@@ -19,8 +19,8 @@
 #include <cstdint>
 #include <initializer_list>
 
-#include "ratcast/buffer.h"
-#include "ratcast/time.h"
+#include "ratcast/core/buffer.h"
+#include "ratcast/core/time.h"
 
 namespace ratcast {
 

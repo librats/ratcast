@@ -17,9 +17,10 @@
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <span>
 
-#include "ratcast/result.h"
+#include "ratcast/core/result.h"
 
 namespace ratcast::wire {
 
@@ -46,6 +47,12 @@ public:
     void varint(uint64_t value) noexcept {
         for (; value >= 0x80; value >>= 7) u8(static_cast<uint8_t>(value | 0x80));
         u8(static_cast<uint8_t>(value));
+    }
+
+    void bytes(std::span<const uint8_t> bytes) noexcept {
+        assert(bytes.size() <= out_.size() - position_);
+        if (!bytes.empty()) std::memcpy(out_.data() + position_, bytes.data(), bytes.size());
+        position_ += bytes.size();
     }
 
     size_t position() const noexcept { return position_; }
@@ -90,6 +97,18 @@ public:
         }
         fail(Errc::Malformed);  // a continuation bit on the tenth byte
         return 0;
+    }
+
+    /// The next `count` bytes, viewed in place; empty after a failure.
+    std::span<const uint8_t> bytes(size_t count) noexcept {
+        if (failed_) return {};
+        if (count > remaining()) {
+            fail(Errc::Truncated);
+            return {};
+        }
+        const std::span<const uint8_t> view = in_.subspan(position_, count);
+        position_ += count;
+        return view;
     }
 
     void skip(size_t count) noexcept {

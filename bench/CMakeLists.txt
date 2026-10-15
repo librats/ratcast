@@ -24,3 +24,10 @@ ratcast_add_bench(bench_core
     LIBS    ratcast::ratcast
 )
 target_include_directories(bench_core PRIVATE "${PROJECT_SOURCE_DIR}/libratcast/src")
+
+# MediaSession's own per-frame costs, over a network that does nothing.
+ratcast_add_bench(bench_session
+    SOURCES bench_session.cpp
+    LIBS    ratcast::ratcast
+)
+target_include_directories(bench_session PRIVATE "${PROJECT_SOURCE_DIR}/libratcast/src")

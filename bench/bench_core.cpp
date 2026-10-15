@@ -10,8 +10,8 @@
 
 #include "framework/alloc_track.h"
 #include "framework/bench.h"
-#include "ratcast/buffer.h"
-#include "ratcast/frame.h"
+#include "ratcast/core/buffer.h"
+#include "ratcast/stream/frame.h"
 #include "wire/frame_codec.h"
 
 using namespace ratcast;

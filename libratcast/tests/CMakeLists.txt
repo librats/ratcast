@@ -1,8 +1,13 @@
 ratcast_add_test(libratcast_tests
     SOURCES
         test_buffer.cpp
+        test_control_codec.cpp
         test_frame_codec.cpp
+        test_frame_tracker.cpp
+        test_media_service.cpp
+        test_media_session.cpp
         test_result.cpp
+        test_stream_description.cpp
         test_time.cpp
         test_version.cpp
         test_wire_bytes.cpp

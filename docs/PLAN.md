@@ -64,6 +64,8 @@ encoded frames, so it is useful without the rest and the SFU links only it.
 6. `send_many` with a shared refcounted buffer for fan-out.
 7. Path MTU discovery above the fixed 1220-byte packets.
 8. A clock-sync service.
+9. One copy fewer on the send path: `Node::send` copies the payload (`to_bytes()`) before
+   `LiveSender` copies it again; take an owned, refcounted buffer instead. Measure in 0.6 first.
 
 ## Media engine
 
@@ -167,7 +169,7 @@ ASan + UBSan job. *Done:* every push builds and tests on three OSes.
 *Done:* header codec round-trips and rejects truncated or garbage input in tests; the send path
 allocates nothing per frame beyond the payload.
 
-**0.2 libratcast over librats.**
+**0.2 libratcast over librats.** ✅
 - `MessageType::Media` in librats; libratcast's `MediaService` is a librats `Subsystem`.
 - Reliable control: stream announce (codec, codec config, resolution, frame rate),
   subscribe / unsubscribe, keyframe request.
@@ -204,6 +206,9 @@ screen|window|file|pattern`, `--codec`, `--bitrate`, `--latency`; stats once a s
 
 **0.6 Baseline.** Glass-to-glass latency with the pattern source (one host, then two), CPU,
 bitrate, behaviour under `tc netem` loss and delay, written to `docs/bench.md`.
+Also look at the first seconds of a stream: under CPU load the integration test saw the frame
+right after a 256 KiB keyframe expire in transport (BBR startup pacing, EDF shedding?). For a
+viewer that is a stall until the next keyframe, at the worst moment — joining.
 *Done:* we know which librats items to do first.
 
 ### Stage 1 — libratcast core

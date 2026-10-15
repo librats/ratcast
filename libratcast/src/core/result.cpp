@@ -1,4 +1,4 @@
-#include "ratcast/result.h"
+#include "ratcast/core/result.h"
 
 namespace ratcast {
 
@@ -8,6 +8,7 @@ const char* to_string(Errc code) noexcept {
         case Errc::Malformed: return "malformed";
         case Errc::UnsupportedVersion: return "unsupported version";
         case Errc::UnknownKind: return "unknown kind";
+        case Errc::Unsupported: return "unsupported";
         case Errc::InvalidArgument: return "invalid argument";
     }
     return "unknown error";

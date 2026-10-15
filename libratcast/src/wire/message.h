@@ -16,7 +16,7 @@
 #include <cstdint>
 #include <span>
 
-#include "ratcast/result.h"
+#include "ratcast/core/result.h"
 #include "wire/bytes.h"
 
 namespace ratcast::wire {
@@ -24,7 +24,12 @@ namespace ratcast::wire {
 inline constexpr uint8_t kWireVersion = 0;
 
 enum class MessageKind : uint8_t {
-    Frame = 1,  ///< an encoded frame, sent live (frame_codec.h)
+    Frame = 1,            ///< an encoded frame, sent live (frame_codec.h)
+    Announce = 2,         ///< a stream is offered, or its description changed (control_codec.h)
+    Withdraw = 3,         ///< a stream is no longer offered
+    Subscribe = 4,        ///< send me this stream's frames
+    Unsubscribe = 5,      ///< stop sending them
+    KeyframeRequest = 6,  ///< I cannot decode until the next keyframe
 };
 
 constexpr uint8_t message_prefix(MessageKind kind) noexcept {
@@ -39,7 +44,12 @@ inline Result<MessageKind> read_prefix(Reader& in) noexcept {
 
     const auto kind = static_cast<MessageKind>(prefix & 0x1F);
     switch (kind) {
-        case MessageKind::Frame: return kind;
+        case MessageKind::Frame:
+        case MessageKind::Announce:
+        case MessageKind::Withdraw:
+        case MessageKind::Subscribe:
+        case MessageKind::Unsubscribe:
+        case MessageKind::KeyframeRequest: return kind;
     }
     return fail(Errc::UnknownKind);
 }

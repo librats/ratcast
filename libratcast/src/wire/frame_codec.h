@@ -34,10 +34,11 @@
  */
 
 #include <cstddef>
+#include <span>
 
-#include "ratcast/buffer.h"
-#include "ratcast/frame.h"
-#include "ratcast/result.h"
+#include "ratcast/core/buffer.h"
+#include "ratcast/core/result.h"
+#include "ratcast/stream/frame.h"
 #include "wire/bytes.h"
 
 namespace ratcast::wire {
@@ -62,6 +63,15 @@ size_t frame_header_size(const FrameInfo& info) noexcept;
 /// without being copied; one with too little headroom is copied once.
 /// Fails with InvalidArgument unless is_encodable(info).
 Result<Buffer> encode_frame(const FrameInfo& info, MutableBuffer payload);
+
+struct FrameHeader {
+    FrameInfo info;
+    size_t size = 0;  ///< bytes of header; the payload starts here
+};
+
+/// The header of the frame message `message`, read in place: enough to decide
+/// whether the frame is wanted before copying any of it.
+Result<FrameHeader> read_frame_header(std::span<const uint8_t> message);
 
 /// The frame in `message`, whose payload is a slice of `message` (no copy).
 /// Expects the whole message, prefix included.

@@ -38,20 +38,25 @@ jobs:
         run: ctest --test-dir build --build-config ${{ matrix.build-type }} --output-on-failure
 
   sanitizers:
-    name: ASan + UBSan
+    name: ${{ matrix.preset }}
     runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        preset: [asan, tsan]
     env:
       CC: clang
       CXX: clang++
       UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+      TSAN_OPTIONS: halt_on_error=1
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
       - run: sudo apt-get update && sudo apt-get install -y ninja-build
-      - run: cmake --preset asan -DRATCAST_BUILD_APP=OFF
-      - run: cmake --build --preset asan
-      - run: ctest --preset asan
+      - run: cmake --preset ${{ matrix.preset }} -DRATCAST_BUILD_APP=OFF
+      - run: cmake --build --preset ${{ matrix.preset }}
+      - run: ctest --preset ${{ matrix.preset }}
 
   app:
     name: Desktop app (Linux)

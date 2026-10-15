@@ -81,8 +81,8 @@ Result<Buffer> encode_frame(const FrameInfo& info, MutableBuffer payload) {
     return std::move(payload).freeze();
 }
 
-Result<EncodedFrame> decode_frame(const Buffer& message) {
-    Reader in(message.bytes());
+Result<FrameHeader> read_frame_header(std::span<const uint8_t> message) {
+    Reader in(message);
 
     const Result<MessageKind> kind = read_prefix(in);
     if (!kind) return fail(kind.error());
@@ -135,7 +135,13 @@ Result<EncodedFrame> decode_frame(const Buffer& message) {
     }
 
     if (!in.ok()) return fail(in.error());
-    return EncodedFrame{info, message.slice(in.position())};
+    return FrameHeader{info, in.position()};
+}
+
+Result<EncodedFrame> decode_frame(const Buffer& message) {
+    const Result<FrameHeader> header = read_frame_header(message.bytes());
+    if (!header) return fail(header.error());
+    return EncodedFrame{header->info, message.slice(header->size)};
 }
 
 }  // namespace ratcast::wire

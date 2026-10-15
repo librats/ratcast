@@ -32,6 +32,7 @@ enum class Errc : uint8_t {
     Malformed,           ///< bytes no valid encoder produces: reserved bits, overlong varints, …
     UnsupportedVersion,  ///< a wire version this build does not speak
     UnknownKind,         ///< a message kind this build does not know
+    Unsupported,         ///< well-formed, but uses something this build does not implement
     InvalidArgument,     ///< a caller passed a value outside its documented range
 };
 
