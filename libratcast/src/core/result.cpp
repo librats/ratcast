@@ -10,6 +10,8 @@ const char* to_string(Errc code) noexcept {
         case Errc::UnknownKind: return "unknown kind";
         case Errc::Unsupported: return "unsupported";
         case Errc::InvalidArgument: return "invalid argument";
+        case Errc::Unavailable: return "unavailable";
+        case Errc::Internal: return "internal error";
     }
     return "unknown error";
 }

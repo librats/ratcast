@@ -180,7 +180,7 @@ allocates nothing per frame beyond the payload.
 *Done:* two nodes in one process exchange a synthetic stream; tests cover lost delta and key frames,
 joining mid-stream, the sender leaving.
 
-**0.3 engine: media model and codecs.**
+**0.3 engine: media model and codecs.** ✅
 - `VideoFrame`: CPU planes (NV12, I420, BGRA) or a GPU handle (DMA-BUF now; D3D11, IOSurface,
   VA surface later) behind one refcounted type.
 - Interfaces: `VideoSource`, `VideoEncoder` (runtime bitrate, forced keyframe), `VideoDecoder`.
@@ -190,10 +190,19 @@ joining mid-stream, the sender leaving.
 
 *Done:* encode → decode round trip for every encoder present; bitrate changes take effect.
 
+Notes from 0.3: hardware encoders are wired up but untested (no GPU in the dev VM) — check
+NVENC / QSV / AMF / VideoToolbox, in-band parameter sets and dynamic bitrate on real machines.
+Software encoders cannot change bitrate in flight through FFmpeg and are reopened (a keyframe;
+~30-50 ms for SVT-AV1 at 1080p), so rate control must change rate sparingly — or reopen in the
+background. SVT-AV1 at 1080p60 takes ~8 ms a picture here, libaom ~19 ms (too slow for 60 fps).
+Hardware decoding (hwaccel) is not in yet: decode is software (dav1d, FFmpeg's H.264 / HEVC).
+
 **0.4 engine: Linux capture.**
 - xdg-desktop-portal ScreenCast over GIO: screen or window, restore token so the picker is shown
   once.
 - PipeWire stream: DMA-BUF with modifiers when offered, memfd / SHM otherwise; cursor as metadata.
+- VAAPI encoding from DMA-BUF (VAAPI takes only GPU pictures); BGRA → NV12 / I420 conversion
+  for the CPU path.
 - File source (FFmpeg demux + decode) for machines without capture, and the base of cinema mode.
 
 *Done:* captures a GNOME Wayland desktop and a single window; survives resize and the window

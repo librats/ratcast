@@ -31,3 +31,9 @@ ratcast_add_bench(bench_session
     LIBS    ratcast::ratcast
 )
 target_include_directories(bench_session PRIVATE "${PROJECT_SOURCE_DIR}/libratcast/src")
+
+# Engine codecs: milliseconds per picture at 720p and 1080p, per encoder.
+ratcast_add_bench(bench_codec
+    SOURCES bench_codec.cpp
+    LIBS    ratcast::engine
+)

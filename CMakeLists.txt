@@ -34,6 +34,7 @@ endif()
 
 # Dependency order, bottom to top. A module may use only those above it here.
 add_subdirectory(libratcast)
+add_subdirectory(engine)
 
 if(RATCAST_BUILD_BENCH)
     add_subdirectory(bench)
