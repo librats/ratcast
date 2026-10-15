@@ -116,21 +116,108 @@ Modules are added when their stage starts; each follows the libratcast shape
 Text chat lives in `client/` as one more room channel next to the call control channel: GossipSub
 per room for delivery, librats storage for history when it is built.
 
-Dependencies: system packages on Linux; a vcpkg manifest for Windows and macOS, added with the
-first native dependency (Opus); Qt from the official installer or aqtinstall; FFmpeg as LGPL
-shared libraries.
+## Dependencies
+
+| Dependency | For | Linux | Windows / macOS |
+|---|---|---|---|
+| FFmpeg ≥ 6 (avcodec, avformat, avutil, swscale) | encode, decode, demux | system | vcpkg, LGPL build we ship |
+| PipeWire ≥ 0.3.40 | screen capture, audio | system | — |
+| GIO (GLib) | xdg-desktop-portal over D-Bus | system | — |
+| libdrm, GBM, EGL, Vulkan | DMA-BUF import, GPU colour conversion | system | — |
+| SDL3 | windows of the CLI tools | system | vcpkg |
+| Qt ≥ 6.5 with Quick | app | system | official installer / aqtinstall |
+| Opus | audio (stage 1) | system (`libopus-dev`) | vcpkg |
+| WebRTC AudioProcessing | AEC, AGC, NS (stage 3) | system | vcpkg or vendored |
+| GoogleTest | tests | fetched by CMake | fetched by CMake |
+
+A vcpkg manifest is added with the first dependency Windows or macOS needs. Each dependency is
+optional at its module boundary: a missing one disables the backend that needs it, never the build.
+
+Licensing: distribution FFmpeg builds often include GPL encoders (libx264, libx265). ratcast never
+selects them, so it behaves the same against an LGPL FFmpeg; software fallbacks are SVT-AV1
+(BSD) and OpenH264 (BSD).
 
 ## Stages
 
+Stages are the roadmap; the current and next stage are broken into steps, later ones stay coarse
+until we reach them. Every step ends with tests and leaves the code in its final place and shape:
+stage 0 is a walking skeleton, not a throwaway prototype.
+
 | Stage | Result | Proves |
 |---|---|---|
-| 0. Prototype | CLI: screen capture on one OS → hardware encode via FFmpeg → live messages → decode → SDL window | glass-to-glass latency; whether live + FEC + BBR is enough as is |
-| 1. libratcast core | framing, jitter buffer, A/V sync, rate control, keyframe requests, Opus, latency profiles, TS in/out, benchmark vs librist / SRT | the library holds its own |
+| 0. Walking skeleton | screen → encoder → libratcast → librats → decoder → window, Linux first | glass-to-glass latency; whether live + FEC + BBR is enough as is |
+| 1. libratcast core | rate control, loss recovery, audio and sync, latency profiles, netsim, benchmark vs librist / SRT, Windows and macOS backends | the library holds its own |
 | 2. One-to-many | tree, simulcast / SVC, absolute deadlines, SFrame, synchronized playout, SFU mode | the main use case |
 | 3. App MVP | Qt UI, rooms and invites, voice with AEC / NS, screen / window / app-audio share, camera on Windows / Linux / macOS | the product |
 | 4. Conferences | active speaker, last-N, grid, moderation, text chat | many participants |
 | 5. Next | Android, cinema mode, HDR, polish | |
 
-**Cinema mode**: when the streamer plays a video file, send its original H.264 / HEVC / AV1
-packets paced by PTS instead of capturing and re-encoding the screen; transcode only the audio to
-Opus. Original quality, no encoding cost, shared pause and seek.
+### Stage 0 — walking skeleton
+
+**0.0 Tooling.** `.clang-format`, CI on Linux / Windows / macOS for the libraries (app on Linux),
+ASan + UBSan job. *Done:* every push builds and tests on three OSes.
+
+**0.1 libratcast foundations.**
+- `Buffer`: refcounted immutable bytes from a pool, with slices — the one way media bytes travel.
+- Time: `Timestamp` / `Duration` in microseconds on a monotonic clock; an injectable `Clock` for
+  virtual-time tests.
+- `EncodedFrame`: stream, frame number, capture time, key / delta, layer ids, references, payload.
+- Wire format v0: versioned compact header (varints); `Result<T>` errors, no exceptions.
+
+*Done:* header codec round-trips and rejects truncated or garbage input in tests; the send path
+allocates nothing per frame beyond the payload.
+
+**0.2 libratcast over librats.**
+- `MessageType::Media` in librats; libratcast's `MediaService` is a librats `Subsystem`.
+- Reliable control: stream announce (codec, codec config, resolution, frame rate),
+  subscribe / unsubscribe, keyframe request.
+- Video frames as live messages, one frame per message, lifetime from the latency profile.
+- Receiver: orders by frame number, drops frames whose references are missing, requests a keyframe
+  (debounced) on a gap; per-stream stats.
+
+*Done:* two nodes in one process exchange a synthetic stream; tests cover lost delta and key frames,
+joining mid-stream, the sender leaving.
+
+**0.3 engine: media model and codecs.**
+- `VideoFrame`: CPU planes (NV12, I420, BGRA) or a GPU handle (DMA-BUF now; D3D11, IOSurface,
+  VA surface later) behind one refcounted type.
+- Interfaces: `VideoSource`, `VideoEncoder` (runtime bitrate, forced keyframe), `VideoDecoder`.
+- FFmpeg backend: hardware encoders first (NVENC, VAAPI, QSV, AMF, VideoToolbox), then SVT-AV1 /
+  OpenH264; low-latency settings (no B-frames, ~1-frame VBV); decoding with hwaccel when available.
+- Pattern source: synthetic frames with the capture time burned in — for tests and latency.
+
+*Done:* encode → decode round trip for every encoder present; bitrate changes take effect.
+
+**0.4 engine: Linux capture.**
+- xdg-desktop-portal ScreenCast over GIO: screen or window, restore token so the picker is shown
+  once.
+- PipeWire stream: DMA-BUF with modifiers when offered, memfd / SHM otherwise; cursor as metadata.
+- File source (FFmpeg demux + decode) for machines without capture, and the base of cinema mode.
+
+*Done:* captures a GNOME Wayland desktop and a single window; survives resize and the window
+closing.
+
+**0.5 Tools.** `ratcast-send` (source → encoder → MediaService) and `ratcast-recv`
+(MediaService → decoder → SDL3 window); connect by address or PeerId; `--source
+screen|window|file|pattern`, `--codec`, `--bitrate`, `--latency`; stats once a second.
+*Done:* one machine streams its desktop to another over a real network.
+
+**0.6 Baseline.** Glass-to-glass latency with the pattern source (one host, then two), CPU,
+bitrate, behaviour under `tc netem` loss and delay, written to `docs/bench.md`.
+*Done:* we know which librats items to do first.
+
+### Stage 1 — libratcast core
+
+1. **Rate control:** encoder bitrate from `PathStats` (fast down on expiring frames or a growing
+   queue, careful up), then a resolution / frame-rate ladder.
+2. **librats:** live sub-priorities, per-message delivery feedback, absolute deadlines.
+3. **Loss recovery:** reference invalidation / LTR where encoders support it, intra-refresh for
+   `game`, keyframe-request aggregation.
+4. **Audio:** PipeWire capture and playback, Opus (FEC, DTX), adaptive jitter buffer, A/V sync.
+5. **Latency profiles** `call` / `game` / `cinema` end to end.
+6. **netsim:** userspace impairment proxy (delay, jitter, loss, bursts, bandwidth caps; no root,
+   any OS) with scripted scenarios in CI.
+7. **Interop and benchmark:** C API, MPEG-TS in / out in the tools, `rats://` URLs, comparison
+   with librist and SRT on netsim scenarios.
+8. **Windows and macOS backends:** Windows.Graphics.Capture + D3D11 → hardware encoder;
+   ScreenCaptureKit + VideoToolbox — the engine is cross-platform before the app is built on it.
