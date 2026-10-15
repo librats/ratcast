@@ -22,6 +22,7 @@ set(CMAKE_ARCHIVE_OUTPUT_DIRECTORY "${PROJECT_BINARY_DIR}/lib")
 
 option(RATCAST_BUILD_APP   "Build the Qt 6 desktop application (needs Qt 6 Quick)" ON)
 option(RATCAST_BUILD_TESTS "Build unit tests" ${PROJECT_IS_TOP_LEVEL})
+option(RATCAST_BUILD_BENCH "Build benchmarks (bench/)" OFF)
 
 include(RatcastCompiler)
 include(RatcastLibrats)
@@ -33,6 +34,10 @@ endif()
 
 # Dependency order, bottom to top. A module may use only those above it here.
 add_subdirectory(libratcast)
+
+if(RATCAST_BUILD_BENCH)
+    add_subdirectory(bench)
+endif()
 
 if(RATCAST_BUILD_APP)
     add_subdirectory(app)

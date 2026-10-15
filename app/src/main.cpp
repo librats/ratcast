@@ -16,8 +16,9 @@ int main(int argc, char* argv[]) {
         {QStringLiteral("libratsVersion"), QString::fromLatin1(ratcast::librats_version())},
     });
 
-    QObject::connect(&engine, &QQmlApplicationEngine::objectCreationFailed, &app,
-                     [] { QCoreApplication::exit(EXIT_FAILURE); }, Qt::QueuedConnection);
+    QObject::connect(
+        &engine, &QQmlApplicationEngine::objectCreationFailed, &app,
+        [] { QCoreApplication::exit(EXIT_FAILURE); }, Qt::QueuedConnection);
     engine.loadFromModule("Ratcast", "Main");
 
     return QGuiApplication::exec();

@@ -13,6 +13,9 @@ if(NOT Qt6Quick_FOUND)
 endif()
 
 qt_standard_project_setup(REQUIRES 6.5)
+if(QT_KNOWN_POLICY_QTP0004)
+    qt_policy(SET QTP0004 NEW)  # qmldir for QML files in subdirectories (qml/)
+endif()
 
 qt_add_executable(ratcast_app
     src/main.cpp
@@ -33,6 +36,13 @@ qt_add_qml_module(ratcast_app
     QML_FILES
         qml/Main.qml
 )
+
+# The QML import scan exists to link QML plugins into a static Qt. A shared Qt
+# loads them at run time, and distribution packages do not ship the plugin
+# targets the scan looks for, so it would only warn about each of them.
+if(QT6_IS_SHARED_LIBS_BUILD)
+    set_target_properties(ratcast_app PROPERTIES QT_QML_MODULE_NO_IMPORT_SCAN TRUE)
+endif()
 
 target_link_libraries(ratcast_app PRIVATE
     Qt6::Quick

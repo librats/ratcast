@@ -1,0 +1,80 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  libraries:
+    name: ${{ matrix.os }} · ${{ matrix.build-type }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-latest, macos-latest]
+        build-type: [Debug, Release]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Configure
+        run: >
+          cmake -S . -B build
+          -DCMAKE_BUILD_TYPE=${{ matrix.build-type }}
+          -DRATCAST_BUILD_APP=OFF
+          -DRATCAST_BUILD_TESTS=ON
+          -DRATCAST_BUILD_BENCH=ON
+
+      - name: Build
+        run: cmake --build build --config ${{ matrix.build-type }} --parallel
+
+      - name: Test
+        run: ctest --test-dir build --build-config ${{ matrix.build-type }} --output-on-failure
+
+  sanitizers:
+    name: ASan + UBSan
+    runs-on: ubuntu-24.04
+    env:
+      CC: clang
+      CXX: clang++
+      UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - run: sudo apt-get update && sudo apt-get install -y ninja-build
+      - run: cmake --preset asan -DRATCAST_BUILD_APP=OFF
+      - run: cmake --build --preset asan
+      - run: ctest --preset asan
+
+  app:
+    name: Desktop app (Linux)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.8.*'
+          cache: true
+      - run: sudo apt-get update && sudo apt-get install -y ninja-build libgl-dev
+      - run: cmake --preset release -DRATCAST_BUILD_APP=ON
+      - run: cmake --build --preset release
+
+  format:
+    name: clang-format
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - run: pipx install clang-format==20.1.8
+      - name: Check formatting
+        run: |
+          git ls-files -- '*.h' '*.hpp' '*.cpp' '*.c' ':!:external/**' \
+            | xargs --no-run-if-empty clang-format --dry-run --Werror

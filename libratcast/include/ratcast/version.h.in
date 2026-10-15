@@ -18,4 +18,4 @@ RATCAST_EXPORT const char* version() noexcept;
 /// Version of the librats this libratcast was built against.
 RATCAST_EXPORT const char* librats_version() noexcept;
 
-} // namespace ratcast
+}  // namespace ratcast

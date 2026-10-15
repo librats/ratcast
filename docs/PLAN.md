@@ -154,10 +154,10 @@ stage 0 is a walking skeleton, not a throwaway prototype.
 
 ### Stage 0 — walking skeleton
 
-**0.0 Tooling.** `.clang-format`, CI on Linux / Windows / macOS for the libraries (app on Linux),
+**0.0 Tooling.** ✅ `.clang-format`, CI on Linux / Windows / macOS for the libraries (app on Linux),
 ASan + UBSan job. *Done:* every push builds and tests on three OSes.
 
-**0.1 libratcast foundations.**
+**0.1 libratcast foundations.** ✅
 - `Buffer`: refcounted immutable bytes from a pool, with slices — the one way media bytes travel.
 - Time: `Timestamp` / `Duration` in microseconds on a monotonic clock; an injectable `Clock` for
   virtual-time tests.

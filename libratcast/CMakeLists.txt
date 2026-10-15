@@ -3,7 +3,11 @@
 # library (the librist / SRT counterpart) and the SFU links it without the rest.
 
 add_library(ratcast
+    src/buffer.cpp
+    src/result.cpp
+    src/time.cpp
     src/version.cpp
+    src/wire/frame_codec.cpp
 )
 add_library(ratcast::ratcast ALIAS ratcast)
 
