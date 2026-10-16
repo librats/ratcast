@@ -41,6 +41,8 @@ std::unique_ptr<VideoWindow> VideoWindow::open(const std::string& title) {
         std::cerr << "no window: " << SDL_GetError() << "\n";
         return nullptr;
     }
+    // Where it cannot wait for the refresh, presenting returns at once.
+    SDL_SetRenderVSync(window->renderer_, 1);
     window->picture_event_ = SDL_RegisterEvents(1);
     SDL_SetRenderDrawColor(window->renderer_, 0, 0, 0, SDL_ALPHA_OPAQUE);
     SDL_RenderClear(window->renderer_);
@@ -69,7 +71,7 @@ void VideoWindow::show(VideoFrame picture) {
     }
 }
 
-void VideoWindow::run(const std::function<bool()>& tick) {
+void VideoWindow::run(const std::function<bool()>& tick, const Presented& presented) {
     for (;;) {
         SDL_Event event;
         if (SDL_WaitEventTimeout(&event, 100)) {
@@ -87,13 +89,13 @@ void VideoWindow::run(const std::function<bool()>& tick) {
             std::lock_guard lock(mutex_);
             picture = std::exchange(next_, std::nullopt);
         }
-        if (picture) draw(*picture);
+        if (picture && draw(*picture) && presented) presented(*picture);
         if (!tick()) return;
     }
 }
 
-void VideoWindow::draw(const VideoFrame& picture) {
-    if (!fit_texture(picture)) return;
+bool VideoWindow::draw(const VideoFrame& picture) {
+    if (!fit_texture(picture)) return false;
     const auto stride = [&](size_t i) { return static_cast<int>(picture.plane(i).stride); };
     switch (picture.format()) {
         case PixelFormat::NV12:
@@ -111,7 +113,7 @@ void VideoWindow::draw(const VideoFrame& picture) {
     }
     SDL_RenderClear(renderer_);
     SDL_RenderTexture(renderer_, texture_, nullptr, nullptr);
-    SDL_RenderPresent(renderer_);
+    return SDL_RenderPresent(renderer_);
 }
 
 /// A texture of the picture's format, size and colours, made anew on a change.

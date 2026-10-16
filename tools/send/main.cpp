@@ -1,6 +1,8 @@
 // ratcast-send: stream a screen, a window, a file or the test pattern to
-// whoever connects. Prints how to connect, then a line of stats a second.
+// whoever connects. Prints how to connect, then a line of stats a second and,
+// on exit, a summary line of key=value pairs.
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cstdio>
@@ -8,6 +10,7 @@
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <map>
 #include <memory>
 #include <optional>
 #include <stop_token>
@@ -150,8 +153,12 @@ std::unique_ptr<ScreenCapture> open_screen(const Options& o) {
 
 std::unique_ptr<VideoSource> open_source(Options& o) {
     if (o.source == "pattern") {
-        return std::make_unique<PatternSource>(PatternConfig{
-            PixelFormat::NV12, o.width & ~1u, o.height & ~1u, o.encoder.frame_rate_num, 1});
+        // Stamped with the time of day, so a viewer on a synchronised host
+        // can tell the latency as well as one on this host.
+        return std::make_unique<PatternSource>(
+            PatternConfig{PixelFormat::NV12, o.width & ~1u, o.height & ~1u,
+                          o.encoder.frame_rate_num, 1},
+            WallClock::instance());
     }
     if (o.source == "file") {
         Result<std::unique_ptr<FileSource>> file =
@@ -170,7 +177,8 @@ std::unique_ptr<VideoSource> open_source(Options& o) {
     return open_screen(o);
 }
 
-/// One line a second: what went out, and how each viewer's path is doing.
+/// One line a second: what went out, and how each viewer's path is doing;
+/// a summary at the end.
 class Reporter {
 public:
     Reporter(librats::Node& node, MediaSession& session, VideoPublisher& publisher)
@@ -185,31 +193,72 @@ public:
             frames > 0 ? double((now.encode_time - last_.encode_time).count()) / 1000 / frames : 0;
         std::printf(
             "[%4us] %3llu fps %6.2f Mbit/s  %ux%u %s  encode %5.2f ms  viewers %zu"
-            "  skipped %llu  repeated %llu  drops %llu\n",
+            "  skipped %llu  repeated %llu  keyframes %llu  drops %llu  cpu %3.0f%%\n",
             seconds_++, static_cast<unsigned long long>(frames), mbps, now.width, now.height,
             now.encoder.c_str(), encode_ms, stream ? stream->subscribers : 0,
             static_cast<unsigned long long>(now.skipped - last_.skipped),
             static_cast<unsigned long long>(now.repeated - last_.repeated),
-            static_cast<unsigned long long>(stream ? stream->backpressure_drops - last_drops_ : 0));
+            static_cast<unsigned long long>(now.keyframes - last_.keyframes),
+            static_cast<unsigned long long>(stream ? stream->backpressure_drops - last_drops_ : 0),
+            cpu_.take_interval());
         for (const librats::PeerInfo& peer : node_.peers()) {
             const std::optional<librats::PathStats> path = node_.path_stats(peer.id);
             if (!path || !path->valid) continue;
-            std::printf("        %s  rtt %5.1f ms  path %7.1f Mbit/s  loss %4.1f%%  expired %llu\n",
-                        peer.id.short_hex().c_str(), path->srtt_us / 1000.0,
-                        double(path->bandwidth_bps) / 1e6, path->loss * 100,
-                        static_cast<unsigned long long>(path->live_expired));
+            librats::PathStats& last = paths_[peer.id];
+            std::printf(
+                "        %s  rtt %5.1f ms  path %7.1f Mbit/s  loss %4.1f%%  expired %llu"
+                "  repair %5.2f Mbit/s\n",
+                peer.id.short_hex().c_str(), path->srtt_us / 1000.0,
+                double(path->bandwidth_bps) / 1e6, path->loss * 100,
+                static_cast<unsigned long long>(path->live_expired),
+                double(path->live_repair_bytes - last.live_repair_bytes) * 8 / 1e6);
+            last = *path;
         }
         std::fflush(stdout);
         last_ = now;
         last_drops_ = stream ? stream->backpressure_drops : 0;
     }
 
+    /// The whole run as key=value pairs, for scripts. Live messages are counted
+    /// over every viewer, as last reported: call after a last report().
+    void summarise() {
+        const VideoPublisherStats now = publisher_.stats();
+        const std::optional<OutgoingStreamStats> stream = session_.outgoing_stats(1);
+        uint64_t live_sent = 0, live_expired = 0, repair = 0, delivered = 0;
+        for (const auto& [peer, path] : paths_) {
+            live_sent += path.live_sent;
+            live_expired += path.live_expired;
+            repair += path.live_repair_bytes;
+            delivered += path.bytes_delivered;
+        }
+        const std::chrono::duration<double> elapsed = std::chrono::steady_clock::now() - started_;
+        std::printf(
+            "summary frames=%llu keyframes=%llu keyframe_kb=%.0f keyframes_asked=%llu"
+            " skipped=%llu encode_ms=%.2f mbps=%.2f live_sent=%llu live_expired=%llu"
+            " repair_share=%.3f cpu=%.0f\n",
+            static_cast<unsigned long long>(now.frames),
+            static_cast<unsigned long long>(now.keyframes),
+            now.keyframes > 0 ? double(now.keyframe_bytes) / 1024 / double(now.keyframes) : 0,
+            static_cast<unsigned long long>(stream ? stream->keyframes_asked : 0),
+            static_cast<unsigned long long>(now.skipped),
+            now.frames > 0 ? double(now.encode_time.count()) / 1000 / double(now.frames) : 0,
+            double(now.bytes) * 8 / 1e6 / std::max(elapsed.count(), 1.0),
+            static_cast<unsigned long long>(live_sent),
+            static_cast<unsigned long long>(live_expired),
+            delivered > 0 ? double(repair) / double(delivered) : 0, cpu_.total());
+        std::fflush(stdout);
+    }
+
 private:
     librats::Node& node_;
     MediaSession& session_;
     VideoPublisher& publisher_;
+    CpuMeter cpu_;
+    const std::chrono::steady_clock::time_point started_ = std::chrono::steady_clock::now();
     VideoPublisherStats last_;
     uint64_t last_drops_ = 0;
+    /// The last word on each viewer's path, kept after it leaves.
+    std::map<PeerId, librats::PathStats> paths_;
     unsigned seconds_ = 1;
 };
 
@@ -279,6 +328,8 @@ int main(int argc, char** argv) {
         }
     }
     if (ended) std::cout << (failed ? "the stream failed\n" : "the source ended\n");
+    reporter.report();
+    reporter.summarise();
 
     video.stop();
     publisher = nullptr;

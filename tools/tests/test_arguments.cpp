@@ -2,6 +2,7 @@
 
 #include <gtest/gtest.h>
 
+#include <chrono>
 #include <vector>
 
 #include "common/tool.h"
@@ -55,4 +56,25 @@ TEST(Tool, ParsesEndpointsSizesAndCodecs) {
 
     EXPECT_EQ(parse_codec("hevc"), Codec::H265);
     EXPECT_EQ(parse_codec("vp9"), std::nullopt);
+}
+
+TEST(Tool, CountsTheProcessCpuTime) {
+    CpuMeter meter;
+    const Duration start = process_cpu_time();
+    const auto give_up = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    volatile uint64_t sink = 0;
+    while (process_cpu_time() - start < std::chrono::milliseconds(20) &&
+           std::chrono::steady_clock::now() < give_up) {
+        for (int i = 0; i < 100'000; ++i) sink = sink + i;
+    }
+    EXPECT_GE(process_cpu_time() - start, std::chrono::milliseconds(20));
+    EXPECT_GT(meter.take_interval(), 0.0);
+    EXPECT_GT(meter.total(), 0.0);
+}
+
+TEST(Tool, WallClockIsTheTimeOfDay) {
+    const auto system =
+        std::chrono::duration_cast<Duration>(std::chrono::system_clock::now().time_since_epoch());
+    const Duration wall = WallClock::instance().now().time_since_epoch();
+    EXPECT_LT(std::chrono::abs(wall - system), std::chrono::seconds(1));
 }

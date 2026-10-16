@@ -7,7 +7,9 @@
  * Pictures arrive from a decoder thread through show(); the window keeps only
  * the newest and draws it on the main thread, where run() loops — SDL wants
  * its windows driven from there. YUV pictures go to the GPU as they are, with
- * their colour space; SDL converts them while drawing.
+ * their colour space; SDL converts them while drawing. Presentation waits for
+ * the display's refresh (vsync) where the driver allows, so a picture counts
+ * as presented about when it reaches the screen.
  */
 
 #include <cstdint>
@@ -37,13 +39,16 @@ public:
     /// Show `picture` next, in place of any not yet drawn. Any thread.
     void show(VideoFrame picture);
 
+    /// Called on the main thread with each picture once it is on screen.
+    using Presented = std::function<void(const VideoFrame& picture)>;
+
     /// Draw pictures as they come until the window is closed or `tick`, which
     /// runs at least every 100 ms, returns false. Main thread.
-    void run(const std::function<bool()>& tick);
+    void run(const std::function<bool()>& tick, const Presented& presented = {});
 
 private:
     VideoWindow() = default;
-    void draw(const VideoFrame& picture);
+    bool draw(const VideoFrame& picture);
     bool fit_texture(const VideoFrame& picture);
 
     SDL_Window* window_ = nullptr;

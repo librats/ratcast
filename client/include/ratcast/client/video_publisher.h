@@ -53,9 +53,10 @@ struct VideoPublisherStats {
     uint64_t repeated = 0;  ///< the last picture encoded again for a keyframe
     uint64_t frames = 0;    ///< encoded and handed to the session
     uint64_t keyframes = 0;
-    uint64_t bytes = 0;     ///< of those frames
-    uint64_t encoders = 0;  ///< opened: one, and one more per change of size or colours
-    uint64_t errors = 0;    ///< pictures the encoder failed on
+    uint64_t bytes = 0;           ///< of those frames
+    uint64_t keyframe_bytes = 0;  ///< of the keyframes among them
+    uint64_t encoders = 0;        ///< opened: one, and one more per change of size or colours
+    uint64_t errors = 0;          ///< pictures the encoder failed on
     Duration encode_time{};
     Duration max_encode_time{};
     uint32_t width = 0;  ///< of the pictures now
@@ -120,6 +121,7 @@ private:
     std::unique_ptr<VideoEncoder> encoder_;
     VideoEncoderConfig encoder_config_;  ///< what encoder_ was opened with
     VideoFrame last_;
+    Timestamp last_encoded_at_{};  ///< on clock_, when last_ went to the encoder
     std::optional<StreamDescription> announced_;
     FrameNumber next_number_ = 0;
     FrameNumber number_offset_ = 0;  ///< added to the current encoder's frame numbers

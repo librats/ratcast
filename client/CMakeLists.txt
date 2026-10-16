@@ -3,6 +3,7 @@
 # chat). Glues engine to libratcast; the app and the tools sit on top.
 
 add_library(ratcast_client STATIC
+    src/playback_meter.cpp
     src/video_player.cpp
     src/video_publisher.cpp
 )

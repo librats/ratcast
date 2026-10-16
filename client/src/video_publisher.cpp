@@ -130,7 +130,11 @@ void VideoPublisher::run() {
                 repeat = true;
             }
         }
-        if (repeat) picture.set_capture_time(clock_.now());
+        if (repeat) {
+            // Later than the original by the time since, on the source's own
+            // clock, whichever that is: capture times only ever move on.
+            picture.set_capture_time(picture.capture_time() + (clock_.now() - last_encoded_at_));
+        }
 
         if (Result<void> published = publish(std::move(picture), keyframe); !published) {
             finish(published);
@@ -166,6 +170,7 @@ Result<void> VideoPublisher::publish(VideoFrame picture, bool keyframe) {
     }
 
     last_ = std::move(picture);
+    last_encoded_at_ = clock_.now();
     std::lock_guard lock(mutex_);
     have_picture_ = true;
     return {};
@@ -231,8 +236,11 @@ void VideoPublisher::send(EncodedVideo&& frame) {
     }
     std::lock_guard lock(stats_mutex_);
     ++stats_.frames;
-    if (info.keyframe) ++stats_.keyframes;
     stats_.bytes += size;
+    if (info.keyframe) {
+        ++stats_.keyframes;
+        stats_.keyframe_bytes += size;
+    }
 }
 
 }  // namespace ratcast

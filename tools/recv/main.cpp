@@ -1,5 +1,5 @@
 // ratcast-recv: connect to a sender, play its video in a window (or without
-// one), and print a line of stats a second.
+// one), and print a line of stats a second and, on exit, a summary line.
 
 #include <algorithm>
 #include <atomic>
@@ -15,6 +15,7 @@
 
 #include "common/arguments.h"
 #include "common/tool.h"
+#include "ratcast/client/playback_meter.h"
 #include "ratcast/client/video_player.h"
 #include "ratcast/engine/pattern_source.h"
 #include "ratcast/session/media_service.h"
@@ -39,8 +40,10 @@ constexpr const char* kUsage = R"(usage: ratcast-recv (--connect HOST:PORT | --p
   --data-dir DIR       keep the peer id across runs
   --verbose            library logs
 
-The pattern source's pictures carry their capture time: on the sender's own
-host, their latency from capture to decoded picture is printed too.
+The pattern source's pictures carry the time of day they were captured: on
+the sender's own host, or one whose clock is synchronised with it (NTP), the
+latency from capture to decoded (and to presented) picture is printed too.
+On exit a summary line, key=value, sums up the run.
 )";
 
 struct Options {
@@ -168,54 +171,32 @@ private:
     std::unique_ptr<VideoPlayer> player_;
 };
 
-/// Pictures counted, and the latency of those that carry their capture time.
-class Pictures {
-public:
-    void add(const VideoFrame& picture) {
-        const std::optional<Timestamp> stamp = read_timestamp(picture);
-        const Duration latency = stamp ? SteadyClock::instance().now() - *stamp : Duration{};
-        std::lock_guard lock(mutex_);
-        ++count_;
-        // A stamp from another host's clock, or no stamp at all, says nothing.
-        if (stamp && latency >= Duration::zero() && latency < 10s) {
-            latency_sum_ += latency;
-            latency_max_ = std::max(latency_max_, latency);
-            ++latencies_;
-        }
-    }
+/// Latency of a picture from its capture, if it carries the pattern's stamp
+/// and that stamp makes sense here: the sender's clock may be another's.
+std::optional<Duration> latency_of(const VideoFrame& picture) {
+    const std::optional<Timestamp> stamp = read_timestamp(picture);
+    if (!stamp) return std::nullopt;
+    const Duration latency = WallClock::instance().now() - *stamp;
+    if (latency < Duration::zero() || latency > std::chrono::seconds(10)) return std::nullopt;
+    return latency;
+}
 
-    uint64_t count() {
-        std::lock_guard lock(mutex_);
-        return count_;
-    }
+double ms(Duration d) { return double(d.count()) / 1000; }
 
-    /// Average and worst latency since the last call; nullopt if none was known.
-    std::optional<std::pair<double, double>> take_latency_ms() {
-        std::lock_guard lock(mutex_);
-        if (latencies_ == 0) return std::nullopt;
-        const std::pair result{double(latency_sum_.count()) / 1000 / double(latencies_),
-                               double(latency_max_.count()) / 1000};
-        latency_sum_ = latency_max_ = Duration{};
-        latencies_ = 0;
-        return result;
-    }
-
-private:
-    std::mutex mutex_;
-    uint64_t count_ = 0;
-    Duration latency_sum_{};
-    Duration latency_max_{};
-    uint64_t latencies_ = 0;
-};
-
+/// One line a second, and a summary at the end.
 class Reporter {
 public:
-    Reporter(Viewer& viewer, Pictures& pictures) : viewer_(viewer), pictures_(pictures) {}
+    Reporter(Viewer& viewer, PlaybackMeter& decoded, PlaybackMeter* shown)
+        : viewer_(viewer), decoded_(decoded), shown_(shown) {}
 
     void report() {
+        const PlaybackStats decoded = decoded_.take_interval();
+        const std::optional<PlaybackStats> shown =
+            shown_ ? std::optional(shown_->take_interval()) : std::nullopt;
+        const double cpu = cpu_.take_interval();
         const auto stats = viewer_.stats();
         if (!stats) {
-            std::printf("[%4us] waiting for a stream\n", seconds_++);
+            std::printf("[%4us] waiting for a stream  cpu %3.0f%%\n", seconds_++, cpu);
             std::fflush(stdout);
             return;
         }
@@ -223,31 +204,79 @@ public:
         const uint64_t pictures = player.pictures - last_player_.pictures;
         const double mbps = double(stream.bytes - last_stream_.bytes) * 8 / 1e6;
         const double decode_ms =
-            pictures > 0
-                ? double((player.decode_time - last_player_.decode_time).count()) / 1000 / pictures
-                : 0;
+            pictures > 0 ? ms(player.decode_time - last_player_.decode_time) / double(pictures) : 0;
         std::printf(
             "[%4us] %3llu fps %6.2f Mbit/s  %ux%u %s  decode %5.2f ms  lost %llu  late %llu"
-            "  dropped %llu",
+            "  dropped %llu  stalls %llu  cpu %3.0f%%",
             seconds_++, static_cast<unsigned long long>(pictures), mbps, player.width,
             player.height, player.decoder.c_str(), decode_ms,
             static_cast<unsigned long long>(stream.frames.lost - last_stream_.frames.lost),
             static_cast<unsigned long long>(stream.frames.late - last_stream_.frames.late),
-            static_cast<unsigned long long>(
-                (stream.frames.undecodable - last_stream_.frames.undecodable) +
-                (player.dropped - last_player_.dropped)));
-        if (const auto latency = pictures_.take_latency_ms()) {
-            std::printf("  latency %5.1f ms (worst %5.1f)", latency->first, latency->second);
-        }
+            static_cast<unsigned long long>(dropped(player, stream) -
+                                            dropped(last_player_, last_stream_)),
+            static_cast<unsigned long long>(decoded.stalls), cpu);
+        print_latency("latency", decoded.latency);
+        if (shown) print_latency("shown", shown->latency);
         std::printf("\n");
         std::fflush(stdout);
         last_player_ = player;
         last_stream_ = stream;
     }
 
+    /// The whole run as key=value pairs, for scripts. Call before the viewer stops.
+    void summarise() {
+        const PlaybackStats decoded = decoded_.total();
+        const auto stats = viewer_.stats();
+        const VideoPlayerStats player = stats ? stats->first : last_player_;
+        const IncomingStreamStats stream = stats ? stats->second : last_stream_;
+        const double first = decoded.first_picture ? ms(*decoded.first_picture) : -1;
+        const std::chrono::duration<double> elapsed = std::chrono::steady_clock::now() - started_;
+        // From the first picture on: what the viewer was shown, per second.
+        const double playing = elapsed.count() - std::max(first, 0.0) / 1000;
+        std::printf(
+            "summary first_picture_ms=%.0f pictures=%llu stalls=%llu stalled_ms=%.0f"
+            " longest_gap_ms=%.0f lost=%llu late=%llu dropped=%llu keyframe_requests=%llu"
+            " fps=%.1f mbps=%.2f cpu=%.0f",
+            first, static_cast<unsigned long long>(decoded.pictures),
+            static_cast<unsigned long long>(decoded.stalls), ms(decoded.stalled),
+            ms(decoded.longest_gap), static_cast<unsigned long long>(stream.frames.lost),
+            static_cast<unsigned long long>(stream.frames.late),
+            static_cast<unsigned long long>(dropped(player, stream)),
+            static_cast<unsigned long long>(stream.frames.keyframe_requests +
+                                            player.keyframe_requests),
+            playing > 0 ? double(decoded.pictures) / playing : 0,
+            double(stream.bytes) * 8 / 1e6 / std::max(elapsed.count(), 1.0), cpu_.total());
+        print_percentiles("latency", decoded.latency);
+        if (shown_) print_percentiles("shown", shown_->total().latency);
+        std::printf("\n");
+        std::fflush(stdout);
+    }
+
 private:
+    /// Frames that reached this host and were never shown.
+    static uint64_t dropped(const VideoPlayerStats& player, const IncomingStreamStats& stream) {
+        return stream.frames.undecodable + player.dropped;
+    }
+
+    static void print_latency(const char* name, const LatencyHistogram& latency) {
+        if (latency.count() == 0) return;
+        std::printf("  %s %5.1f ms (p95 %5.1f, worst %5.1f)", name, ms(latency.mean()),
+                    ms(latency.percentile(0.95)), ms(latency.max()));
+    }
+
+    static void print_percentiles(const char* name, const LatencyHistogram& latency) {
+        if (latency.count() == 0) return;
+        std::printf(" %s_mean_ms=%.1f %s_p50_ms=%.1f %s_p95_ms=%.1f %s_p99_ms=%.1f %s_max_ms=%.1f",
+                    name, ms(latency.mean()), name, ms(latency.percentile(0.5)), name,
+                    ms(latency.percentile(0.95)), name, ms(latency.percentile(0.99)), name,
+                    ms(latency.max()));
+    }
+
     Viewer& viewer_;
-    Pictures& pictures_;
+    PlaybackMeter& decoded_;
+    PlaybackMeter* const shown_;
+    CpuMeter cpu_;
+    const std::chrono::steady_clock::time_point started_ = std::chrono::steady_clock::now();
     VideoPlayerStats last_player_;
     IncomingStreamStats last_stream_;
     unsigned seconds_ = 1;
@@ -275,9 +304,15 @@ int main(int argc, char** argv) {
     if (!o.headless) std::cout << "built without SDL3: no window, as with --headless\n";
 #endif
 
-    Pictures pictures;
+    // Pictures as decoded and, in a window, as presented. The wait for the
+    // first one counts from the moment we dial.
+    PlaybackMeter decoded;
+    std::optional<PlaybackMeter> shown;
+#ifdef RATCAST_TOOLS_WINDOW
+    if (window) shown.emplace();
+#endif
     Viewer viewer(o.peer, [&](VideoFrame picture) {
-        pictures.add(picture);
+        decoded.picture(latency_of(picture));
 #ifdef RATCAST_TOOLS_WINDOW
         if (window) window->show(std::move(picture));
 #endif
@@ -292,6 +327,8 @@ int main(int argc, char** argv) {
         std::cerr << "ratcast-recv: the node did not start\n";
         return 1;
     }
+    decoded.start();
+    if (shown) shown->start();
     if (o.connect) {
         node.connect(o.connect->first, o.connect->second);
         std::printf("connecting to %s:%u\n", o.connect->first.c_str(), o.connect->second);
@@ -300,7 +337,7 @@ int main(int argc, char** argv) {
                     o.peer->short_hex().c_str());
     }
 
-    Reporter reporter(viewer, pictures);
+    Reporter reporter(viewer, decoded, shown ? &*shown : nullptr);
     const auto start = std::chrono::steady_clock::now();
     auto next = start + 1s;
     const auto keep_going = [&] {
@@ -309,22 +346,23 @@ int main(int argc, char** argv) {
             next += 1s;
             reporter.report();
         }
-        if (o.frames > 0 && pictures.count() >= o.frames) return false;
+        if (o.frames > 0 && decoded.total().pictures >= o.frames) return false;
         if (o.duration > 0 && now - start >= std::chrono::seconds(o.duration)) return false;
         return !interrupted();
     };
 #ifdef RATCAST_TOOLS_WINDOW
     if (window) {
-        window->run(keep_going);
+        window->run(keep_going,
+                    [&](const VideoFrame& picture) { shown->picture(latency_of(picture)); });
     } else
 #endif
     {
         while (keep_going()) std::this_thread::sleep_for(20ms);
     }
 
+    reporter.summarise();
+    const bool played = decoded.total().pictures > 0;
     viewer.stop();
     node.stop();
-    const uint64_t decoded = pictures.count();
-    std::printf("%llu pictures\n", static_cast<unsigned long long>(decoded));
-    return decoded > 0 ? 0 : 1;
+    return played ? 0 : 1;
 }

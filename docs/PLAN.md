@@ -56,16 +56,36 @@ encoded frames, so it is useful without the rest and the SFU links only it.
 
 ## librats work
 
-1. Priorities inside `Priority::Live`: audio > keyframe / base layer > deltas > enhancement layers.
-2. Absolute deadlines when forwarding, so latency does not accumulate per hop.
-3. Per-live-message delivered / expired feedback.
-4. FEC across messages (small Opus packets) — or rely on Opus in-band FEC + RED.
-5. A delay-sensitive realtime mode for BBR (or a GCC-style controller), compared on `bench_path`.
-6. `send_many` with a shared refcounted buffer for fan-out.
-7. Path MTU discovery above the fixed 1220-byte packets.
-8. A clock-sync service.
-9. One copy fewer on the send path: `Node::send` copies the payload (`to_bytes()`) before
-   `LiveSender` copies it again; take an owned, refcounted buffer instead. Measure in 0.6 first.
+In the order 0.6 found them needed (measurements and reasons: `docs/bench.md`).
+
+1. **Reordering is not loss for live data.** RACK's reordering adaptation is off while a live
+   message is outstanding, so with live video always outstanding every reordered packet is a
+   loss: 2% of packets arriving 25 ms early read as 15–25% loss, are sent twice and expire
+   (25 fps, seconds of stalls); per-packet jitter, which reorders everything, plays nothing.
+2. **A live flow's start.** (a) The initial window of 4 packets paces a fresh connection at
+   4 packets per round trip × 2.77: a 50 KB keyframe takes ~190 ms to leave at 50 ms RTT and
+   ~385 ms at 100 ms, past a 200 ms lifetime, and a live flow that then falls silent grows the
+   rate once per keyframe request rather than once per round trip. 10 packets (RFC 9002) gets a
+   keyframe through at 50 ms RTT; longer paths need the first keyframe to be smaller (rate
+   control starting low) or to be allowed to arrive late (item 3).
+   (b) Shedding by the pacing rate drops the frames behind a keyframe while that rate is still
+   Startup's floor (the integration test's expired frame). (c) Startup's exit on a lifted round
+   trip (an app-limited burst that "queues") fires on ±10 ms of jitter and leaves the estimate
+   where the first keyframe left it: 2.7 s to the first picture. A joining scenario in
+   `bench_path` to measure these on.
+3. Per-live-message delivered / expired feedback: a sender learns that a keyframe expired at
+   once, not from the receiver's next request a `keyframe_retry` later, and a joining viewer
+   can be caught up instead of asked again (stage 1, item 3).
+4. Priorities inside `Priority::Live`: audio > keyframe / base layer > deltas > enhancement layers.
+5. Absolute deadlines when forwarding, so latency does not accumulate per hop.
+6. FEC across messages (small Opus packets) — or rely on Opus in-band FEC + RED.
+7. A delay-sensitive realtime mode for BBR (or a GCC-style controller), compared on `bench_path`.
+8. `send_many` with a shared refcounted buffer for fan-out.
+9. Path MTU discovery above the fixed 1220-byte packets.
+10. A clock-sync service.
+11. One copy fewer on the send path: `Node::send` copies the payload (`to_bytes()`) before
+    `LiveSender` copies it again. Measured in 0.6: the reactor thread uses 0.8% of a core at
+    8 Mbit/s, so it matters only for fan-out (with item 8).
 
 ## Media engine
 
@@ -108,7 +128,8 @@ ratcast/
 ├── client/               UI-agnostic client core: media pipelines now, rooms and chat later
 ├── app/                  Qt 6 / QML desktop application    → ratcast
 ├── server/               headless SFU / relay node         (stage 2)
-├── tools/                ratcast-send / ratcast-recv; netem bench later
+├── tools/                ratcast-send / ratcast-recv
+├── bench/                micro-benchmarks; netem.py: the tools across an emulated network
 └── docs/
 ```
 
@@ -239,24 +260,37 @@ capture to decoded picture 14.7 ms at 720p60, 22 ms at 1080p60 (encode 8.4 / 10.
 hand. UBSan found undefined left shifts in librats' curve25519 (negative values, int overflow);
 fixed there, librats' 1035 tests pass under it.
 
-**0.6 Baseline.** Glass-to-glass latency with the pattern source (one host, then two), CPU,
-bitrate, behaviour under `tc netem` loss and delay, written to `docs/bench.md`.
-Also look at the first seconds of a stream: under CPU load the integration test saw the frame
-right after a 256 KiB keyframe expire in transport (BBR startup pacing, EDF shedding?). For a
-viewer that is a stall until the next keyframe, at the worst moment — joining.
+**0.6 Baseline.** ✅ (one host; two hosts by hand) Glass-to-glass latency with the pattern
+source, CPU, bitrate, behaviour under `tc netem` loss, delay, jitter, reordering and caps, written
+to `docs/bench.md`. Also the first seconds of a stream: the frame expiring after a large keyframe.
 *Done:* we know which librats items to do first.
+
+Notes from 0.6: `bench/netem.py` runs the tools in two network namespaces of an unprivileged user
+namespace (no root), the veth between them shaped per direction; `PlaybackMeter` (client) measures
+what a viewer sees — the wait for the first picture, stalls, latency percentiles — and the tools
+print it, with CPU, as a `summary` line; the pattern is stamped with the time of day, so two hosts
+with synchronised clocks measure latency too. On one host, 1080p60 AV1 at 8 Mbit/s: 18 ms capture
+to decoded picture (p50), 21 ms to the window; SVT-AV1 takes a core, dav1d a quarter, librats under
+1%. Clean and lossy paths (1–5%, bursts) play at one-way delay + 18 ms, p95 +40–60 ms from
+repairs, a few short stalls. Three problems, all in the transport's first seconds or its loss
+detection: joining takes 0.5 s at 50 ms RTT and 2 s at 200 ms (the initial window paces a
+keyframe out slower than its lifetime; the frame behind it is shed by Startup's floor rate — the
+0.5 integration test's expired frame); 2% reordering reads as 20% loss and leaves 26 fps; jitter
+ends BBR's Startup early. Hence the new order of "librats work" above.
 
 ### Stage 1 — libratcast core
 
 1. **Rate control:** encoder bitrate from `PathStats` (fast down on expiring frames or a growing
-   queue, careful up), then a resolution / frame-rate ladder.
+   queue, careful up), starting low so that the first keyframe is small, then a resolution /
+   frame-rate ladder.
 2. **librats:** live sub-priorities, per-message delivery feedback, absolute deadlines.
-3. **Loss recovery:** reference invalidation / LTR where encoders support it, intra-refresh for
-   `game`, keyframe-request aggregation.
+3. **Loss recovery and joining:** reference invalidation / LTR where encoders support it,
+   intra-refresh for `game`, keyframe-request aggregation; a joining viewer's keyframe allowed
+   to arrive late (with delivery feedback) and the viewer caught up, instead of asked again.
 4. **Audio:** PipeWire capture and playback, Opus (FEC, DTX), adaptive jitter buffer, A/V sync.
 5. **Latency profiles** `call` / `game` / `cinema` end to end.
 6. **netsim:** userspace impairment proxy (delay, jitter, loss, bursts, bandwidth caps; no root,
-   any OS) with scripted scenarios in CI.
+   any OS) with scripted scenarios in CI; `bench/netem.py` covers Linux meanwhile.
 7. **Interop and benchmark:** C API, MPEG-TS in / out in the tools, `rats://` URLs, comparison
    with librist and SRT on netsim scenarios.
 8. **GPU paths and the other platforms:** Linux DMA-BUF capture → VAAPI encoding (colour
