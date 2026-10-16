@@ -43,13 +43,14 @@ VideoFrame draw_pattern(const PatternConfig& config, uint64_t index, Timestamp c
 std::optional<Timestamp> read_timestamp(const VideoFrame& picture);
 
 /// The pattern as a VideoSource: a picture every frame interval, from a thread
-/// of its own, stamped with the clock's time when drawing started.
+/// of its own, stamped with the clock's time when drawing started. It never
+/// ends by itself.
 class PatternSource final : public VideoSource {
 public:
     explicit PatternSource(PatternConfig config, Clock& clock = SteadyClock::instance());
     ~PatternSource() override;
 
-    Result<void> start(Sink sink) override;
+    Result<void> start(Sink sink, EndHandler ended) override;
     void stop() override;
 
 private:

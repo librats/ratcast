@@ -37,3 +37,14 @@ ratcast_add_bench(bench_codec
     SOURCES bench_codec.cpp
     LIBS    ratcast::engine
 )
+
+# Capture's pixel conversion (BGRA into NV12 / I420) per screen size, with
+# libswscale alongside for scale when FFmpeg is there.
+ratcast_add_bench(bench_convert
+    SOURCES bench_convert.cpp
+    LIBS    ratcast::engine
+)
+if(TARGET ratcast::ffmpeg)
+    target_link_libraries(bench_convert PRIVATE ratcast::ffmpeg)
+    target_compile_definitions(bench_convert PRIVATE RATCAST_BENCH_SWSCALE)
+endif()

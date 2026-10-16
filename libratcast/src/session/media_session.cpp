@@ -294,6 +294,7 @@ void MediaSession::request_keyframe(const PeerId& peer, StreamId stream_id) {
     {
         std::lock_guard lock(stream->mutex);
         if (!stream->subscribed) return;
+        stream->tracker.invalidate(clock_.now());  // tick() repeats the request until one comes
     }
     network_.send_reliable(peer, wire::encode_control(wire::KeyframeRequest{stream_id}));
 }

@@ -22,7 +22,8 @@
  *   - A decodable keyframe is handed on at once, whatever gap is before it:
  *     nothing before a keyframe is needed by it or by anything after it.
  *   - While the stream is broken, or before its first keyframe, it asks for a
- *     keyframe, at most once per `keyframe_retry`.
+ *     keyframe, at most once per `keyframe_retry`. The receiver can break it
+ *     too, when its decoder fails (invalidate()).
  *
  * Not thread-safe: one owner drives it (MediaSession locks around it).
  * Allocation-free once constructed, as long as ready frames are taken with
@@ -81,6 +82,11 @@ public:
     /// Make the progress that is due by `now` without a new frame: give up
     /// gaps whose patience ran out.
     void update(Timestamp now);
+
+    /// What was handed on is of no use (the decoder failed on it): the stream
+    /// is broken until the next keyframe, and frames that reference anything
+    /// before it are dropped. Counts as a keyframe request made at `now`.
+    void invalidate(Timestamp now);
 
     /// The next frame to decode, in decode order; nullopt when none is ready.
     std::optional<EncodedFrame> pop();

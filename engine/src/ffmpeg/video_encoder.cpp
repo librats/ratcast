@@ -12,6 +12,7 @@
 
 #include "ffmpeg/av.h"
 #include "ratcast/engine/video_codec.h"
+#include "ratcast/engine/video_convert.h"
 #include "video/codec_backend.h"
 
 #include "librats/util/logger.h"
@@ -163,6 +164,11 @@ public:
           frame_(av_frame_alloc()),
           packet_(av_packet_alloc()) {}
 
+    ~FfmpegVideoEncoder() override {
+        // Say the stream ended: SVT-AV1 complains when closed in mid-stream.
+        if (context_) avcodec_send_frame(context_.get(), nullptr);
+    }
+
     /// Open the codec for the current config.
     Result<void> open() {
         av::CodecContextPtr context(avcodec_alloc_context3(&codec_));
@@ -174,6 +180,7 @@ public:
         context->time_base = av::kMicroseconds;
         context->framerate = AVRational{static_cast<int>(config_.frame_rate_num),
                                         static_cast<int>(config_.frame_rate_den)};
+        av::set_color_space(*context, config_.color_space);
         context->max_b_frames = 0;
         context->gop_size = config_.keyframe_interval > 0
                                 ? static_cast<int>(config_.keyframe_interval)
@@ -195,9 +202,14 @@ public:
     const VideoEncoderInfo& info() const noexcept override { return info_; }
 
     Result<void> encode(const VideoFrame& picture, bool keyframe, Sink sink) override {
-        if (picture.format() != info_.input_format || picture.width() != config_.width ||
-            picture.height() != config_.height) {
+        if (picture.format() == PixelFormat::BGRA || picture.width() != config_.width ||
+            picture.height() != config_.height || picture.color_space() != config_.color_space) {
             return fail(Errc::InvalidArgument);
+        }
+        if (picture.format() != info_.input_format) {  // the other 4:2:0 layout
+            Result<VideoFrame> converted = convert_frame(picture, info_.input_format);
+            if (!converted) return fail(converted.error());
+            return encode(*converted, keyframe, sink);
         }
         if (reopen_) {
             // Whatever the old encoder still holds belongs before this picture.
@@ -262,6 +274,10 @@ private:
         frame_->format = context_->pix_fmt;
         frame_->width = context_->width;
         frame_->height = context_->height;
+        frame_->color_primaries = context_->color_primaries;
+        frame_->color_trc = context_->color_trc;
+        frame_->colorspace = context_->colorspace;
+        frame_->color_range = context_->color_range;
         for (size_t i = 0; i < picture.plane_count(); ++i) {
             frame_->data[i] = const_cast<uint8_t*>(picture.plane(i).data);
             frame_->linesize[i] = static_cast<int>(picture.plane(i).stride);

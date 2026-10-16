@@ -50,14 +50,13 @@ constexpr uint32_t kHeight = 240;
 class VideoCodecTest : public ::testing::TestWithParam<EncoderCase> {
 protected:
     void SetUp() override {
-        VideoEncoderConfig config;
-        config.codec = GetParam().codec;
-        config.encoder = GetParam().name;
-        config.width = kWidth;
-        config.height = kHeight;
-        config.frame_rate_num = 60;  // live rates are what encoders are tuned for
-        config.bitrate = 2'000'000;
-        Result<std::unique_ptr<VideoEncoder>> encoder = open_video_encoder(config);
+        config_.codec = GetParam().codec;
+        config_.encoder = GetParam().name;
+        config_.width = kWidth;
+        config_.height = kHeight;
+        config_.frame_rate_num = 60;  // live rates are what encoders are tuned for
+        config_.bitrate = 2'000'000;
+        Result<std::unique_ptr<VideoEncoder>> encoder = open_video_encoder(config_);
         if (!encoder)
             GTEST_SKIP() << GetParam().name << " cannot open here: " << to_string(encoder.error());
         encoder_ = std::move(*encoder);
@@ -107,6 +106,7 @@ protected:
         return std::move(frame).freeze(Timestamp{1s + std::chrono::microseconds(index * 16'667)});
     }
 
+    VideoEncoderConfig config_;
     std::unique_ptr<VideoEncoder> encoder_;
     std::unique_ptr<VideoDecoder> decoder_;
 };
@@ -170,12 +170,48 @@ TEST_P(VideoCodecTest, KeepsGoingAfterAFlush) {
     EXPECT_EQ(decode(next[0]).size(), 1u);
 }
 
+TEST_P(VideoCodecTest, TakesEitherYuvLayout) {
+    const PixelFormat other =
+        encoder_->info().input_format == PixelFormat::NV12 ? PixelFormat::I420 : PixelFormat::NV12;
+    const PatternConfig config{other, kWidth, kHeight, 60, 1};
+    const VideoFrame picture = draw_pattern(config, 0, Timestamp{2s});
+    std::vector<EncodedVideo> frames = encode(picture);
+    ASSERT_EQ(frames.size(), 1u);
+    const std::vector<VideoFrame> decoded = decode(frames[0]);
+    ASSERT_EQ(decoded.size(), 1u);
+    EXPECT_EQ(read_timestamp(decoded[0]), Timestamp{2s});
+}
+
+TEST_P(VideoCodecTest, SignalsTheColorSpace) {
+    const ColorSpace color_space{ColorMatrix::BT601, ColorRange::Full};
+    VideoEncoderConfig config = config_;
+    config.color_space = color_space;
+    Result<std::unique_ptr<VideoEncoder>> encoder = open_video_encoder(config);
+    ASSERT_TRUE(encoder);
+    encoder_ = std::move(*encoder);
+
+    VideoFrame picture = pattern(0);
+    picture.set_color_space(color_space);
+    std::vector<EncodedVideo> frames = encode(picture);
+    ASSERT_EQ(frames.size(), 1u);
+    const std::vector<VideoFrame> decoded = decode(frames[0]);
+    ASSERT_EQ(decoded.size(), 1u);
+    EXPECT_EQ(decoded[0].color_space(), color_space);
+}
+
 TEST_P(VideoCodecTest, RefusesPicturesOfAnotherShape) {
+    const auto refused = [&](const VideoFrame& picture) {
+        const Result<void> encoded = encoder_->encode(picture, false, [](EncodedVideo&&) {});
+        return !encoded && encoded.error() == Errc::InvalidArgument;
+    };
     const PatternConfig wrong_size{encoder_->info().input_format, kWidth * 2, kHeight, 30, 1};
-    const Result<void> encoded =
-        encoder_->encode(draw_pattern(wrong_size, 0, Timestamp{}), false, [](EncodedVideo&&) {});
-    ASSERT_FALSE(encoded);
-    EXPECT_EQ(encoded.error(), Errc::InvalidArgument);
+    EXPECT_TRUE(refused(draw_pattern(wrong_size, 0, Timestamp{})));
+    const PatternConfig rgb{PixelFormat::BGRA, kWidth, kHeight, 30, 1};
+    EXPECT_TRUE(refused(draw_pattern(rgb, 0, Timestamp{})));
+
+    VideoFrame wrong_colors = pattern(0);
+    wrong_colors.set_color_space({ColorMatrix::BT601, ColorRange::Limited});
+    EXPECT_TRUE(refused(wrong_colors));
 }
 
 INSTANTIATE_TEST_SUITE_P(Encoders, VideoCodecTest, ::testing::ValuesIn(all_encoders()), case_name);

@@ -1,15 +1,19 @@
 #include <algorithm>
+#include <cassert>
 #include <chrono>
 
 #include "ratcast/engine/pattern_source.h"
 
 namespace ratcast {
 
-PatternSource::PatternSource(PatternConfig config, Clock& clock) : config_(config), clock_(clock) {}
+PatternSource::PatternSource(PatternConfig config, Clock& clock) : config_(config), clock_(clock) {
+    // As every source: 4:2:0 pictures of even sizes.
+    assert(config.format == PixelFormat::BGRA || (config.width % 2 == 0 && config.height % 2 == 0));
+}
 
 PatternSource::~PatternSource() { stop(); }
 
-Result<void> PatternSource::start(Sink sink) {
+Result<void> PatternSource::start(Sink sink, EndHandler /*ended*/) {
     std::lock_guard lock(mutex_);
     if (thread_.joinable()) return fail(Errc::InvalidArgument);
     running_ = true;

@@ -61,8 +61,26 @@ Errc errc_of(int error) noexcept;
 
 AVCodecID codec_id(Codec codec) noexcept;
 
+/// The decoder to use for `id`: FFmpeg's own, except for AV1, whose own
+/// decodes only through a hardware accelerator — libdav1d instead.
+const AVCodec* find_decoder(AVCodecID id) noexcept;
+
 AVPixelFormat pixel_format(PixelFormat format) noexcept;
 std::optional<PixelFormat> pixel_format(AVPixelFormat format) noexcept;
+
+/// Signal `color_space` in what an encoder writes (BT.709 primaries and
+/// transfer, as ColorMatrix promises).
+void set_color_space(AVCodecContext& context, ColorSpace color_space) noexcept;
+
+/// The colour space of a decoded picture; what the stream leaves unspecified
+/// is taken to be ColorSpace{}'s.
+ColorSpace color_space(const AVFrame& frame) noexcept;
+
+/// The top-left `width` x `height` of the picture in `frame`, as a VideoFrame
+/// that shares FFmpeg's buffers: the reference moves out of `frame`. Nullopt,
+/// with `frame` left as it was, for a pixel format the engine does not handle.
+std::optional<VideoFrame> take_picture(AVFrame& frame, uint32_t width, uint32_t height,
+                                       Timestamp capture_time);
 
 /// Microseconds, the unit of every timestamp passed to and from FFmpeg.
 inline constexpr AVRational kMicroseconds{1, 1'000'000};

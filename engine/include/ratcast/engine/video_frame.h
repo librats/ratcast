@@ -14,6 +14,9 @@
  * Planes allocated here start and have strides on 64-byte boundaries, which is
  * what SIMD code in encoders and converters wants. Pictures in GPU memory will
  * be a third kind of frame; the accessors here describe CPU-visible planes.
+ *
+ * A YUV picture also says how its numbers map to colour (ColorSpace), which an
+ * encoder signals in the stream so that the far side shows the same colours.
  */
 
 #include <array>
@@ -31,6 +34,27 @@ enum class PixelFormat : uint8_t {
     I420,  ///< 8-bit 4:2:0 in three planes: Y, then U and V at half size
     NV12,  ///< 8-bit 4:2:0 in two planes: Y, then U and V interleaved at half size
     BGRA,  ///< 8-bit packed blue, green, red, alpha (alpha may be undefined)
+};
+
+/// The matrix that turns RGB into YUV. Primaries and transfer are always
+/// BT.709's, which sRGB shares: what screens show and cameras give.
+enum class ColorMatrix : uint8_t {
+    BT709,  ///< HD and up
+    BT601,  ///< SD
+};
+
+enum class ColorRange : uint8_t {
+    Limited,  ///< luma 16-235, chroma 16-240: what video uses
+    Full,     ///< 0-255
+};
+
+/// How a YUV picture's values map to colour. RGB pictures are sRGB at full
+/// range; for them the colour space means nothing.
+struct ColorSpace {
+    ColorMatrix matrix = ColorMatrix::BT709;
+    ColorRange range = ColorRange::Limited;
+
+    friend bool operator==(const ColorSpace&, const ColorSpace&) = default;
 };
 
 /// How many planes a picture in `format` has.
@@ -62,9 +86,11 @@ public:
     VideoFrame() noexcept = default;
 
     /// A frame over planes someone else owns; `owner` keeps them alive as long
-    /// as any copy of the frame exists.
+    /// as any copy of the frame exists. Without an owner the frame is a view,
+    /// valid only as long as the planes are.
     VideoFrame(PixelFormat format, uint32_t width, uint32_t height, std::span<const Plane> planes,
-               std::shared_ptr<const void> owner, Timestamp capture_time) noexcept;
+               std::shared_ptr<const void> owner, Timestamp capture_time,
+               ColorSpace color_space = {}) noexcept;
 
     bool empty() const noexcept { return width_ == 0; }
     PixelFormat format() const noexcept { return format_; }
@@ -77,6 +103,9 @@ public:
     Timestamp capture_time() const noexcept { return capture_time_; }
     void set_capture_time(Timestamp time) noexcept { capture_time_ = time; }
 
+    ColorSpace color_space() const noexcept { return color_space_; }
+    void set_color_space(ColorSpace color_space) noexcept { color_space_ = color_space; }
+
 private:
     friend class MutableVideoFrame;
 
@@ -85,6 +114,7 @@ private:
     uint32_t height_ = 0;
     std::array<Plane, kMaxPlanes> planes_{};
     Timestamp capture_time_{};
+    ColorSpace color_space_;
     Buffer storage_;                     ///< owner of planes allocated here
     std::shared_ptr<const void> owner_;  ///< owner of planes from elsewhere
 };
@@ -113,7 +143,7 @@ public:
     const Plane& plane(size_t i) const noexcept { return planes_[i]; }
 
     /// The finished picture, captured at `capture_time`. Leaves this empty.
-    VideoFrame freeze(Timestamp capture_time) && noexcept;
+    VideoFrame freeze(Timestamp capture_time, ColorSpace color_space = {}) && noexcept;
 
 private:
     MutableVideoFrame() = default;

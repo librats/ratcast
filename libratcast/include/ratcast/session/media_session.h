@@ -126,7 +126,9 @@ public:
 
     void unsubscribe(const PeerId& peer, StreamId stream);
 
-    /// Ask for a keyframe of a subscribed stream — after a decoder error, say.
+    /// Ask for a keyframe of a subscribed stream, after a decoder error. Until
+    /// it comes, frames that depend on earlier ones are dropped, and the
+    /// request is repeated as it is for a lost frame.
     void request_keyframe(const PeerId& peer, StreamId stream);
 
     std::optional<IncomingStreamStats> incoming_stats(const PeerId& peer, StreamId stream) const;

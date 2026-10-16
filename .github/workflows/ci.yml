@@ -23,9 +23,14 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Install FFmpeg (Linux)
+      # Codecs and the file source (FFmpeg), screen capture (PipeWire, GIO for
+      # the portal). There is no PipeWire daemon on the runner: those tests skip.
+      - name: Install media libraries (Linux)
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y pkg-config libavcodec-dev libavutil-dev
+        run: >
+          sudo apt-get update && sudo apt-get install -y pkg-config
+          libavcodec-dev libavformat-dev libavutil-dev libswscale-dev
+          libpipewire-0.3-dev libglib2.0-dev dbus
 
       - name: Configure
         run: >
@@ -51,13 +56,15 @@ jobs:
     env:
       CC: clang
       CXX: clang++
-      UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
-      TSAN_OPTIONS: halt_on_error=1
     steps:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
-      - run: sudo apt-get update && sudo apt-get install -y ninja-build pkg-config libavcodec-dev libavutil-dev
+      # Sanitizer options and suppressions come with the test presets.
+      - run: >
+          sudo apt-get update && sudo apt-get install -y ninja-build pkg-config
+          libavcodec-dev libavformat-dev libavutil-dev libswscale-dev
+          libpipewire-0.3-dev libglib2.0-dev dbus
       - run: cmake --preset ${{ matrix.preset }} -DRATCAST_BUILD_APP=OFF
       - run: cmake --build --preset ${{ matrix.preset }}
       - run: ctest --preset ${{ matrix.preset }}

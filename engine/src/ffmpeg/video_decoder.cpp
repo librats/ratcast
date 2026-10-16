@@ -4,7 +4,7 @@
 
 #include <cstring>
 #include <memory>
-#include <span>
+#include <optional>
 #include <utility>
 
 #include "ffmpeg/av.h"
@@ -15,21 +15,6 @@
 
 namespace ratcast {
 namespace {
-
-/// Decoders worth trying for `codec`, best first. AV1 needs libdav1d: FFmpeg's
-/// own AV1 decoder decodes only through a hardware accelerator.
-std::span<const char* const> decoder_names(Codec codec) {
-    static constexpr const char* kAv1[] = {"libdav1d"};
-    static constexpr const char* kH264[] = {"h264"};
-    static constexpr const char* kH265[] = {"hevc"};
-    switch (codec) {
-        case Codec::AV1: return kAv1;
-        case Codec::H264: return kH264;
-        case Codec::H265: return kH265;
-        case Codec::Opus: break;
-    }
-    return {};
-}
 
 class FfmpegVideoDecoder final : public VideoDecoder {
 public:
@@ -69,32 +54,21 @@ private:
             if (error == AVERROR(EAGAIN) || error == AVERROR_EOF) return {};
             if (error < 0) return fail(av::errc_of(error));
 
-            const std::optional<PixelFormat> format =
-                av::pixel_format(static_cast<AVPixelFormat>(frame_->format));
-            if (!format) {
+            // The picture stays in FFmpeg's buffers; the VideoFrame holds a
+            // reference to them.
+            const int64_t pts = frame_->best_effort_timestamp != AV_NOPTS_VALUE
+                                    ? frame_->best_effort_timestamp
+                                    : frame_->pts;
+            std::optional<VideoFrame> picture =
+                av::take_picture(*frame_, static_cast<uint32_t>(frame_->width),
+                                 static_cast<uint32_t>(frame_->height), Timestamp{Duration{pts}});
+            if (!picture) {
                 LOG_WARN("engine", info_.name << " produced pixel format " << frame_->format
                                               << ", which the engine does not handle");
                 av_frame_unref(frame_.get());
                 return fail(Errc::Unsupported);
             }
-
-            // The picture stays in FFmpeg's buffers; the VideoFrame holds a
-            // reference to them.
-            std::shared_ptr<AVFrame> owner(av_frame_alloc(), av::FrameDeleter{});
-            if (!owner) return fail(Errc::Internal);
-            av_frame_move_ref(owner.get(), frame_.get());
-
-            VideoFrame::Plane planes[VideoFrame::kMaxPlanes];
-            for (size_t i = 0; i < plane_count(*format); ++i) {
-                planes[i] = {owner->data[i], static_cast<size_t>(owner->linesize[i])};
-            }
-            const int64_t pts = owner->best_effort_timestamp != AV_NOPTS_VALUE
-                                    ? owner->best_effort_timestamp
-                                    : owner->pts;
-            VideoFrame picture(
-                *format, static_cast<uint32_t>(owner->width), static_cast<uint32_t>(owner->height),
-                std::span(planes, plane_count(*format)), owner, Timestamp{Duration{pts}});
-            sink(std::move(picture));
+            sink(std::move(*picture));
         }
     }
 
@@ -139,16 +113,11 @@ Result<std::unique_ptr<VideoDecoder>> open_decoder(const AVCodec& codec,
 namespace backend {
 
 Result<std::unique_ptr<VideoDecoder>> open_video_decoder(const VideoDecoderConfig& config) {
-    for (const char* name : decoder_names(config.codec)) {
-        const AVCodec* codec = avcodec_find_decoder_by_name(name);
-        if (!codec) continue;
-        Result<std::unique_ptr<VideoDecoder>> decoder = open_decoder(*codec, config);
-        if (decoder) {
-            LOG_INFO("engine", "video decoder: " << name);
-            return decoder;
-        }
-    }
-    return fail(Errc::Unavailable);
+    const AVCodec* codec = av::find_decoder(av::codec_id(config.codec));
+    if (!codec) return fail(Errc::Unavailable);
+    Result<std::unique_ptr<VideoDecoder>> decoder = open_decoder(*codec, config);
+    if (decoder) LOG_INFO("engine", "video decoder: " << codec->name);
+    return decoder;
 }
 
 }  // namespace backend

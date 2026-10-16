@@ -35,6 +35,7 @@ enum class Errc : uint8_t {
     Unsupported,         ///< well-formed, but uses something this build does not implement
     InvalidArgument,     ///< a caller passed a value outside its documented range
     Unavailable,         ///< what is needed is not there: a codec, a device, a driver
+    Cancelled,           ///< called off: the user declined, or the caller stopped waiting
     Internal,            ///< an underlying library failed; the log has the details
 };
 

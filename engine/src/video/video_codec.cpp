@@ -28,4 +28,6 @@ Result<std::unique_ptr<VideoDecoder>> open_video_decoder(const VideoDecoderConfi
     return backend::open_video_decoder(config);
 }
 
+void set_codec_logging(bool verbose) { backend::set_codec_logging(verbose); }
+
 }  // namespace ratcast

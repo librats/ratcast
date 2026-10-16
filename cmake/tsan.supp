@@ -1,0 +1,14 @@
+# ThreadSanitizer suppressions, for the tsan test preset (CMakePresets.json).
+#
+# Libraries built without ThreadSanitizer that synchronise their threads by
+# means it cannot see — their own atomics, futexes, eventfds — look racy to
+# it wherever their memory crosses threads. Only such libraries belong here.
+
+# dav1d's frame and tile workers, and FFmpeg's reference counts (AVBuffer),
+# which those workers release.
+called_from_lib:libdav1d.so
+called_from_lib:libavutil.so
+# GLib and GIO (GDBus runs a worker thread of its own).
+called_from_lib:libglib-2.0.so
+called_from_lib:libgio-2.0.so
+called_from_lib:libgobject-2.0.so

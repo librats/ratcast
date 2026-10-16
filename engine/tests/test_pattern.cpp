@@ -89,11 +89,13 @@ TEST(PatternSource, DeliversStampedPicturesAtItsRate) {
     PatternSource source({PixelFormat::NV12, 160, 120, 100, 1});
     std::mutex mutex;
     std::vector<Timestamp> stamps;
-    ASSERT_TRUE(source.start([&](VideoFrame picture) {
-        std::lock_guard lock(mutex);
-        stamps.push_back(*read_timestamp(picture));
-    }));
-    EXPECT_FALSE(source.start([](VideoFrame) {}));  // already running
+    ASSERT_TRUE(source.start(
+        [&](VideoFrame picture) {
+            std::lock_guard lock(mutex);
+            stamps.push_back(*read_timestamp(picture));
+        },
+        {}));
+    EXPECT_FALSE(source.start([](VideoFrame) {}, {}));  // already running
 
     std::this_thread::sleep_for(300ms);
     source.stop();

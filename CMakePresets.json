@@ -105,6 +105,10 @@
       },
       "execution": {
         "jobs": 0
+      },
+      "environment": {
+        "PIPEWIRE_DLCLOSE": "false",
+        "UBSAN_OPTIONS": "halt_on_error=1:print_stacktrace=1"
       }
     },
     {
@@ -115,6 +119,9 @@
       },
       "execution": {
         "jobs": 0
+      },
+      "environment": {
+        "TSAN_OPTIONS": "halt_on_error=1:suppressions=${sourceDir}/cmake/tsan.supp"
       }
     }
   ]

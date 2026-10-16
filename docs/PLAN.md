@@ -97,18 +97,18 @@ encoded frames, so it is useful without the rest and the SFU links only it.
 ```
 ratcast/
 ├── CMakeLists.txt        top level: options, module order
-├── CMakePresets.json     debug / release / core (no Qt) / asan
-├── cmake/                build helpers (compiler defaults, librats, testing)
+├── CMakePresets.json     debug / release / core (no Qt) / asan / tsan
+├── cmake/                build helpers (compiler defaults, librats, FFmpeg, PipeWire, testing)
 ├── external/librats/     submodule, developed together with ratcast
 ├── libratcast/           media transport library          → ratcast::ratcast
 │   ├── include/ratcast/  public headers ("ratcast/<name>.h")
 │   ├── src/              private sources
 │   └── tests/
 ├── engine/               media I/O                         (stage 0–1)
-├── client/               UI-agnostic client core           (stage 3)
+├── client/               UI-agnostic client core: media pipelines now, rooms and chat later
 ├── app/                  Qt 6 / QML desktop application    → ratcast
 ├── server/               headless SFU / relay node         (stage 2)
-├── tools/                ratcast-send / ratcast-recv, netem bench (stage 0–1)
+├── tools/                ratcast-send / ratcast-recv; netem bench later
 └── docs/
 ```
 
@@ -197,21 +197,47 @@ Software encoders cannot change bitrate in flight through FFmpeg and are reopene
 background. SVT-AV1 at 1080p60 takes ~8 ms a picture here, libaom ~19 ms (too slow for 60 fps).
 Hardware decoding (hwaccel) is not in yet: decode is software (dav1d, FFmpeg's H.264 / HEVC).
 
-**0.4 engine: Linux capture.**
+**0.4 engine: Linux capture.** ✅ (VAAPI and DMA-BUF moved to stage 1)
 - xdg-desktop-portal ScreenCast over GIO: screen or window, restore token so the picker is shown
-  once.
-- PipeWire stream: DMA-BUF with modifiers when offered, memfd / SHM otherwise; cursor as metadata.
-- VAAPI encoding from DMA-BUF (VAAPI takes only GPU pictures); BGRA → NV12 / I420 conversion
-  for the CPU path.
-- File source (FFmpeg demux + decode) for machines without capture, and the base of cinema mode.
+  once; a connection of its own per cast, so the portal closes the session even after a crash.
+- PipeWire stream: BGRx in shared memory, crop metadata, renegotiation on resize; the capture ends
+  when the node goes (the registry says so), pictures held to a maximum rate.
+- BGRA → NV12 / I420 on the CPU, in the same pass that empties the buffer; `ColorSpace` (BT.709 /
+  BT.601, limited / full) on `VideoFrame`, signalled by encoders, read back by decoders.
+- File source (FFmpeg demux + decode, libswscale for other formats) for machines without capture,
+  and the base of cinema mode.
 
 *Done:* captures a GNOME Wayland desktop and a single window; survives resize and the window
 closing.
 
-**0.5 Tools.** `ratcast-send` (source → encoder → MediaService) and `ratcast-recv`
-(MediaService → decoder → SDL3 window); connect by address or PeerId; `--source
-screen|window|file|pattern`, `--codec`, `--bitrate`, `--latency`; stats once a second.
+Notes from 0.4: the dev VM (VMware, vmwgfx) has no VA-API driver, so VAAPI encoding and the
+DMA-BUF path it needs cannot run here; they move to stage 1 item 8 with the other GPU paths, to be
+built and tested on an Intel or AMD machine. Meanwhile capture asks for shared memory, which the
+compositor fills from the GPU itself. The pointer is drawn in by the compositor (embedded mode),
+which works the same for both memory kinds; metadata mode pays off once the cursor travels as a
+stream of its own. Tested against a stand-in PipeWire node and a fake portal on a private bus, and
+against real mutter through `org.gnome.Mutter.ScreenCast`. Conversion: 1.0 ms for 1080p, 5.2 ms
+for 4K (1.8x and 1.6x faster than libswscale). Mutter sends a picture only when the screen
+changes, so the sender in 0.5 must keep the last picture to encode a requested keyframe from.
+PipeWire 1.6 leaks a stream destroyed while it is still connecting; teardown waits that out.
+
+**0.5 Tools.** ✅ on one host (two machines: by hand) — `ratcast-send` (source → encoder → MediaService) and `ratcast-recv`
+(MediaService → decoder → SDL3 window, or `--headless`); connect by address or by peer id (DHT,
+`--announce` / `--peer`); `--source screen|window|file|pattern`, `--codec`, `--bitrate`, `--fps`,
+`--latency`; stats once a second, with each viewer's path (RTT, estimate, loss, expired) on the
+sender and capture-to-picture latency on the receiver when the pattern's stamps can be read.
 *Done:* one machine streams its desktop to another over a real network.
+
+Notes from 0.5: the pipelines are the `client` module's (`VideoPublisher`, `VideoPlayer`), so the
+app reuses them; the tools only parse options and print. The publisher keeps only the newest
+picture (skips, never queues), repeats the last one when a keyframe is wanted from a still screen,
+and starts a new encoder on a size change with frame numbers carrying on. `request_keyframe()` on a
+session now breaks the stream until the keyframe arrives and repeats the request (a sender ignores
+one too soon after its last keyframe). Loopback, release build, SVT-AV1 + dav1d at 8 Mbit/s:
+capture to decoded picture 14.7 ms at 720p60, 22 ms at 1080p60 (encode 8.4 / 10.3 ms, decode
+3.2 / 3.5 ms), no losses. A real second machine and the portal dialog are still to be tried by
+hand. UBSan found undefined left shifts in librats' curve25519 (negative values, int overflow);
+fixed there, librats' 1035 tests pass under it.
 
 **0.6 Baseline.** Glass-to-glass latency with the pattern source (one host, then two), CPU,
 bitrate, behaviour under `tc netem` loss and delay, written to `docs/bench.md`.
@@ -233,5 +259,6 @@ viewer that is a stall until the next keyframe, at the worst moment — joining.
    any OS) with scripted scenarios in CI.
 7. **Interop and benchmark:** C API, MPEG-TS in / out in the tools, `rats://` URLs, comparison
    with librist and SRT on netsim scenarios.
-8. **Windows and macOS backends:** Windows.Graphics.Capture + D3D11 → hardware encoder;
+8. **GPU paths and the other platforms:** Linux DMA-BUF capture → VAAPI encoding (colour
+   conversion on the GPU), hardware decoding; Windows.Graphics.Capture + D3D11 → hardware encoder;
    ScreenCaptureKit + VideoToolbox — the engine is cross-platform before the app is built on it.

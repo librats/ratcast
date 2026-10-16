@@ -167,6 +167,27 @@ TEST_F(FrameTrackerTest, AsksForKeyframesAtMostOncePerRetry) {
     EXPECT_EQ(tracker_.stats().keyframe_requests, 2u);
 }
 
+TEST_F(FrameTrackerTest, InvalidatingDropsEverythingUntilAKeyframe) {
+    push(key(0));
+    push(delta(1));
+    EXPECT_EQ(drain(), (Frames{0, 1}));
+
+    tracker_.invalidate(now_);  // the decoder failed on frame 1
+    EXPECT_FALSE(tracker_.decodable());
+    push(delta(2));
+    push(delta(3, {0}));  // even a reference to the keyframe is gone
+    EXPECT_EQ(drain(), Frames{});
+    EXPECT_EQ(tracker_.stats().undecodable, 2u);
+
+    // Asked for one just now; again after the retry interval, until it comes.
+    EXPECT_FALSE(tracker_.want_keyframe(now_));
+    EXPECT_TRUE(tracker_.want_keyframe(now_ + kRetry));
+    push(key(4));
+    push(delta(5));
+    EXPECT_EQ(drain(), (Frames{4, 5}));
+    EXPECT_TRUE(tracker_.decodable());
+}
+
 TEST_F(FrameTrackerTest, ResetForgetsEverything) {
     push(key(0));
     push(delta(2));

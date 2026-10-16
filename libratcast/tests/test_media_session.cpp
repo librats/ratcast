@@ -344,18 +344,31 @@ TEST_F(MediaSessionTest, KeyframeRequestsFromManyReceiversAreCoalesced) {
 
     ASSERT_TRUE(send(0, true));
     hub.deliver_all();
-    receiver.session.request_keyframe(sender.id, 1);  // sent before the keyframe arrived
+    receiver.session.request_keyframe(sender.id, 1);  // its decoder failed on frame 0, say
     hub.deliver_all();
-    advance(1s);
     EXPECT_EQ(sender.keyframes_needed, 2);  // ignored: too soon after a keyframe
+    advance(250ms);                         // the receiver asks again, and now it counts
+    EXPECT_EQ(sender.keyframes_needed, 3);
 
-    receiver.session.request_keyframe(sender.id, 1);
     other.session.request_keyframe(sender.id, 1);
     hub.deliver_all();
-    EXPECT_EQ(sender.keyframes_needed, 3);  // the second one is held back...
+    EXPECT_EQ(sender.keyframes_needed, 3);  // held back: one was just asked for...
     ASSERT_TRUE(send(1, true));
     advance(1s);
     EXPECT_EQ(sender.keyframes_needed, 3);  // ...and the keyframe answers both
+}
+
+TEST_F(MediaSessionTest, AReceiverThatAsksForAKeyframeDropsWhatCannotDecode) {
+    subscribe(receiver);
+    ASSERT_TRUE(send(0, true));
+    ASSERT_TRUE(send(1, false));
+    hub.deliver_all();
+    receiver.session.request_keyframe(sender.id, 1);
+    ASSERT_TRUE(send(2, false));  // depends on what the decoder lost
+    ASSERT_TRUE(send(3, true));
+    ASSERT_TRUE(send(4, false));
+    hub.deliver_all();
+    EXPECT_EQ(receiver.frames, (Frames{0, 1, 3, 4}));
 }
 
 TEST_F(MediaSessionTest, AFullQueueCostsTheSubscriberFramesUntilAKeyframe) {

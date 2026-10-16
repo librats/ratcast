@@ -58,6 +58,13 @@ std::optional<EncodedFrame> FrameTracker::pop() {
     return std::move(ready_[ready_head_++]);
 }
 
+void FrameTracker::invalidate(Timestamp now) {
+    last_request_ = now;
+    if (!started_) return;  // waiting for a keyframe already
+    broken_ = true;
+    delivered_.reset();  // nothing before the next keyframe can be referenced
+}
+
 bool FrameTracker::want_keyframe(Timestamp now) noexcept {
     if (decodable()) return false;
     if (last_request_ && now - *last_request_ < config_.keyframe_retry) return false;

@@ -35,11 +35,12 @@ size_t plane_rows(PixelFormat format, size_t plane, uint32_t height) noexcept {
 
 VideoFrame::VideoFrame(PixelFormat format, uint32_t width, uint32_t height,
                        std::span<const Plane> planes, std::shared_ptr<const void> owner,
-                       Timestamp capture_time) noexcept
+                       Timestamp capture_time, ColorSpace color_space) noexcept
     : format_(format),
       width_(width),
       height_(height),
       capture_time_(capture_time),
+      color_space_(color_space),
       owner_(std::move(owner)) {
     assert(planes.size() == ratcast::plane_count(format));
     for (size_t i = 0; i < planes.size(); ++i) planes_[i] = planes[i];
@@ -74,12 +75,13 @@ MutableVideoFrame MutableVideoFrame::allocate(PixelFormat format, uint32_t width
     return frame;
 }
 
-VideoFrame MutableVideoFrame::freeze(Timestamp capture_time) && noexcept {
+VideoFrame MutableVideoFrame::freeze(Timestamp capture_time, ColorSpace color_space) && noexcept {
     VideoFrame frame;
     frame.format_ = format_;
     frame.width_ = width_;
     frame.height_ = height_;
     frame.capture_time_ = capture_time;
+    frame.color_space_ = color_space;
     for (size_t i = 0; i < VideoFrame::kMaxPlanes; ++i) {
         frame.planes_[i] = VideoFrame::Plane{planes_[i].data, planes_[i].stride};
     }

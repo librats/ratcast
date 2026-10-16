@@ -40,6 +40,8 @@ struct VideoEncoderConfig {
     uint32_t frame_rate_num = 60;
     uint32_t frame_rate_den = 1;
     uint32_t bitrate = 4'000'000;  ///< bits per second
+    /// The colour space of the pictures, signalled in the stream.
+    ColorSpace color_space;
     /// Most frames between two keyframes; 0 for keyframes only when asked.
     uint32_t keyframe_interval = 0;
     /// Use this FFmpeg encoder ("libsvtav1", "h264_nvenc") instead of choosing.
@@ -52,7 +54,8 @@ struct VideoEncoderInfo {
     std::string name;  ///< the FFmpeg encoder, e.g. "av1_nvenc"
     Codec codec = Codec::AV1;
     bool hardware = false;
-    /// What encode() takes; feed it pictures in this format.
+    /// What the encoder works in. encode() takes the other 4:2:0 layout too,
+    /// at the cost of converting it first.
     PixelFormat input_format = PixelFormat::NV12;
 };
 
@@ -72,9 +75,9 @@ public:
 
     virtual const VideoEncoderInfo& info() const noexcept = 0;
 
-    /// Encode `picture` — of the configured size, in info().input_format — as
-    /// a keyframe if `keyframe`. Every frame the encoder completes is handed
-    /// to `sink` before this returns.
+    /// Encode `picture` — of the configured size and colour space, in NV12 or
+    /// I420 — as a keyframe if `keyframe`. Every frame the encoder completes is
+    /// handed to `sink` before this returns.
     virtual Result<void> encode(const VideoFrame& picture, bool keyframe, Sink sink) = 0;
 
     /// Aim at `bits_per_second` from the next picture on. An encoder that
@@ -116,7 +119,8 @@ public:
     virtual const VideoDecoderInfo& info() const noexcept = 0;
 
     /// Decode `frame`. Every picture the decoder completes is handed to `sink`
-    /// before this returns, carrying the frame's capture time. Fails with
+    /// before this returns, carrying the frame's capture time and the colour
+    /// space the stream signals. Fails with
     /// Malformed for a frame the decoder cannot make sense of; the decoder
     /// recovers at the next keyframe.
     virtual Result<void> decode(const EncodedFrame& frame, Sink sink) = 0;
@@ -125,5 +129,12 @@ public:
 /// A decoder for `config.codec`. Fails with Unavailable when this build of
 /// FFmpeg has none.
 Result<std::unique_ptr<VideoDecoder>> open_video_decoder(const VideoDecoderConfig& config);
+
+// ── Logging ─────────────────────────────────────────────────────────────────
+
+/// What the codec libraries print themselves: only fatal errors (the default
+/// for tools; the engine reports what fails through its own log), or all they
+/// have to say. Before opening codecs, as SVT-AV1 reads it once per encoder.
+void set_codec_logging(bool verbose);
 
 }  // namespace ratcast

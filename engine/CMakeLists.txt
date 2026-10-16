@@ -2,24 +2,45 @@
 # Knows nothing of the network: what it produces is what MediaSession sends.
 
 include(RatcastFFmpeg)
+include(RatcastPipeWire)
 
 add_library(ratcast_engine STATIC
     src/pattern/pattern.cpp
     src/pattern/pattern_source.cpp
     src/video/video_codec.cpp
+    src/video/video_convert.cpp
     src/video/video_frame.cpp
 )
 add_library(ratcast::engine ALIAS ratcast_engine)
 
+# Pixel loops written for the vectoriser, which GCC runs in full only at -O3:
+# twice as fast as -O2 for BGRA into NV12.
+if(NOT MSVC)
+    set_source_files_properties(src/video/video_convert.cpp
+        PROPERTIES COMPILE_OPTIONS "$<$<NOT:$<CONFIG:Debug>>:-O3>")
+endif()
+
 if(RATCAST_FFMPEG_FOUND)
     target_sources(ratcast_engine PRIVATE
         src/ffmpeg/av.cpp
+        src/ffmpeg/file_source.cpp
         src/ffmpeg/video_decoder.cpp
         src/ffmpeg/video_encoder.cpp
     )
     target_link_libraries(ratcast_engine PRIVATE ratcast::ffmpeg)
 else()
-    target_sources(ratcast_engine PRIVATE src/codecs_unavailable.cpp)
+    target_sources(ratcast_engine PRIVATE src/ffmpeg_unavailable.cpp)
+endif()
+
+if(RATCAST_PIPEWIRE_FOUND)
+    target_sources(ratcast_engine PRIVATE
+        src/linux/pipewire_capture.cpp
+        src/linux/portal.cpp
+        src/linux/screen_capture.cpp
+    )
+    target_link_libraries(ratcast_engine PRIVATE ratcast::pipewire ratcast::gio)
+else()
+    target_sources(ratcast_engine PRIVATE src/capture/screen_capture_unavailable.cpp)
 endif()
 
 target_include_directories(ratcast_engine
