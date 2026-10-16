@@ -58,10 +58,21 @@ encoded frames, so it is useful without the rest and the SFU links only it.
 
 In the order 0.6 found them needed (measurements and reasons: `docs/bench.md`).
 
-1. **Reordering is not loss for live data.** RACK's reordering adaptation is off while a live
-   message is outstanding, so with live video always outstanding every reordered packet is a
-   loss: 2% of packets arriving 25 ms early read as 15–25% loss, are sent twice and expire
-   (25 fps, seconds of stalls); per-packet jitter, which reorders everything, plays nothing.
+1. ✅ **Reordering is not loss for live data.** RACK's reordering adaptation was off while a
+   live message was outstanding, so with live video always outstanding every reordered packet
+   was a loss, sent twice and reported to BBR, which cut its estimate below the stream: 2% of
+   packets arriving 25 ms early read as 15–25% loss (26 fps, seconds of stalls); per-packet
+   jitter, which reorders everything, played nothing. Now a path's learnt reordering is waited
+   out for live data too, unless the wait would leave a frame no time for a copy: then the
+   piece goes again sooner (at once on a path that loses packets, at the last moment on one that
+   mostly overtakes them), and either way it is a loss for BBR and the loss counts only once the
+   path's reordering no longer explains it (`Recovery::give_up_sooner`). Found on the way: a
+   packet number was sent in one byte, so one overtaken by more than 127 others (a keyframe's
+   burst past one held back) was read 256 off — lost under Noise, and in plaintext taken for a
+   later packet whose data then never came; now never under two bytes. Left: jitter several
+   times the base round trip (netem's `reorder`) still stalls — the window is capped at a
+   smoothed round trip that the overtaking packets bias low, and BBR's window, built on a
+   minimum round trip of a few ms, cannot hold a keyframe (`docs/bench.md`).
 2. **A live flow's start.** (a) The initial window of 4 packets paces a fresh connection at
    4 packets per round trip × 2.77: a 50 KB keyframe takes ~190 ms to leave at 50 ms RTT and
    ~385 ms at 100 ms, past a 200 ms lifetime, and a live flow that then falls silent grows the

@@ -112,17 +112,48 @@ What it says:
   stall of a few hundred ms until a keyframe — 1–4 in 15 s.
 - **Joining is slow, and slower with distance.** 0.2 s at 20 ms RTT, 0.5 s at 50 ms, ~1 s at
   100 ms, 2 s at 200 ms, where it should be ~3 round trips plus the pipeline. See below.
-- **Reordering breaks the stream.** With 2% of packets arriving 25 ms early (`reorder-2`) the
-  sender reads 15–25% loss, sends the overtaken packets again and still lets frames expire:
-  26 fps and 8 s of stalls in 15. Per-packet jitter (`reorder`, everything reordered) plays
-  nothing at all: 530 of 886 frames expire and 55 keyframes are asked for. RACK's adaptation to
-  reordering (librats' `Recovery`) is off while live messages are outstanding — for a video
-  stream, always.
+- **Reordering breaks the stream** (fixed since, see below). With 2% of packets arriving 25 ms
+  early (`reorder-2`) the sender reads 15–25% loss, sends the overtaken packets again and still
+  lets frames expire: 26 fps and 8 s of stalls in 15. Per-packet jitter (`reorder`, everything
+  reordered) plays nothing at all: 530 of 886 frames expire and 55 keyframes are asked for.
+  RACK's adaptation to reordering (librats' `Recovery`) is off while live messages are
+  outstanding — for a video stream, always.
 - **Jitter without reordering costs more than it should**: +40 ms at the median over `rtt-50`
   and one run in three takes 1.8 s to join (BBR, below).
 - **A path narrower than the stream collapses** (`cap-6`: 30 fps, half of every second
   stalled) — expected, there is no rate control yet (stage 1, item 1). With headroom
   (`cap-20`) the cap is invisible.
+
+### Reordering, after librats item 1
+
+The same runs after the fix (`PLAN.md`, "librats work", item 1): a path's learnt reordering is
+waited out for live data too, unless the wait would leave a frame no time for a copy, and what
+goes again sooner is a loss for BBR only once the reordering no longer explains it. Also a
+packet number is no longer sent in one byte, which a packet overtaken by more than 127 others
+(a keyframe's burst past one held back) did not survive.
+
+| scenario | first picture, ms | fps | latency p50 / p95 / p99, ms | stalls (ms) | lost / dropped | expired / sent | keyframes |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| reorder-2 (before) | 570 | 26 | 131.1 / 208.9 / 225.3 | 11 (7945) | 112 / 295 | 204 / 826 | 27 |
+| reorder-2 | 536 | 60 | 71.7 / 86.0 / 124.9 | 0 (0) | 0 / 0 | 8 / 827 | 3 |
+| reorder (before) | — | 0 | 176.1 / 225.3 / 227.7 | 0 (0) | 0 / 427 | 530 / 886 | 55 |
+| reorder | 507 | 0 | 171.8 / 196.4 / 197.2 | 0 (0) | 294 / 518 | 451 / 883 | 53 |
+
+The control scenarios (`local`, `rtt-50`, `loss-2`, `burst`, `cap-20`) are unchanged, and so is
+a live run over a real path (this VM to a server ~40 ms away, `bench_transport --connect`).
+
+- `reorder-2` plays clean. Its median is still ~24 ms above `rtt-50`'s: the early 2% give
+  round trips of 25 ms, half the path's, and BBR's window (2 × bandwidth × minimum round trip)
+  then holds a keyframe back at the sender. No real path delivers a packet faster than its base
+  delay; netem's "early" packets do.
+- `reorder` (each packet's one-way delay drawn on its own, normal 25 ± 10 ms: from ~0 to ~55 ms)
+  still does not play. Its round trips range from a few ms to ~100 ms, several times the path's
+  base, and two things give: the reordering window is capped at the smoothed round trip, which
+  the newest acknowledgement — usually a packet that overtook — biases low; and BBR's window,
+  built on a minimum round trip of a few ms, cannot hold a keyframe in flight. `bench_path`
+  shows the edge: jitter up to the base round trip plays (50 ms + 0–40 ms each way: 1.7% late),
+  several times it does not (10 ms + 0–40 ms: 97% late). A path like that is rare; it is BBR's
+  problem more than the loss detector's, and stays on the list.
 
 ### Joining
 
@@ -170,8 +201,9 @@ the interval to pass; the netem runs join one second into the stream so as not t
 
 In librats (the list in `PLAN.md`, "librats work", is ordered by this):
 
-1. Reordering must not read as loss while live messages are outstanding — the one failure here
-   that stops a stream outright, on paths (Wi-Fi, LTE, bonded links) that are common.
+1. ✅ Reordering must not read as loss while live messages are outstanding — the one failure here
+   that stopped a stream outright, on paths (Wi-Fi, LTE, bonded links) that are common. Jitter
+   several times the base round trip still breaks BBR (above).
 2. The start of a live flow: a 10-packet initial window; no shedding by Startup's floor rate;
    BBR's app-limited Startup exit robust to jitter; a joining scenario in `bench_path`, which
    measures in virtual time what netem can only sample.
