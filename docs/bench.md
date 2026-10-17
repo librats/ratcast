@@ -121,12 +121,12 @@ What it says:
 - **Jitter without reordering costs more than it should**: +40 ms at the median over `rtt-50`
   and one run in three takes 1.8 s to join (BBR, below).
 - **A path narrower than the stream collapses** (`cap-6`: 30 fps, half of every second
-  stalled) — expected, there is no rate control yet (stage 1, item 1). With headroom
+  stalled) — expected, there is no rate control yet (`PLAN.md`, 1.1). With headroom
   (`cap-20`) the cap is invisible.
 
-### Reordering, after librats item 1
+### Reordering, after librats L1
 
-The same runs after the fix (`PLAN.md`, "librats work", item 1): live data waits out a path's
+The same runs after the fix (`PLAN.md`, librats track, L1): live data waits out a path's
 learnt reordering as bulk does, the window may grow up to a probe timeout rather than a round
 trip, and FEC counts that wait into the time a repair takes. Also a packet number is no longer
 sent in one byte, which a packet overtaken by more than 127 others (a keyframe's burst past one
@@ -153,7 +153,7 @@ and `bench_path`'s rows with loss in bursts move both ways by seed.
   still does not play: 6 fps. Its round trips range from a few ms to ~100 ms, several times the
   path's base. The reordering window now reaches that far, but BBR's window, built on a minimum
   round trip of a few ms, cannot hold a keyframe in flight. A path like that is rare; it is
-  BBR's problem, not the loss detector's (`PLAN.md`, "librats work", item 7).
+  BBR's problem, not the loss detector's (`PLAN.md`, librats track, L7).
 - `bench_path`'s reordering table (50 Mbit/s, 20 ms, four seeds) says the same in virtual time.
   With every datagram late by its own 0–10 ms, 1080p30, 1080p60 and 4K60 had 7–34%, 18–73% and
   90–99% of their frames late, and 12–53% of all packets went twice. Now every class has under
@@ -161,7 +161,7 @@ and `bench_path`'s rows with loss in bursts move both ways by seed.
   50 Mbit/s link, where 0.1–5% of the datagrams are overtaken by 8 ms: 1–3% of frames late,
   where it had 0.3% (though at 5% only 0.4–0.5% of its packets go twice, not 5%). A real loss now
   waits out the learnt window too, and at 80% of the link there is little room to catch up
-  after it. A rate control that leaves headroom (ratcast stage 1, item 1) covers it.
+  after it. A rate control that leaves headroom (`PLAN.md`, 1.1) covers it.
 
 ### Joining
 
@@ -207,20 +207,21 @@ the interval to pass; the netem runs join one second into the stream so as not t
 
 ### What to do first
 
-In librats (the list in `PLAN.md`, "librats work", is ordered by this):
+In librats (`PLAN.md`, librats track, ordered by this):
 
-1. ✅ Reordering must not read as loss while live messages are outstanding — the one failure here
-   that stopped a stream outright, on paths (Wi-Fi, LTE, bonded links) that are common. Jitter
-   several times the base round trip still breaks BBR (above; `PLAN.md`, item 7).
-2. The start of a live flow: a 10-packet initial window; no shedding by Startup's floor rate;
+1. ✅ L1: reordering must not read as loss while live messages are outstanding — the one
+   failure here that stopped a stream outright, on paths (Wi-Fi, LTE, bonded links) that are
+   common. Jitter several times the base round trip still breaks BBR (above; L7).
+2. L2, the start of a live flow: a 10-packet initial window; no shedding by Startup's floor rate;
    BBR's app-limited Startup exit robust to jitter; a joining scenario in `bench_path`, which
    measures in virtual time what netem can only sample.
-3. Per-live-message delivered / expired feedback, for keyframe recovery and joining.
+3. L3, per-live-message delivered / expired feedback, for keyframe recovery and joining.
 
-In ratcast (stage 1): rate control first (`cap-6`), starting low so that a joining keyframe is
-small (✅, below); then joining with a keyframe allowed to arrive late.
+In ratcast (stage 1, "A stream that holds"): rate control first (1.1, `cap-6`), starting low so
+that a joining keyframe is small (✅, below); then joining with a keyframe allowed to arrive late
+(1.2).
 
-## Rate control, stage 1
+## Rate control (1.1)
 
 The session steers each stream's encoder by the paths to its viewers, sampled every 100 ms
 (`RateController`, `ratcast/session/rate_controller.h`): it starts at 2 Mbit/s and ramps ×1.5 a
@@ -289,7 +290,7 @@ Against the fixed 8 Mbit/s of the baseline:
 - **Joining is faster** at every distance (0.33 s at 50 ms RTT, 0.6 s at 100 ms, 1.5 s at 200 ms
   against 0.5 / 0.9 / 2.0 s): the first keyframe is a quarter of the size.
 - **Clean and lossy paths are unchanged** once the ramp is done (5–7 s to reach 8 Mbit/s; the
-  first cut is the start's expired keyframe, librats item 2); loss is not taken for congestion.
+  first cut is the start's expired keyframe, librats L2); loss is not taken for congestion.
   `burst` stalls more often (9 against 4–8), in the same short stalls a lost reference costs.
 - **Where BBR's estimate is wrong, rate control follows it down.** On `jitter` BBR's Startup
   exits on the jitter and leaves an estimate of 1–4 Mbit/s on a 1 Gbit/s path; filled with
@@ -297,5 +298,5 @@ Against the fixed 8 Mbit/s of the baseline:
   stalls than a fixed 8 Mbit/s that kept BBR busy enough to grow its estimate. `reorder-2` loses
   similarly to BBR's window (25 ms round trips from the early packets: the sender queues), and
   `reorder` plays for the first time (54 fps) but at 1.4 Mbit/s. These are librats' to fix
-  (`PLAN.md`, "librats work", items 2 and 7), not rate control's to work around: the estimate is
+  (`PLAN.md`, librats track, L2 and L7), not rate control's to work around: the estimate is
   all a sender has to go by.
