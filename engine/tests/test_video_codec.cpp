@@ -152,9 +152,24 @@ TEST_P(VideoCodecTest, ABitrateChangeTakesEffect) {
 
     const size_t before = average(0, 60);
     encoder_->set_bitrate(500'000);
-    const size_t after = average(60, 120);
-    // A quarter of the rate; settling takes a few frames, so ask for less.
+    // Settling takes some frames, or a new encoder opened alongside does.
+    (void)average(60, 90);
+    const size_t after = average(90, 150);
+    // A quarter of the rate; ask for less.
     EXPECT_LT(after * 2, before) << "before " << before << " B, after " << after << " B";
+}
+
+TEST_P(VideoCodecTest, ABitrateChangeLosesNoPicture) {
+    // An encoder that cannot change its rate in flight opens another alongside
+    // and switches to it: every picture still comes out, in order, decodable.
+    for (uint64_t i = 0; i < 40; ++i) {
+        if (i == 5) encoder_->set_bitrate(1'000'000);
+        if (i == 6) encoder_->set_bitrate(800'000);  // while the first change opens
+        std::vector<EncodedVideo> frames = encode(pattern(i));
+        ASSERT_EQ(frames.size(), 1u) << "picture " << i;
+        EXPECT_EQ(frames[0].info.number, i);
+        EXPECT_EQ(decode(frames[0]).size(), 1u) << "picture " << i;
+    }
 }
 
 TEST_P(VideoCodecTest, KeepsGoingAfterAFlush) {

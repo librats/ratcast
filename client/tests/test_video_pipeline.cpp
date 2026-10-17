@@ -276,3 +276,18 @@ TEST_F(VideoPipelineTest, ADamagedFrameAsksForAKeyframe) {
     const size_t before = picture_count();
     EXPECT_TRUE(eventually([&] { return picture_count() > before + 5; }));  // and it goes on
 }
+
+TEST_F(VideoPipelineTest, AimsWhereRateControlAsks) {
+    ASSERT_TRUE(publisher_->start(pattern_));
+    play();
+    ASSERT_TRUE(eventually([&] { return picture_count() >= 3; }));
+    // Rate control starts at its start, capped at the encoder's bitrate.
+    EXPECT_EQ(publisher_->stats().bitrate, 1'000'000u);
+    EXPECT_EQ(sender_->outgoing_stats(1)->bitrate, 1'000'000u);
+
+    publisher_->set_bitrate(400'000);
+    ASSERT_TRUE(eventually([&] { return publisher_->stats().bitrate == 400'000u; }));
+    const size_t before = picture_count();
+    EXPECT_TRUE(eventually([&] { return picture_count() > before + 10; }));
+    EXPECT_EQ(player_->stats().decode_errors, 0u);
+}

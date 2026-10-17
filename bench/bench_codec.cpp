@@ -3,12 +3,17 @@
 // whether a machine can stream 1080p60 at all, and which encoder preset to use.
 //
 // Encoders are stateful, so this runs a stream through each rather than timing
-// one call in a loop: 30 pictures to settle, then 120 measured.
+// one call in a loop: 30 pictures to settle, then 120 measured. Then the
+// bitrate halves, as rate control changes it, and 30 more pictures show what
+// that costs: the slowest of them and, for an encoder that cannot change its
+// rate in flight, how many pictures on the new encoder takes over (with a
+// keyframe — its size is the other cost).
 
 #include <algorithm>
 #include <chrono>
 #include <cstdio>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "ratcast/engine/pattern_source.h"
@@ -71,11 +76,38 @@ void run(Codec codec, const std::string& name, Size size) {
             decode_ms += ms_since(decode_start);
         }
     }
+
     std::printf(
         "  %-12s %4ux%-4u %5.1f Mbit/s   encode %6.2f ms (worst %6.2f)   decode %6.2f ms   %6.0f "
         "B/frame\n",
         name.c_str(), size.width, size.height, size.bitrate / 1e6, encode_ms / kMeasured,
         worst_encode_ms, decode_ms / kMeasured, double(bytes) / kMeasured);
+
+    (*encoder)->set_bitrate(size.bitrate / 2);
+    double worst_ms = 0;
+    int keyframe_at = -1;
+    size_t keyframe_bytes = 0;
+    for (int i = 0; i < kWarmup; ++i) {
+        const auto start = std::chrono::steady_clock::now();
+        (void)(*encoder)->encode(pictures[i], false, [&](EncodedVideo&& v) {
+            if (v.info.keyframe && keyframe_at < 0) {
+                keyframe_at = i;
+                keyframe_bytes = v.payload.size();
+            }
+        });
+        worst_ms = std::max(worst_ms, ms_since(start));
+        // At the source's pace, as a live encoder gets them: the encoder being
+        // opened alongside has the time in between.
+        std::this_thread::sleep_until(start + std::chrono::microseconds(16'667));
+    }
+    if (keyframe_at < 0) {
+        std::printf("  %31s bitrate halved: worst encode %6.2f ms, in flight\n", "", worst_ms);
+    } else {
+        std::printf(
+            "  %31s bitrate halved: worst encode %6.2f ms, new encoder from picture %d, "
+            "keyframe %zu B\n",
+            "", worst_ms, keyframe_at, keyframe_bytes);
+    }
 }
 
 }  // namespace

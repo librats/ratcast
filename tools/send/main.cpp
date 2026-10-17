@@ -43,7 +43,9 @@ How:
   --codec av1|h265|h264   default: av1
   --encoder NAME       a particular FFmpeg encoder (default: the best there is)
   --software           no hardware encoders
-  --bitrate KBPS       default: 4000
+  --bitrate KBPS       the most rate control goes up to (default 4000)
+  --start-bitrate KBPS where rate control starts (default 2000)
+  --fixed-bitrate      no rate control: always --bitrate
   --fps N              frames a second at most (default 60; a file plays at its own)
   --latency MS         how long a frame is worth delivering (default 200)
 
@@ -61,6 +63,8 @@ struct Options {
     uint32_t width = 1280;
     uint32_t height = 720;
     VideoEncoderConfig encoder;
+    bool rate_control = true;
+    uint32_t start_bitrate = 2'000'000;
     Duration latency = 200ms;
     uint16_t port = 7700;
     bool announce = false;
@@ -97,6 +101,8 @@ std::optional<Options> parse(int argc, char** argv) {
     o.encoder.encoder = args.text("encoder").value_or("");
     o.encoder.allow_hardware = !args.flag("software");
     o.encoder.bitrate = args.number("bitrate", 50, 500'000).value_or(4000) * 1000;
+    o.start_bitrate = args.number("start-bitrate", 50, 500'000).value_or(2000) * 1000;
+    o.rate_control = !args.flag("fixed-bitrate");
     o.encoder.frame_rate_num = args.number("fps", 1, 240).value_or(60);
     o.latency = std::chrono::milliseconds(args.number("latency", 10, 30'000).value_or(200));
     o.port = static_cast<uint16_t>(args.number("port", 0, 65535).value_or(7700));
@@ -192,10 +198,10 @@ public:
         const double encode_ms =
             frames > 0 ? double((now.encode_time - last_.encode_time).count()) / 1000 / frames : 0;
         std::printf(
-            "[%4us] %3llu fps %6.2f Mbit/s  %ux%u %s  encode %5.2f ms  viewers %zu"
+            "[%4us] %3llu fps %6.2f Mbit/s (aim %5.2f)  %ux%u %s  encode %5.2f ms  viewers %zu"
             "  skipped %llu  repeated %llu  keyframes %llu  drops %llu  cpu %3.0f%%\n",
-            seconds_++, static_cast<unsigned long long>(frames), mbps, now.width, now.height,
-            now.encoder.c_str(), encode_ms, stream ? stream->subscribers : 0,
+            seconds_++, static_cast<unsigned long long>(frames), mbps, now.bitrate / 1e6, now.width,
+            now.height, now.encoder.c_str(), encode_ms, stream ? stream->subscribers : 0,
             static_cast<unsigned long long>(now.skipped - last_.skipped),
             static_cast<unsigned long long>(now.repeated - last_.repeated),
             static_cast<unsigned long long>(now.keyframes - last_.keyframes),
@@ -205,11 +211,19 @@ public:
             const std::optional<librats::PathStats> path = node_.path_stats(peer.id);
             if (!path || !path->valid) continue;
             librats::PathStats& last = paths_[peer.id];
+            const uint64_t lost = path->bytes_lost - last.bytes_lost;
+            const uint64_t resolved = lost + path->bytes_delivered - last.bytes_delivered;
+            const double queue_ms = path->bandwidth_bps > 0 ? double(path->queued_bytes) * 8e3 /
+                                                                  double(path->bandwidth_bps)
+                                                            : 0;
+            // "busy": the estimate was taken with the path kept busy, so it is
+            // what the path carries rather than a floor.
             std::printf(
-                "        %s  rtt %5.1f ms  path %7.1f Mbit/s  loss %4.1f%%  expired %llu"
-                "  repair %5.2f Mbit/s\n",
+                "        %s  rtt %5.1f ms  path %7.1f Mbit/s%s  queue %4.0f ms  loss %4.1f%%"
+                "  expired %llu  repair %5.2f Mbit/s\n",
                 peer.id.short_hex().c_str(), path->srtt_us / 1000.0,
-                double(path->bandwidth_bps) / 1e6, path->loss * 100,
+                double(path->bandwidth_bps) / 1e6, path->app_limited ? "     " : " busy", queue_ms,
+                resolved > 0 ? 100.0 * double(lost) / double(resolved) : 0.0,
                 static_cast<unsigned long long>(path->live_expired),
                 double(path->live_repair_bytes - last.live_repair_bytes) * 8 / 1e6);
             last = *path;
@@ -235,7 +249,7 @@ public:
         std::printf(
             "summary frames=%llu keyframes=%llu keyframe_kb=%.0f keyframes_asked=%llu"
             " skipped=%llu encode_ms=%.2f mbps=%.2f live_sent=%llu live_expired=%llu"
-            " repair_share=%.3f cpu=%.0f\n",
+            " repair_share=%.3f bitrate_cuts=%llu bitrate_raises=%llu cpu=%.0f\n",
             static_cast<unsigned long long>(now.frames),
             static_cast<unsigned long long>(now.keyframes),
             now.keyframes > 0 ? double(now.keyframe_bytes) / 1024 / double(now.keyframes) : 0,
@@ -245,7 +259,9 @@ public:
             double(now.bytes) * 8 / 1e6 / std::max(elapsed.count(), 1.0),
             static_cast<unsigned long long>(live_sent),
             static_cast<unsigned long long>(live_expired),
-            delivered > 0 ? double(repair) / double(delivered) : 0, cpu_.total());
+            delivered > 0 ? double(repair) / double(delivered) : 0,
+            static_cast<unsigned long long>(stream ? stream->bitrate_cuts : 0),
+            static_cast<unsigned long long>(stream ? stream->bitrate_raises : 0), cpu_.total());
         std::fflush(stdout);
     }
 
@@ -284,6 +300,10 @@ int main(int argc, char** argv) {
             [&publisher](StreamId) {
                 if (VideoPublisher* p = publisher.load()) p->request_keyframe();
             },
+        .bitrate_changed =
+            [&publisher](StreamId, uint32_t bits_per_second) {
+                if (VideoPublisher* p = publisher.load()) p->set_bitrate(bits_per_second);
+            },
     }));
     if (o.announce) add_discovery(node, discovery_key(node.local_id()), o.data_dir);
 
@@ -291,6 +311,8 @@ int main(int argc, char** argv) {
     config.label = o.source;
     config.lifetime = o.latency;
     config.encoder = o.encoder;
+    config.rate_control = o.rate_control;
+    config.start_bitrate = o.start_bitrate;
     VideoPublisher video(media->session(), config);
     publisher = &video;
 

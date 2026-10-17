@@ -4,7 +4,10 @@
 // it can change its bitrate in flight — the candidate table below.
 
 #include <algorithm>
+#include <chrono>
+#include <future>
 #include <limits>
+#include <mutex>
 #include <optional>
 #include <span>
 #include <string>
@@ -28,12 +31,21 @@ constexpr uint32_t kBufferFrames = 2;
 /// gop_size when keyframes come only on request: longer than any session.
 constexpr int kNoPeriodicKeyframes = 1 << 30;
 
+/// Held while an encoder opens or closes. SVT-AV1 keeps state of its own
+/// across encoders, and opening one while another closes races on it
+/// (ThreadSanitizer saw it): one at a time, whichever threads they are on.
+std::mutex& lifecycle_mutex() {
+    static std::mutex mutex;
+    return mutex;
+}
+
 struct Candidate {
     const char* name;
     Codec codec;
     bool hardware;
     /// Takes a new AVCodecContext::bit_rate between frames. The others are
-    /// reopened, which costs a keyframe (and for SVT-AV1 some 30 ms at 1080p).
+    /// opened anew, which costs a keyframe, and takes long enough (SVT-AV1:
+    /// 55 ms at 1080p) to be done alongside the encoder at work.
     bool dynamic_bitrate;
     void (*tune)(const VideoEncoderConfig&, AVCodecContext&, av::Dictionary&);
 };
@@ -164,38 +176,14 @@ public:
           frame_(av_frame_alloc()),
           packet_(av_packet_alloc()) {}
 
-    ~FfmpegVideoEncoder() override {
-        // Say the stream ended: SVT-AV1 complains when closed in mid-stream.
-        if (context_) avcodec_send_frame(context_.get(), nullptr);
-    }
+    ~FfmpegVideoEncoder() override { close_context(std::move(context_)); }
 
     /// Open the codec for the current config.
     Result<void> open() {
-        av::CodecContextPtr context(avcodec_alloc_context3(&codec_));
-        if (!context || !frame_ || !packet_) return fail(Errc::Internal);
-
-        context->width = static_cast<int>(config_.width);
-        context->height = static_cast<int>(config_.height);
-        context->pix_fmt = av::pixel_format(info_.input_format);
-        context->time_base = av::kMicroseconds;
-        context->framerate = AVRational{static_cast<int>(config_.frame_rate_num),
-                                        static_cast<int>(config_.frame_rate_den)};
-        av::set_color_space(*context, config_.color_space);
-        context->max_b_frames = 0;
-        context->gop_size = config_.keyframe_interval > 0
-                                ? static_cast<int>(config_.keyframe_interval)
-                                : kNoPeriodicKeyframes;
-        apply_bitrate(*context);
-
-        av::Dictionary options;
-        candidate_.tune(config_, *context, options);
-        const int error = avcodec_open2(context.get(), &codec_, options.get());
-        if (error < 0) {
-            LOG_DEBUG("engine",
-                      "encoder " << info_.name << " cannot open: " << av::describe(error));
-            return fail(error == AVERROR(EINVAL) ? Errc::InvalidArgument : Errc::Unavailable);
-        }
-        context_ = std::move(context);
+        if (!frame_ || !packet_) return fail(Errc::Internal);
+        Result<av::CodecContextPtr> context = open_context(candidate_, codec_, config_, info_);
+        if (!context) return fail(context.error());
+        close_context(std::exchange(context_, std::move(*context)));
         return {};
     }
 
@@ -212,11 +200,25 @@ public:
             return encode(*converted, keyframe, sink);
         }
         if (reopen_) {
+            // Opened for the config now; one still opening alongside is stale.
+            next_ = {};
+            open_again_ = false;
             // Whatever the old encoder still holds belongs before this picture.
             if (Result<void> flushed = flush(sink); !flushed) return flushed;
             if (Result<void> opened = open(); !opened) return opened;
             reopen_ = false;
             keyframe = true;
+        } else if (next_.valid() &&
+                   next_.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+            if (Result<av::CodecContextPtr> next = next_.get(); next) {
+                if (Result<void> flushed = flush(sink); !flushed) return flushed;
+                // Closing takes as long as opening: alongside too.
+                closing_ = std::async(std::launch::async, &FfmpegVideoEncoder::close_context,
+                                      std::exchange(context_, std::move(*next)));
+                reopen_ = false;
+                keyframe = true;
+            }  // else open_context() said why; the encoder at work carries on
+            if (std::exchange(open_again_, false)) open_alongside();
         }
 
         if (Result<void> wrapped = wrap(picture, keyframe); !wrapped) return wrapped;
@@ -233,9 +235,9 @@ public:
         if (bits_per_second == 0 || bits_per_second == config_.bitrate) return;
         config_.bitrate = bits_per_second;
         if (candidate_.dynamic_bitrate) {
-            apply_bitrate(*context_);
+            apply_bitrate(*context_, config_);
         } else {
-            reopen_ = true;
+            open_alongside();
         }
     }
 
@@ -249,13 +251,67 @@ public:
     }
 
 private:
-    void apply_bitrate(AVCodecContext& context) const {
-        const int64_t bitrate = config_.bitrate;
+    static void apply_bitrate(AVCodecContext& context, const VideoEncoderConfig& config) {
+        const int64_t bitrate = config.bitrate;
         context.bit_rate = bitrate;
         context.rc_max_rate = bitrate;
         context.rc_buffer_size = static_cast<int>(std::min<int64_t>(
-            bitrate * kBufferFrames * config_.frame_rate_den / config_.frame_rate_num,
+            bitrate * kBufferFrames * config.frame_rate_den / config.frame_rate_num,
             std::numeric_limits<int>::max()));
+    }
+
+    /// A codec context for `config`, open. Touches nothing of an encoder's,
+    /// so any thread may call it.
+    static Result<av::CodecContextPtr> open_context(const Candidate& candidate,
+                                                    const AVCodec& codec,
+                                                    const VideoEncoderConfig& config,
+                                                    const VideoEncoderInfo& info) {
+        std::lock_guard lock(lifecycle_mutex());
+        av::CodecContextPtr context(avcodec_alloc_context3(&codec));
+        if (!context) return fail(Errc::Internal);
+
+        context->width = static_cast<int>(config.width);
+        context->height = static_cast<int>(config.height);
+        context->pix_fmt = av::pixel_format(info.input_format);
+        context->time_base = av::kMicroseconds;
+        context->framerate = AVRational{static_cast<int>(config.frame_rate_num),
+                                        static_cast<int>(config.frame_rate_den)};
+        av::set_color_space(*context, config.color_space);
+        context->max_b_frames = 0;
+        context->gop_size = config.keyframe_interval > 0
+                                ? static_cast<int>(config.keyframe_interval)
+                                : kNoPeriodicKeyframes;
+        apply_bitrate(*context, config);
+
+        av::Dictionary options;
+        candidate.tune(config, *context, options);
+        const int error = avcodec_open2(context.get(), &codec, options.get());
+        if (error < 0) {
+            LOG_DEBUG("engine", "encoder " << info.name << " cannot open: " << av::describe(error));
+            return fail(error == AVERROR(EINVAL) ? Errc::InvalidArgument : Errc::Unavailable);
+        }
+        return context;
+    }
+
+    /// Close `context`, if any, from any thread.
+    static void close_context(av::CodecContextPtr context) {
+        if (!context) return;
+        std::lock_guard lock(lifecycle_mutex());
+        // Say the stream ended: SVT-AV1 complains when closed in mid-stream.
+        avcodec_send_frame(context.get(), nullptr);
+        context.reset();
+    }
+
+    /// Open an encoder for the current config on a thread of its own; encode()
+    /// switches to it, with a keyframe, at the first picture after it is ready.
+    /// One at a time: a change meanwhile is opened once this one is in.
+    void open_alongside() {
+        if (next_.valid()) {
+            open_again_ = true;
+            return;
+        }
+        next_ = std::async(std::launch::async, &FfmpegVideoEncoder::open_context,
+                           std::cref(candidate_), std::cref(codec_), config_, info_);
     }
 
     // Point frame_ at the picture's planes. The frame's buffer holds a copy of
@@ -328,6 +384,11 @@ private:
     av::FramePtr frame_;
     av::PacketPtr packet_;
     bool reopen_ = false;
+    /// The encoder open_alongside() is opening, and whether the config changed
+    /// again since it began.
+    std::future<Result<av::CodecContextPtr>> next_;
+    bool open_again_ = false;
+    std::future<void> closing_;  ///< the encoder switched from, being closed
     std::optional<int64_t> last_pts_;
     FrameNumber next_number_ = 0;
 };

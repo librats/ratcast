@@ -122,6 +122,7 @@ struct Party {
                     payloads.push_back(f.payload);
                 },
             .keyframe_needed = [this](StreamId) { ++keyframes_needed; },
+            .bitrate_changed = [this](StreamId, uint32_t b) { bitrates.push_back(b); },
         };
     }
 
@@ -132,6 +133,7 @@ struct Party {
     std::vector<FrameNumber> frames;
     std::vector<Buffer> payloads;
     int keyframes_needed = 0;
+    std::vector<uint32_t> bitrates;
     std::function<void(const EncodedFrame&)> on_frame;
     MediaSession session;  // last: its handlers point at the members above
 };
@@ -153,6 +155,8 @@ MutableBuffer payload_for(FrameNumber number, size_t size = 300) {
     return payload;
 }
 
+constexpr BitrateLimits kBitrate{.min = 250'000, .start = 2'000'000, .max = 8'000'000};
+
 class MediaSessionTest : public ::testing::Test {
 protected:
     MediaSessionTest() {
@@ -166,18 +170,24 @@ protected:
         b.session.on_peer_connected(a.id);
     }
 
-    void subscribe(Party& who) {
-        ASSERT_TRUE(who.session.subscribe(sender.id, 1));
+    void subscribe(Party& who, StreamId stream = 1) {
+        ASSERT_TRUE(who.session.subscribe(sender.id, stream));
         hub.deliver_all();
     }
 
-    Result<void> send(FrameNumber number, bool keyframe) {
+    /// Stream 2, rate-controlled.
+    void add_rated_stream() {
+        ASSERT_TRUE(sender.session.add_stream(screen(2), kBitrate));
+        hub.deliver_all();
+    }
+
+    Result<void> send(FrameNumber number, bool keyframe, StreamId stream = 1) {
         FrameInfo info;
         info.number = number;
         info.keyframe = keyframe;
         info.capture_time = clock.now();
         if (!keyframe && number > 0) info.references = {number - 1};
-        return sender.session.send_frame(1, info, payload_for(number));
+        return sender.session.send_frame(stream, info, payload_for(number));
     }
 
     /// Let `d` pass. What is already in flight arrives first: the network is
@@ -197,6 +207,18 @@ protected:
 };
 
 using Frames = std::vector<FrameNumber>;
+using Bitrates = std::vector<uint32_t>;
+
+/// A path the sender does not fill, `expired` live messages since it opened.
+PathStats path(uint64_t expired = 0) {
+    PathStats s;
+    s.valid = true;
+    s.bandwidth_bps = 20'000'000;
+    s.app_limited = true;
+    s.srtt_us = 50'000;
+    s.live_expired = expired;
+    return s;
+}
 
 }  // namespace
 
@@ -407,6 +429,63 @@ TEST_F(MediaSessionTest, ABlockedPeerIsPolledWhenTheEventNeverComes) {
     ASSERT_TRUE(send(2, true));
     hub.deliver_all();
     EXPECT_EQ(receiver.frames, (Frames{0, 1, 2}));
+}
+
+// ── Rate control ────────────────────────────────────────────────────────────
+
+TEST_F(MediaSessionTest, RefusesBitrateLimitsThatAreNotValid) {
+    EXPECT_EQ(sender.session.add_stream(screen(2), BitrateLimits{1, 3, 2}).error(),
+              Errc::InvalidArgument);
+}
+
+TEST_F(MediaSessionTest, RateControlFollowsTheSubscribersPath) {
+    add_rated_stream();
+    subscribe(receiver, 2);
+    EXPECT_EQ(sender.session.outgoing_stats(2)->bitrate, kBitrate.start);
+
+    sender.session.on_peer_path(receiver.id, path());  // the first sample starts the clock
+    clock.advance(1s);
+    sender.session.on_peer_path(receiver.id, path());
+    EXPECT_EQ(sender.bitrates, Bitrates{3'000'000});
+
+    clock.advance(100ms);
+    sender.session.on_peer_path(receiver.id, path(1));  // a frame expired
+    EXPECT_EQ(sender.bitrates, (Bitrates{3'000'000, 2'550'000}));
+
+    const auto stats = sender.session.outgoing_stats(2);
+    EXPECT_EQ(stats->bitrate, 2'550'000u);
+    EXPECT_EQ(stats->bitrate_raises, 1u);
+    EXPECT_EQ(stats->bitrate_cuts, 1u);
+    EXPECT_EQ(sender.session.outgoing_stats(1)->bitrate, 0u);  // not rate-controlled
+}
+
+TEST_F(MediaSessionTest, RateControlHearsOnlyItsSubscribersPaths) {
+    add_rated_stream();
+    sender.session.on_peer_path(receiver.id, path(1));
+    EXPECT_TRUE(sender.bitrates.empty());
+}
+
+TEST_F(MediaSessionTest, AFullQueueIsOveruse) {
+    add_rated_stream();
+    subscribe(receiver, 2);
+    sender.endpoint.set_full(receiver.id, true);
+    ASSERT_TRUE(send(0, true, 2));  // queued, but the queue is now full
+    sender.session.on_peer_path(receiver.id, path());
+    EXPECT_EQ(sender.bitrates, Bitrates{1'700'000});
+}
+
+TEST_F(MediaSessionTest, AStreamNobodyWatchesStartsAfresh) {
+    add_rated_stream();
+    subscribe(receiver, 2);
+    sender.session.on_peer_path(receiver.id, path(1));
+    receiver.session.unsubscribe(sender.id, 2);
+    hub.deliver_all();
+    EXPECT_EQ(sender.bitrates, (Bitrates{1'700'000, kBitrate.start}));
+
+    subscribe(receiver, 2);
+    sender.session.on_peer_path(receiver.id, path(2));
+    sender.session.on_peer_disconnected(receiver.id);
+    EXPECT_EQ(sender.bitrates, (Bitrates{1'700'000, kBitrate.start, 1'700'000, kBitrate.start}));
 }
 
 // ── Peers coming and going ──────────────────────────────────────────────────

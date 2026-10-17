@@ -39,6 +39,10 @@ void MediaService::attach(librats::NodeContext& ctx) {
     });
     network.on_peer_writable(
         [this](const librats::Peer& peer) { session_.on_peer_writable(peer.id()); });
+    // Turns path sampling on, every NodeConfig::path_sample_ms (100 ms if 0).
+    network.on_peer_path([this](const librats::Peer& peer, const librats::PathStats& sample) {
+        session_.on_peer_path(peer.id(), sample);
+    });
     network_.store(&network, std::memory_order_release);
 }
 

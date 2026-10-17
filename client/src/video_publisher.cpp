@@ -30,6 +30,9 @@ Result<void> VideoPublisher::start(VideoSource& source, EndHandler ended) {
         keyframe_requested_ = false;
         have_picture_ = false;
     }
+    // The stream is announced afresh, so rate control starts over.
+    const std::optional<BitrateLimits> limits = bitrate_limits();
+    bitrate_ = limits ? limits->start : config_.encoder.bitrate;
     ended_ = std::move(ended);
     thread_ = std::thread(&VideoPublisher::run, this);
 
@@ -73,6 +76,17 @@ void VideoPublisher::request_keyframe() {
         keyframe_requested_ = true;
     }
     wake_.notify_one();
+}
+
+void VideoPublisher::set_bitrate(uint32_t bits_per_second) {
+    if (bits_per_second > 0) bitrate_.store(bits_per_second, std::memory_order_relaxed);
+}
+
+std::optional<BitrateLimits> VideoPublisher::bitrate_limits() const {
+    if (!config_.rate_control) return std::nullopt;
+    const uint32_t max = config_.encoder.bitrate;
+    const uint32_t start = std::min(config_.start_bitrate, max);
+    return BitrateLimits{.min = std::min(config_.min_bitrate, start), .start = start, .max = max};
 }
 
 VideoPublisherStats VideoPublisher::stats() const {
@@ -153,6 +167,13 @@ Result<void> VideoPublisher::publish(VideoFrame picture, bool keyframe) {
         picture.color_space() != encoder_config_.color_space) {
         if (Result<void> opened = open_encoder(picture); !opened) return opened;
     }
+    if (const uint32_t bitrate = bitrate_.load(std::memory_order_relaxed);
+        bitrate != encoder_config_.bitrate) {
+        encoder_->set_bitrate(bitrate);
+        encoder_config_.bitrate = bitrate;
+        std::lock_guard lock(stats_mutex_);
+        stats_.bitrate = bitrate;
+    }
 
     const auto start = std::chrono::steady_clock::now();
     const Result<void> encoded = encoder_->encode(
@@ -187,6 +208,7 @@ Result<void> VideoPublisher::open_encoder(const VideoFrame& picture) {
     config.width = picture.width();
     config.height = picture.height();
     config.color_space = picture.color_space();
+    config.bitrate = bitrate_.load(std::memory_order_relaxed);
     Result<std::unique_ptr<VideoEncoder>> encoder = open_video_encoder(config);
     if (!encoder) {
         LOG_WARN("client", "stream " << config_.stream << ": no encoder for " << config.width << "x"
@@ -204,8 +226,8 @@ Result<void> VideoPublisher::open_encoder(const VideoFrame& picture) {
         VideoFormat{config.width, config.height, config.frame_rate_num, config.frame_rate_den};
     description.lifetime = config_.lifetime;
     description.label = config_.label;
-    const Result<void> announced =
-        announced_ ? session_.update_stream(description) : session_.add_stream(description);
+    const Result<void> announced = announced_ ? session_.update_stream(description)
+                                              : session_.add_stream(description, bitrate_limits());
     if (!announced) return announced;
     announced_ = std::move(description);
 
@@ -213,6 +235,7 @@ Result<void> VideoPublisher::open_encoder(const VideoFrame& picture) {
     ++stats_.encoders;
     stats_.width = config.width;
     stats_.height = config.height;
+    stats_.bitrate = config.bitrate;
     stats_.encoder = encoder_->info().name;
     return {};
 }

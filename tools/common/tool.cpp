@@ -40,8 +40,7 @@ librats::NodeConfig node_config(uint16_t port, bool listen, const std::string& d
     config.enable_listen = listen;
     config.protocol = kProtocol;
     config.data_dir = data_dir;
-    // Report how each viewer's path is doing, for the sender's stats.
-    config.path_sample_ms = 1000;
+    // Paths are sampled every 100 ms, as MediaService's rate control asks.
     return config;
 }
 

@@ -126,34 +126,42 @@ What it says:
 
 ### Reordering, after librats item 1
 
-The same runs after the fix (`PLAN.md`, "librats work", item 1): a path's learnt reordering is
-waited out for live data too, unless the wait would leave a frame no time for a copy, and what
-goes again sooner is a loss for BBR only once the reordering no longer explains it. Also a
-packet number is no longer sent in one byte, which a packet overtaken by more than 127 others
-(a keyframe's burst past one held back) did not survive.
+The same runs after the fix (`PLAN.md`, "librats work", item 1): live data waits out a path's
+learnt reordering as bulk does, the window may grow up to a probe timeout rather than a round
+trip, and FEC counts that wait into the time a repair takes. Also a packet number is no longer
+sent in one byte, which a packet overtaken by more than 127 others (a keyframe's burst past one
+held back) did not survive.
 
 | scenario | first picture, ms | fps | latency p50 / p95 / p99, ms | stalls (ms) | lost / dropped | expired / sent | keyframes |
 |---|---:|---:|---:|---:|---:|---:|---:|
 | reorder-2 (before) | 570 | 26 | 131.1 / 208.9 / 225.3 | 11 (7945) | 112 / 295 | 204 / 826 | 27 |
-| reorder-2 | 536 | 60 | 71.7 / 86.0 / 124.9 | 0 (0) | 0 / 0 | 8 / 827 | 3 |
+| reorder-2 | 564 | 60 | 70.7 / 86.0 / 112.7 | 0 (0) | 0 / 0 | 8 / 884 | 3 |
 | reorder (before) | — | 0 | 176.1 / 225.3 / 227.7 | 0 (0) | 0 / 427 | 530 / 886 | 55 |
-| reorder | 507 | 0 | 171.8 / 196.4 / 197.2 | 0 (0) | 294 / 518 | 451 / 883 | 53 |
+| reorder | 548 | 6 | 120.8 / 217.1 / 234.2 | 2 (5566) | 396 / 365 | 400 / 856 | 47 |
 
-The control scenarios (`local`, `rtt-50`, `loss-2`, `burst`, `cap-20`) are unchanged, and so is
-a live run over a real path (this VM to a server ~40 ms away, `bench_transport --connect`).
+The control scenarios (`local`, `rtt-50`, `loss-2`, `cap-20`) are unchanged, and so is a live
+run over a real path (this VM to a server ~40 ms away, `bench_transport --connect`: every frame
+delivered, 41 ms median). `burst` stalls 8 times in 15 s at the median of ten runs against 7
+with the previous librats on the same VM, the same repair share (9%): within its spread (3–14),
+and `bench_path`'s rows with loss in bursts move both ways by seed.
 
 - `reorder-2` plays clean. Its median is still ~24 ms above `rtt-50`'s: the early 2% give
   round trips of 25 ms, half the path's, and BBR's window (2 × bandwidth × minimum round trip)
   then holds a keyframe back at the sender. No real path delivers a packet faster than its base
   delay; netem's "early" packets do.
 - `reorder` (each packet's one-way delay drawn on its own, normal 25 ± 10 ms: from ~0 to ~55 ms)
-  still does not play. Its round trips range from a few ms to ~100 ms, several times the path's
-  base, and two things give: the reordering window is capped at the smoothed round trip, which
-  the newest acknowledgement — usually a packet that overtook — biases low; and BBR's window,
-  built on a minimum round trip of a few ms, cannot hold a keyframe in flight. `bench_path`
-  shows the edge: jitter up to the base round trip plays (50 ms + 0–40 ms each way: 1.7% late),
-  several times it does not (10 ms + 0–40 ms: 97% late). A path like that is rare; it is BBR's
-  problem more than the loss detector's, and stays on the list.
+  still does not play: 6 fps. Its round trips range from a few ms to ~100 ms, several times the
+  path's base. The reordering window now reaches that far, but BBR's window, built on a minimum
+  round trip of a few ms, cannot hold a keyframe in flight. A path like that is rare; it is
+  BBR's problem, not the loss detector's (`PLAN.md`, "librats work", item 7).
+- `bench_path`'s reordering table (50 Mbit/s, 20 ms, four seeds) says the same in virtual time.
+  With every datagram late by its own 0–10 ms, 1080p30, 1080p60 and 4K60 had 7–34%, 18–73% and
+  90–99% of their frames late, and 12–53% of all packets went twice. Now every class has under
+  1% of frames late and at most 0.1% of packets sent twice. The cost is 4K60, 40 Mbit/s on that
+  50 Mbit/s link, where 0.1–5% of the datagrams are overtaken by 8 ms: 1–3% of frames late,
+  where it had 0.3% (though at 5% only 0.4–0.5% of its packets go twice, not 5%). A real loss now
+  waits out the learnt window too, and at 80% of the link there is little room to catch up
+  after it. A rate control that leaves headroom (ratcast stage 1, item 1) covers it.
 
 ### Joining
 
@@ -203,11 +211,91 @@ In librats (the list in `PLAN.md`, "librats work", is ordered by this):
 
 1. ✅ Reordering must not read as loss while live messages are outstanding — the one failure here
    that stopped a stream outright, on paths (Wi-Fi, LTE, bonded links) that are common. Jitter
-   several times the base round trip still breaks BBR (above).
+   several times the base round trip still breaks BBR (above; `PLAN.md`, item 7).
 2. The start of a live flow: a 10-packet initial window; no shedding by Startup's floor rate;
    BBR's app-limited Startup exit robust to jitter; a joining scenario in `bench_path`, which
    measures in virtual time what netem can only sample.
 3. Per-live-message delivered / expired feedback, for keyframe recovery and joining.
 
 In ratcast (stage 1): rate control first (`cap-6`), starting low so that a joining keyframe is
-small; then joining with a keyframe allowed to arrive late.
+small (✅, below); then joining with a keyframe allowed to arrive late.
+
+## Rate control, stage 1
+
+The session steers each stream's encoder by the paths to its viewers, sampled every 100 ms
+(`RateController`, `ratcast/session/rate_controller.h`): it starts at 2 Mbit/s and ramps ×1.5 a
+second; it cuts at once to 85% of what a full path carries when frames expire, a queue fills up
+or a message waits in front of the path for a quarter of its lifetime; it climbs back carefully
+towards where the path filled up. An encoder that cannot change its bitrate in flight (every
+software one through FFmpeg) opens a new one alongside and switches to it with a keyframe.
+
+Changing the bitrate, `bench_codec` (the new rows): the slowest of the next 30 pictures, taken at
+the source's pace, and the keyframe the new encoder starts with.
+
+| encoder | normal: mean / worst encode | bitrate halved: worst encode | keyframe |
+|---|---:|---:|---:|
+| SVT-AV1 720p, 4 Mbit/s | 5.3 / 12 ms | 14–26 ms | 12 KB |
+| SVT-AV1 1080p, 8 Mbit/s | 7.8 / 18–22 ms | 25–31 ms | 24 KB |
+| libaom 1080p, 8 Mbit/s | 19.6 / 26 ms | 61–65 ms | 11 KB |
+
+Reopened on the encoding thread, as before, SVT-AV1 stopped for 55 ms at 1080p (39 ms at 720p):
+three pictures at 60 fps, and a stall for a viewer at every change. Opening and closing are now
+done alongside; libaom's first picture on a new encoder is slow in itself. SVT-AV1 keeps state
+across encoders, so encoders open and close one at a time (ThreadSanitizer caught one opening
+while another closed).
+
+The netem runs, rate-controlled (`bench/netem.py --repeat 3`; `--send-arg=--fixed-bitrate` gives
+the baseline above; `--bitrate` is now the top). The new column is what the viewer received over
+the run, ramp included, and how many times the bitrate was cut. `cap-drop` is new: 20 Mbit/s
+that falls to 4 for five seconds.
+
+1920x1080 at 60 fps, AV1, at most 8 Mbit/s, frame lifetime 200 ms; 15 s a run, medians of 3.
+
+| scenario | path | first picture, ms | fps | Mbit/s (cuts) | latency p50 / p95 / p99, ms | stalls (ms) | lost / dropped | expired / sent | keyframes | repair | CPU send / recv, % |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| local | veth, no shaping | 37 | 60 | 6.3 (1) | 16.4 / 30.2 / 38.9 | 0 (0) | 0 / 0 | 0 / 889 | 6 | 0.0% | 143 / 24 |
+| rtt-20 | 20 ms RTT | 170 | 59 | 6.2 (1) | 31.7 / 52.2 / 73.7 | 1 (137) | 0 / 0 | 0 / 875 | 6 | 0.0% | 141 / 24 |
+| rtt-50 | 50 ms RTT | 327 | 59 | 5.6 (2) | 55.3 / 81.9 / 108.5 | 1 (149) | 1 / 0 | 1 / 870 | 7 | 0.0% | 142 / 23 |
+| rtt-100 | 100 ms RTT | 615 | 59 | 5.2 (3) | 73.7 / 94.2 / 116.7 | 1 (184) | 1 / 0 | 10 / 874 | 9 | 0.0% | 145 / 21 |
+| rtt-200 | 200 ms RTT | 1472 | 56 | 4.2 (4) | 124.9 / 155.6 / 196.6 | 4 (982) | 4 / 42 | 32 / 854 | 14 | 0.0% | 143 / 19 |
+| jitter | 50 ms RTT, ±10 ms jitter, in order | 455 | 53 | 1.7 (9) | 71.7 / 155.6 / 213.0 | 11 (2589) | 16 / 49 | 24 / 857 | 20 | 0.0% | 139 / 14 |
+| reorder-2 | 50 ms RTT, 2% of packets 25 ms early | 329 | 58 | 3.4 (4) | 69.6 / 135.2 / 184.3 | 6 (1115) | 2 / 7 | 2 / 867 | 10 | 0.0% | 135 / 19 |
+| reorder | 50 ms RTT, ±10 ms jitter, every packet on its own | 379 | 54 | 1.4 (12) | 64.5 / 167.9 / 221.2 | 12 (2560) | 24 / 49 | 27 / 830 | 20 | 0.1% | 129 / 14 |
+| loss-1 | 50 ms RTT, 1% loss | 346 | 59 | 5.6 (2) | 48.1 / 98.3 / 135.2 | 3 (467) | 2 / 0 | 1 / 863 | 7 | 3.5% | 140 / 22 |
+| loss-2 | 50 ms RTT, 2% loss | 329 | 60 | 5.6 (2) | 50.2 / 108.5 / 143.4 | 2 (265) | 1 / 0 | 1 / 876 | 7 | 5.5% | 143 / 22 |
+| loss-5 | 50 ms RTT, 5% loss | 446 | 59 | 5.5 (2) | 59.4 / 110.6 / 151.6 | 3 (363) | 2 / 0 | 2 / 876 | 7 | 12.1% | 141 / 22 |
+| loss-both | 50 ms RTT, 2% loss both ways | 332 | 59 | 5.5 (2) | 59.4 / 110.6 / 139.3 | 3 (619) | 2 / 0 | 1 / 869 | 7 | 5.7% | 142 / 22 |
+| burst | 50 ms RTT, bursts of loss (~4%) | 328 | 59 | 5.6 (2) | 48.1 / 108.5 / 151.6 | 9 (1074) | 1 / 0 | 1 / 877 | 7 | 6.7% | 140 / 22 |
+| cap-20 | 50 ms RTT, 20 Mbit/s, 100 ms buffer | 330 | 60 | 5.6 (1) | 50.2 / 73.7 / 102.4 | 1 (104) | 1 / 0 | 1 / 880 | 7 | 0.0% | 143 / 23 |
+| cap-6 | 50 ms RTT, 6 Mbit/s (below the stream) | 341 | 59 | 3.8 (4) | 73.7 / 155.6 / 204.8 | 8 (997) | 1 / 0 | 1 / 873 | 15 | 0.0% | 143 / 19 |
+| cap-drop | 50 ms RTT, 20 Mbit/s, 4 Mbit/s from 5 s to 10 s | 334 | 53 | 2.7 (5) | 51.2 / 159.7 / 225.3 | 7 (2324) | 18 / 80 | 18 / 874 | 18 | 2.1% | 142 / 16 |
+
+Against the fixed 8 Mbit/s of the baseline:
+
+| scenario | first picture, ms | fps | latency p50 / p95, ms | stalls (ms) |
+|---|---:|---:|---:|---:|
+| rtt-100, fixed → rate control | 941 → 615 | 58 → 59 | 74 / 92 → 74 / 94 | 2 (656) → 1 (184) |
+| rtt-200 | 1993 → 1472 | 60 → 56 | 125 / 143 → 125 / 156 | 0 (0) → 4 (982) |
+| cap-6 | 557 → 341 | 30 → 59 | 180 / 234 → 74 / 156 | 11 (7177) → 8 (997) |
+| cap-drop (fixed: one run) | 496 → 334 | 40 → 53 | 61 / 156 → 51 / 160 | 5 (5072) → 7 (2324) |
+| reorder | 548 → 379 | 6 → 54 | 121 / 217 → 65 / 168 | 2 (5566) → 12 (2560) |
+| reorder-2 | 564 → 329 | 60 → 58 | 71 / 86 → 70 / 135 | 0 (0) → 6 (1115) |
+| jitter | 594 → 455 | 51 → 53 | 86 / 152 → 72 / 156 | 2 (1005) → 11 (2589) |
+
+- **A narrow path plays.** `cap-6` keeps 59 fps at ~4 Mbit/s where a fixed 8 Mbit/s played 30
+  with half of every second stalled; when the path falls to 4 Mbit/s mid-stream (`cap-drop`) the
+  bitrate is cut within one to two seconds, the viewer sees about two seconds of trouble rather
+  than five, and the ramp is back at 8 Mbit/s four seconds after the path is.
+- **Joining is faster** at every distance (0.33 s at 50 ms RTT, 0.6 s at 100 ms, 1.5 s at 200 ms
+  against 0.5 / 0.9 / 2.0 s): the first keyframe is a quarter of the size.
+- **Clean and lossy paths are unchanged** once the ramp is done (5–7 s to reach 8 Mbit/s; the
+  first cut is the start's expired keyframe, librats item 2); loss is not taken for congestion.
+  `burst` stalls more often (9 against 4–8), in the same short stalls a lost reference costs.
+- **Where BBR's estimate is wrong, rate control follows it down.** On `jitter` BBR's Startup
+  exits on the jitter and leaves an estimate of 1–4 Mbit/s on a 1 Gbit/s path; filled with
+  keyframes that estimate is a full path, and the stream settles at 1–2 Mbit/s with more, shorter
+  stalls than a fixed 8 Mbit/s that kept BBR busy enough to grow its estimate. `reorder-2` loses
+  similarly to BBR's window (25 ms round trips from the early packets: the sender queues), and
+  `reorder` plays for the first time (54 fps) but at 1.4 Mbit/s. These are librats' to fix
+  (`PLAN.md`, "librats work", items 2 and 7), not rate control's to work around: the estimate is
+  all a sender has to go by.

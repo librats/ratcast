@@ -6,6 +6,7 @@ ratcast_add_test(libratcast_tests
         test_frame_tracker.cpp
         test_media_service.cpp
         test_media_session.cpp
+        test_rate_controller.cpp
         test_result.cpp
         test_stream_description.cpp
         test_time.cpp

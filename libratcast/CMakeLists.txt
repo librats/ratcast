@@ -9,6 +9,7 @@ add_library(ratcast
     src/core/version.cpp
     src/session/media_service.cpp
     src/session/media_session.cpp
+    src/session/rate_controller.cpp
     src/stream/frame_tracker.cpp
     src/stream/stream_description.cpp
     src/wire/control_codec.cpp

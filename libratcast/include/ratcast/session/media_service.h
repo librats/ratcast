@@ -11,8 +11,9 @@
  *     node.start();
  *
  * It carries the session's messages on librats' MessageType::Media lane —
- * control reliably, frames as live messages — feeds it the node's peer events,
- * and ticks it from a thread of its own.
+ * control reliably, frames as live messages — feeds it the node's peer events
+ * and path samples (which turns the node's path sampling on), and ticks it
+ * from a thread of its own.
  */
 
 #include <atomic>
