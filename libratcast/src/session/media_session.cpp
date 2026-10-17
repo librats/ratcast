@@ -24,17 +24,30 @@ struct MediaSession::PeerState {
     /// drains. Set by senders, cleared by the network's writable event or by
     /// tick() seeing the peer writable again.
     std::atomic<bool> blocked{false};
+
+    std::mutex path_mutex;  ///< guards `path`
+    PathMonitor path;
 };
 
 struct MediaSession::OutgoingStream {
     struct Subscriber {
+        explicit Subscriber(std::shared_ptr<PeerState> state) : peer(std::move(state)) {}
+
         std::shared_ptr<PeerState> peer;
         /// Missed a frame (or has seen none yet): the frames before the next
         /// keyframe are of no use to it.
         bool awaiting_keyframe = true;
+        /// A frame was held back for it since its path's last sample: its
+        /// queue was full, which rate control takes for overuse.
+        bool backpressured = false;
+        /// What its path is known to carry, as of the last sample.
+        std::optional<uint64_t> capacity;
     };
 
-    explicit OutgoingStream(StreamDescription d) : description(std::move(d)) {}
+    OutgoingStream(StreamDescription d, std::optional<BitrateLimits> bitrate)
+        : description(std::move(d)) {
+        if (bitrate) rate.emplace(*bitrate, description.lifetime);
+    }
 
     std::mutex mutex;  ///< guards everything below
     StreamDescription description;
@@ -45,7 +58,21 @@ struct MediaSession::OutgoingStream {
     /// A keyframe was needed within min_keyframe_interval of the last one; tick()
     /// asks for it once the interval has passed, unless a keyframe came first.
     bool keyframe_wanted = false;
+    std::optional<RateController> rate;  ///< for a rate-controlled stream
     OutgoingStreamStats stats;
+
+    /// Counts a change rate control made and passes it on.
+    std::optional<uint32_t> count(std::optional<uint32_t> bitrate, uint32_t before) {
+        if (bitrate) (*bitrate < before ? stats.bitrate_cuts : stats.bitrate_raises) += 1;
+        return bitrate;
+    }
+
+    /// Nobody watches any more: the next viewer starts afresh.
+    std::optional<uint32_t> restart_if_unwatched() {
+        if (!rate || !subscribers.empty()) return std::nullopt;
+        const uint32_t before = rate->target();
+        return count(rate->restart(), before);
+    }
 };
 
 struct MediaSession::IncomingStream {
@@ -127,13 +154,16 @@ FrameTracker::Config MediaSession::tracker_config(const StreamDescription& descr
 
 // ── Streams this node sends ─────────────────────────────────────────────────
 
-Result<void> MediaSession::add_stream(const StreamDescription& description) {
-    if (!is_valid(description)) return fail(Errc::InvalidArgument);
+Result<void> MediaSession::add_stream(const StreamDescription& description,
+                                      std::optional<BitrateLimits> bitrate) {
+    if (!is_valid(description) || (bitrate && !is_valid(*bitrate))) {
+        return fail(Errc::InvalidArgument);
+    }
 
     std::vector<PeerId> peers;
     {
         std::unique_lock lock(mutex_);
-        auto stream = std::make_shared<OutgoingStream>(description);
+        auto stream = std::make_shared<OutgoingStream>(description, bitrate);
         if (!outgoing_.try_emplace(description.id, std::move(stream)).second) {
             return fail(Errc::InvalidArgument);
         }
@@ -208,6 +238,7 @@ Result<void> MediaSession::send_frame(StreamId stream_id, FrameInfo info, Mutabl
                 // queue needs. The first frame after it drains asks.
                 if (useful) {
                     subscriber.awaiting_keyframe = true;
+                    subscriber.backpressured = true;
                     s.stats.backpressure_drops += 1;
                 } else {
                     s.stats.awaiting_keyframe += 1;
@@ -230,6 +261,7 @@ Result<void> MediaSession::send_frame(StreamId stream_id, FrameInfo info, Mutabl
             s.stats.bytes += message->size();
             if (!network_.send_live(subscriber.peer->id, *message, s.description.lifetime)) {
                 subscriber.peer->blocked.store(true, std::memory_order_release);
+                subscriber.backpressured = true;
             }
         }
     }
@@ -258,6 +290,7 @@ std::optional<OutgoingStreamStats> MediaSession::outgoing_stats(StreamId stream_
     std::lock_guard lock(stream->mutex);
     OutgoingStreamStats stats = stream->stats;
     stats.subscribers = stream->subscribers.size();
+    if (stream->rate) stats.bitrate = stream->rate->target();
     return stats;
 }
 
@@ -327,7 +360,7 @@ void MediaSession::on_peer_connected(const PeerId& peer) {
 }
 
 void MediaSession::on_peer_disconnected(const PeerId& peer) {
-    std::vector<std::shared_ptr<OutgoingStream>> streams;
+    std::vector<std::pair<StreamId, std::shared_ptr<OutgoingStream>>> streams;
     std::vector<StreamId> withdrawn;
     {
         std::unique_lock lock(mutex_);
@@ -340,12 +373,18 @@ void MediaSession::on_peer_disconnected(const PeerId& peer) {
                 ++it;
             }
         }
-        for (const auto& [id, stream] : outgoing_) streams.push_back(stream);
+        for (const auto& [id, stream] : outgoing_) streams.emplace_back(id, stream);
     }
-    for (const auto& stream : streams) {
-        std::lock_guard lock(stream->mutex);
-        std::erase_if(stream->subscribers,
-                      [&](const auto& subscriber) { return subscriber.peer->id == peer; });
+    for (const auto& [id, stream] : streams) {
+        std::optional<uint32_t> bitrate;
+        {
+            std::lock_guard lock(stream->mutex);
+            const size_t erased = std::erase_if(stream->subscribers, [&](const auto& subscriber) {
+                return subscriber.peer->id == peer;
+            });
+            if (erased > 0) bitrate = stream->restart_if_unwatched();
+        }
+        if (bitrate) notify(handlers_.bitrate_changed, id, *bitrate);
     }
     for (StreamId stream : withdrawn) notify(handlers_.stream_withdrawn, peer, stream);
 }
@@ -354,6 +393,52 @@ void MediaSession::on_peer_writable(const PeerId& peer) {
     std::shared_lock lock(mutex_);
     if (const auto it = peers_.find(peer); it != peers_.end()) {
         it->second->blocked.store(false, std::memory_order_release);
+    }
+}
+
+void MediaSession::on_peer_path(const PeerId& peer, const PathStats& sample) {
+    const Timestamp now = clock_.now();
+    std::shared_ptr<PeerState> state;
+    std::vector<std::pair<StreamId, std::shared_ptr<OutgoingStream>>> streams;
+    {
+        std::shared_lock lock(mutex_);
+        const auto it = peers_.find(peer);
+        if (it == peers_.end()) return;
+        state = it->second;
+        for (const auto& [id, stream] : outgoing_) streams.emplace_back(id, stream);
+    }
+    PathSignal signal;
+    {
+        std::lock_guard lock(state->path_mutex);
+        signal = state->path.update(sample, now);
+    }
+
+    for (const auto& [id, stream] : streams) {
+        std::optional<uint32_t> bitrate;
+        {
+            std::lock_guard lock(stream->mutex);
+            OutgoingStream& s = *stream;
+            if (!s.rate) continue;
+            const auto subscriber = std::ranges::find_if(
+                s.subscribers, [&](const auto& subscriber) { return subscriber.peer->id == peer; });
+            if (subscriber == s.subscribers.end()) continue;
+            subscriber->capacity = signal.capacity;
+
+            const uint32_t before = s.rate->target();
+            if (std::exchange(subscriber->backpressured, false) || s.rate->overused(signal)) {
+                bitrate = s.count(s.rate->on_overuse(now, signal.rtt, signal.capacity), before);
+            } else {
+                // Raised no further than the narrowest path is known to carry.
+                std::optional<uint64_t> capacity;
+                for (const auto& other : s.subscribers) {
+                    if (other.capacity) {
+                        capacity = std::min(capacity.value_or(*other.capacity), *other.capacity);
+                    }
+                }
+                bitrate = s.count(s.rate->on_clear(now, capacity), before);
+            }
+        }
+        if (bitrate) notify(handlers_.bitrate_changed, id, *bitrate);
     }
 }
 
@@ -477,7 +562,7 @@ void MediaSession::on_subscribe(const PeerId& peer, StreamId stream_id) {
             return subscriber.peer->id == peer;
         });
         if (known) return;
-        stream->subscribers.push_back(OutgoingStream::Subscriber{std::move(state)});
+        stream->subscribers.emplace_back(std::move(state));
         ask = ask_keyframe(*stream, clock_.now());
     }
     if (ask) notify(handlers_.keyframe_needed, stream_id);
@@ -486,9 +571,15 @@ void MediaSession::on_subscribe(const PeerId& peer, StreamId stream_id) {
 void MediaSession::on_unsubscribe(const PeerId& peer, StreamId stream_id) {
     const std::shared_ptr<OutgoingStream> stream = find_outgoing(stream_id);
     if (!stream) return;
-    std::lock_guard lock(stream->mutex);
-    std::erase_if(stream->subscribers,
-                  [&](const auto& subscriber) { return subscriber.peer->id == peer; });
+    std::optional<uint32_t> bitrate;
+    {
+        std::lock_guard lock(stream->mutex);
+        const size_t erased = std::erase_if(stream->subscribers, [&](const auto& subscriber) {
+            return subscriber.peer->id == peer;
+        });
+        if (erased > 0) bitrate = stream->restart_if_unwatched();
+    }
+    if (bitrate) notify(handlers_.bitrate_changed, stream_id, *bitrate);
 }
 
 void MediaSession::on_keyframe_request(const PeerId& peer, StreamId stream_id) {

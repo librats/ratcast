@@ -27,6 +27,7 @@ import signal
 import statistics
 import subprocess
 import sys
+import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -43,6 +44,8 @@ class Scenario:
     path: str  # what it stands for, for the table
     forward: str = ""  # netem options, sender -> viewer
     backward: str = ""  # netem options, viewer -> sender
+    # (seconds after the viewer starts, new forward options): a path that changes
+    changes: tuple = ()
 
 
 def queue_limit(rate_mbit, delay_ms, buffer_ms=100):
@@ -84,6 +87,8 @@ SCENARIOS = [
              "delay 25ms"),
     Scenario("cap-20", "50 ms RTT, 20 Mbit/s, 100 ms buffer", capped(20, 25), "delay 25ms"),
     Scenario("cap-6", "50 ms RTT, 6 Mbit/s (below the stream)", capped(6, 25), "delay 25ms"),
+    Scenario("cap-drop", "50 ms RTT, 20 Mbit/s, 4 Mbit/s from 5 s to 10 s", capped(20, 25),
+             "delay 25ms", changes=((5, capped(4, 25)), (10, capped(20, 25)))),
 ]
 
 
@@ -134,6 +139,10 @@ def shape(scenario):
             sh(*wrap(["tc", "qdisc", "add", "dev", device, "root", "netem", *options.split()]))
 
 
+def shape_forward(options):
+    sh("tc", "qdisc", "replace", "dev", "va", "root", "netem", *options.split())
+
+
 def parse_summary(text):
     for line in text.splitlines():
         if line.startswith("summary "):
@@ -159,12 +168,18 @@ def run_once(scenario, args, log_dir, index):
             # A viewer joins a stream that is already going, as in a real call:
             # not within the sender's first keyframe interval.
             time.sleep(args.join_after)
+            changes = [threading.Timer(at, shape_forward, (options,))
+                       for at, options in scenario.changes]
+            for change in changes:
+                change.start()
             viewer = subprocess.run(
                 in_viewer(str(args.bin / "ratcast-recv"), "--connect", f"{SENDER_ADDRESS}:{PORT}",
                           "--headless", "--duration", str(args.duration)),
                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
                 timeout=args.duration + 30)
             Path(f"{stem}.recv.log").write_text(viewer.stdout)
+            for change in changes:
+                change.join()
         finally:
             sender.send_signal(signal.SIGINT)
             try:
@@ -186,18 +201,21 @@ def cell(value, digits=0):
 
 def table(results, args):
     rows = [
-        f"{args.size} at {args.fps} fps, {args.codec}, {args.bitrate} kbit/s, frame lifetime "
-        f"{args.latency} ms; {args.duration} s a run, medians of {args.repeat}.",
+        f"{args.size} at {args.fps} fps, {args.codec}, {args.bitrate} kbit/s at most, frame "
+        f"lifetime {args.latency} ms"
+        + (f", sender {' '.join(args.send_args)}" if args.send_args else "")
+        + f"; {args.duration} s a run, medians of {args.repeat}.",
         "",
-        "| scenario | path | first picture, ms | fps | latency p50 / p95 / p99, ms "
+        "| scenario | path | first picture, ms | fps | Mbit/s (cuts) | latency p50 / p95 / p99, ms "
         "| stalls (ms) | lost / dropped | expired / sent | keyframes | repair | CPU send / recv, % |",
-        "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
+        "|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
     for scenario, runs in results:
         first = median(runs, 1, "first_picture_ms")
         fps = median(runs, 1, "fps")
         rows.append(
             f"| {scenario.name} | {scenario.path} | {cell(first)} | {cell(fps)} "
+            f"| {cell(median(runs, 1, 'mbps'), 1)} ({cell(median(runs, 0, 'bitrate_cuts'))}) "
             f"| {cell(median(runs, 1, 'latency_p50_ms'), 1)} / "
             f"{cell(median(runs, 1, 'latency_p95_ms'), 1)} / "
             f"{cell(median(runs, 1, 'latency_p99_ms'), 1)} "
@@ -235,6 +253,8 @@ def main():
         for s in SCENARIOS:
             print(f"{s.name:10} {s.path}\n{'':10}   -> {s.forward or '-'}\n{'':10}   <- "
                   f"{s.backward or '-'}")
+            for at, options in s.changes:
+                print(f"{'':10}   -> from {at} s: {options}")
         return 0
     unknown = set(args.scenarios) - {s.name for s in SCENARIOS}
     if unknown:

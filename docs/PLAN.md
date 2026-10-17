@@ -58,21 +58,38 @@ encoded frames, so it is useful without the rest and the SFU links only it.
 
 In the order 0.6 found them needed (measurements and reasons: `docs/bench.md`).
 
+Where it stands after item 1: the steady state holds — one-way delay + ~18 ms on a clean path,
+58–60 fps under 1–5% loss and bursts, reordering and jitter no longer taken for loss, every frame
+delivered over a real 40 ms path. What every viewer still meets is the start (item 2) — and since
+stage 1's rate control steers the encoder by BBR's estimate, the start now costs more than the
+first picture: an estimate Startup leaves low (a keyframe behind the initial window, an exit on
+jitter) is a low bitrate for seconds, on `jitter` for the whole run (`docs/bench.md`, "Rate
+control"). The rest waits for the step that needs it:
+
+| when | items |
+|---|---|
+| next | 2 — every join pays it, and rate control follows what it leaves; measured in `bench_path` |
+| with stage 1, item 3 (joining) | 3 |
+| with stage 1, item 4 (audio) | 4, 6 |
+| after item 2, against rate control on `jitter` and `reorder` | 7 (and what is left of item 1) |
+| stage 2 (one-to-many) | 5, 8, 11 — fan-out costs CPU only with many viewers (0.8% of a core per 8 Mbit/s stream now) |
+| when needed | 9, 10 |
+
 1. ✅ **Reordering is not loss for live data.** RACK's reordering adaptation was off while a
    live message was outstanding, so with live video always outstanding every reordered packet
    was a loss, sent twice and reported to BBR, which cut its estimate below the stream: 2% of
    packets arriving 25 ms early read as 15–25% loss (26 fps, seconds of stalls); per-packet
-   jitter, which reorders everything, played nothing. Now a path's learnt reordering is waited
-   out for live data too, unless the wait would leave a frame no time for a copy: then the
-   piece goes again sooner (at once on a path that loses packets, at the last moment on one that
-   mostly overtakes them), and either way it is a loss for BBR and the loss counts only once the
-   path's reordering no longer explains it (`Recovery::give_up_sooner`). Found on the way: a
-   packet number was sent in one byte, so one overtaken by more than 127 others (a keyframe's
-   burst past one held back) was read 256 off — lost under Noise, and in plaintext taken for a
-   later packet whose data then never came; now never under two bytes. Left: jitter several
-   times the base round trip (netem's `reorder`) still stalls — the window is capped at a
-   smoothed round trip that the overtaking packets bias low, and BBR's window, built on a
-   minimum round trip of a few ms, cannot hold a keyframe (`docs/bench.md`).
+   jitter, which reorders everything, played nothing. Now live data waits out a path's learnt
+   reordering like bulk does, the window may grow up to a probe timeout rather than a round trip
+   (jitter larger than the round trip itself), and FEC sizes its repairs knowing a loss is found
+   that much later. Found on the way: a packet number was sent in one byte, so one overtaken by
+   more than 127 others (a keyframe's burst past one held back) was read 256 off — lost under
+   Noise, and in plaintext taken for a later packet whose data then never came; now never under
+   two bytes. Left, neither blocking (`docs/bench.md`): per-packet jitter several times the base
+   round trip (netem's `reorder`, 6 fps) — BBR's window, built on a minimum round trip of a few
+   ms, cannot hold a keyframe: item 7; and 4K60 at 80% of a link that reorders a few packets in a
+   hundred, 1–3% of frames late, since a real loss now waits out the window too — a rate control
+   that leaves headroom (stage 1, item 1) covers it.
 2. **A live flow's start.** (a) The initial window of 4 packets paces a fresh connection at
    4 packets per round trip × 2.77: a 50 KB keyframe takes ~190 ms to leave at 50 ms RTT and
    ~385 ms at 100 ms, past a 200 ms lifetime, and a live flow that then falls silent grows the
@@ -91,6 +108,8 @@ In the order 0.6 found them needed (measurements and reasons: `docs/bench.md`).
 5. Absolute deadlines when forwarding, so latency does not accumulate per hop.
 6. FEC across messages (small Opus packets) — or rely on Opus in-band FEC + RED.
 7. A delay-sensitive realtime mode for BBR (or a GCC-style controller), compared on `bench_path`.
+   It has to keep a window that holds a keyframe on a path whose round trips swing by several
+   times their minimum (netem's `reorder`, item 1).
 8. `send_many` with a shared refcounted buffer for fan-out.
 9. Path MTU discovery above the fixed 1220-byte packets.
 10. A clock-sync service.
@@ -291,10 +310,11 @@ ends BBR's Startup early. Hence the new order of "librats work" above.
 
 ### Stage 1 — libratcast core
 
-1. **Rate control:** encoder bitrate from `PathStats` (fast down on expiring frames or a growing
-   queue, careful up), starting low so that the first keyframe is small, then a resolution /
-   frame-rate ladder.
-2. **librats:** live sub-priorities, per-message delivery feedback, absolute deadlines.
+1. **Rate control:** ✅ encoder bitrate from `PathStats` (fast down on expiring frames or a
+   growing queue, careful up), starting low so that the first keyframe is small; still to do, a
+   resolution / frame-rate ladder for paths too narrow for the picture at any bitrate.
+2. **librats:** a live flow's start, per-message delivery feedback, live sub-priorities — when
+   each is due: "librats work" above.
 3. **Loss recovery and joining:** reference invalidation / LTR where encoders support it,
    intra-refresh for `game`, keyframe-request aggregation; a joining viewer's keyframe allowed
    to arrive late (with delivery feedback) and the viewer caught up, instead of asked again.
@@ -307,3 +327,15 @@ ends BBR's Startup early. Hence the new order of "librats work" above.
 8. **GPU paths and the other platforms:** Linux DMA-BUF capture → VAAPI encoding (colour
    conversion on the GPU), hardware decoding; Windows.Graphics.Capture + D3D11 → hardware encoder;
    ScreenCaptureKit + VideoToolbox — the engine is cross-platform before the app is built on it.
+
+Notes from item 1: `RateController` (libratcast) turns each viewer's path samples — librats'
+`on_peer_path`, every 100 ms — into one bitrate per stream, the slowest viewer's: start at
+2 Mbit/s, ×1.5 a second up, cut to 85% of what a full path carries (busy two samples running,
+its estimate settled) on expired frames, a full queue or a quarter-lifetime wait, careful +8%
+steps back towards where it filled up. The round trip is no signal (jitter alone lifts it). The
+publisher hands the bitrate to the encoder; encoders FFmpeg cannot change in flight open a new
+one alongside and switch with a keyframe (SVT-AV1 at 1080p: a 25–31 ms picture instead of a
+55 ms stop). netem: `cap-6` from 30 to 59 fps, joining a third faster; it follows BBR's estimate
+wherever that goes, so `jitter` and `reorder-2` play at 1.5–3.5 Mbit/s with more stalls than at a
+fixed 8 — librats item 2 is next for that. Two streams to one viewer (camera and screen) each take
+the whole path for now: they share it in stage 3.

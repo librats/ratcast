@@ -17,6 +17,11 @@
  * until one. The session tells the encoder through `keyframe_needed`, at most
  * once per `min_keyframe_interval` however many receivers ask.
  *
+ * A stream added with BitrateLimits is rate-controlled: the session follows
+ * the paths to its subscribers (on_peer_path) and tells the encoder the
+ * bitrate to aim at through `bitrate_changed` (see RateController). With
+ * several subscribers the stream goes at the pace of the slowest.
+ *
  * Threads: every method may be called from any thread. Network events arrive
  * on the network's threads, tick() on a timer's, send_frame() on an
  * encoder's, the rest on the application's. Handlers run on whichever of those
@@ -41,6 +46,7 @@
 #include "ratcast/core/time.h"
 #include "ratcast/export.h"
 #include "ratcast/session/media_network.h"
+#include "ratcast/session/rate_controller.h"
 #include "ratcast/stream/frame.h"
 #include "ratcast/stream/frame_tracker.h"
 #include "ratcast/stream/stream_description.h"
@@ -67,6 +73,9 @@ struct SessionHandlers {
     std::function<void(const PeerId& peer, EncodedFrame frame)> frame_received = {};
     /// The encoder of a local stream should make its next frame a keyframe.
     std::function<void(StreamId stream)> keyframe_needed = {};
+    /// The encoder of a rate-controlled local stream should aim at a new
+    /// bitrate, in bits per second.
+    std::function<void(StreamId stream, uint32_t bits_per_second)> bitrate_changed = {};
 };
 
 struct OutgoingStreamStats {
@@ -79,6 +88,9 @@ struct OutgoingStreamStats {
     uint64_t backpressure_drops = 0;  ///< not sent: the subscriber's queue was full
     uint64_t keyframe_requests = 0;   ///< keyframe requests received from subscribers
     uint64_t keyframes_asked = 0;     ///< times keyframe_needed fired
+    uint32_t bitrate = 0;             ///< what rate control aims at now; 0 without it
+    uint64_t bitrate_cuts = 0;        ///< times rate control lowered the bitrate
+    uint64_t bitrate_raises = 0;      ///< and raised it
 };
 
 struct IncomingStreamStats {
@@ -98,9 +110,11 @@ public:
 
     // ── Streams this node sends ─────────────────────────────────────────────
 
-    /// Offer a stream to every peer, now and as they connect. Fails with
-    /// InvalidArgument for a description that is not valid or an id in use.
-    Result<void> add_stream(const StreamDescription& description);
+    /// Offer a stream to every peer, now and as they connect; with `bitrate`,
+    /// rate-controlled from `bitrate.start` on. Fails with InvalidArgument for
+    /// a description or limits that are not valid, or an id in use.
+    Result<void> add_stream(const StreamDescription& description,
+                            std::optional<BitrateLimits> bitrate = std::nullopt);
 
     /// Replace a stream's description and announce it again.
     Result<void> update_stream(const StreamDescription& description);
@@ -138,6 +152,9 @@ public:
     void on_peer_connected(const PeerId& peer);
     void on_peer_disconnected(const PeerId& peer);
     void on_peer_writable(const PeerId& peer);
+    /// A sample of the path to `peer`, every 100 ms or so (librats'
+    /// on_peer_path): what rate control steers by.
+    void on_peer_path(const PeerId& peer, const PathStats& sample);
     void on_message(const PeerId& peer, std::span<const uint8_t> message);
 
     /// Time-based work: give up gaps that waited long enough, repeat keyframe

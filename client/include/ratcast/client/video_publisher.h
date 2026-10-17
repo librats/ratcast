@@ -16,8 +16,13 @@
  *
  * A change of size or colour space starts a new encoder, with a keyframe;
  * frame numbers carry on, so receivers see one stream throughout.
+ *
+ * The stream is rate-controlled unless configured otherwise: the session
+ * follows the paths to the viewers and the publisher hands the bitrate it
+ * asks for (set_bitrate()) to the encoder before the next picture.
  */
 
+#include <atomic>
 #include <condition_variable>
 #include <cstdint>
 #include <functional>
@@ -43,8 +48,14 @@ struct VideoPublisherConfig {
     /// How long a frame is worth delivering: the stream's latency profile.
     Duration lifetime = std::chrono::milliseconds(200);
     /// Codec, bitrate, frame rate and encoder choice. Size and colour space
-    /// come from the pictures.
+    /// come from the pictures. The bitrate is the most rate control asks for.
     VideoEncoderConfig encoder;
+    /// Rate control's start, low so that the first keyframe is small, and its
+    /// floor; both capped at encoder.bitrate. Without rate control the
+    /// encoder keeps encoder.bitrate.
+    bool rate_control = true;
+    uint32_t start_bitrate = 2'000'000;
+    uint32_t min_bitrate = 250'000;
 };
 
 struct VideoPublisherStats {
@@ -61,7 +72,8 @@ struct VideoPublisherStats {
     Duration max_encode_time{};
     uint32_t width = 0;  ///< of the pictures now
     uint32_t height = 0;
-    std::string encoder;  ///< the encoder in use, e.g. "libsvtav1"
+    uint32_t bitrate = 0;  ///< what the encoder aims at now
+    std::string encoder;   ///< the encoder in use, e.g. "libsvtav1"
 };
 
 class VideoPublisher {
@@ -89,6 +101,10 @@ public:
     /// asks for. Any thread.
     void request_keyframe();
 
+    /// Aim at `bits_per_second` from the next picture on: what MediaSession's
+    /// bitrate_changed asks for. Any thread.
+    void set_bitrate(uint32_t bits_per_second);
+
     VideoPublisherStats stats() const;
 
 private:
@@ -97,6 +113,7 @@ private:
     void run();
     Result<void> publish(VideoFrame picture, bool keyframe);
     Result<void> open_encoder(const VideoFrame& picture);
+    std::optional<BitrateLimits> bitrate_limits() const;
     void send(EncodedVideo&& frame);
 
     MediaSession& session_;
@@ -116,6 +133,7 @@ private:
     bool have_picture_ = false;  ///< the encoder thread has a last picture to repeat
     bool stopping_ = false;
     bool finished_ = false;
+    std::atomic<uint32_t> bitrate_{0};  ///< the latest set_bitrate(), or where start() began
 
     // The encoder thread's own.
     std::unique_ptr<VideoEncoder> encoder_;
