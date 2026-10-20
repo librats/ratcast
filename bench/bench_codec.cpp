@@ -8,14 +8,20 @@
 // that costs: the slowest of them and, for an encoder that cannot change its
 // rate in flight, how many pictures on the new encoder takes over (with a
 // keyframe — its size is the other cost).
+//
+// Then Opus, for voice and for music: microseconds per 20 ms frame both ways,
+// which says what a call's sound costs next to its picture.
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstdio>
+#include <numbers>
 #include <string>
 #include <thread>
 #include <vector>
 
+#include "ratcast/engine/audio_codec.h"
 #include "ratcast/engine/pattern_source.h"
 #include "ratcast/engine/video_codec.h"
 
@@ -110,6 +116,54 @@ void run(Codec codec, const std::string& name, Size size) {
     }
 }
 
+constexpr int kAudioFrames = 500;  // 10 s
+
+// Ten seconds of a chord with some noise over it: busier than a tone, which
+// Opus codes in next to nothing.
+AudioFrame audio_signal(AudioFormat format) {
+    MutableAudioFrame frame =
+        MutableAudioFrame::allocate(format, size_t{format.sample_rate} * kAudioFrames / 50);
+    std::span<float> out = frame.samples();
+    uint32_t noise = 1;
+    for (size_t i = 0; i < frame.length(); ++i) {
+        const double t = double(i) / format.sample_rate;
+        double v = 0;
+        for (double f : {220.0, 277.2, 329.6, 1760.0})
+            v += 0.15 * std::sin(2 * std::numbers::pi * f * t);
+        for (size_t c = 0; c < format.channels; ++c) {
+            noise = noise * 1664525 + 1013904223;
+            out[i * format.channels + c] = float(v + 0.02 * (int32_t(noise) / 2147483648.0));
+        }
+    }
+    return std::move(frame).freeze(Timestamp{});
+}
+
+void run_audio(const char* label, const AudioEncoderConfig& config) {
+    Result<std::unique_ptr<AudioEncoder>> encoder = open_audio_encoder(config);
+    Result<std::unique_ptr<AudioDecoder>> decoder =
+        open_audio_decoder({config.codec, config.format, {}});
+    if (!encoder || !decoder) return;  // no Opus in this build
+
+    std::vector<EncodedAudio> frames;
+    const AudioFrame signal = audio_signal(config.format);
+    const auto start = std::chrono::steady_clock::now();
+    (void)(*encoder)->encode(signal, [&](EncodedAudio&& a) { frames.push_back(std::move(a)); });
+    const double encode_ms = ms_since(start);
+
+    size_t bytes = 0;
+    const auto decode_start = std::chrono::steady_clock::now();
+    for (EncodedAudio& a : frames) {
+        bytes += a.payload.size();
+        (void)(*decoder)->decode({a.info, std::move(a.payload).freeze()});
+    }
+    const double decode_ms = ms_since(decode_start);
+
+    std::printf("  %-6s %s %3u kbit/s %u ch   encode %5.1f us   decode %5.1f us   %4.0f B/frame\n",
+                label, (*encoder)->info().name.c_str(), config.bitrate / 1000,
+                unsigned(config.format.channels), 1000 * encode_ms / kAudioFrames,
+                1000 * decode_ms / kAudioFrames, double(bytes) / kAudioFrames);
+}
+
 }  // namespace
 
 int main() {
@@ -121,5 +175,9 @@ int main() {
             for (const Size& size : sizes) run(codec, name, size);
         }
     }
+
+    std::printf("\nPer 20 ms of sound (%d frames):\n", kAudioFrames);
+    run_audio("voice", {.format = {48'000, 1}, .bitrate = 32'000, .expected_loss = 10});
+    run_audio("music", {.format = {48'000, 2}, .content = AudioContent::Music, .bitrate = 128'000});
     return 0;
 }

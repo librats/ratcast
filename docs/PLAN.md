@@ -116,7 +116,7 @@ per room for delivery, librats storage for history when it is built.
 | libdrm, GBM, EGL, Vulkan | DMA-BUF import, GPU colour conversion (stage 4) | system | — |
 | SDL3 | windows of the CLI tools | system | vcpkg |
 | Qt ≥ 6.5 with Quick | app | system | official installer / aqtinstall |
-| Opus | audio (stage 2) | system (`libopus-dev`) | vcpkg |
+| libopus ≥ 1.3 | audio | system (`libopus-dev`) | vcpkg |
 | WebRTC AudioProcessing | AEC, AGC, NS (stage 6) | system | vcpkg or vendored |
 | GoogleTest | tests | fetched by CMake | fetched by CMake |
 
@@ -402,7 +402,18 @@ take `--latency call|game|cinema`.
 
 - **2.1 Audio:** PipeWire capture and playback, Opus (voice with DTX + FEC, music stereo),
   adaptive jitter buffer. librats: **needs** L4 (audio must not wait behind a keyframe);
-  L6 only if Opus in-band FEC + RED turn out not to be enough.
+  L6 only if Opus in-band FEC + RED turn out not to be enough. In steps:
+  - (a) ✅ Opus in the engine: `AudioFrame`, `AudioEncoder` / `AudioDecoder` over libopus — any
+    block size in, frames out; DTX that sends nothing in silence; in-band FEC; a gap filled by
+    the next frame's FEC or by concealment. ~0.1 ms a frame to encode (`docs/bench.md`). FEC
+    brings a single lost frame back nearly whole; of two in a row the first is concealed and
+    the second, from FEC after concealment, comes out at a quarter of its level — bursts are
+    what RED or L6 would be for, if a measurement asks;
+  - (b) sound in and out: `AudioSource` / `AudioSink`, PipeWire capture (a microphone, or what a
+    node plays) and playback, a tone pattern source;
+  - (c) audio over the session: audio streams in `MediaSession`, an adaptive jitter buffer, L4;
+  - (d) client and tools: `AudioPublisher` / `AudioPlayer`, `--audio` in `ratcast-send` /
+    `ratcast-recv`, netem: 2% loss, a keyframe's burst next to the audio.
 - **2.2 A/V sync:** a common playout clock per sender, the video held to the audio.
 - **2.3 Latency profiles** `call` / `game` / `cinema` end to end: lifetimes, jitter-buffer depth,
   keyframe policy and encoder settings from one choice.

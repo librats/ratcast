@@ -11,7 +11,7 @@ it was measured on and with which command, so it can be measured again after a c
 cmake --preset release -DRATCAST_BUILD_BENCH=ON && cmake --build --preset release
 ./build/release/bin/bench_core      # Buffer, frame header
 ./build/release/bin/bench_session   # MediaSession per frame
-./build/release/bin/bench_codec     # encoders and decoders
+./build/release/bin/bench_codec     # video encoders and decoders, Opus
 ./build/release/bin/bench_convert   # BGRA -> NV12 / I420, against libswscale
 ```
 
@@ -41,8 +41,8 @@ compositor's own frame.
 ## The machine
 
 The dev VM all numbers below come from: VMware guest on an Intel Core Ultra 7 265KF, 16 vCPUs,
-Linux 7.0, FFmpeg 8 (libavcodec 62.11), SVT-AV1 2.3.0, dav1d 1.5.3, no GPU codecs (`vmwgfx` has no
-VA-API). Release build. One host: both tools share the CPU, which flatters nothing — they are far
+Linux 7.0, FFmpeg 8 (libavcodec 62.11), SVT-AV1 2.3.0, dav1d 1.5.3, libopus 1.6.1, no GPU codecs
+(`vmwgfx` has no VA-API). Release build. One host: both tools share the CPU, which flatters nothing — they are far
 from saturating 16 cores.
 
 ## Baseline, 0.6
@@ -558,3 +558,17 @@ picture 681 → 616 and 1448 → 1178 ms.
 
 What is left, in both cases: fewer keyframes at bitrate changes (1.1's leftover — on `reorder`
 and `cap-drop`), and librats L2 (a, b) for joining on long paths.
+
+## Opus (2.1)
+
+`bench_codec`, its last rows: ten seconds of a chord with some noise over it (a tone alone Opus
+codes in next to nothing), encoded and decoded in 20 ms frames, libopus 1.6.1 at its default
+complexity (10).
+
+| | bitrate | encode | decode | frame |
+|---|---:|---:|---:|---:|
+| voice: mono, in-band FEC for 10% loss | 32 kbit/s | 116 µs | 28 µs | 77 B |
+| music: stereo | 128 kbit/s | 113 µs | 31 µs | 322 B |
+
+Under 0.6% of a core to encode, 0.15% to decode: sound costs nothing next to the picture (the
+1080p60 sender of the stage 1 runs takes ~140% of a core), so the complexity stays at its best.

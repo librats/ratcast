@@ -2,9 +2,12 @@
 # Knows nothing of the network: what it produces is what MediaSession sends.
 
 include(RatcastFFmpeg)
+include(RatcastOpus)
 include(RatcastPipeWire)
 
 add_library(ratcast_engine STATIC
+    src/audio/audio_codec.cpp
+    src/audio/audio_frame.cpp
     src/pattern/pattern.cpp
     src/pattern/pattern_source.cpp
     src/video/video_codec.cpp
@@ -30,6 +33,16 @@ if(RATCAST_FFMPEG_FOUND)
     target_link_libraries(ratcast_engine PRIVATE ratcast::ffmpeg)
 else()
     target_sources(ratcast_engine PRIVATE src/ffmpeg_unavailable.cpp)
+endif()
+
+if(RATCAST_OPUS_FOUND)
+    target_sources(ratcast_engine PRIVATE
+        src/opus/audio_decoder.cpp
+        src/opus/audio_encoder.cpp
+    )
+    target_link_libraries(ratcast_engine PRIVATE ratcast::opus)
+else()
+    target_sources(ratcast_engine PRIVATE src/opus_unavailable.cpp)
 endif()
 
 if(RATCAST_PIPEWIRE_FOUND)
