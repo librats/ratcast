@@ -11,9 +11,9 @@
  *     node.start();
  *
  * It carries the session's messages on librats' MessageType::Media lane —
- * control reliably, frames as live messages — feeds it the node's peer events
- * and path samples (which turns the node's path sampling on), and ticks it
- * from a thread of its own.
+ * control reliably, frames as live messages — feeds it the node's peer events,
+ * path samples (which turns the node's path sampling on) and what became of
+ * each frame sent, and ticks it from a thread of its own.
  */
 
 #include <atomic>
@@ -47,7 +47,8 @@ public:
 
 private:
     void send_reliable(const PeerId& peer, const Buffer& message) override;
-    bool send_live(const PeerId& peer, const Buffer& message, Duration lifetime) override;
+    bool send_live(const PeerId& peer, const Buffer& message, Duration lifetime,
+                   uint64_t tag) override;
     bool writable(const PeerId& peer) const override;
     size_t max_live_message() const override;
 

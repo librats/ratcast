@@ -5,9 +5,9 @@
  * @brief MediaSessions in one process, joined by a thread instead of a network.
  *
  * What MediaService does over librats, minus librats: the sessions' messages
- * go through a queue that one thread delivers in order, and the same thread
- * ticks every session. Real threads and real time, as the client sees them in
- * the app, without sockets or their timing.
+ * go through a queue that one thread delivers in order — a live one followed
+ * by word to its sender that it was — and the same thread ticks every session. Real threads and
+ * real time, as the client sees them in the app, without sockets or their timing.
  */
 
 #include <chrono>
@@ -64,8 +64,11 @@ private:
         void send_reliable(const PeerId& peer, const Buffer& message) override {
             send(peer, message);
         }
-        bool send_live(const PeerId& peer, const Buffer& message, Duration) override {
-            send(peer, message);
+        bool send_live(const PeerId& peer, const Buffer& message, Duration, uint64_t tag) override {
+            loopback_.post([this, peer, message, tag] {
+                loopback_.session(peer).on_message(self_, message.bytes());
+                loopback_.session(self_).on_live_outcome(peer, tag, true);
+            });
             return true;
         }
         bool writable(const PeerId&) const override { return true; }

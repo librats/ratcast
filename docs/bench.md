@@ -456,3 +456,31 @@ is measured as a whole:
 | burst | 47 / 113 → 125 / 135 | 8 (1005) → 1 (318) | 91 |
 
 The stalls left are the start's (the frame expired behind the joining keyframe, 1.2's).
+
+## Joining (1.2, with librats L3)
+
+Where the wait for the first picture went, read off timestamps on both ends of one run each
+(`rtt-100`, `rtt-200`; `PLAN.md` 1.2's notes): two round trips to subscribe, half one for the
+sender to hear of it, and then keyframes expiring behind a fresh connection's 4-packet window —
+2 sent at 100 ms RTT, 6 at 200 ms, before one arrived. Now the joining keyframe and the frames
+behind it are let arrive late (four round trips more than the lifetime, shrinking back), and the
+sender hears what became of each frame (L3) instead of reading the path's expiry count.
+
+One run each, 6 s (`bench/netem.py --duration 6 …`), against the last full table above; medians
+of three when stage 1 is measured as a whole:
+
+| scenario | first picture, ms | stalls (ms) | expired / keyframes |
+|---|---:|---:|---:|
+| rtt-50 | 328 → 328 | 1 (101) → 0 | 1 / 7 → 0 / 6 |
+| rtt-100 | 681 → 617 | 1 (113) → 1 (136) | 11 / 8 → 1 / 7 |
+| rtt-200 | 1448 → 1176 | 1 (191) → 2 (414) | 31 / 10 → 8 / 10 |
+| loss-2 | 330 → 323 | 3 (342) → 1 (129) | 2 / 7 → 0 / 6 |
+| burst | 328 → 382 | 8 (1005) → 1 (100) | 1 / 7 → 1 / 7 |
+
+(The `loss-2` and `burst` stalls fell with 1.3; the first picture there stays ~330 ms, 323–384 ms
+over six runs of `loss-2` — the higher ones a keyframe repaired on the way. One `rtt-50` run had
+two stalls of 0.4 s with the sender's own frame rate down to 47 in the same seconds: the VM, not
+the path — the two runs after it had none.) Left at 200 ms RTT: the keyframe
+still needs ~3 round trips through the 4-packet window, and BBR's Startup paces at its floor
+meanwhile, by which librats sheds the frames behind it — the stall after the first picture is
+the keyframe that has to follow (L2 (a, b)).

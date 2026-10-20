@@ -10,6 +10,7 @@
  */
 
 #include <cstddef>
+#include <cstdint>
 
 #include "ratcast/core/buffer.h"
 #include "ratcast/core/time.h"
@@ -35,7 +36,13 @@ public:
     /// whole, or not at all. Returns whether the peer has room for more; false
     /// means the message was queued but the sender must hold back until
     /// writable() says so.
-    virtual bool send_live(const PeerId& peer, const Buffer& message, Duration lifetime) = 0;
+    ///
+    /// What becomes of it — delivered, or given up on — goes to the session's
+    /// on_live_outcome() under `tag` as soon as the network knows (librats'
+    /// on_live_outcome), never from inside this call. Nothing for a message to
+    /// a peer that disconnects first.
+    virtual bool send_live(const PeerId& peer, const Buffer& message, Duration lifetime,
+                           uint64_t tag) = 0;
 
     /// Whether `peer` can take more right now.
     virtual bool writable(const PeerId& peer) const = 0;

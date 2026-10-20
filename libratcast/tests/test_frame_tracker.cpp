@@ -74,11 +74,14 @@ TEST_F(FrameTrackerTest, StartsOnlyAtAKeyframe) {
     EXPECT_EQ(drain(), (Frames{0, 1, 2}));
 }
 
-TEST_F(FrameTrackerTest, GivesUpFramesWithNothingToStartFrom) {
+TEST_F(FrameTrackerTest, FramesWaitForTheFirstKeyframeHoweverLate) {
     push(delta(7));
-    wait(kPatience);
+    push(delta(8));
+    wait(10 * kPatience);
     EXPECT_EQ(drain(), Frames{});
-    EXPECT_EQ(tracker_.stats().undecodable, 1u);
+    push(key(6));  // a joining keyframe, repaired late
+    EXPECT_EQ(drain(), (Frames{6, 7, 8}));
+    EXPECT_EQ(tracker_.stats().undecodable, 0u);
 }
 
 TEST_F(FrameTrackerTest, HoldsFramesBehindAGapUntilItFills) {
@@ -205,6 +208,16 @@ protected:
     SmallFrameTrackerTest() : FrameTrackerTest(4) {}
 };
 }  // namespace
+
+TEST_F(SmallFrameTrackerTest, BeforeTheFirstKeyframeAFullQueueGivesUpTheOldest) {
+    for (FrameNumber n = 1; n <= 4; ++n) push(delta(n));
+    push(delta(5));
+    EXPECT_EQ(tracker_.stats().undecodable, 1u);
+    push(key(0));  // too late for frame 1, so for everything behind it
+    EXPECT_EQ(drain(), Frames{0});
+    push(key(6));
+    EXPECT_EQ(drain(), Frames{6});
+}
 
 TEST_F(SmallFrameTrackerTest, AFullQueueGivesUpTheOldestGap) {
     push(key(0));

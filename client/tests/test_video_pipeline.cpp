@@ -306,22 +306,25 @@ TEST_F(VideoPipelineTest, PlaysEvenlyPastFramesThatCameLate) {
     config.height = 240;
     Result<std::unique_ptr<VideoEncoder>> encoder = open_video_encoder(config);
     ASSERT_TRUE(encoder);
+    // Encoded beforehand, so that only the path's lateness is in their timing.
     constexpr Duration kFrame = 16'667us;
-    const Timestamp start = SteadyClock::instance().now();
-    Timestamp held_until{};
-    for (uint64_t i = 0; i < 60; ++i) {
+    std::vector<std::vector<EncodedFrame>> encoded(60);
+    for (uint64_t i = 0; i < encoded.size(); ++i) {
         const VideoFrame frame = draw_pattern({(*encoder)->info().input_format, 320, 240}, i,
                                               Timestamp{10s} + int64_t(i) * kFrame);
-        std::vector<EncodedFrame> encoded;
         ASSERT_TRUE((*encoder)->encode(frame, i == 0, [&](EncodedVideo&& v) {
-            encoded.push_back({v.info, Buffer::copy_of(v.payload.bytes())});
+            encoded[i].push_back({v.info, Buffer::copy_of(v.payload.bytes())});
         }));
+    }
+    const Timestamp start = SteadyClock::instance().now();
+    Timestamp held_until{};
+    for (uint64_t i = 0; i < encoded.size(); ++i) {
         const Timestamp due = start + int64_t(i) * kFrame;
         if (i == 15) held_until = due + 80ms;
         if (i == 30) held_until = due + 70ms;
         if (i == 45) held_until = due + 60ms;
         std::this_thread::sleep_until(std::max(due, held_until));
-        for (EncodedFrame& f : encoded) player.push(std::move(f));
+        for (EncodedFrame& f : encoded[i]) player.push(std::move(f));
     }
     ASSERT_TRUE(eventually([&] { return player.stats().pictures == 60; }));
     player.stop();

@@ -1,6 +1,7 @@
 // MediaSession end to end over an in-memory network, in virtual time: every
 // message is queued, and delivered only when the test says so — which is
-// where it drops, reorders or holds them.
+// where it drops, reorders or holds them. The sender hears what became of a
+// live message as it is delivered or dropped.
 
 #include "ratcast/session/media_session.h"
 
@@ -15,6 +16,7 @@
 #include <set>
 #include <vector>
 
+#include "wire/frame_codec.h"
 #include "wire/message.h"
 
 using namespace ratcast;
@@ -33,7 +35,13 @@ struct Message {
     PeerId to;
     Buffer bytes;
     bool live = false;
+    uint64_t tag = 0;  ///< a live message's, for its outcome
 };
+
+/// The number of the frame a live message carries.
+FrameNumber number_of(const Message& m) {
+    return wire::read_frame_header(m.bytes.bytes())->info.number;
+}
 
 /// The wire between every session in a test.
 class Hub {
@@ -42,15 +50,34 @@ public:
     std::map<PeerId, MediaSession*> sessions;
     /// Live messages it returns true for are lost.
     std::function<bool(const Message&)> lose;
+    /// Live messages it returns true for stay on their way, in `held`, until
+    /// release().
+    std::function<bool(const Message&)> hold;
+    std::deque<Message> held;
 
     /// Deliver everything queued, including what deliveries queue in turn.
     void deliver_all() {
         while (!queue.empty()) {
             Message m = std::move(queue.front());
             queue.pop_front();
-            if (m.live && lose && lose(m)) continue;
-            sessions.at(m.to)->on_message(m.from, m.bytes.bytes());
+            if (m.live && hold && hold(m)) {
+                held.push_back(std::move(m));
+                continue;
+            }
+            const bool lost = m.live && lose && lose(m);
+            if (!lost) sessions.at(m.to)->on_message(m.from, m.bytes.bytes());
+            if (m.live) sessions.at(m.from)->on_live_outcome(m.to, m.tag, !lost);
         }
+    }
+
+    /// Deliver what was held, and stop holding.
+    void release() {
+        hold = nullptr;
+        while (!held.empty()) {
+            queue.push_front(std::move(held.back()));
+            held.pop_back();
+        }
+        deliver_all();
     }
 
     /// Live messages queued right now, in reverse order: what a path that
@@ -78,13 +105,19 @@ public:
     void send_reliable(const PeerId& peer, const Buffer& message) override {
         hub_.queue.push_back({self_, peer, message, false});
     }
-    bool send_live(const PeerId& peer, const Buffer& message, Duration lifetime) override {
+    bool send_live(const PeerId& peer, const Buffer& message, Duration lifetime,
+                   uint64_t tag) override {
         EXPECT_GT(lifetime, Duration::zero());
-        hub_.queue.push_back({self_, peer, message, true});
+        EXPECT_NE(tag, 0u);
+        lifetimes.push_back(lifetime);
+        hub_.queue.push_back({self_, peer, message, true, tag});
         return !full_.contains(peer);
     }
     bool writable(const PeerId& peer) const override { return !full_.contains(peer); }
     size_t max_live_message() const override { return 64 * 1024; }
+
+    /// What each live message was given, in the order they were sent.
+    std::vector<Duration> lifetimes;
 
     /// Make `peer`'s queue look full, or drained.
     void set_full(const PeerId& peer, bool full) {
@@ -339,17 +372,17 @@ TEST_F(MediaSessionTest, ALostReferenceBringsAKeyframe) {
     ASSERT_TRUE(send(1, false));
     hub.deliver_all();
     hub.lose = nullptr;
+    // The network gave frame 1 up: the receiver cannot decode what follows.
+    EXPECT_EQ(sender.keyframes_needed, 2);
     ASSERT_TRUE(send(2, false));
     hub.deliver_all();
     EXPECT_EQ(receiver.frames, Frames{0});
-    EXPECT_EQ(sender.keyframes_needed, 1);
 
-    advance(150ms);  // frame 1 is given up: 2 cannot be decoded
-    EXPECT_EQ(sender.keyframes_needed, 2);
+    advance(150ms);  // the receiver gives frame 1 up as well, and asks
     EXPECT_EQ(sender.session.outgoing_stats(1)->keyframe_requests, 1u);
-
     ASSERT_TRUE(send(3, true));
-    hub.deliver_all();
+    advance(1s);
+    EXPECT_EQ(sender.keyframes_needed, 2);  // the one keyframe answers both
     EXPECT_EQ(receiver.frames, (Frames{0, 3}));
 
     const auto stats = receiver.session.incoming_stats(sender.id, 1);
@@ -358,20 +391,113 @@ TEST_F(MediaSessionTest, ALostReferenceBringsAKeyframe) {
     EXPECT_EQ(stats->frames.undecodable, 1u);
 }
 
-TEST_F(MediaSessionTest, FramesExpiringOnTheWayAreAKeyframeNeeded) {
+TEST_F(MediaSessionTest, AFrameGivenUpOnTheWayIsAKeyframeNeededAtOnce) {
     subscribe(receiver);
     ASSERT_TRUE(send(0, true));
     hub.deliver_all();
     EXPECT_EQ(sender.keyframes_needed, 1);
-    sender.session.on_peer_path(receiver.id, path());
-    EXPECT_EQ(sender.keyframes_needed, 1);
 
-    // The frame behind the keyframe expired: the receiver cannot decode what
+    // Given up on right behind the keyframe: the receiver cannot decode what
     // follows, and the sender need not wait for it to say so.
-    sender.session.on_peer_path(receiver.id, path(1));
+    hub.lose = [](const Message&) { return true; };
+    ASSERT_TRUE(send(1, false));
+    hub.deliver_all();
     EXPECT_EQ(sender.keyframes_needed, 1);  // held back: a keyframe was just sent...
     advance(200ms);
     EXPECT_EQ(sender.keyframes_needed, 2);  // ...until min_keyframe_interval has passed
+
+    // A frame given up on after a keyframe that went behind it is no loss.
+    hub.lose = nullptr;
+    ASSERT_TRUE(send(2, true));
+    advance(1s);
+    hub.lose = [](const Message& m) { return number_of(m) == 3; };
+    ASSERT_TRUE(send(3, false));
+    ASSERT_TRUE(send(4, true));
+    hub.deliver_all();
+    EXPECT_EQ(sender.keyframes_needed, 2);
+
+    // Nor is what the path's samples say: they count what expired, not which.
+    sender.session.on_peer_path(receiver.id, path(3));
+    advance(1s);
+    EXPECT_EQ(sender.keyframes_needed, 2);
+}
+
+// ── Joining ─────────────────────────────────────────────────────────────────
+
+// A fresh connection lets a keyframe through only over a few round trips: the
+// first one a subscriber gets may come late rather than not at all, and the
+// frames behind it as well, each still due after the one before it.
+TEST_F(MediaSessionTest, AJoiningKeyframeAndTheFramesBehindItMayArriveLate) {
+    sender.session.on_peer_path(receiver.id, path());  // a 50 ms round trip
+    subscribe(receiver);
+    ASSERT_TRUE(send(0, false));  // not for it: it waits for a keyframe
+    for (FrameNumber n = 1; n <= 50; ++n) {
+        ASSERT_TRUE(send(n, n == 1 || n == 30));
+        clock.advance(10ms);
+    }
+    const std::vector<Duration>& lifetimes = sender.endpoint.lifetimes;
+    ASSERT_EQ(lifetimes.size(), 50u);
+    EXPECT_EQ(lifetimes[0], 150ms + 4 * 50ms);
+    EXPECT_EQ(lifetimes[1], 345ms);  // half the 10 ms since
+    for (size_t i = 1; i < lifetimes.size(); ++i) {
+        EXPECT_GE(Duration{10ms} + lifetimes[i], lifetimes[i - 1]) << "frame " << i + 1;
+    }
+    EXPECT_EQ(lifetimes[29], 205ms) << "a later keyframe is no join";
+    EXPECT_EQ(lifetimes.back(), 150ms);  // the stream's own
+    hub.deliver_all();
+    EXPECT_EQ(receiver.frames.size(), 50u);
+}
+
+TEST_F(MediaSessionTest, WhileItsKeyframeIsOnItsWayAJoiningReceiverAsksInVain) {
+    subscribe(receiver);
+    hub.hold = [](const Message&) { return true; };
+    ASSERT_TRUE(send(0, true));
+    advance(300ms);  // nothing came: the receiver asks for a keyframe
+    EXPECT_EQ(sender.session.outgoing_stats(1)->keyframe_requests, 1u);
+    EXPECT_EQ(sender.keyframes_needed, 1);  // the one subscribing asked for
+
+    hub.release();
+    EXPECT_EQ(receiver.frames, Frames{0});
+    receiver.session.request_keyframe(sender.id, 1);  // its decoder failed, say
+    hub.deliver_all();
+    EXPECT_EQ(sender.keyframes_needed, 2);
+}
+
+TEST_F(MediaSessionTest, AJoiningKeyframeGivenUpOnIsSentAgain) {
+    sender.session.on_peer_path(receiver.id, path());
+    subscribe(receiver);
+    hub.lose = [](const Message& m) { return number_of(m) == 0; };
+    ASSERT_TRUE(send(0, true));
+    hub.deliver_all();
+    advance(200ms);  // min_keyframe_interval after the one subscribing asked for
+    EXPECT_EQ(sender.keyframes_needed, 2);
+    ASSERT_TRUE(send(1, false));  // of no use without frame 0: not sent
+    ASSERT_TRUE(send(2, true));
+    hub.deliver_all();
+    EXPECT_EQ(receiver.frames, Frames{2});
+    EXPECT_EQ(sender.endpoint.lifetimes, (std::vector<Duration>{350ms, 350ms}));
+}
+
+// A frame behind a joining keyframe still on its way is given up on: the
+// keyframe asked for now goes right behind it, and is all that is needed.
+TEST_F(MediaSessionTest, AFrameLostBehindAJoiningKeyframeIsAKeyframeNeededAtOnce) {
+    sender.session.on_peer_path(receiver.id, path());
+    subscribe(receiver);
+    hub.hold = [](const Message& m) { return number_of(m) == 0; };
+    hub.lose = [](const Message& m) { return number_of(m) == 1; };
+    ASSERT_TRUE(send(0, true));
+    ASSERT_TRUE(send(1, false));
+    hub.deliver_all();
+    EXPECT_EQ(sender.keyframes_needed, 1);  // held back: a keyframe was just sent...
+    advance(200ms);
+    EXPECT_EQ(sender.keyframes_needed, 2);  // ...until min_keyframe_interval has passed
+    ASSERT_TRUE(send(2, true));
+    EXPECT_EQ(sender.endpoint.lifetimes.back(), 250ms) << "not behind the joining keyframe";
+
+    hub.release();
+    advance(1s);
+    EXPECT_EQ(sender.keyframes_needed, 2);
+    EXPECT_EQ(receiver.frames, (Frames{0, 2}));
 }
 
 TEST_F(MediaSessionTest, KeyframeRequestsFromManyReceiversAreCoalesced) {

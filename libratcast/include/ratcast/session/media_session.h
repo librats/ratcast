@@ -12,10 +12,22 @@
  * with every reference in place (FrameTracker).
  *
  * Keyframes are the currency of recovery. A subscriber starts receiving at the
- * next keyframe; a receiver that loses a frame something depends on asks for
- * one; a subscriber whose queue was full misses frames and gets nothing more
- * until one. The session tells the encoder through `keyframe_needed`, at most
- * once per `min_keyframe_interval` however many receivers ask.
+ * next keyframe; a frame to it that the network gave up on (on_live_outcome)
+ * means it cannot decode what follows, and so does one a receiver finds
+ * missing, which it asks for a keyframe for; a subscriber whose queue was full
+ * misses frames and gets nothing more until one. The session tells the encoder
+ * through `keyframe_needed`, at most once per `min_keyframe_interval` however
+ * many receivers ask.
+ *
+ * Joining is the exception: a subscriber's first keyframe may arrive late
+ * rather than not at all. A fresh connection's window opens over a few round
+ * trips, and a keyframe sent again meets the same window, so asking again
+ * gains nothing. The first keyframe, and the frames behind it, go with four
+ * round trips more than the stream's lifetime, shrinking back at half the time
+ * passing so that each frame is still due after the one before it; the viewer
+ * plays them catching up. Until the network says the keyframe arrived, the
+ * receiver's requests for one are not news; if it was given up on, it is sent
+ * again.
  *
  * A stream added with BitrateLimits is rate-controlled: the session follows
  * the paths to its subscribers (on_peer_path) and tells the encoder the
@@ -155,6 +167,9 @@ public:
     /// A sample of the path to `peer`, every 100 ms or so (librats'
     /// on_peer_path): what rate control steers by.
     void on_peer_path(const PeerId& peer, const PathStats& sample);
+    /// What became of a live message to `peer`, sent under `tag`
+    /// (MediaNetwork::send_live): delivered, or given up on.
+    void on_live_outcome(const PeerId& peer, uint64_t tag, bool delivered);
     void on_message(const PeerId& peer, std::span<const uint8_t> message);
 
     /// Time-based work: give up gaps that waited long enough, repeat keyframe
@@ -205,6 +220,8 @@ private:
     std::unordered_map<StreamId, std::shared_ptr<OutgoingStream>> outgoing_;
     std::unordered_map<StreamKey, std::shared_ptr<IncomingStream>, StreamKeyHash> incoming_;
     std::unordered_map<PeerId, std::shared_ptr<PeerState>, PeerId::Hash> peers_;
+    /// The next stream's slot in the tags of its frames; never 0, so no tag is.
+    uint16_t next_slot_ = 1;
 
     std::atomic<uint64_t> rejected_{0};
 };

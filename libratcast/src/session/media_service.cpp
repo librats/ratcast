@@ -43,6 +43,10 @@ void MediaService::attach(librats::NodeContext& ctx) {
     network.on_peer_path([this](const librats::Peer& peer, const librats::PathStats& sample) {
         session_.on_peer_path(peer.id(), sample);
     });
+    network.on_live_outcome(librats::MessageType::Media,
+                            [this](const librats::Peer& peer, uint64_t tag, bool delivered) {
+                                session_.on_live_outcome(peer.id(), tag, delivered);
+                            });
     network_.store(&network, std::memory_order_release);
 }
 
@@ -79,12 +83,14 @@ void MediaService::send_reliable(const PeerId& peer, const Buffer& message) {
     }
 }
 
-bool MediaService::send_live(const PeerId& peer, const Buffer& message, Duration lifetime) {
+bool MediaService::send_live(const PeerId& peer, const Buffer& message, Duration lifetime,
+                             uint64_t tag) {
     // librats counts lifetimes in milliseconds; round up so a frame never gets
     // less time than its stream allows.
     librats::SendOptions options;
     options.lifetime = std::max(std::chrono::ceil<std::chrono::milliseconds>(lifetime),
                                 std::chrono::milliseconds(1));
+    options.tag = tag;
     librats::PeerNetwork* network = network_.load(std::memory_order_acquire);
     return network && network->send(peer, librats::MessageType::Media, view_of(message), options);
 }

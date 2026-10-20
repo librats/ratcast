@@ -275,8 +275,8 @@ many viewers and other platforms are later stages.
 - no scenario playing worse with rate control than at a fixed bitrate (✅ since L2 (c): `jitter`,
   `reorder` and `reorder-2` play at 59–60 fps like the clean paths).
 
-Order: 1.3, which needs nothing from librats, then 1.2 with L3 — and L2 (a, b) if the
-first-picture target still asks for them; 1.1's leftovers when a measurement asks.
+Order: 1.3 ✅, 1.2 with L3 ✅ — and now L2 (a, b), which the first-picture target at 200 ms
+asks for (1.2's notes); 1.1's leftovers when a measurement asks.
 
 **1.1 Rate control.** ✅ The encoder's bitrate from the viewers' `PathStats`: fast down on expiring
 frames or a growing queue, careful up, starting low so that the first keyframe is small. Left:
@@ -321,9 +321,34 @@ opens comes with it), which leaves a 0.1–0.2 s stall after the first picture �
 
 **1.2 Joining.** A joining viewer's keyframe is allowed to arrive late, and the viewer is caught
 up rather than asked again; keyframe requests from several viewers in one window are answered
-with one keyframe. *Done:* the first-picture target above at every distance.
-librats: **needs** L3 (the sender learns the keyframe is on its way or expired); **better with**
-L2 (a, b) (initial window, shedding by Startup's rate).
+with one keyframe. *Done:* the first-picture target above at every distance. Done in ratcast with
+L3 ✅; left: L2 (a, b), without which the target is out of reach from ~150 ms RTT up (below).
+librats: **needs** L3 ✅ (the sender learns the keyframe is on its way or expired) and, for the
+long paths, L2 (a, b) (initial window, shedding by Startup's rate).
+
+Notes from 1.2: where the time went (one run each, timestamps on both ends): the viewer
+subscribes two round trips after it dials (handshake, then the announce), the sender hears of it
+half a round trip later — and its first keyframe, ~25 KB, cannot leave in the 200 ms − one-way it
+had behind a fresh connection's 4-packet window: it expired, the next met a window only a little
+wider, and at 200 ms RTT six went before one arrived (1.45–1.7 s to the first picture); the frames
+behind the one that did expired too, which is the stall after it. Now a subscriber's first
+keyframe goes with four round trips more than the stream's lifetime, and every frame after it
+with what the one before got less half the time since — each due after the one before, as EDF
+sends them; ms rounding made a shared deadline reorder them — so the viewer gets the keyframe
+late and plays the frames behind it catching up (`MediaSession`, "Joining"). Each frame is
+tagged (L3): the sender hears at once that the joining keyframe arrived (joined) or was given up
+(sent again), ignores the receiver's requests while it is on its way, and asks for a keyframe the
+moment a frame to a subscriber is given up on — no longer from the path's expiry count, which
+says how many, not which, and comes up to a sample later. A frame given up on behind the
+joining keyframe brings the next one at once: it goes right behind it, as late. The receiver
+waits for its first keyframe however late (`FrameTracker`; before, frames behind a gap it left
+were dropped after the lifetime, and a keyframe repaired late on a long lossy path came to
+nothing). One `netem` run each (6 s, `docs/bench.md`), before → after: first picture `rtt-50`
+328 → 328 ms, no stall after it (was 0.1 s); `rtt-100` 681 → 601–621 ms, stall after it 113 →
+136 ms; `rtt-200` 1448 → 1164–1188 ms, stall 191 → ~400 ms; `loss-2` 330 → 323–384 ms. What is left on the long
+paths is librats' (L2 (a, b)): the 4-packet window holds the keyframe ~3 round trips, and while
+it does, BBR's Startup paces at its floor (~0.5 Mbit/s at 200 ms), by which the frames behind it
+are shed as unable to leave in time — up to 8 of them at 200 ms, and the keyframe after.
 
 **1.3 Smooth playback on lossy paths.** ✅ The stalls on lossy paths (3–8 in 15 s, `burst` the
 most) are frames that arrived, late: a packet FEC did not rebuild is sent again, a round trip
@@ -435,24 +460,26 @@ and the list is in priority order:
 |---:|---|---|---|---|---|
 | | L1 | Reordering is not loss for live data | needed | 0.6 | ✅ |
 | | L2 (c) | BBR on a jittery path | needed | 1.1 | ✅ |
-| 1 | L3 | Per-message delivered / expired feedback | needed | 1.2 | **next** |
+| | L3 | Per-message delivered / expired feedback | needed | 1.2 | ✅ |
+| 1 | L2 (a, b) | A live flow's start: initial window, shedding | needed | 1.2 (long paths) | **next** |
 | 2 | L4 | Priorities inside `Priority::Live` | needed | 2.1 | |
-| 3 | L2 (a, b) | A live flow's start: initial window, shedding | improves | 1.1, 1.2 | if 1.2's target asks |
-| 4 | L5 | Absolute deadlines when forwarding | needed | stage 5 (tree) | |
-| 5 | L8 | `send_many` with a shared buffer | improves | stage 5 (SFU) | |
-| 6 | L11 | One copy fewer on the send path | improves | with L8 | |
-| 7 | L6 | FEC across messages | optional | 2.1 | if Opus FEC + RED fall short |
-| 8 | L9 | Path MTU discovery | optional | 3.4, 4K | |
-| 9 | L10 | A clock-sync service | optional | stage 5 (playout) | libratcast can do it over ping |
-| 10 | L7 | A delay-sensitive realtime mode | optional | — | mostly done with L2 (c) |
+| 3 | L5 | Absolute deadlines when forwarding | needed | stage 5 (tree) | |
+| 4 | L8 | `send_many` with a shared buffer | improves | stage 5 (SFU) | |
+| 5 | L11 | One copy fewer on the send path | improves | with L8 | |
+| 6 | L6 | FEC across messages | optional | 2.1 | if Opus FEC + RED fall short |
+| 7 | L9 | Path MTU discovery | optional | 3.4, 4K | |
+| 8 | L10 | A clock-sync service | optional | stage 5 (playout) | libratcast can do it over ping |
+| 9 | L7 | A delay-sensitive realtime mode | optional | — | mostly done with L2 (c) |
+| 10 | L12 | Live outcomes in the C ABI | optional | other bindings | when one needs them |
 
-Where it stands after L1 and L2 (c): the steady state holds — one-way delay + ~18 ms on a clean
-path, 59–60 fps under 1–5% loss, bursts, jitter and reordering, and BBR's estimate follows a
-jittery path as it does a clean one, so rate control (1.1) ramps and holds there too. What every
-viewer still meets is the first second: the joining keyframe behind a 4-packet initial window
-(L2 (a, b)) — 0.7 s to the first picture at 100 ms RTT, 1.45 s at 200 ms, and a short stall
-after it. Both have a cheaper answer in ratcast first (1.1, 1.2), so the next librats item is the
-one 1.2 cannot do without: L3.
+Where it stands after L1, L2 (c) and L3: the steady state holds — one-way delay + ~18 ms on a
+clean path, 59–60 fps under 1–5% loss, bursts, jitter and reordering, and BBR's estimate follows
+a jittery path as it does a clean one, so rate control (1.1) ramps and holds there too. What
+every viewer still meets is the first second, which ratcast has taken as far as it can (1.2: the
+joining keyframe arrives late instead of being sent again, 1.45 → 1.2 s at 200 ms RTT): the
+keyframe behind a 4-packet initial window and the frames behind it shed by Startup's floor rate
+— 0.6 s to the first picture at 100 ms RTT, 1.2 s at 200 ms, and a stall of up to 0.4 s after
+it. That is L2 (a, b), next.
 
 **L1 — Reordering is not loss for live data.** ✅ RACK's reordering adaptation was off while a
 live message was outstanding, so with live video always outstanding every reordered packet was a
@@ -480,23 +507,34 @@ now waits out the window too — rate control's headroom (1.1) covers it.
   lateness; random loss on a path that holds packets back is no longer read as a full queue; a
   late packet behind many gaps is taken in rather than dropped as a duplicate. netem: `jitter`,
   `reorder` and `reorder-2` at 59–60 fps and 5.3–5.7 Mbit/s (1.1's notes).
-- (a) *Improves 1.1 and 1.2.* The initial window of 4 packets paces a fresh connection at
+- (a) *Needed by 1.2 on long paths.* The initial window of 4 packets paces a fresh connection at
   4 packets per round trip × 2.77: a keyframe leaves slower than its lifetime from ~100 ms RTT
   up (32 frames expire at 200 ms before the first picture), and a live flow that then falls
   silent grows the rate once per keyframe request rather than once per round trip. 10 packets
   (RFC 9002) gets a keyframe through at 50 ms RTT; longer paths need the first keyframe to be
-  smaller (rate control starting low, ✅) or to be allowed to arrive late (1.2, with L3).
-- (b) *Improves 1.1.* Shedding by the pacing rate drops the frames behind a keyframe while that
-  rate is still Startup's floor (the integration test's expired frame).
+  smaller (rate control starting low, ✅) or to be allowed to arrive late (1.2 ✅, with L3) — and
+  then it still takes ~3 round trips through the window: 1.2 s to the first picture at 200 ms
+  RTT, where the target is ~0.95 s.
+- (b) *Needed by 1.2 on long paths.* Shedding by the pacing rate drops the frames behind a
+  keyframe while that rate is still Startup's floor (~0.5 Mbit/s at 200 ms RTT): with the joining
+  keyframe let arrive late (1.2), up to 8 frames behind it are shed, and the keyframe that has to
+  follow is a 0.4 s stall after the first picture.
 
 The start's expired frames were also a false rate cut at the start of nearly every netem run,
-which 1.1 no longer takes them for; what they still cost is a 0.1–0.2 s stall after the first
-picture. A joining scenario in `bench_path` to measure (a) and
-(b) on, in virtual time, when they are taken up.
+which 1.1 no longer takes them for. A joining scenario in `bench_path` to measure (a) and (b) on,
+in virtual time, when they are taken up.
 
-**L3 — Per-live-message delivered / expired feedback.** *Needed by 1.2.* A sender learns that a
+**L3 — Per-live-message delivered / expired feedback.** ✅ *Needed by 1.2.* A sender learns that a
 keyframe expired at once, not from the receiver's next request a `keyframe_retry` later, and a
-joining viewer can be caught up instead of asked again.
+joining viewer can be caught up instead of asked again. `SendOptions::tag`; the sender hears
+`PeerNetwork::on_live_outcome(type, (peer, tag, delivered))` the moment the message is settled —
+acknowledged (or FEC-complete) on UDP, sealed onto the stream on TCP, or given up on, shed
+included — recorded by `LiveSender` / `SendQueue` and passed up from the transport's reactor
+entry points, never from inside `send()`. Tested from `LiveSender` and `SendQueue` up to two
+nodes over either transport.
+
+**L12 — Live outcomes in the C ABI** (`rats_send` with a tag, a `rats_on_live_outcome`), for the
+bindings; nothing uses them yet.
 
 **L4 — Priorities inside `Priority::Live`.** *Needed by 2.1.* Audio > keyframe / base layer >
 deltas > enhancement layers.

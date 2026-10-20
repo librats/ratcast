@@ -21,6 +21,10 @@
  *     temporal layer) breaks nothing.
  *   - A decodable keyframe is handed on at once, whatever gap is before it:
  *     nothing before a keyframe is needed by it or by anything after it.
+ *   - Before the first keyframe nothing is due: it may come late (a joining
+ *     keyframe does, see MediaSession), and the frames behind it are of use
+ *     once it is in. They wait for it however long, as many as there is room
+ *     for.
  *   - While the stream is broken, or before its first keyframe, it asks for a
  *     keyframe, at most once per `keyframe_retry`. The receiver can break it
  *     too, when its decoder fails (invalidate()).

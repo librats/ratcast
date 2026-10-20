@@ -13,6 +13,27 @@
 #include "wire/message.h"
 
 namespace ratcast {
+namespace {
+
+using namespace std::chrono_literals;
+
+/// A joining subscriber's first keyframe may take this many round trips more
+/// than the stream's lifetime: a fresh connection's window, doubling each round
+/// trip from a few packets, has let some 60 through by then — a 1080p keyframe
+/// at the bitrate a stream starts at, and the frames behind it.
+constexpr int kJoinRoundTrips = 4;
+/// The round trip taken before the path's first sample.
+constexpr Duration kUnknownRtt = 100ms;
+
+/// A frame's tag in the network's outcomes: its stream's slot, above its number.
+constexpr int kSlotShift = 48;
+constexpr uint64_t kNumberMask = (uint64_t{1} << kSlotShift) - 1;
+
+uint64_t live_tag(uint16_t slot, FrameNumber number) noexcept {
+    return (uint64_t{slot} << kSlotShift) | ((number + 1) & kNumberMask);
+}
+
+}  // namespace
 
 // ── Per-peer and per-stream state ───────────────────────────────────────────
 
@@ -27,6 +48,13 @@ struct MediaSession::PeerState {
 
     std::mutex path_mutex;  ///< guards `path`
     PathMonitor path;
+    /// The smoothed round trip of the last path sample; 0 before the first.
+    std::atomic<uint32_t> rtt_us{0};
+
+    Duration rtt() const noexcept {
+        const uint32_t us = rtt_us.load(std::memory_order_relaxed);
+        return us == 0 ? kUnknownRtt : Duration{us};
+    }
 };
 
 struct MediaSession::OutgoingStream {
@@ -42,17 +70,63 @@ struct MediaSession::OutgoingStream {
         bool backpressured = false;
         /// What its path is known to carry, as of the last sample.
         std::optional<uint64_t> capacity;
+
+        /// A keyframe of the stream is known to have reached it.
+        bool joined = false;
+        /// Its first keyframe, on its way: none before it is sent, nor once the
+        /// network has said what became of it.
+        std::optional<FrameNumber> joining;
+        /// What the last frame to it was given, and when.
+        Duration lifetime{};
+        Timestamp sent_at{};
     };
 
-    OutgoingStream(StreamDescription d, std::optional<BitrateLimits> bitrate)
-        : description(std::move(d)) {
+    OutgoingStream(StreamDescription d, std::optional<BitrateLimits> bitrate, uint16_t tag_slot)
+        : slot(tag_slot), description(std::move(d)) {
         if (bitrate) rate.emplace(*bitrate, description.lifetime);
     }
 
-    std::mutex mutex;  ///< guards everything below
+    /// How long `subscriber` is given for a frame sent now. Its first keyframe
+    /// gets kJoinRoundTrips round trips more than the stream's lifetime; the
+    /// frames after it get what the one before them got, less half the time
+    /// since, so each is still due after the one before it.
+    Duration lifetime_for(Subscriber& subscriber, const FrameInfo& info, Timestamp now) {
+        if (!subscriber.joined && info.keyframe && subscriber.awaiting_keyframe) {
+            subscriber.joining = info.number;
+            subscriber.lifetime = description.lifetime + kJoinRoundTrips * subscriber.peer->rtt();
+        } else {
+            subscriber.lifetime = std::max(description.lifetime,
+                                           subscriber.lifetime - (now - subscriber.sent_at) / 2);
+        }
+        subscriber.sent_at = now;
+        return subscriber.lifetime;
+    }
+
+    /// The network settled frame `number` to `subscriber`. Returns whether that
+    /// leaves it needing a keyframe.
+    bool settle(Subscriber& subscriber, FrameNumber number, bool delivered) {
+        if (subscriber.joining && number == *subscriber.joining) {
+            subscriber.joining.reset();
+            if (delivered) {
+                subscriber.joined = true;
+                return false;
+            }
+            subscriber.awaiting_keyframe = true;  // what follows it is of no use
+            return true;
+        }
+        // What follows a frame given up on cannot be decoded, up to a keyframe
+        // sent after it. Behind a joining keyframe still on its way too: asked
+        // for now, the next one goes right behind it, as late as it may be.
+        return !delivered && (subscriber.joined || subscriber.joining.has_value()) &&
+               !(last_keyframe && *last_keyframe > number);
+    }
+
+    const uint16_t slot;  ///< in the tags of its frames
+    std::mutex mutex;     ///< guards everything below
     StreamDescription description;
     std::vector<Subscriber> subscribers;
     std::optional<FrameNumber> last_number;
+    std::optional<FrameNumber> last_keyframe;
     std::optional<Timestamp> last_keyframe_sent;
     std::optional<Timestamp> last_keyframe_asked;
     /// A keyframe was needed within min_keyframe_interval of the last one; tick()
@@ -179,10 +253,10 @@ Result<void> MediaSession::add_stream(const StreamDescription& description,
     std::vector<PeerId> peers;
     {
         std::unique_lock lock(mutex_);
-        auto stream = std::make_shared<OutgoingStream>(description, bitrate);
-        if (!outgoing_.try_emplace(description.id, std::move(stream)).second) {
-            return fail(Errc::InvalidArgument);
-        }
+        if (outgoing_.contains(description.id)) return fail(Errc::InvalidArgument);
+        outgoing_.emplace(description.id,
+                          std::make_shared<OutgoingStream>(description, bitrate, next_slot_));
+        if (++next_slot_ == 0) next_slot_ = 1;
         // Taken under the same lock as the insertion: a peer connecting
         // concurrently is either listed here or sees the stream itself.
         for (const auto& [id, state] : peers_) peers.push_back(id);
@@ -239,6 +313,7 @@ Result<void> MediaSession::send_frame(StreamId stream_id, FrameInfo info, Mutabl
         if (info.keyframe) {
             s.stats.keyframes += 1;
             s.last_keyframe_sent = now;
+            s.last_keyframe = info.number;
             s.keyframe_wanted = false;
         }
 
@@ -272,10 +347,12 @@ Result<void> MediaSession::send_frame(StreamId stream_id, FrameInfo info, Mutabl
                 if (!encoded) return fail(encoded.error());
                 message = std::move(*encoded);
             }
+            const Duration lifetime = s.lifetime_for(subscriber, info, now);
             subscriber.awaiting_keyframe = false;
             s.stats.messages += 1;
             s.stats.bytes += message->size();
-            if (!network_.send_live(subscriber.peer->id, *message, s.description.lifetime)) {
+            if (!network_.send_live(subscriber.peer->id, *message, lifetime,
+                                    live_tag(s.slot, info.number))) {
                 subscriber.peer->blocked.store(true, std::memory_order_release);
                 subscriber.backpressured = true;
             }
@@ -423,6 +500,7 @@ void MediaSession::on_peer_path(const PeerId& peer, const PathStats& sample) {
         state = it->second;
         for (const auto& [id, stream] : outgoing_) streams.emplace_back(id, stream);
     }
+    state->rtt_us.store(sample.srtt_us, std::memory_order_relaxed);
     PathSignal signal;
     {
         std::lock_guard lock(state->path_mutex);
@@ -430,23 +508,46 @@ void MediaSession::on_peer_path(const PeerId& peer, const PathStats& sample) {
     }
 
     for (const auto& [id, stream] : streams) {
-        bool keyframe = false;
         std::optional<uint32_t> bitrate;
         {
             std::lock_guard lock(stream->mutex);
             OutgoingStream& s = *stream;
+            if (!s.rate) continue;
             const auto subscriber = std::ranges::find_if(
                 s.subscribers, [&](const auto& subscriber) { return subscriber.peer->id == peer; });
             if (subscriber == s.subscribers.end()) continue;
-            // The peer is missing a frame, and would ask for a keyframe only
-            // once the next one arrived — a round trip on, and ignored if that
-            // is soon after the last keyframe.
-            if (signal.expired) keyframe = ask_keyframe(s, now);
-            if (s.rate) bitrate = s.follow(*subscriber, signal, now);
+            bitrate = s.follow(*subscriber, signal, now);
         }
-        if (keyframe) notify(handlers_.keyframe_needed, id);
         if (bitrate) notify(handlers_.bitrate_changed, id, *bitrate);
     }
+}
+
+void MediaSession::on_live_outcome(const PeerId& peer, uint64_t tag, bool delivered) {
+    const auto slot = static_cast<uint16_t>(tag >> kSlotShift);
+    const FrameNumber number = (tag & kNumberMask) - 1;
+    StreamId id = 0;
+    std::shared_ptr<OutgoingStream> stream;
+    {
+        std::shared_lock lock(mutex_);
+        const auto it = std::ranges::find_if(
+            outgoing_, [&](const auto& entry) { return entry.second->slot == slot; });
+        if (it == outgoing_.end()) return;  // removed since
+        id = it->first;
+        stream = it->second;
+    }
+
+    bool ask = false;
+    {
+        std::lock_guard lock(stream->mutex);
+        OutgoingStream& s = *stream;
+        const auto subscriber = std::ranges::find_if(
+            s.subscribers, [&](const auto& subscriber) { return subscriber.peer->id == peer; });
+        if (subscriber == s.subscribers.end()) return;
+        // Sooner than the receiver could say: it would ask only once a frame
+        // after it arrived, a round trip later.
+        ask = s.settle(*subscriber, number, delivered) && ask_keyframe(s, clock_.now());
+    }
+    if (ask) notify(handlers_.keyframe_needed, id);
 }
 
 void MediaSession::on_message(const PeerId& peer, std::span<const uint8_t> message) {
@@ -598,10 +699,13 @@ void MediaSession::on_keyframe_request(const PeerId& peer, StreamId stream_id) {
     {
         std::lock_guard lock(stream->mutex);
         OutgoingStream& s = *stream;
-        const bool subscribed = std::ranges::any_of(
+        const auto subscriber = std::ranges::find_if(
             s.subscribers, [&](const auto& subscriber) { return subscriber.peer->id == peer; });
-        if (!subscribed) return;
+        if (subscriber == s.subscribers.end()) return;
         s.stats.keyframe_requests += 1;
+        // Its first keyframe is on its way, and the network will say if it is
+        // not: the receiver asks only because it has nothing yet.
+        if (subscriber->joining) return;
         // A request this soon after a keyframe was most likely sent before that
         // keyframe arrived. A receiver still unable to decode asks again after
         // keyframe_retry, by when this window has passed.

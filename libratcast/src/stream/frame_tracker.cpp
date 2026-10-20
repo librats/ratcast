@@ -91,13 +91,10 @@ void FrameTracker::advance(Timestamp now) {
             continue;
         }
 
-        // Behind a gap, or nothing to start from yet: wait, up to patience.
-        if (now - front.arrived < config_.patience) break;
-        if (started_) {
-            skip_to(front.frame.info.number - 1);
-        } else {
-            discard_front(stats_.undecodable);
-        }
+        // Nothing to start from yet: wait for the keyframe, which may come
+        // late. Behind a gap: wait, up to patience.
+        if (!started_ || now - front.arrived < config_.patience) break;
+        skip_to(front.frame.info.number - 1);
     }
 }
 
