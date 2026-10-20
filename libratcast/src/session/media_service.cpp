@@ -84,13 +84,14 @@ void MediaService::send_reliable(const PeerId& peer, const Buffer& message) {
 }
 
 bool MediaService::send_live(const PeerId& peer, const Buffer& message, Duration lifetime,
-                             uint64_t tag) {
+                             uint64_t tag, LiveRank rank) {
     // librats counts lifetimes in milliseconds; round up so a frame never gets
     // less time than its stream allows.
     librats::SendOptions options;
     options.lifetime = std::max(std::chrono::ceil<std::chrono::milliseconds>(lifetime),
                                 std::chrono::milliseconds(1));
     options.tag = tag;
+    options.rank = static_cast<uint8_t>(rank);
     librats::PeerNetwork* network = network_.load(std::memory_order_acquire);
     return network && network->send(peer, librats::MessageType::Media, view_of(message), options);
 }

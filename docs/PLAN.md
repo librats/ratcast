@@ -150,7 +150,7 @@ final place and shape: stage 0 is a walking skeleton, not a throwaway prototype.
 |---|---|---|
 | **0. Skeleton** ✅ | screen → encoder → libratcast → librats → decoder → window, on Linux; latency and behaviour on emulated networks measured | L1 ✅ |
 | **1. A stream that holds** ✅ | one video stream to a few viewers plays on every emulated path: rate control, fast joining, smooth playback on lossy paths | L2 (c) ✅, L3 ✅; L2 (a, b) put off |
-| **2. Sound** ← now | audio, A/V sync, latency profiles `call` / `game` / `cinema` end to end | L4 |
+| **2. Sound** ← now | audio, A/V sync, latency profiles `call` / `game` / `cinema` end to end | L4 ✅ |
 | **3. Standalone library** | netsim, C API, MPEG-TS, `rats://` URLs, a benchmark against librist and SRT | — |
 | **4. Platforms** | GPU paths and hardware codecs; Windows and macOS capture | — |
 | **5. Watch together** | one-to-many: forwarding tree, simulcast / SVC, SFU, SFrame E2EE, synchronized playout | L5 |
@@ -413,7 +413,12 @@ take `--latency call|game|cinema`.
     the sound will be heard), PipeWire capture — a microphone, the whole of what the computer
     plays, or one node — and playback, the tone source. The PipeWire plumbing video capture had
     is shared now (`pipewire::StreamThread`);
-  - (c) audio over the session: audio streams in `MediaSession`, an adaptive jitter buffer, L4;
+  - (c) ✅ audio over the session: `MediaSession` sends an audio stream's frames with neither
+    keyframe requests nor joining nor outcomes, and hands them on as they arrive
+    (`FrameTracker` without `in_order`); `JitterBuffer` (libratcast `stream/`, codec-agnostic,
+    tested in virtual time) plays them by capture time behind a delay that covers 97% of their
+    lateness plus a frame — so the frame after a lost one is there for its FEC — and grows where
+    sound is made up anyway, shrinks in silence; L4 sends sound ahead of a keyframe;
   - (d) client and tools: `AudioPublisher` / `AudioPlayer`, `--audio` in `ratcast-send` /
     `ratcast-recv`, netem: 2% loss, a keyframe's burst next to the audio.
 - **2.2 A/V sync:** a common playout clock per sender, the video held to the audio.
@@ -485,16 +490,16 @@ and the list is in priority order:
 | | L1 | Reordering is not loss for live data | needed | 0.6 | ✅ |
 | | L2 (c) | BBR on a jittery path | needed | 1.1 | ✅ |
 | | L3 | Per-message delivered / expired feedback | needed | 1.2 | ✅ |
-| 1 | L4 | Priorities inside `Priority::Live` | needed | 2.1 | **next** |
-| 2 | L2 (a, b) | A live flow's start: initial window, shedding | needed | 1.2 (long paths) | put off |
-| 3 | L5 | Absolute deadlines when forwarding | needed | stage 5 (tree) | |
-| 4 | L8 | `send_many` with a shared buffer | improves | stage 5 (SFU) | |
-| 5 | L11 | One copy fewer on the send path | improves | with L8 | |
-| 6 | L6 | FEC across messages | optional | 2.1 | if Opus FEC + RED fall short |
-| 7 | L9 | Path MTU discovery | optional | 3.4, 4K | |
-| 8 | L10 | A clock-sync service | optional | stage 5 (playout) | libratcast can do it over ping |
-| 9 | L7 | A delay-sensitive realtime mode | optional | — | mostly done with L2 (c) |
-| 10 | L12 | Live outcomes in the C ABI | optional | other bindings | when one needs them |
+| | L4 | Priorities inside `Priority::Live` | needed | 2.1 | ✅ |
+| 1 | L2 (a, b) | A live flow's start: initial window, shedding | needed | 1.2 (long paths) | put off |
+| 2 | L5 | Absolute deadlines when forwarding | needed | stage 5 (tree) | |
+| 3 | L8 | `send_many` with a shared buffer | improves | stage 5 (SFU) | |
+| 4 | L11 | One copy fewer on the send path | improves | with L8 | |
+| 5 | L6 | FEC across messages | optional | 2.1 | if Opus FEC + RED fall short |
+| 6 | L9 | Path MTU discovery | optional | 3.4, 4K | |
+| 7 | L10 | A clock-sync service | optional | stage 5 (playout) | libratcast can do it over ping |
+| 8 | L7 | A delay-sensitive realtime mode | optional | — | mostly done with L2 (c) |
+| 9 | L12 | Live outcomes and ranks in the C ABI | optional | other bindings | when one needs them |
 
 Where it stands after L1, L2 (c) and L3: the steady state holds — one-way delay + ~18 ms on a
 clean path, 59–60 fps under 1–5% loss, bursts, jitter and reordering, and BBR's estimate follows
@@ -503,8 +508,8 @@ every viewer still meets is the first second, which ratcast has taken as far as 
 joining keyframe arrives late instead of being sent again, 1.45 → 1.2 s at 200 ms RTT): the
 keyframe behind a 4-packet initial window and the frames behind it shed by Startup's floor rate
 — 0.6 s to the first picture at 100 ms RTT, 1.2 s at 200 ms, and a stall of up to 0.4 s after
-it. That is L2 (a, b), put off with stage 1 closed (joining faster is not urgent); next is L4,
-for stage 2's audio.
+it. That is L2 (a, b), put off with stage 1 closed (joining faster is not urgent). L4, for
+stage 2's audio, is done: live messages leave by rank, then deadline.
 
 **L1 — Reordering is not loss for live data.** ✅ RACK's reordering adaptation was off while a
 live message was outstanding, so with live video always outstanding every reordered packet was a
@@ -558,11 +563,18 @@ included — recorded by `LiveSender` / `SendQueue` and passed up from the trans
 entry points, never from inside `send()`. Tested from `LiveSender` and `SendQueue` up to two
 nodes over either transport.
 
-**L12 — Live outcomes in the C ABI** (`rats_send` with a tag, a `rats_on_live_outcome`), for the
-bindings; nothing uses them yet.
+**L12 — Live outcomes and ranks in the C ABI** (`rats_send` with a tag and a rank, a
+`rats_on_live_outcome`), for the bindings; nothing uses them yet.
 
-**L4 — Priorities inside `Priority::Live`.** *Needed by 2.1.* Audio > keyframe / base layer >
-deltas > enhancement layers.
+**L4 — Priorities inside `Priority::Live`.** ✅ *Needed by 2.1.* Audio > keyframe / base layer >
+deltas > enhancement layers. `SendOptions::rank` (0–3): a lower rank's live messages leave ahead
+of a higher one's whatever their deadlines, nearest deadline first within a rank. On UDP
+`LiveSender` keeps a deadline-ordered queue per rank (expiry takes the earliest front of any, and
+shedding under overload counts what leaves ahead in that order); on TCP `SendQueue` has a live
+lane per (type, rank), each rank a scheduling class between Interactive and Normal. ratcast:
+sound 0, keyframes 1, other frames 2 (`LiveRank`). Before it, EDF alone sent sound sent after a
+keyframe behind the whole keyframe whenever the sound's deadline was the later — the same
+lifetime, or longer as `cinema` will give it.
 
 **L5 — Absolute deadlines when forwarding,** so latency does not accumulate per hop. *Needed by
 stage 5's tree.*

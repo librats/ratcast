@@ -27,7 +27,7 @@ constexpr size_t kDeltaFrame = 16 * 1024;
 class NullNetwork final : public MediaNetwork {
 public:
     void send_reliable(const PeerId&, const Buffer&) override {}
-    bool send_live(const PeerId&, const Buffer& message, Duration, uint64_t) override {
+    bool send_live(const PeerId&, const Buffer& message, Duration, uint64_t, LiveRank) override {
         bench::do_not_optimize(message.data());
         return true;
     }

@@ -29,6 +29,13 @@
  *     keyframe, at most once per `keyframe_retry`. The receiver can break it
  *     too, when its decoder fails (invalidate()).
  *
+ * A stream whose frames each decode on their own — audio — needs none of
+ * that, and waiting behind a gap would only eat into the time a jitter buffer
+ * has to put frames in order and wait for late ones. With `in_order` off,
+ * every frame is handed on as it arrives, once: duplicates, and frames too old
+ * to tell from one (past kReferenceWindow), are dropped as late; nothing is
+ * counted lost, and no keyframe is asked for.
+ *
  * Not thread-safe: one owner drives it (MediaSession locks around it).
  * Allocation-free once constructed, as long as ready frames are taken with
  * pop() after each push() or update().
@@ -55,6 +62,9 @@ public:
         Duration keyframe_retry = std::chrono::milliseconds(250);
         /// Frames held waiting at most; past it the oldest gap is given up.
         size_t max_pending = 128;
+        /// Hand frames on in decode order (above); off for frames that stand
+        /// alone, which go on as they arrive.
+        bool in_order = true;
     };
 
     struct Stats {
@@ -111,6 +121,7 @@ private:
         Timestamp arrived;
     };
 
+    void push_unordered(EncodedFrame frame);
     void advance(Timestamp now);
     void make_room(Timestamp now);
     bool jump_to_keyframe();

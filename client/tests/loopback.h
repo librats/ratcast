@@ -64,10 +64,11 @@ private:
         void send_reliable(const PeerId& peer, const Buffer& message) override {
             send(peer, message);
         }
-        bool send_live(const PeerId& peer, const Buffer& message, Duration, uint64_t tag) override {
+        bool send_live(const PeerId& peer, const Buffer& message, Duration, uint64_t tag,
+                       LiveRank) override {
             loopback_.post([this, peer, message, tag] {
                 loopback_.session(peer).on_message(self_, message.bytes());
-                loopback_.session(self_).on_live_outcome(peer, tag, true);
+                if (tag != 0) loopback_.session(self_).on_live_outcome(peer, tag, true);
             });
             return true;
         }

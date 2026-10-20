@@ -29,6 +29,12 @@
  * receiver's requests for one are not news; if it was given up on, it is sent
  * again.
  *
+ * Audio is the other exception: each of its frames decodes on its own, so a
+ * subscriber starts at once, never needs a keyframe, and a frame to it that
+ * the network gave up on costs only itself. A receiver hands audio frames on
+ * as they arrive, for a jitter buffer (JitterBuffer) to put in order and wait
+ * for the late ones.
+ *
  * A stream added with BitrateLimits is rate-controlled: the session follows
  * the paths to its subscribers (on_peer_path) and tells the encoder the
  * bitrate to aim at through `bitrate_changed` (see RateController). With
@@ -40,7 +46,8 @@
  * caused them, never with a session lock held — so a handler may call back
  * into the session — and must not block: the frame handler in particular
  * runs on a network thread and should only queue the frame for a decoder.
- * Frames of one stream reach the handler one at a time, in decode order.
+ * Frames of one stream reach the handler one at a time, in decode order —
+ * audio frames in the order they arrived.
  */
 
 #include <atomic>

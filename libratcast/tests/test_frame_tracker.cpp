@@ -228,3 +228,30 @@ TEST_F(SmallFrameTrackerTest, AFullQueueGivesUpTheOldestGap) {
     EXPECT_EQ(drain(), (Frames{2, 3, 4, 5, 6}));
     EXPECT_EQ(tracker_.stats().lost, 1u);
 }
+
+// Frames that stand alone (audio) go on as they arrive, each once.
+TEST(UnorderedFrameTrackerTest, HandsOnEveryFrameAsItArrivesOnce) {
+    FrameTracker tracker(FrameTracker::Config{.in_order = false});
+    const Timestamp now{10s};
+    tracker.reset(now);
+    std::vector<FrameNumber> out;
+    for (FrameNumber n : {0, 2, 1, 1, 6, 3, 0}) {
+        tracker.push(key(n), now);
+        while (auto f = tracker.pop()) out.push_back(f->info.number);
+    }
+    EXPECT_EQ(out, (Frames{0, 2, 1, 6, 3}));
+    EXPECT_EQ(tracker.stats().delivered, 5u);
+    EXPECT_EQ(tracker.stats().late, 2u);  // the second 1 and the second 0
+    EXPECT_EQ(tracker.stats().lost, 0u);
+
+    // Too old to tell from a duplicate: late.
+    tracker.push(key(6 + FrameTracker::kReferenceWindow), now);
+    tracker.push(key(4), now);
+    EXPECT_EQ(tracker.pop()->info.number, 6 + FrameTracker::kReferenceWindow);
+    EXPECT_FALSE(tracker.pop());
+    EXPECT_EQ(tracker.stats().late, 3u);
+
+    // Never a keyframe to ask for.
+    tracker.invalidate(now);
+    EXPECT_FALSE(tracker.want_keyframe(now + 1s));
+}

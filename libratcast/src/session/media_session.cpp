@@ -86,11 +86,23 @@ struct MediaSession::OutgoingStream {
         if (bitrate) rate.emplace(*bitrate, description.lifetime);
     }
 
+    /// Every frame of it decodes on its own: nothing waits for a keyframe, and
+    /// no frame is worth more time than the others.
+    bool stands_alone() const noexcept { return description.kind() == MediaKind::Audio; }
+
+    /// Where a frame goes among the live messages to a peer: sound first, then
+    /// a keyframe, then the frames that depend on it.
+    LiveRank rank_of(const FrameInfo& info) const noexcept {
+        if (stands_alone()) return LiveRank::Sound;
+        return info.keyframe ? LiveRank::Keyframe : LiveRank::Frame;
+    }
+
     /// How long `subscriber` is given for a frame sent now. Its first keyframe
     /// gets kJoinRoundTrips round trips more than the stream's lifetime; the
     /// frames after it get what the one before them got, less half the time
     /// since, so each is still due after the one before it.
     Duration lifetime_for(Subscriber& subscriber, const FrameInfo& info, Timestamp now) {
+        if (stands_alone()) return description.lifetime;
         if (!subscriber.joined && info.keyframe && subscriber.awaiting_keyframe) {
             subscriber.joining = info.number;
             subscriber.lifetime = description.lifetime + kJoinRoundTrips * subscriber.peer->rtt();
@@ -239,6 +251,7 @@ FrameTracker::Config MediaSession::tracker_config(const StreamDescription& descr
         .patience = description.lifetime,
         .keyframe_retry = config_.keyframe_retry,
         .max_pending = config_.max_pending_frames,
+        .in_order = description.kind() != MediaKind::Audio,
     };
 }
 
@@ -351,8 +364,10 @@ Result<void> MediaSession::send_frame(StreamId stream_id, FrameInfo info, Mutabl
             subscriber.awaiting_keyframe = false;
             s.stats.messages += 1;
             s.stats.bytes += message->size();
-            if (!network_.send_live(subscriber.peer->id, *message, lifetime,
-                                    live_tag(s.slot, info.number))) {
+            // What became of a frame that stands alone changes nothing.
+            const uint64_t tag = s.stands_alone() ? 0 : live_tag(s.slot, info.number);
+            if (!network_.send_live(subscriber.peer->id, *message, lifetime, tag,
+                                    s.rank_of(info))) {
                 subscriber.peer->blocked.store(true, std::memory_order_release);
                 subscriber.backpressured = true;
             }
@@ -671,7 +686,7 @@ void MediaSession::on_subscribe(const PeerId& peer, StreamId stream_id) {
         });
         if (known) return;
         stream->subscribers.emplace_back(std::move(state));
-        ask = ask_keyframe(*stream, clock_.now());
+        ask = !stream->stands_alone() && ask_keyframe(*stream, clock_.now());
     }
     if (ask) notify(handlers_.keyframe_needed, stream_id);
 }
@@ -703,6 +718,7 @@ void MediaSession::on_keyframe_request(const PeerId& peer, StreamId stream_id) {
             s.subscribers, [&](const auto& subscriber) { return subscriber.peer->id == peer; });
         if (subscriber == s.subscribers.end()) return;
         s.stats.keyframe_requests += 1;
+        if (s.stands_alone()) return;  // every frame is a keyframe
         // Its first keyframe is on its way, and the network will say if it is
         // not: the receiver asks only because it has nothing yet.
         if (subscriber->joining) return;

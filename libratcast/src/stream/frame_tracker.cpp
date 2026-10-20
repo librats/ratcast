@@ -31,6 +31,10 @@ void FrameTracker::push(EncodedFrame frame, Timestamp now) {
     ++stats_.received;
     const FrameNumber number = frame.info.number;
 
+    if (!config_.in_order) {
+        push_unordered(std::move(frame));
+        return;
+    }
     if (pending_.size() >= config_.max_pending) make_room(now);
     if (started_ && number <= last_) {
         ++stats_.late;
@@ -66,11 +70,35 @@ void FrameTracker::invalidate(Timestamp now) {
 }
 
 bool FrameTracker::want_keyframe(Timestamp now) noexcept {
-    if (decodable()) return false;
+    if (decodable() || !config_.in_order) return false;
     if (last_request_ && now - *last_request_ < config_.keyframe_retry) return false;
     last_request_ = now;
     ++stats_.keyframe_requests;
     return true;
+}
+
+// A frame that stands alone goes on at once, unless it went on before.
+void FrameTracker::push_unordered(EncodedFrame frame) {
+    const FrameNumber number = frame.info.number;
+    if (started_ && number <= last_ &&
+        (last_ - number >= kReferenceWindow || delivered_[number % kReferenceWindow])) {
+        ++stats_.late;
+        return;
+    }
+    if (!started_ || number > last_) {
+        // The numbers jumped over have not been seen yet; they may still come.
+        if (!started_ || number - last_ >= kReferenceWindow) {
+            delivered_.reset();
+        } else {
+            for (FrameNumber n = last_ + 1; n < number; ++n)
+                delivered_[n % kReferenceWindow] = false;
+        }
+        started_ = true;
+        last_ = number;
+    }
+    delivered_[number % kReferenceWindow] = true;
+    ++stats_.delivered;
+    ready_.push_back(std::move(frame));
 }
 
 // Hand on, or give up, whatever can be dealt with by `now`.

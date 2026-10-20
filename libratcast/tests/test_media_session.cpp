@@ -66,7 +66,7 @@ public:
             }
             const bool lost = m.live && lose && lose(m);
             if (!lost) sessions.at(m.to)->on_message(m.from, m.bytes.bytes());
-            if (m.live) sessions.at(m.from)->on_live_outcome(m.to, m.tag, !lost);
+            if (m.live && m.tag != 0) sessions.at(m.from)->on_live_outcome(m.to, m.tag, !lost);
         }
     }
 
@@ -105,11 +105,12 @@ public:
     void send_reliable(const PeerId& peer, const Buffer& message) override {
         hub_.queue.push_back({self_, peer, message, false});
     }
-    bool send_live(const PeerId& peer, const Buffer& message, Duration lifetime,
-                   uint64_t tag) override {
+    bool send_live(const PeerId& peer, const Buffer& message, Duration lifetime, uint64_t tag,
+                   LiveRank rank) override {
         EXPECT_GT(lifetime, Duration::zero());
-        EXPECT_NE(tag, 0u);
         lifetimes.push_back(lifetime);
+        tags.push_back(tag);
+        ranks.push_back(rank);
         hub_.queue.push_back({self_, peer, message, true, tag});
         return !full_.contains(peer);
     }
@@ -118,6 +119,8 @@ public:
 
     /// What each live message was given, in the order they were sent.
     std::vector<Duration> lifetimes;
+    std::vector<uint64_t> tags;
+    std::vector<LiveRank> ranks;
 
     /// Make `peer`'s queue look full, or drained.
     void set_full(const PeerId& peer, bool full) {
@@ -178,6 +181,16 @@ StreamDescription screen(StreamId id = 1) {
     d.format = VideoFormat{1920, 1080, 60, 1};
     d.lifetime = 150ms;
     d.label = "screen";
+    return d;
+}
+
+StreamDescription mic(StreamId id = 3) {
+    StreamDescription d;
+    d.id = id;
+    d.codec = Codec::Opus;
+    d.format = AudioFormat{48'000, 1};
+    d.lifetime = 100ms;
+    d.label = "mic";
     return d;
 }
 
@@ -370,6 +383,7 @@ TEST_F(MediaSessionTest, ALostReferenceBringsAKeyframe) {
 
     hub.lose = [](const Message&) { return true; };
     ASSERT_TRUE(send(1, false));
+    EXPECT_EQ(sender.endpoint.ranks.back(), LiveRank::Frame);
     hub.deliver_all();
     hub.lose = nullptr;
     // The network gave frame 1 up: the receiver cannot decode what follows.
@@ -396,6 +410,9 @@ TEST_F(MediaSessionTest, AFrameGivenUpOnTheWayIsAKeyframeNeededAtOnce) {
     ASSERT_TRUE(send(0, true));
     hub.deliver_all();
     EXPECT_EQ(sender.keyframes_needed, 1);
+    ASSERT_EQ(sender.endpoint.tags.size(), 1u);
+    EXPECT_NE(sender.endpoint.tags[0], 0u);  // the network is to say what became of it
+    EXPECT_EQ(sender.endpoint.ranks[0], LiveRank::Keyframe);
 
     // Given up on right behind the keyframe: the receiver cannot decode what
     // follows, and the sender need not wait for it to say so.
@@ -420,6 +437,47 @@ TEST_F(MediaSessionTest, AFrameGivenUpOnTheWayIsAKeyframeNeededAtOnce) {
     sender.session.on_peer_path(receiver.id, path(3));
     advance(1s);
     EXPECT_EQ(sender.keyframes_needed, 2);
+}
+
+// ── Audio ───────────────────────────────────────────────────────────────────
+
+// Every audio frame decodes on its own: a subscriber starts at once, a lost
+// frame costs only itself, and nobody asks for a keyframe.
+TEST_F(MediaSessionTest, AnAudioStreamNeedsNoKeyframes) {
+    ASSERT_TRUE(sender.session.add_stream(mic()));
+    hub.deliver_all();
+    subscribe(receiver, 3);
+    EXPECT_EQ(sender.keyframes_needed, 0);
+
+    hub.lose = [](const Message& m) { return number_of(m) == 4; };
+    for (FrameNumber n = 0; n < 10; ++n) ASSERT_TRUE(send(n, true, 3));
+    advance(1s);
+    EXPECT_EQ(receiver.frames, (Frames{0, 1, 2, 3, 5, 6, 7, 8, 9}));
+    EXPECT_EQ(sender.keyframes_needed, 0);
+    EXPECT_EQ(sender.session.outgoing_stats(3)->keyframes_asked, 0u);
+
+    // Every frame with the stream's own lifetime, none of them tagged: what
+    // became of one changes nothing.
+    for (Duration lifetime : sender.endpoint.lifetimes) EXPECT_EQ(lifetime, 100ms);
+    for (uint64_t tag : sender.endpoint.tags) EXPECT_EQ(tag, 0u);
+    for (LiveRank rank : sender.endpoint.ranks) EXPECT_EQ(rank, LiveRank::Sound);
+
+    // Even a receiver that asks gets none.
+    receiver.session.request_keyframe(sender.id, 3);
+    advance(1s);
+    EXPECT_EQ(sender.keyframes_needed, 0);
+}
+
+// Audio frames go on as they arrive, for a jitter buffer to put in order:
+// waiting for a gap would take the time it has to wait for late frames.
+TEST_F(MediaSessionTest, AudioFramesAreHandedOnAsTheyArrive) {
+    ASSERT_TRUE(sender.session.add_stream(mic()));
+    hub.deliver_all();
+    subscribe(receiver, 3);
+    for (FrameNumber n = 0; n < 4; ++n) ASSERT_TRUE(send(n, true, 3));
+    hub.reverse_live();
+    hub.deliver_all();
+    EXPECT_EQ(receiver.frames, (Frames{3, 2, 1, 0}));
 }
 
 // ── Joining ─────────────────────────────────────────────────────────────────

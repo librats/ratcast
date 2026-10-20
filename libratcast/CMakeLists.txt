@@ -11,6 +11,7 @@ add_library(ratcast
     src/session/media_session.cpp
     src/session/rate_controller.cpp
     src/stream/frame_tracker.cpp
+    src/stream/jitter_buffer.cpp
     src/stream/stream_description.cpp
     src/wire/control_codec.cpp
     src/wire/frame_codec.cpp

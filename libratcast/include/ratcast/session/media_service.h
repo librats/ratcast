@@ -47,8 +47,8 @@ public:
 
 private:
     void send_reliable(const PeerId& peer, const Buffer& message) override;
-    bool send_live(const PeerId& peer, const Buffer& message, Duration lifetime,
-                   uint64_t tag) override;
+    bool send_live(const PeerId& peer, const Buffer& message, Duration lifetime, uint64_t tag,
+                   LiveRank rank) override;
     bool writable(const PeerId& peer) const override;
     size_t max_live_message() const override;
 
