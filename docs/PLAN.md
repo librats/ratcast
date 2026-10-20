@@ -149,7 +149,7 @@ final place and shape: stage 0 is a walking skeleton, not a throwaway prototype.
 | Stage | Result | librats needs |
 |---|---|---|
 | **0. Skeleton** ✅ | screen → encoder → libratcast → librats → decoder → window, on Linux; latency and behaviour on emulated networks measured | L1 ✅ |
-| **1. A stream that holds** ← now | one video stream to a few viewers plays on every emulated path: rate control, fast joining, loss recovery | L2, L3 |
+| **1. A stream that holds** ← now | one video stream to a few viewers plays on every emulated path: rate control, fast joining, loss recovery | L2 (c) ✅, L3 |
 | **2. Sound** | audio, A/V sync, latency profiles `call` / `game` / `cinema` end to end | L4 |
 | **3. Standalone library** | netsim, C API, MPEG-TS, `rats://` URLs, a benchmark against librist and SRT | — |
 | **4. Platforms** | GPU paths and hardware codecs; Windows and macOS capture | — |
@@ -270,22 +270,25 @@ many viewers and other platforms are later stages.
 *Done when* `bench/netem.py --repeat 3` shows:
 - at least 55 fps in every scenario but `cap-drop`, which is back to full rate within 2 s of
   each change of the path;
-- the first picture within about four round trips plus 150 ms (now 1.5 s at 200 ms RTT);
-- no scenario playing worse with rate control than at a fixed bitrate (now `jitter`,
-  `reorder-2`: `docs/bench.md`, "Rate control").
+- the first picture within about four round trips plus 150 ms (now 0.7 s at 100 ms RTT,
+  1.45 s at 200 ms), and no stall right after it (now 0.1–0.2 s on most paths);
+- no scenario playing worse with rate control than at a fixed bitrate (✅ since L2 (c): `jitter`,
+  `reorder` and `reorder-2` play at 59–60 fps like the clean paths).
 
-Order: L2 first (both 1.1's remaining gap and 1.2 wait for it), then 1.2 with L3, then 1.3;
-1.1's leftovers when the numbers after L2 show which of them still matter.
+Order: 1.3, which needs nothing from librats, then 1.2 with L3 — and L2 (a, b) if the
+first-picture target still asks for them; 1.1's leftovers when a measurement asks.
 
 **1.1 Rate control.** ✅ The encoder's bitrate from the viewers' `PathStats`: fast down on expiring
 frames or a growing queue, careful up, starting low so that the first keyframe is small. Left:
+- ✅ the start's false cut: frames expiring while the transport is in Startup are no overuse;
+- ✅ a narrowing path in one cut, by what it delivered rather than by BBR's lagging estimate;
 - fewer keyframes: every bitrate change of a software encoder is a keyframe (7 in a 15 s run
   against 3 at a fixed bitrate, 15 on `cap-6`) — once ramped, change less often and in larger
   steps; encoders that change in flight (hardware, 4.2) need no keyframe at all;
 - a resolution / frame-rate ladder for paths too narrow for the picture at any bitrate.
 
-librats: **needs** L2 (on `jitter` the estimate rate control follows is what Startup left:
-1–2 Mbit/s on a 1 Gbit/s path); **better with** L7 (`reorder`, `reorder-2`).
+librats: **needs** L2 (c) ✅ (on `jitter` the estimate rate control follows was what Startup
+left, 1–2 Mbit/s on a 1 Gbit/s path).
 
 Notes from 1.1: `RateController` (libratcast) turns each viewer's path samples — librats'
 `on_peer_path`, every 100 ms — into one bitrate per stream, the slowest viewer's: start at
@@ -295,15 +298,32 @@ steps back towards where it filled up. The round trip is no signal (jitter alone
 publisher hands the bitrate to the encoder; encoders FFmpeg cannot change in flight open a new
 one alongside and switch with a keyframe (SVT-AV1 at 1080p: a 25–31 ms picture instead of a
 55 ms stop). netem: `cap-6` from 30 to 59 fps, joining a third faster; it follows BBR's estimate
-wherever that goes, so `jitter` and `reorder-2` play at 1.5–3.5 Mbit/s with more stalls than at a
-fixed 8 — L2 is what fixes that. Two streams to one viewer (camera and screen) each take the
+wherever that goes, so `jitter` and `reorder-2` played at 1.5–3.5 Mbit/s with more stalls than at
+a fixed 8 — until L2 (c), below. Two streams to one viewer (camera and screen) each take the
 whole path for now: they share it in stage 6.
+
+After L2 (c) (librats as of 2026-10-20; `bench/netem.py --repeat 3`, rate-controlled, before →
+after): `jitter` 53 → 60 fps, 1.7 → 5.7 Mbit/s over the run, 9 → 2 cuts, p95 156 → 88 ms,
+stalls 2.6 → 0.2 s; `reorder` 54 → 59 fps, 1.4 → 5.3 Mbit/s, stalls 2.6 → 0.5 s; `reorder-2`
+58 → 60 fps, 3.4 → 5.6 Mbit/s, no stalls. The jittery paths now ramp and hold like the clean
+ones (5.6–5.7 Mbit/s over a 15 s run, ramp included); the clean and lossy rows are unchanged.
+
+Then (`docs/bench.md`, "The start and a narrowing path"): the start's cut came from frames
+expiring while BBR was in Startup, pacing at 2.74× an estimate that is only how far it got; a
+sample pacing at more than twice its estimate now counts for nothing but a full queue, and every
+path but the narrow ones ramps to 8 Mbit/s in four seconds with no cut (5.9–6.3 Mbit/s over a
+run). A cut goes to 85% of the lesser of BBR's estimate and what the path delivered between two
+busy samples: after `cap-drop`'s fall to 4 Mbit/s the estimate took 3.5 s to come down, the
+delivery said 4 at once — 55 fps and 1.5 s of stalls, from 50 fps and 2.9 s. The cut's new
+encoder had been hiding the start's expired frame with its keyframe; now an expiry on a
+subscriber's path is a keyframe needed at once (and a keyframe asked for while a new encoder
+opens comes with it), which leaves a 0.1–0.2 s stall after the first picture — 1.2's.
 
 **1.2 Joining.** A joining viewer's keyframe is allowed to arrive late, and the viewer is caught
 up rather than asked again; keyframe requests from several viewers in one window are answered
 with one keyframe. *Done:* the first-picture target above at every distance.
-librats: **needs** L2 (initial window, shedding by Startup's rate), L3 (the sender learns the
-keyframe is on its way or expired).
+librats: **needs** L3 (the sender learns the keyframe is on its way or expired); **better with**
+L2 (a, b) (initial window, shedding by Startup's rate).
 
 **1.3 Loss recovery.** Reference invalidation / LTR where encoders support it, intra-refresh for
 `game`: a lost reference costs a few frames, not a stall until the next keyframe (now 1–4 short
@@ -386,23 +406,25 @@ and the list is in priority order:
 | # | id | item | tier | for | status |
 |---:|---|---|---|---|---|
 | | L1 | Reordering is not loss for live data | needed | 0.6 | ✅ |
-| 1 | L2 | A live flow's start | needed | 1.1, 1.2 | **next** |
-| 2 | L3 | Per-message delivered / expired feedback | needed | 1.2 (1.3 better with) | |
-| 3 | L4 | Priorities inside `Priority::Live` | needed | 2.1 | |
-| 4 | L7 | A delay-sensitive realtime mode | improves | 1.1 on jittery paths | after L2, on what it leaves |
-| 5 | L5 | Absolute deadlines when forwarding | needed | stage 5 (tree) | |
-| 6 | L8 | `send_many` with a shared buffer | improves | stage 5 (SFU) | |
-| 7 | L11 | One copy fewer on the send path | improves | with L8 | |
-| 8 | L6 | FEC across messages | optional | 2.1 | if Opus FEC + RED fall short |
-| 9 | L9 | Path MTU discovery | optional | 3.4, 4K | |
-| 10 | L10 | A clock-sync service | optional | stage 5 (playout) | libratcast can do it over ping |
+| | L2 (c) | BBR on a jittery path | needed | 1.1 | ✅ |
+| 1 | L3 | Per-message delivered / expired feedback | needed | 1.2 (1.3 better with) | **next** |
+| 2 | L4 | Priorities inside `Priority::Live` | needed | 2.1 | |
+| 3 | L2 (a, b) | A live flow's start: initial window, shedding | improves | 1.1, 1.2 | if 1.2's target asks |
+| 4 | L5 | Absolute deadlines when forwarding | needed | stage 5 (tree) | |
+| 5 | L8 | `send_many` with a shared buffer | improves | stage 5 (SFU) | |
+| 6 | L11 | One copy fewer on the send path | improves | with L8 | |
+| 7 | L6 | FEC across messages | optional | 2.1 | if Opus FEC + RED fall short |
+| 8 | L9 | Path MTU discovery | optional | 3.4, 4K | |
+| 9 | L10 | A clock-sync service | optional | stage 5 (playout) | libratcast can do it over ping |
+| 10 | L7 | A delay-sensitive realtime mode | optional | — | mostly done with L2 (c) |
 
-Where it stands after L1: the steady state holds — one-way delay + ~18 ms on a clean path,
-58–60 fps under 1–5% loss and bursts, reordering and jitter no longer taken for loss, every frame
-delivered over a real 40 ms path. What every viewer still meets is the start (L2) — and since
-rate control (1.1) steers the encoder by BBR's estimate, the start now costs more than the first
-picture: an estimate Startup leaves low (a keyframe behind the initial window, an exit on jitter)
-is a low bitrate for seconds, on `jitter` for the whole run (`docs/bench.md`, "Rate control").
+Where it stands after L1 and L2 (c): the steady state holds — one-way delay + ~18 ms on a clean
+path, 59–60 fps under 1–5% loss, bursts, jitter and reordering, and BBR's estimate follows a
+jittery path as it does a clean one, so rate control (1.1) ramps and holds there too. What every
+viewer still meets is the first second: the joining keyframe behind a 4-packet initial window
+(L2 (a, b)) — 0.7 s to the first picture at 100 ms RTT, 1.45 s at 200 ms, and a short stall
+after it. Both have a cheaper answer in ratcast first (1.1, 1.2), so the next librats item is the
+one 1.2 cannot do without: L3.
 
 **L1 — Reordering is not loss for live data.** ✅ RACK's reordering adaptation was off while a
 live message was outstanding, so with live video always outstanding every reordered packet was a
@@ -415,26 +437,34 @@ the way: a packet number was sent in one byte, so one overtaken by more than 127
 keyframe's burst past one held back) was read 256 off — lost under Noise, and in plaintext taken
 for a later packet whose data then never came; now never under two bytes. Left, neither blocking
 (`docs/bench.md`): per-packet jitter several times the base round trip (netem's `reorder`) —
-BBR's window, built on a minimum round trip of a few ms, cannot hold a keyframe: L7; and 4K60 at
+BBR's window, built on a minimum round trip of a few ms, cannot hold a keyframe (done in L2 (c));
+and 4K60 at
 80% of a link that reorders a few packets in a hundred, 1–3% of frames late, since a real loss
 now waits out the window too — rate control's headroom (1.1) covers it.
 
-**L2 — A live flow's start.** *Needed by 1.1 and 1.2; next.* Three parts, (c) first for rate
-control, (a) and (b) for joining:
-- (c) Startup's exit on a lifted round trip (an app-limited burst that "queues") fires on ±10 ms
-  of jitter and leaves the estimate where the first keyframe left it: 2.7 s to the first picture
-  at a fixed bitrate, 1–2 Mbit/s for the whole run with rate control.
-- (a) The initial window of 4 packets paces a fresh connection at 4 packets per round trip ×
-  2.77: a 50 KB keyframe takes ~190 ms to leave at 50 ms RTT and ~385 ms at 100 ms, past a 200 ms
-  lifetime, and a live flow that then falls silent grows the rate once per keyframe request
-  rather than once per round trip. 10 packets (RFC 9002) gets a keyframe through at 50 ms RTT;
-  longer paths need the first keyframe to be smaller (rate control starting low, ✅) or to be
-  allowed to arrive late (1.2, with L3).
-- (b) Shedding by the pacing rate drops the frames behind a keyframe while that rate is still
-  Startup's floor (the integration test's expired frame).
+**L2 — A live flow's start.** Three parts:
+- (c) ✅ *BBR on a jittery path.* Startup's exit on a lifted round trip fired on ±10 ms of
+  jitter and left the estimate where the first keyframe left it: 2.7 s to the first picture at a
+  fixed bitrate, 1–2 Mbit/s for the whole run with rate control. Now a standing queue in Startup,
+  or a burst that queued in a probe, is checked by padding up to the pacing rate before it is
+  believed; the window is sized over the round trip the path shows at load (Little's law), not
+  over one lucky minimum; a probe ends only on a burst later than twice the path's own ack
+  lateness; random loss on a path that holds packets back is no longer read as a full queue; a
+  late packet behind many gaps is taken in rather than dropped as a duplicate. netem: `jitter`,
+  `reorder` and `reorder-2` at 59–60 fps and 5.3–5.7 Mbit/s (1.1's notes).
+- (a) *Improves 1.1 and 1.2.* The initial window of 4 packets paces a fresh connection at
+  4 packets per round trip × 2.77: a keyframe leaves slower than its lifetime from ~100 ms RTT
+  up (32 frames expire at 200 ms before the first picture), and a live flow that then falls
+  silent grows the rate once per keyframe request rather than once per round trip. 10 packets
+  (RFC 9002) gets a keyframe through at 50 ms RTT; longer paths need the first keyframe to be
+  smaller (rate control starting low, ✅) or to be allowed to arrive late (1.2, with L3).
+- (b) *Improves 1.1.* Shedding by the pacing rate drops the frames behind a keyframe while that
+  rate is still Startup's floor (the integration test's expired frame).
 
-The start's expired frames are also the first rate cut in nearly every netem run. A joining
-scenario in `bench_path` to measure all three on, in virtual time.
+The start's expired frames were also a false rate cut at the start of nearly every netem run,
+which 1.1 no longer takes them for; what they still cost is a 0.1–0.2 s stall after the first
+picture. A joining scenario in `bench_path` to measure (a) and
+(b) on, in virtual time, when they are taken up.
 
 **L3 — Per-live-message delivered / expired feedback.** *Needed by 1.2.* A sender learns that a
 keyframe expired at once, not from the receiver's next request a `keyframe_retry` later, and a
@@ -442,11 +472,6 @@ joining viewer can be caught up instead of asked again.
 
 **L4 — Priorities inside `Priority::Live`.** *Needed by 2.1.* Audio > keyframe / base layer >
 deltas > enhancement layers.
-
-**L7 — A delay-sensitive realtime mode** for BBR (or a GCC-style controller), compared on
-`bench_path`. *Improves 1.1 on jittery paths.* It has to keep a window that holds a keyframe on a
-path whose round trips swing by several times their minimum (netem's `reorder`, L1). Taken up
-after L2, against what `jitter`, `reorder-2` and `reorder` still show then.
 
 **L5 — Absolute deadlines when forwarding,** so latency does not accumulate per hop. *Needed by
 stage 5's tree.*
@@ -464,3 +489,8 @@ decides).
 
 **L10 — A clock-sync service** (stage 5's synchronized playout; libratcast can do it over librats
 ping instead).
+
+**L7 — A delay-sensitive realtime mode** for BBR (or a GCC-style controller). *Optional.* What
+it was for — a window that holds a keyframe on a path whose round trips swing by several times
+their minimum (netem's `reorder`) — came with L2 (c): `reorder` plays at 59 fps. Taken up again
+only if a measured path, or calls (stage 2), ask for lower queueing delay than BBR keeps.

@@ -14,6 +14,9 @@ constexpr double kMaxCut = 0.5;
 /// An estimate that grew more than this since the last sample is still being
 /// found (as BBR's Startup finds it), not a ceiling.
 constexpr double kStillGrowing = 1.25;
+/// Pacing faster than this many times the estimate is a congestion controller
+/// still finding the path (BBR's Startup: 2.77).
+constexpr double kStartupPacing = 2.0;
 /// Of what a path is known to carry, the most a raise aims at.
 constexpr double kHeadroom = 0.9;
 /// A step up with no ceiling to approach, and one towards a ceiling.
@@ -38,6 +41,7 @@ PathSignal PathMonitor::update(const PathStats& sample, Timestamp now) {
     PathSignal signal;
     if (!sample.valid) return signal;
     signal.rtt = Duration{sample.srtt_us};
+    signal.starting = double(sample.pacing_bps) > double(sample.bandwidth_bps) * kStartupPacing;
 
     const Duration queue_delay =
         sample.bandwidth_bps > 0
@@ -50,19 +54,23 @@ PathSignal PathMonitor::update(const PathStats& sample, Timestamp now) {
     // The counters start at zero with the connection, so the first sample
     // counts from there; a rate needs the time between two.
     signal.expired = sample.live_expired > (last_ ? last_->live_expired : 0);
-    double repair_bps = 0;
-    if (last_ && now > last_at_) {
+    // A keyframe alone keeps a path busy for a moment; one busy in two samples
+    // running delivered what it carries in between.
+    const bool busy =
+        !signal.starting && last_ && now > last_at_ && !last_->app_limited && !sample.app_limited;
+    if (busy) {
         const double seconds = std::chrono::duration<double>(now - last_at_).count();
-        repair_bps = double(sample.live_repair_bytes - last_->live_repair_bytes) * 8 / seconds;
-    }
-    // A keyframe alone keeps a path busy for a moment; one that stays busy
-    // with an estimate that has stopped growing is full.
-    const bool full = last_ && !last_->app_limited && !sample.app_limited &&
-                      sample.bandwidth_bps > 0 &&
-                      double(sample.bandwidth_bps) <= double(last_->bandwidth_bps) * kStillGrowing;
-    if (full) {
-        signal.capacity =
-            static_cast<uint64_t>(std::max(double(sample.bandwidth_bps) - repair_bps, 0.0));
+        const double repair_bps =
+            double(sample.live_repair_bytes - last_->live_repair_bytes) * 8 / seconds;
+        const double delivered_bps =
+            double(sample.bytes_delivered - last_->bytes_delivered) * 8 / seconds;
+        signal.delivered = static_cast<uint64_t>(std::max(delivered_bps - repair_bps, 0.0));
+        // With an estimate that has stopped growing, it is full.
+        if (sample.bandwidth_bps > 0 &&
+            double(sample.bandwidth_bps) <= double(last_->bandwidth_bps) * kStillGrowing) {
+            signal.capacity =
+                static_cast<uint64_t>(std::max(double(sample.bandwidth_bps) - repair_bps, 0.0));
+        }
     }
 
     last_ = sample;
@@ -76,18 +84,21 @@ RateController::RateController(BitrateLimits limits, Duration lifetime) noexcept
     : limits_(limits), lifetime_(lifetime), target_(limits.start) {}
 
 bool RateController::overused(const PathSignal& signal) const noexcept {
-    return signal.expired || signal.queue_delay > lifetime_ / 4;
+    return !signal.starting && (signal.expired || signal.queue_delay > lifetime_ / 4);
 }
 
-std::optional<uint32_t> RateController::on_overuse(Timestamp now, Duration rtt,
-                                                   std::optional<uint64_t> capacity) noexcept {
+std::optional<uint32_t> RateController::on_overuse(Timestamp now, const PathSignal& path) noexcept {
     // Frames sent before the last cut are still on their way, and may yet
     // expire; they say nothing about the new rate.
-    if (last_cut_ && now - *last_cut_ < lifetime_ + rtt) return std::nullopt;
+    if (last_cut_ && now - *last_cut_ < lifetime_ + path.rtt) return std::nullopt;
     last_cut_ = now;
+    // What the path carries: the lesser of what it delivered and its estimate,
+    // which lags a path that narrowed.
+    std::optional<uint64_t> carries = path.delivered;
+    if (path.capacity) carries = std::min(carries.value_or(*path.capacity), *path.capacity);
     double from = target_;
-    if (capacity) {
-        from = std::clamp(double(*capacity), target_* kMaxCut, from);
+    if (carries) {
+        from = std::clamp(double(*carries), target_* kMaxCut, from);
         ceiling_ = from;
     }
     return set_target(from * kBackoff);

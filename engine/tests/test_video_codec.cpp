@@ -172,6 +172,24 @@ TEST_P(VideoCodecTest, ABitrateChangeLosesNoPicture) {
     }
 }
 
+TEST_P(VideoCodecTest, AKeyframeAskedForAsTheBitrateChangesComesOnce) {
+    for (uint64_t i = 0; i < 5; ++i) {
+        for (EncodedVideo& frame : encode(pattern(i))) decode(frame);
+    }
+    // As rate control does on frames that expired: a lower bitrate and a
+    // keyframe. An encoder that opens another for the bitrate makes the one
+    // keyframe it starts with do for both.
+    encoder_->set_bitrate(1'000'000);
+    int keyframes = 0;
+    for (uint64_t i = 5; i < 40; ++i) {
+        std::vector<EncodedVideo> frames = encode(pattern(i), i == 5);
+        ASSERT_EQ(frames.size(), 1u) << "picture " << i;
+        keyframes += frames[0].info.keyframe;
+        EXPECT_EQ(decode(frames[0]).size(), 1u) << "picture " << i;
+    }
+    EXPECT_EQ(keyframes, 1);
+}
+
 TEST_P(VideoCodecTest, KeepsGoingAfterAFlush) {
     for (uint64_t i = 0; i < 5; ++i) encode(pattern(i));
     std::vector<EncodedVideo> rest;

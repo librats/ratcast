@@ -220,6 +220,13 @@ PathStats path(uint64_t expired = 0) {
     return s;
 }
 
+/// The same while the transport is still finding it, as BBR's Startup does.
+PathStats starting_path(uint64_t expired) {
+    PathStats s = path(expired);
+    s.pacing_bps = s.bandwidth_bps * 277 / 100;
+    return s;
+}
+
 }  // namespace
 
 // ── Announcing ──────────────────────────────────────────────────────────────
@@ -351,6 +358,22 @@ TEST_F(MediaSessionTest, ALostReferenceBringsAKeyframe) {
     EXPECT_EQ(stats->frames.undecodable, 1u);
 }
 
+TEST_F(MediaSessionTest, FramesExpiringOnTheWayAreAKeyframeNeeded) {
+    subscribe(receiver);
+    ASSERT_TRUE(send(0, true));
+    hub.deliver_all();
+    EXPECT_EQ(sender.keyframes_needed, 1);
+    sender.session.on_peer_path(receiver.id, path());
+    EXPECT_EQ(sender.keyframes_needed, 1);
+
+    // The frame behind the keyframe expired: the receiver cannot decode what
+    // follows, and the sender need not wait for it to say so.
+    sender.session.on_peer_path(receiver.id, path(1));
+    EXPECT_EQ(sender.keyframes_needed, 1);  // held back: a keyframe was just sent...
+    advance(200ms);
+    EXPECT_EQ(sender.keyframes_needed, 2);  // ...until min_keyframe_interval has passed
+}
+
 TEST_F(MediaSessionTest, KeyframeRequestsFromManyReceiversAreCoalesced) {
     Party other(hub, clock, 3);
     connect(sender, other);
@@ -465,6 +488,17 @@ TEST_F(MediaSessionTest, RateControlHearsOnlyItsSubscribersPaths) {
     EXPECT_TRUE(sender.bitrates.empty());
 }
 
+TEST_F(MediaSessionTest, FramesExpiringWhileTheTransportStartsAreNoOveruse) {
+    add_rated_stream();
+    subscribe(receiver, 2);
+    sender.session.on_peer_path(receiver.id, starting_path(1));  // the joining keyframe
+    EXPECT_TRUE(sender.bitrates.empty());
+
+    clock.advance(100ms);
+    sender.session.on_peer_path(receiver.id, path(2));
+    EXPECT_EQ(sender.bitrates, Bitrates{1'700'000});
+}
+
 TEST_F(MediaSessionTest, AFullQueueIsOveruse) {
     add_rated_stream();
     subscribe(receiver, 2);
@@ -486,6 +520,8 @@ TEST_F(MediaSessionTest, AStreamNobodyWatchesStartsAfresh) {
     sender.session.on_peer_path(receiver.id, path(2));
     sender.session.on_peer_disconnected(receiver.id);
     EXPECT_EQ(sender.bitrates, (Bitrates{1'700'000, kBitrate.start, 1'700'000, kBitrate.start}));
+    EXPECT_EQ(sender.session.outgoing_stats(2)->bitrate_cuts, 2u);  // the restarts are not
+    EXPECT_EQ(sender.session.outgoing_stats(2)->bitrate_raises, 0u);
 }
 
 // ── Peers coming and going ──────────────────────────────────────────────────

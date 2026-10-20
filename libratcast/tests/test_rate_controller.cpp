@@ -29,9 +29,14 @@ protected:
         return rate.target();
     }
 
-    uint32_t overuse(Duration after, std::optional<uint64_t> capacity = std::nullopt) {
+    uint32_t overuse(Duration after, std::optional<uint64_t> capacity = std::nullopt,
+                     std::optional<uint64_t> delivered = std::nullopt) {
         now += after;
-        rate.on_overuse(now, kRtt, capacity);
+        PathSignal path;
+        path.rtt = kRtt;
+        path.capacity = capacity;
+        path.delivered = delivered;
+        rate.on_overuse(now, path);
         return rate.target();
     }
 
@@ -92,6 +97,42 @@ TEST(PathMonitor, KnowsTheCapacityOnlyOfAFullPathAndLeavesOutRepairs) {
     EXPECT_FALSE(monitor.update(growing, Timestamp{1300ms}).capacity);
 }
 
+TEST(PathMonitor, MeasuresWhatABusyPathDeliveredLessRepairs) {
+    PathMonitor monitor;
+    PathStats s = sample(10'000'000, true);
+    s.bytes_delivered = 1'000'000;
+    monitor.update(s, Timestamp{1s});
+    s.bytes_delivered += 50'000;  // 4 Mbit/s over 100 ms, but not busy all along
+    s.app_limited = false;
+    EXPECT_FALSE(monitor.update(s, Timestamp{1100ms}).delivered);
+
+    s.bytes_delivered += 50'000;
+    s.live_repair_bytes = 2'500;  // 0.2 Mbit/s of it repairs
+    const PathSignal signal = monitor.update(s, Timestamp{1200ms});
+    ASSERT_TRUE(signal.delivered);
+    EXPECT_EQ(*signal.delivered, 3'800'000u);
+    // The estimate remembers the path wider; it is no longer growing, so the
+    // path is full all the same.
+    EXPECT_EQ(signal.capacity, 9'800'000u);
+}
+
+TEST(PathMonitor, SaysNothingOfThePathWhileTheTransportIsStillFindingIt) {
+    PathMonitor monitor;
+    PathStats s = sample(1'000'000, false);
+    s.pacing_bps = 2'770'000;  // BBR's Startup
+    s.queued_bytes = 50'000;   // 400 ms at what it has found so far
+    s.live_expired = 1;
+    monitor.update(s, Timestamp{1s});
+    s.bytes_delivered = 12'500;
+    const PathSignal signal = monitor.update(s, Timestamp{1100ms});
+    EXPECT_TRUE(signal.starting);
+    EXPECT_FALSE(signal.capacity);
+    EXPECT_FALSE(signal.delivered);
+
+    s.pacing_bps = 1'250'000;  // probing past Startup
+    EXPECT_FALSE(monitor.update(s, Timestamp{1200ms}).starting);
+}
+
 // ── RateController ──────────────────────────────────────────────────────────
 
 TEST(BitrateLimits, Validity) {
@@ -111,6 +152,14 @@ TEST_F(RateControllerTest, OverusedByExpiriesOrAQueueOfAQuarterLifetime) {
     signal.queue_delay = 0ms;
     signal.expired = true;
     EXPECT_TRUE(rate.overused(signal));
+}
+
+TEST_F(RateControllerTest, NotOverusedWhileTheTransportIsStillFindingThePath) {
+    PathSignal signal;
+    signal.starting = true;
+    signal.expired = true;
+    signal.queue_delay = 1s;
+    EXPECT_FALSE(rate.overused(signal));
 }
 
 TEST_F(RateControllerTest, RampsUpFromTheStartASecondAStep) {
@@ -137,6 +186,13 @@ TEST_F(RateControllerTest, CutsAtOnceToBelowWhatThePathCarries) {
     // lifetime and a round trip.
     EXPECT_EQ(overuse(200ms), 850'000u);
     EXPECT_EQ(overuse(60ms), 722'500u);  // 85% of the target, the path unknown
+}
+
+TEST_F(RateControllerTest, CutsByWhatABusyPathDeliveredWhereItsEstimateLags) {
+    clear(0s);
+    // The estimate still remembers 10 Mbit/s; 1.2 got through.
+    EXPECT_EQ(overuse(0s, 10'000'000, 1'200'000), 1'020'000u);
+    EXPECT_EQ(clear(2s), 1'101'600u);  // careful: the path filled up at 1.2 Mbit/s
 }
 
 TEST_F(RateControllerTest, CutsNoMoreThanHalfAtOnce) {
@@ -172,7 +228,7 @@ TEST_F(RateControllerTest, ACutWithThePathNotKnownToBeFullLeavesNoCeiling) {
 TEST_F(RateControllerTest, StaysWithinTheLimits) {
     for (int i = 0; i < 20; ++i) overuse(1s);
     EXPECT_EQ(rate.target(), kLimits.min);
-    EXPECT_EQ(rate.on_overuse(now + 1s, kRtt, std::nullopt), std::nullopt);  // no change
+    EXPECT_EQ(rate.on_overuse(now + 1s, PathSignal{}), std::nullopt);  // no change
 }
 
 TEST_F(RateControllerTest, RestartGoesBackToTheStartAndForgetsThePath) {

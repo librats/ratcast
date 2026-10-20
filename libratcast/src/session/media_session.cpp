@@ -67,11 +67,27 @@ struct MediaSession::OutgoingStream {
         return bitrate;
     }
 
-    /// Nobody watches any more: the next viewer starts afresh.
+    /// Rate control hears a sample of `subscriber`'s path.
+    std::optional<uint32_t> follow(Subscriber& subscriber, const PathSignal& path, Timestamp now) {
+        subscriber.capacity = path.capacity;
+        const uint32_t before = rate->target();
+        if (std::exchange(subscriber.backpressured, false) || rate->overused(path)) {
+            return count(rate->on_overuse(now, path), before);
+        }
+        // Raised no further than the narrowest path is known to carry.
+        std::optional<uint64_t> capacity;
+        for (const Subscriber& other : subscribers) {
+            if (other.capacity)
+                capacity = std::min(capacity.value_or(*other.capacity), *other.capacity);
+        }
+        return count(rate->on_clear(now, capacity), before);
+    }
+
+    /// Nobody watches any more: the next viewer starts afresh. Neither a cut
+    /// nor a raise: no path asked for it.
     std::optional<uint32_t> restart_if_unwatched() {
         if (!rate || !subscribers.empty()) return std::nullopt;
-        const uint32_t before = rate->target();
-        return count(rate->restart(), before);
+        return rate->restart();
     }
 };
 
@@ -414,30 +430,21 @@ void MediaSession::on_peer_path(const PeerId& peer, const PathStats& sample) {
     }
 
     for (const auto& [id, stream] : streams) {
+        bool keyframe = false;
         std::optional<uint32_t> bitrate;
         {
             std::lock_guard lock(stream->mutex);
             OutgoingStream& s = *stream;
-            if (!s.rate) continue;
             const auto subscriber = std::ranges::find_if(
                 s.subscribers, [&](const auto& subscriber) { return subscriber.peer->id == peer; });
             if (subscriber == s.subscribers.end()) continue;
-            subscriber->capacity = signal.capacity;
-
-            const uint32_t before = s.rate->target();
-            if (std::exchange(subscriber->backpressured, false) || s.rate->overused(signal)) {
-                bitrate = s.count(s.rate->on_overuse(now, signal.rtt, signal.capacity), before);
-            } else {
-                // Raised no further than the narrowest path is known to carry.
-                std::optional<uint64_t> capacity;
-                for (const auto& other : s.subscribers) {
-                    if (other.capacity) {
-                        capacity = std::min(capacity.value_or(*other.capacity), *other.capacity);
-                    }
-                }
-                bitrate = s.count(s.rate->on_clear(now, capacity), before);
-            }
+            // The peer is missing a frame, and would ask for a keyframe only
+            // once the next one arrived — a round trip on, and ignored if that
+            // is soon after the last keyframe.
+            if (signal.expired) keyframe = ask_keyframe(s, now);
+            if (s.rate) bitrate = s.follow(*subscriber, signal, now);
         }
+        if (keyframe) notify(handlers_.keyframe_needed, id);
         if (bitrate) notify(handlers_.bitrate_changed, id, *bitrate);
     }
 }

@@ -208,8 +208,15 @@ public:
             if (Result<void> opened = open(); !opened) return opened;
             reopen_ = false;
             keyframe = true;
+            keyframe_owed_ = false;
         } else if (next_.valid() &&
-                   next_.wait_for(std::chrono::seconds(0)) == std::future_status::ready) {
+                   next_.wait_for(std::chrono::seconds(0)) != std::future_status::ready) {
+            // The encoder opening alongside starts with a keyframe; one asked
+            // for meanwhile comes with it rather than right before it — two in
+            // a row, most likely into a path the change is making room on.
+            keyframe_owed_ = keyframe_owed_ || keyframe;
+            keyframe = false;
+        } else if (next_.valid()) {
             if (Result<av::CodecContextPtr> next = next_.get(); next) {
                 if (Result<void> flushed = flush(sink); !flushed) return flushed;
                 // Closing takes as long as opening: alongside too.
@@ -218,6 +225,7 @@ public:
                 reopen_ = false;
                 keyframe = true;
             }  // else open_context() said why; the encoder at work carries on
+            keyframe = std::exchange(keyframe_owed_, false) || keyframe;
             if (std::exchange(open_again_, false)) open_alongside();
         }
 
@@ -388,6 +396,8 @@ private:
     /// again since it began.
     std::future<Result<av::CodecContextPtr>> next_;
     bool open_again_ = false;
+    /// A keyframe was asked for while `next_` opened: it brings one.
+    bool keyframe_owed_ = false;
     std::future<void> closing_;  ///< the encoder switched from, being closed
     std::optional<int64_t> last_pts_;
     FrameNumber next_number_ = 0;
