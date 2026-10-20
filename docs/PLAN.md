@@ -149,7 +149,7 @@ final place and shape: stage 0 is a walking skeleton, not a throwaway prototype.
 | Stage | Result | librats needs |
 |---|---|---|
 | **0. Skeleton** ✅ | screen → encoder → libratcast → librats → decoder → window, on Linux; latency and behaviour on emulated networks measured | L1 ✅ |
-| **1. A stream that holds** ← now | one video stream to a few viewers plays on every emulated path: rate control, fast joining, loss recovery | L2 (c) ✅, L3 |
+| **1. A stream that holds** ← now | one video stream to a few viewers plays on every emulated path: rate control, fast joining, smooth playback on lossy paths | L2 (c) ✅, L3 |
 | **2. Sound** | audio, A/V sync, latency profiles `call` / `game` / `cinema` end to end | L4 |
 | **3. Standalone library** | netsim, C API, MPEG-TS, `rats://` URLs, a benchmark against librist and SRT | — |
 | **4. Platforms** | GPU paths and hardware codecs; Windows and macOS capture | — |
@@ -325,10 +325,37 @@ with one keyframe. *Done:* the first-picture target above at every distance.
 librats: **needs** L3 (the sender learns the keyframe is on its way or expired); **better with**
 L2 (a, b) (initial window, shedding by Startup's rate).
 
-**1.3 Loss recovery.** Reference invalidation / LTR where encoders support it, intra-refresh for
-`game`: a lost reference costs a few frames, not a stall until the next keyframe (now 1–4 short
-stalls in 15 s on lossy paths, 9 on `burst`). librats: **better with** L3 (an expired frame
-known at once, not a `keyframe_retry` later).
+**1.3 Smooth playback on lossy paths.** ✅ The stalls on lossy paths (3–8 in 15 s, `burst` the
+most) are frames that arrived, late: a packet FEC did not rebuild is sent again, a round trip
+and its detection later (~+70 ms at 50 ms RTT), and the frames behind it, there already, wait
+for it in decode order. Frames actually lost are 1–3 a run, mostly at the start, and since 1.1
+an expiry on a subscriber's path is a keyframe at once. So the player shows pictures on a
+schedule — capture time on this clock plus a delay that covers how late frames have been
+arriving lately, growing at once to a late frame, shrinking slowly back — up to a limit
+(the stream's lifetime: no frame comes later), which 2.3's profiles set. *Done:* no more than
+one stall in 15 s on `loss-*` and `burst` past the start, for ~60–70 ms more latency there, and
+~20 ms on clean paths for even motion (below). If repairs still come too late for it, more FEC
+for live messages (fewer repairs that wait a round trip) is librats' to offer. Left:
+- SVT-AV1's low-delay structure makes every fourth frame ~3× the size of the others and ~12 ms
+  slower to encode, so frames reach even a local viewer in clumps every 66 ms — motion that
+  judders, shown as it comes; the buffer evens it out for ~20 ms on every path. An encoder
+  setting without the structure (`hierarchical-levels=0` changes nothing) or a hardware encoder
+  (4.2) would let it shrink to nothing on clean paths.
+Reference invalidation, LTR and intra-refresh move to 4.2: neither SVT-AV1 nor libaom offers
+them through FFmpeg, and lost frames are few; intra-refresh on hardware encoders is worth more
+against the keyframes of 1.1 (`cap-6`).
+
+Notes from 1.3: `PlayoutSchedule` (client) times each picture at its capture time on this clock
+— arrival less capture time, least over 10–20 s, is the clocks' offset plus the path — plus a
+delay; `VideoPlayer` decodes at once and hands pictures on when due (`--buffer MS` in
+`ratcast-recv`, 0 for the old way). Late frames come in runs, up to one on time; the delay covers
+the second latest run of ten seconds, not the latest (one run is a stall whatever the delay, and
+the worst moment of ten seconds is not worth every picture's latency), grows at once and shrinks
+at 5% speed. Runs within 200 ms of a keyframe do not count: it took long to send, and at a new
+bitrate the encoder opening alongside slows the one at work for a few frames before it, the new
+one is slow for a few after — counted, a ramp held the delay at 50 ms on a clean path. One
+`netem` run each: `burst` 8 → 1 stalls at 47 → 125 ms (p50), `loss-2` 3 → 2 (both at the start)
+at 49 → 111 ms, `rtt-50` 48 → 66 ms, `local` 16 → 34 ms.
 
 ### Stage 2 — Sound
 
@@ -364,7 +391,8 @@ encoding, and a 1440p60 game is captured and encoded without a CPU copy.
 - **4.1 Linux GPU path:** DMA-BUF capture → VAAPI encoding with colour conversion on the GPU,
   hardware decoding (on an Intel or AMD machine; the dev VM has no VA-API).
 - **4.2 Hardware encoders on real machines:** NVENC, QSV, AMF, VideoToolbox — in-band parameter
-  sets, bitrate changed in flight (no keyframe per change, 1.1).
+  sets, bitrate changed in flight (no keyframe per change, 1.1), intra-refresh in place of
+  keyframes and LTR / reference invalidation where the encoder has them (from 1.3).
 - **4.3 Windows:** Windows.Graphics.Capture + D3D11 → hardware encoder.
 - **4.4 macOS:** ScreenCaptureKit + VideoToolbox.
 
@@ -407,7 +435,7 @@ and the list is in priority order:
 |---:|---|---|---|---|---|
 | | L1 | Reordering is not loss for live data | needed | 0.6 | ✅ |
 | | L2 (c) | BBR on a jittery path | needed | 1.1 | ✅ |
-| 1 | L3 | Per-message delivered / expired feedback | needed | 1.2 (1.3 better with) | **next** |
+| 1 | L3 | Per-message delivered / expired feedback | needed | 1.2 | **next** |
 | 2 | L4 | Priorities inside `Priority::Live` | needed | 2.1 | |
 | 3 | L2 (a, b) | A live flow's start: initial window, shedding | improves | 1.1, 1.2 | if 1.2's target asks |
 | 4 | L5 | Absolute deadlines when forwarding | needed | stage 5 (tree) | |

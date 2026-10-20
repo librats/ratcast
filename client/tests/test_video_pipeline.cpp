@@ -12,6 +12,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <thread>
 #include <vector>
 
 #include "loopback.h"
@@ -275,6 +276,71 @@ TEST_F(VideoPipelineTest, ADamagedFrameAsksForAKeyframe) {
 
     const size_t before = picture_count();
     EXPECT_TRUE(eventually([&] { return picture_count() > before + 5; }));  // and it goes on
+}
+
+TEST_F(VideoPipelineTest, PlaysEvenlyPastFramesThatCameLate) {
+    // A stream to subscribe to; its own frames go nowhere, the player is fed
+    // by hand below.
+    ASSERT_TRUE(publisher_->start(pattern_));
+    ASSERT_TRUE(eventually([&] {
+        std::lock_guard lock(mutex_);
+        return !announced_.empty();
+    }));
+    StreamDescription description;
+    {
+        std::lock_guard lock(mutex_);
+        description = announced_.back();
+    }
+    std::vector<Timestamp> shown;
+    VideoPlayer player(*receiver_, sender_id_, description, [&](VideoFrame) {
+        std::lock_guard lock(mutex_);
+        shown.push_back(SteadyClock::instance().now());
+    });
+    ASSERT_TRUE(player.start());
+
+    // 60 frames at 60 fps, as a lossy path delivers them: frames 15, 30 and
+    // 45 are sent again and come 80, 70 and 60 ms late, and the frames behind
+    // each come with it.
+    VideoEncoderConfig config;
+    config.width = 320;
+    config.height = 240;
+    Result<std::unique_ptr<VideoEncoder>> encoder = open_video_encoder(config);
+    ASSERT_TRUE(encoder);
+    constexpr Duration kFrame = 16'667us;
+    const Timestamp start = SteadyClock::instance().now();
+    Timestamp held_until{};
+    for (uint64_t i = 0; i < 60; ++i) {
+        const VideoFrame frame = draw_pattern({(*encoder)->info().input_format, 320, 240}, i,
+                                              Timestamp{10s} + int64_t(i) * kFrame);
+        std::vector<EncodedFrame> encoded;
+        ASSERT_TRUE((*encoder)->encode(frame, i == 0, [&](EncodedVideo&& v) {
+            encoded.push_back({v.info, Buffer::copy_of(v.payload.bytes())});
+        }));
+        const Timestamp due = start + int64_t(i) * kFrame;
+        if (i == 15) held_until = due + 80ms;
+        if (i == 30) held_until = due + 70ms;
+        if (i == 45) held_until = due + 60ms;
+        std::this_thread::sleep_until(std::max(due, held_until));
+        for (EncodedFrame& f : encoded) player.push(std::move(f));
+    }
+    ASSERT_TRUE(eventually([&] { return player.stats().pictures == 60; }));
+    player.stop();
+
+    // The first late run is a stall, and so is the second, which says the
+    // path does it: the delay then covers the third.
+    std::vector<Timestamp> times;
+    {
+        std::lock_guard lock(mutex_);
+        times = shown;
+    }
+    const auto longest_gap = [&](size_t from, size_t to) {
+        Duration longest{};
+        for (size_t i = from + 1; i < to; ++i) longest = std::max(longest, times[i] - times[i - 1]);
+        return longest;
+    };
+    EXPECT_GE(longest_gap(10, 25), 70ms);
+    EXPECT_LT(longest_gap(40, 60), 45ms);  // shown as they came, one would be 76 ms
+    EXPECT_GE(player.stats().delay, 65ms);
 }
 
 TEST_F(VideoPipelineTest, AimsWhereRateControlAsks) {

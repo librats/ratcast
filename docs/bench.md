@@ -429,3 +429,30 @@ run, which the column above counted as one.)
   in its five seconds at 4 Mbit/s (2.9 s before, 5.1 s at a fixed 8 Mbit/s).
 - `cap-6` is unchanged within its spread (3–10 stalls a run): its stalls are the keyframes of
   each change on a path with no room for them (13 in 15 s) — 1.1's fewer keyframes.
+
+## Playout buffer (1.3)
+
+Most stalls on lossy paths were frames that came late, not frames lost: a packet FEC did not
+rebuild is sent again a round trip later, and the frames behind it wait for it in decode order.
+In the runs above, nearly every second with a stall on `loss-*` and `burst` had no frame lost,
+late or dropped, and its worst latency was 130–220 ms against ~55 ms. The player now shows each
+picture on a schedule (`PlayoutSchedule`, `PLAN.md` 1.3) that covers how late frames come.
+
+Measured on the way: frames reach the viewer in clumps every 66 ms on every path, `local`
+included — SVT-AV1's low-delay structure makes every fourth frame ~30 KB against 4–15 KB for
+the others and ~12 ms slower to encode, and the three behind it wait. Shown as they come, that
+is motion that judders (a window shows the newest picture, so two of a clump never reach the
+screen); the buffer evens it out for ~20 ms.
+
+One run each (`bench/netem.py local rtt-50 loss-2 burst`, the default buffer: at most the frame
+lifetime), against the last full table above; medians of three runs are to be taken when stage 1
+is measured as a whole:
+
+| scenario | latency p50 / p95, ms | stalls (ms) | buffer at the end, ms |
+|---|---:|---:|---:|
+| local | 16 / 30 → 34 / 36 | 0 → 0 | 23 |
+| rtt-50 | 48 / 68 → 66 / 70 | 1 (101) → 1 (102) | 30 |
+| loss-2 | 49 / 102 → 111 / 119 | 3 (342) → 2 (217) | 75 |
+| burst | 47 / 113 → 125 / 135 | 8 (1005) → 1 (318) | 91 |
+
+The stalls left are the start's (the frame expired behind the joining keyframe, 1.2's).

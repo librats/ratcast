@@ -6,9 +6,12 @@
  *
  * Frames arrive on a network thread, in decode order (MediaSession's
  * frame_received); the player queues them for a decoder thread of its own and
- * hands the pictures on from there. When decoding falls behind or fails, the
- * player drops what it holds, asks the sender for a keyframe and carries on
- * from it: the picture stands still for a moment rather than lagging for good.
+ * hands the pictures on from there, each when PlayoutSchedule says: a frame
+ * that came late — sent again on a lossy path — holds up the ones behind it,
+ * and pictures held back as long play on evenly past it. When decoding falls
+ * behind or fails, the player drops what it holds, asks the sender for a
+ * keyframe and carries on from it: the picture stands still for a moment
+ * rather than lagging for good.
  */
 
 #include <condition_variable>
@@ -21,6 +24,7 @@
 #include <string>
 #include <thread>
 
+#include "ratcast/client/playout_schedule.h"
 #include "ratcast/core/result.h"
 #include "ratcast/core/time.h"
 #include "ratcast/engine/video_codec.h"
@@ -35,6 +39,10 @@ struct VideoPlayerConfig {
     /// Frames waiting for the decoder before the player gives up on them and
     /// starts again from a keyframe.
     size_t max_queued_frames = 16;
+    /// The most a picture is held back to play evenly past late frames.
+    /// nullopt: the stream's lifetime, past which no frame comes; zero: every
+    /// picture as soon as it is decoded.
+    std::optional<Duration> max_delay;
 };
 
 struct VideoPlayerStats {
@@ -45,6 +53,7 @@ struct VideoPlayerStats {
     uint64_t keyframe_requests = 0;
     Duration decode_time{};
     Duration max_decode_time{};
+    Duration delay{};    ///< pictures are held back for, past the fastest frames
     uint32_t width = 0;  ///< of the last picture
     uint32_t height = 0;
     std::string decoder;  ///< the decoder in use, e.g. "libdav1d"
@@ -82,8 +91,19 @@ public:
     VideoPlayerStats stats() const;
 
 private:
+    struct Arrival {
+        EncodedFrame frame;
+        Timestamp at;
+    };
+    struct Held {
+        Timestamp due;
+        VideoFrame picture;
+    };
+
     void run();
-    void decode(const EncodedFrame& frame);
+    void decode(const Arrival& arrival);
+    void show_due();
+    Duration max_delay() const noexcept;
     Result<void> open_decoder(const StreamDescription& description);
     void request_keyframe();
 
@@ -99,7 +119,7 @@ private:
     // The hand-over from the network thread to the decoder thread.
     std::mutex mutex_;
     std::condition_variable wake_;
-    std::deque<EncodedFrame> queue_;
+    std::deque<Arrival> queue_;
     std::optional<StreamDescription> new_description_;  ///< for the decoder thread to pick up
     bool awaiting_keyframe_ = false;                    ///< drop frames until one
     bool running_ = false;
@@ -107,6 +127,8 @@ private:
     // The decoder thread's own (and start()'s, before the thread runs).
     StreamDescription description_;
     std::unique_ptr<VideoDecoder> decoder_;
+    PlayoutSchedule schedule_;
+    std::deque<Held> held_;  ///< decoded, until due
 
     mutable std::mutex stats_mutex_;
     VideoPlayerStats stats_;

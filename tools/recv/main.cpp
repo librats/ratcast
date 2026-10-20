@@ -35,6 +35,8 @@ constexpr const char* kUsage = R"(usage: ratcast-recv (--connect HOST:PORT | --p
   --connect HOST:PORT  the sender's address
   --peer ID            the sender's peer id, found through the DHT (it runs --announce)
   --headless           decode, but show nothing
+  --buffer MS          hold pictures back at most this long to play evenly past late
+                       frames (default: the stream's frame lifetime; 0: show each at once)
   --frames N           exit once N pictures are decoded
   --duration S         exit after S seconds
   --data-dir DIR       keep the peer id across runs
@@ -42,7 +44,7 @@ constexpr const char* kUsage = R"(usage: ratcast-recv (--connect HOST:PORT | --p
 
 The pattern source's pictures carry the time of day they were captured: on
 the sender's own host, or one whose clock is synchronised with it (NTP), the
-latency from capture to decoded (and to presented) picture is printed too.
+latency from capture to picture, as played (and as presented), is printed too.
 On exit a summary line, key=value, sums up the run.
 )";
 
@@ -50,6 +52,7 @@ struct Options {
     std::optional<std::pair<std::string, uint16_t>> connect;
     std::optional<PeerId> peer;
     bool headless = false;
+    std::optional<Duration> buffer;
     uint64_t frames = 0;
     uint32_t duration = 0;
     std::string data_dir;
@@ -79,6 +82,9 @@ std::optional<Options> parse(int argc, char** argv) {
         }
     }
     o.headless = args.flag("headless");
+    if (const auto buffer = args.number("buffer", 0, 10'000)) {
+        o.buffer = std::chrono::milliseconds(*buffer);
+    }
     o.frames = args.number("frames", 1, 1'000'000'000).value_or(0);
     o.duration = args.number("duration", 1, 1'000'000).value_or(0);
     o.data_dir = args.text("data-dir").value_or("");
@@ -98,8 +104,8 @@ std::optional<Options> parse(int argc, char** argv) {
 /// goes and comes back.
 class Viewer {
 public:
-    Viewer(std::optional<PeerId> sender, VideoPlayer::Sink sink)
-        : sender_(std::move(sender)), sink_(std::move(sink)) {}
+    Viewer(std::optional<PeerId> sender, VideoPlayerConfig config, VideoPlayer::Sink sink)
+        : sender_(std::move(sender)), config_(config), sink_(std::move(sink)) {}
 
     SessionHandlers handlers() {
         return SessionHandlers{
@@ -145,7 +151,7 @@ private:
         if (player_ || description.kind() != MediaKind::Video) return;
         if (sender_ && peer != *sender_) return;
 
-        auto player = std::make_unique<VideoPlayer>(*session_, peer, description, sink_);
+        auto player = std::make_unique<VideoPlayer>(*session_, peer, description, sink_, config_);
         if (Result<void> started = player->start(); !started) {
             std::cerr << "cannot play stream '" << description.label
                       << "': " << to_string(started.error()) << "\n";
@@ -165,6 +171,7 @@ private:
     }
 
     const std::optional<PeerId> sender_;
+    const VideoPlayerConfig config_;
     const VideoPlayer::Sink sink_;
     MediaSession* session_ = nullptr;
     std::mutex mutex_;
@@ -207,14 +214,14 @@ public:
             pictures > 0 ? ms(player.decode_time - last_player_.decode_time) / double(pictures) : 0;
         std::printf(
             "[%4us] %3llu fps %6.2f Mbit/s  %ux%u %s  decode %5.2f ms  lost %llu  late %llu"
-            "  dropped %llu  stalls %llu  cpu %3.0f%%",
+            "  dropped %llu  stalls %llu  buffer %3.0f ms  cpu %3.0f%%",
             seconds_++, static_cast<unsigned long long>(pictures), mbps, player.width,
             player.height, player.decoder.c_str(), decode_ms,
             static_cast<unsigned long long>(stream.frames.lost - last_stream_.frames.lost),
             static_cast<unsigned long long>(stream.frames.late - last_stream_.frames.late),
             static_cast<unsigned long long>(dropped(player, stream) -
                                             dropped(last_player_, last_stream_)),
-            static_cast<unsigned long long>(decoded.stalls), cpu);
+            static_cast<unsigned long long>(decoded.stalls), ms(player.delay), cpu);
         print_latency("latency", decoded.latency);
         if (shown) print_latency("shown", shown->latency);
         std::printf("\n");
@@ -236,7 +243,7 @@ public:
         std::printf(
             "summary first_picture_ms=%.0f pictures=%llu stalls=%llu stalled_ms=%.0f"
             " longest_gap_ms=%.0f lost=%llu late=%llu dropped=%llu keyframe_requests=%llu"
-            " fps=%.1f mbps=%.2f cpu=%.0f",
+            " fps=%.1f mbps=%.2f buffer_ms=%.0f cpu=%.0f",
             first, static_cast<unsigned long long>(decoded.pictures),
             static_cast<unsigned long long>(decoded.stalls), ms(decoded.stalled),
             ms(decoded.longest_gap), static_cast<unsigned long long>(stream.frames.lost),
@@ -245,7 +252,8 @@ public:
             static_cast<unsigned long long>(stream.frames.keyframe_requests +
                                             player.keyframe_requests),
             playing > 0 ? double(decoded.pictures) / playing : 0,
-            double(stream.bytes) * 8 / 1e6 / std::max(elapsed.count(), 1.0), cpu_.total());
+            double(stream.bytes) * 8 / 1e6 / std::max(elapsed.count(), 1.0), ms(player.delay),
+            cpu_.total());
         print_percentiles("latency", decoded.latency);
         if (shown_) print_percentiles("shown", shown_->total().latency);
         std::printf("\n");
@@ -304,14 +312,15 @@ int main(int argc, char** argv) {
     if (!o.headless) std::cout << "built without SDL3: no window, as with --headless\n";
 #endif
 
-    // Pictures as decoded and, in a window, as presented. The wait for the
-    // first one counts from the moment we dial.
+    // Pictures as the player hands them on, on its schedule, and, in a
+    // window, as presented. The wait for the first one counts from the moment
+    // we dial.
     PlaybackMeter decoded;
     std::optional<PlaybackMeter> shown;
 #ifdef RATCAST_TOOLS_WINDOW
     if (window) shown.emplace();
 #endif
-    Viewer viewer(o.peer, [&](VideoFrame picture) {
+    Viewer viewer(o.peer, VideoPlayerConfig{.max_delay = o.buffer}, [&](VideoFrame picture) {
         decoded.picture(latency_of(picture));
 #ifdef RATCAST_TOOLS_WINDOW
         if (window) window->show(std::move(picture));

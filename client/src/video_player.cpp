@@ -14,7 +14,8 @@ VideoPlayer::VideoPlayer(MediaSession& session, PeerId peer, StreamDescription d
       stream_(description.id),
       sink_(std::move(sink)),
       config_(config),
-      description_(std::move(description)) {}
+      description_(std::move(description)),
+      schedule_(max_delay()) {}
 
 VideoPlayer::~VideoPlayer() { stop(); }
 
@@ -28,6 +29,8 @@ Result<void> VideoPlayer::start() {
         awaiting_keyframe_ = false;
         queue_.clear();
     }
+    schedule_.reset();
+    held_.clear();
     thread_ = std::thread(&VideoPlayer::run, this);
     if (Result<void> subscribed = session_.subscribe(peer_, stream_); !subscribed) {
         {
@@ -53,9 +56,11 @@ void VideoPlayer::stop() {
     wake_.notify_one();
     thread_.join();
     decoder_.reset();
+    held_.clear();
 }
 
 void VideoPlayer::push(EncodedFrame frame) {
+    const Timestamp now = SteadyClock::instance().now();
     bool overflow = false;
     size_t dropped = 0;
     {
@@ -69,7 +74,7 @@ void VideoPlayer::push(EncodedFrame frame) {
             awaiting_keyframe_ = true;
             overflow = true;
         } else {
-            queue_.push_back(std::move(frame));
+            queue_.push_back({std::move(frame), now});
         }
     }
     {
@@ -96,22 +101,28 @@ VideoPlayerStats VideoPlayer::stats() const {
 
 void VideoPlayer::run() {
     for (;;) {
-        EncodedFrame frame;
+        std::optional<Arrival> arrival;
         std::optional<StreamDescription> description;
+        bool dropped = false;
         {
             std::unique_lock lock(mutex_);
-            wake_.wait(lock, [&] { return !running_ || !queue_.empty(); });
-            if (!running_) return;
-            frame = std::move(queue_.front());
-            queue_.pop_front();
-            if (awaiting_keyframe_ && !frame.info.keyframe) {
-                lock.unlock();
-                std::lock_guard stats(stats_mutex_);
-                ++stats_.dropped;
-                continue;
+            // Wake for a frame to decode, or when the next picture is due.
+            const auto woken = [&] { return !running_ || !queue_.empty(); };
+            if (held_.empty()) {
+                wake_.wait(lock, woken);
+            } else {
+                wake_.wait_until(lock, held_.front().due, woken);
             }
-            awaiting_keyframe_ = false;
-            description = std::exchange(new_description_, std::nullopt);
+            if (!running_) return;
+            if (!queue_.empty()) {
+                arrival = std::move(queue_.front());
+                queue_.pop_front();
+                dropped = awaiting_keyframe_ && !arrival->frame.info.keyframe;
+                if (!dropped) {
+                    awaiting_keyframe_ = false;
+                    description = std::exchange(new_description_, std::nullopt);
+                }
+            }
         }
 
         // Another codec needs another decoder; a new size is the decoder's to
@@ -120,26 +131,25 @@ void VideoPlayer::run() {
             const bool other_codec = description->codec != description_.codec;
             description_ = std::move(*description);
             if (other_codec && !open_decoder(description_)) decoder_.reset();
+            schedule_.set_max_delay(max_delay());
         }
-        if (!decoder_) {  // a codec this build cannot decode
+        if (arrival && (dropped || !decoder_)) {  // !decoder_: a codec this build cannot decode
             std::lock_guard stats(stats_mutex_);
             ++stats_.dropped;
-            continue;
+        } else if (arrival) {
+            decode(*arrival);
         }
-        decode(frame);
+        show_due();
     }
 }
 
-void VideoPlayer::decode(const EncodedFrame& frame) {
+void VideoPlayer::decode(const Arrival& arrival) {
+    const EncodedFrame& frame = arrival.frame;
+    schedule_.on_frame(frame.info.capture_time, arrival.at, frame.info.keyframe);
     const auto start = std::chrono::steady_clock::now();
     const Result<void> decoded = decoder_->decode(frame, [this](VideoFrame&& picture) {
-        {
-            std::lock_guard lock(stats_mutex_);
-            ++stats_.pictures;
-            stats_.width = picture.width();
-            stats_.height = picture.height();
-        }
-        sink_(std::move(picture));
+        const Timestamp due = schedule_.due(picture.capture_time());
+        held_.push_back({due, std::move(picture)});
     });
     const auto took =
         std::chrono::duration_cast<Duration>(std::chrono::steady_clock::now() - start);
@@ -158,6 +168,27 @@ void VideoPlayer::decode(const EncodedFrame& frame) {
         }
         request_keyframe();
     }
+}
+
+// Hand on the pictures whose time has come, in order.
+void VideoPlayer::show_due() {
+    const Timestamp now = SteadyClock::instance().now();
+    while (!held_.empty() && held_.front().due <= now) {
+        VideoFrame picture = std::move(held_.front().picture);
+        held_.pop_front();
+        {
+            std::lock_guard lock(stats_mutex_);
+            ++stats_.pictures;
+            stats_.delay = schedule_.delay();
+            stats_.width = picture.width();
+            stats_.height = picture.height();
+        }
+        sink_(std::move(picture));
+    }
+}
+
+Duration VideoPlayer::max_delay() const noexcept {
+    return config_.max_delay.value_or(description_.lifetime);
 }
 
 Result<void> VideoPlayer::open_decoder(const StreamDescription& description) {
