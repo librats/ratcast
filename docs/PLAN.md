@@ -400,7 +400,7 @@ Audio next to the video, in sync, and the latency profile as the one knob over b
 scenarios, audio stays uninterrupted under 2% loss and next to a keyframe's burst, and the tools
 take `--latency call|game|cinema`.
 
-- **2.1 Audio:** PipeWire capture and playback, Opus (voice with DTX + FEC, music stereo),
+- **2.1 Audio:** ✅ PipeWire capture and playback, Opus (voice with DTX + FEC, music stereo),
   adaptive jitter buffer. librats: **needs** L4 (audio must not wait behind a keyframe);
   L6 only if Opus in-band FEC + RED turn out not to be enough. In steps:
   - (a) ✅ Opus in the engine: `AudioFrame`, `AudioEncoder` / `AudioDecoder` over libopus — any
@@ -419,8 +419,16 @@ take `--latency call|game|cinema`.
     tested in virtual time) plays them by capture time behind a delay that covers 97% of their
     lateness plus a frame — so the frame after a lost one is there for its FEC — and grows where
     sound is made up anyway, shrinks in silence; L4 sends sound ahead of a keyframe;
-  - (d) client and tools: `AudioPublisher` / `AudioPlayer`, `--audio` in `ratcast-send` /
-    `ratcast-recv`, netem: 2% loss, a keyframe's burst next to the audio.
+  - (d) ✅ client and tools: `AudioPublisher` (source → encoder thread → session) and
+    `AudioPlayer` (session → jitter buffer → decoded on the output's own pull), `VirtualOutput`
+    (sound played in real time to nobody: headless viewers, tests), `--audio` in `ratcast-send`
+    (tone, mic, system) and `ratcast-recv` (speaker, virtual, off), `bench/netem.py --audio`.
+    On single runs (`docs/bench.md`): 56 ms from capture to speaker on a clean path; 2% loss
+    without a break (FEC brings back 10 of 11 frames); keyframes every 2 s next to the sound
+    cost nothing where the path has room. L4 halves the harm where the stream fills the queue:
+    `cap-6` 180 → 100 ms at the median, lost frames 16 → 8. A path narrower than the stream
+    still breaks the sound for a moment, in the bottleneck's queue, which no rank overtakes:
+    that is rate control's margin.
 - **2.2 A/V sync:** a common playout clock per sender, the video held to the audio.
 - **2.3 Latency profiles** `call` / `game` / `cinema` end to end: lifetimes, jitter-buffer depth,
   keyframe policy and encoder settings from one choice.

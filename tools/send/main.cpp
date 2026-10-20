@@ -1,5 +1,5 @@
-// ratcast-send: stream a screen, a window, a file or the test pattern to
-// whoever connects. Prints how to connect, then a line of stats a second and,
+// ratcast-send: stream a screen, a window, a file or the test pattern, and
+// sound if asked, to whoever connects. Prints how to connect, then a line of stats a second and,
 // on exit, a summary line of key=value pairs.
 
 #include <algorithm>
@@ -19,10 +19,13 @@
 
 #include "common/arguments.h"
 #include "common/tool.h"
+#include "ratcast/client/audio_publisher.h"
 #include "ratcast/client/video_publisher.h"
+#include "ratcast/engine/audio_device.h"
 #include "ratcast/engine/file_source.h"
 #include "ratcast/engine/pattern_source.h"
 #include "ratcast/engine/screen_capture.h"
+#include "ratcast/engine/tone_source.h"
 #include "ratcast/session/media_service.h"
 
 using namespace ratcast;
@@ -48,6 +51,15 @@ How:
   --fixed-bitrate      no rate control: always --bitrate
   --fps N              frames a second at most (default 60; a file plays at its own)
   --latency MS         how long a frame is worth delivering (default 200)
+  --keyframe-every S   a keyframe every S seconds as well as when asked (default: only
+                       when asked); bursts to measure what else waits behind them
+
+Sound:
+  --audio tone|mic|system   send sound too: a tone (stamped like the pattern), the
+                       microphone, or what this computer plays
+  --music              code it as music: stereo, full band, without DTX or FEC
+                       (implied by --audio system)
+  --audio-bitrate KBPS default 32, or 128 for music
 
 Network:
   --port N             listen port (default 7700; 0 for any)
@@ -66,6 +78,9 @@ struct Options {
     bool rate_control = true;
     uint32_t start_bitrate = 2'000'000;
     Duration latency = 200ms;
+    uint32_t keyframe_every = 0;  ///< seconds; 0: only when asked
+    std::string audio;            ///< empty: no sound
+    AudioEncoderConfig audio_encoder;
     uint16_t port = 7700;
     bool announce = false;
     std::string data_dir;
@@ -105,6 +120,17 @@ std::optional<Options> parse(int argc, char** argv) {
     o.rate_control = !args.flag("fixed-bitrate");
     o.encoder.frame_rate_num = args.number("fps", 1, 240).value_or(60);
     o.latency = std::chrono::milliseconds(args.number("latency", 10, 30'000).value_or(200));
+    o.keyframe_every = args.number("keyframe-every", 1, 3600).value_or(0);
+    o.audio = args.text("audio").value_or("");
+    const bool music = args.flag("music") || o.audio == "system";
+    o.audio_encoder.content = music ? AudioContent::Music : AudioContent::Voice;
+    o.audio_encoder.format = {48'000, music ? uint8_t{2} : uint8_t{1}};
+    o.audio_encoder.bitrate =
+        args.number("audio-bitrate", 6, 510).value_or(music ? 128 : 32) * 1000;
+    // A voice: silence sent as nothing, and FEC for some loss. Music has
+    // neither: Opus codes it in CELT, which carries no FEC.
+    o.audio_encoder.dtx = !music;
+    o.audio_encoder.expected_loss = music ? 0 : 10;
     o.port = static_cast<uint16_t>(args.number("port", 0, 65535).value_or(7700));
     o.announce = args.flag("announce");
     o.data_dir = args.text("data-dir").value_or("");
@@ -115,6 +141,10 @@ std::optional<Options> parse(int argc, char** argv) {
     if (o.source != "screen" && o.source != "window" && o.source != "file" &&
         o.source != "pattern") {
         std::cerr << "ratcast-send: --source wants screen, window, file or pattern\n";
+        return std::nullopt;
+    }
+    if (!o.audio.empty() && o.audio != "tone" && o.audio != "mic" && o.audio != "system") {
+        std::cerr << "ratcast-send: --audio wants tone, mic or system\n";
         return std::nullopt;
     }
     if (o.source == "file" && o.file.empty()) {
@@ -183,12 +213,29 @@ std::unique_ptr<VideoSource> open_source(Options& o) {
     return open_screen(o);
 }
 
+std::unique_ptr<AudioSource> open_audio(const Options& o) {
+    if (o.audio == "tone") {
+        // Stamped with the time of day, as the pattern is. Loud enough for
+        // Opus to take it for speech, and code FEC for it.
+        return std::make_unique<ToneSource>(
+            ToneConfig{.format = o.audio_encoder.format, .level = 0.5f}, WallClock::instance());
+    }
+    Result<std::unique_ptr<AudioSource>> capture =
+        open_audio_capture({.format = o.audio_encoder.format, .system_sound = o.audio == "system"});
+    if (!capture) {
+        std::cerr << "ratcast-send: no sound capture: " << to_string(capture.error()) << "\n";
+        return nullptr;
+    }
+    return std::move(*capture);
+}
+
 /// One line a second: what went out, and how each viewer's path is doing;
 /// a summary at the end.
 class Reporter {
 public:
-    Reporter(librats::Node& node, MediaSession& session, VideoPublisher& publisher)
-        : node_(node), session_(session), publisher_(publisher) {}
+    Reporter(librats::Node& node, MediaSession& session, VideoPublisher& publisher,
+             const AudioPublisher* sound)
+        : node_(node), session_(session), publisher_(publisher), sound_(sound) {}
 
     void report() {
         const VideoPublisherStats now = publisher_.stats();
@@ -207,6 +254,13 @@ public:
             static_cast<unsigned long long>(now.keyframes - last_.keyframes),
             static_cast<unsigned long long>(stream ? stream->backpressure_drops - last_drops_ : 0),
             cpu_.take_interval());
+        if (sound_) {
+            const AudioPublisherStats sound = sound_->stats();
+            std::printf("        sound %3llu fps %5.1f kbit/s  %s\n",
+                        static_cast<unsigned long long>(sound.frames - last_sound_.frames),
+                        double(sound.bytes - last_sound_.bytes) * 8 / 1e3, sound.encoder.c_str());
+            last_sound_ = sound;
+        }
         for (const librats::PeerInfo& peer : node_.peers()) {
             const std::optional<librats::PathStats> path = node_.path_stats(peer.id);
             if (!path || !path->valid) continue;
@@ -249,7 +303,7 @@ public:
         std::printf(
             "summary frames=%llu keyframes=%llu keyframe_kb=%.0f keyframes_asked=%llu"
             " skipped=%llu encode_ms=%.2f mbps=%.2f live_sent=%llu live_expired=%llu"
-            " repair_share=%.3f bitrate_cuts=%llu bitrate_raises=%llu cpu=%.0f\n",
+            " repair_share=%.3f bitrate_cuts=%llu bitrate_raises=%llu cpu=%.0f",
             static_cast<unsigned long long>(now.frames),
             static_cast<unsigned long long>(now.keyframes),
             now.keyframes > 0 ? double(now.keyframe_bytes) / 1024 / double(now.keyframes) : 0,
@@ -262,6 +316,14 @@ public:
             delivered > 0 ? double(repair) / double(delivered) : 0,
             static_cast<unsigned long long>(stream ? stream->bitrate_cuts : 0),
             static_cast<unsigned long long>(stream ? stream->bitrate_raises : 0), cpu_.total());
+        if (sound_) {
+            const AudioPublisherStats sound = sound_->stats();
+            std::printf(" audio_frames=%llu audio_kbps=%.1f audio_dropped=%llu",
+                        static_cast<unsigned long long>(sound.frames),
+                        double(sound.bytes) * 8 / 1e3 / std::max(elapsed.count(), 1.0),
+                        static_cast<unsigned long long>(sound.dropped));
+        }
+        std::printf("\n");
         std::fflush(stdout);
     }
 
@@ -269,9 +331,11 @@ private:
     librats::Node& node_;
     MediaSession& session_;
     VideoPublisher& publisher_;
+    const AudioPublisher* const sound_;
     CpuMeter cpu_;
     const std::chrono::steady_clock::time_point started_ = std::chrono::steady_clock::now();
     VideoPublisherStats last_;
+    AudioPublisherStats last_sound_;
     uint64_t last_drops_ = 0;
     /// The last word on each viewer's path, kept after it leaves.
     std::map<PeerId, librats::PathStats> paths_;
@@ -292,6 +356,8 @@ int main(int argc, char** argv) {
 
     std::unique_ptr<VideoSource> source = open_source(o);
     if (!source) return 1;
+    std::unique_ptr<AudioSource> audio_source;
+    if (!o.audio.empty() && !(audio_source = open_audio(o))) return 1;
 
     librats::Node node(node_config(o.port, true, o.data_dir));
     std::atomic<VideoPublisher*> publisher{nullptr};
@@ -315,6 +381,12 @@ int main(int argc, char** argv) {
     config.start_bitrate = o.start_bitrate;
     VideoPublisher video(media->session(), config);
     publisher = &video;
+    std::optional<AudioPublisher> sound;
+    if (audio_source) {
+        sound.emplace(media->session(),
+                      AudioPublisherConfig{
+                          .label = o.audio, .lifetime = o.latency, .encoder = o.audio_encoder});
+    }
 
     if (!node.start()) {
         std::cerr << "ratcast-send: cannot listen on port " << o.port << "\n";
@@ -339,20 +411,40 @@ int main(int argc, char** argv) {
                   << "\n";
         return 1;
     }
+    if (sound) {
+        if (Result<void> started = sound->start(*audio_source,
+                                                [&](Result<void> outcome) {
+                                                    failed = !outcome;
+                                                    ended = true;
+                                                });
+            !started) {
+            std::cerr << "ratcast-send: the sound did not start: " << to_string(started.error())
+                      << "\n";
+            return 1;
+        }
+    }
 
-    Reporter reporter(node, media->session(), video);
+    Reporter reporter(node, media->session(), video, sound ? &*sound : nullptr);
     auto next = std::chrono::steady_clock::now() + 1s;
+    const auto keyframe_every = std::chrono::seconds(o.keyframe_every);
+    auto next_keyframe = std::chrono::steady_clock::now() + keyframe_every;
     while (!interrupted() && !ended) {
         std::this_thread::sleep_for(50ms);
-        if (std::chrono::steady_clock::now() >= next) {
+        const auto now = std::chrono::steady_clock::now();
+        if (now >= next) {
             next += 1s;
             reporter.report();
+        }
+        if (o.keyframe_every > 0 && now >= next_keyframe) {
+            next_keyframe += keyframe_every;
+            video.request_keyframe();
         }
     }
     if (ended) std::cout << (failed ? "the stream failed\n" : "the source ended\n");
     reporter.report();
     reporter.summarise();
 
+    if (sound) sound->stop();
     video.stop();
     publisher = nullptr;
     node.stop();

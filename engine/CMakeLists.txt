@@ -12,6 +12,7 @@ add_library(ratcast_engine STATIC
     src/pattern/pattern.cpp
     src/pattern/pattern_source.cpp
     src/pattern/tone_source.cpp
+    src/pattern/virtual_output.cpp
     src/video/video_codec.cpp
     src/video/video_convert.cpp
     src/video/video_frame.cpp

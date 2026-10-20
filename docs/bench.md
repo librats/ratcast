@@ -572,3 +572,53 @@ complexity (10).
 
 Under 0.6% of a core to encode, 0.15% to decode: sound costs nothing next to the picture (the
 1080p60 sender of the stage 1 runs takes ~140% of a core), so the complexity stays at its best.
+
+## Sound over the network (2.1)
+
+`bench/netem.py --audio --keyframe-every 2 --duration 10`: the stamped 1080p60 pattern as before,
+with a stamped tone beside it (Opus voice, 32 kbit/s, DTX, FEC for 10% loss) and a keyframe every
+2 s on top of those asked for, so the sound keeps meeting keyframe bursts. The viewer plays the
+sound in real time into an output without a device (10 ms blocks, 10 ms of "device" latency).
+Single runs while 2.1 is built; the stage is measured whole at its end.
+
+| scenario | first sound, ms | latency p50 / p95 / p99 / max, ms | jitter buffer delay / target, ms | lost / late | FEC / concealed, ms | breaks |
+|---|---:|---:|---:|---:|---:|---:|
+| local | 35 | 56.3 / 57.3 / 58.4 / 59.7 | 26 / 24 | 0 / 0 | 0 / 0 | 0 |
+| loss-2 | 198 | 98.3 / 100.2 / 100.2 / 100.2 | 44 / 26 | 11 / 11 | 200 / 40 | 0 |
+| cap-20 | 197 | 79.9 / 79.9 / 79.9 / 81.8 | 22 / 30 | 2 / 2 | 0 / 40 | 0 |
+| cap-6 | 199 | 100.4 / 120.8 / 120.8 / 263.9 | 64 / 64 | 8 / 8 | 0 / 200 | 1 |
+
+Latency is from the tone's capture to the speaker. A break is 100 ms or more without a frame
+played.
+
+- **A clean path, 56 ms**: 20 ms to fill a frame (its capture time is its first sample's), the
+  jitter buffer's 24 ms (2 ms of lateness and a frame, so that the next frame's FEC is there for
+  a lost one), 10 ms of output, and the output's blocks. The frame for FEC is the place to look
+  when 2.3's `call` profile wants less.
+- **2% loss, no break**: 11 frames lost on the wire. librats repaired each of them, but the
+  repair came a round trip later, after its time, so the frames count as late. The next frame's
+  FEC brought back 10 of them; 40 ms was concealed over 10 s.
+- **Next to a keyframe (cap-20)**: the frames late are the first second's only, while the
+  viewer joins and the target is still learnt. The keyframes every 2 s cost the sound nothing.
+- **A path narrower than the stream (cap-6)** is where it breaks. At 6 s the video, which rate
+  control had let up to 4.85 Mbit/s of 6, met a keyframe and filled the bottleneck's queue. The
+  sound waits in that queue like everything else (netem's FIFO, which no rank in the sender
+  overtakes): 7 frames late in that second, a 140 ms break. The video lost 8 frames there too.
+  This is rate control's margin, not the sound's.
+
+L4, measured by turning it off (every live message rank 0, so deadline order only), on the same
+paths:
+
+| scenario | latency p50 / p95 / max, ms, ranked → not | lost / late, ranked → not | concealed, ms, ranked → not |
+|---|---:|---:|---:|
+| local | 56.3 / 57.3 / 59.7 → 55.3 / 56.3 / 57.5 | 0 → 0 | 0 → 0 |
+| cap-20 | 79.9 / 79.9 / 81.8 → 79.9 / 79.9 / 81.2 | 2 → 1 | 40 → 20 |
+| cap-6 | 100.4 / 120.8 / 263.9 → 180.2 / 200.5 / 200.5 | 8 → 16 | 200 → 440 |
+
+Where librats' own queue has room, ranks change nothing. Where the stream fills it (`cap-6`),
+the sound queues behind the video without ranks: 80 ms more latency at the median, twice the
+frames lost, and the jitter buffer pushed to its 200 ms limit.
+
+Opus codes FEC only for frames its voice activity detector (SILK's) takes for speech. A steady
+tone qualifies only above about 0.45 of full scale, which is why the senders' tone plays at 0.5.
+A real voice qualifies as it is.

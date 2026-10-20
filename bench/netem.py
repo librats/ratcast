@@ -10,10 +10,14 @@ Ubuntu 24.04+ also kernel.apparmor_restrict_unprivileged_userns=0).
 Every run starts a fresh sender and a fresh viewer -- a new connection and a new
 encoder -- so the wait for the first picture, joining, is measured each time.
 The sender sends the stamped test pattern, so the viewer reads the latency from
-capture to decoded picture off every picture.
+capture to decoded picture off every picture. With --audio it sends a stamped
+tone too, which the viewer plays in real time to nobody, and a second table
+says how the sound fared: from capture to the speaker, what was lost, brought
+back by FEC or made up, and how long the jitter buffer held it.
 
     bench/netem.py                            # every scenario, once
     bench/netem.py --repeat 3 rtt-100 loss-2  # some of them, three times each
+    bench/netem.py --audio --keyframe-every 2 local cap-20   # sound next to keyframes
     bench/netem.py --list
 
 Prints a Markdown table (medians over the repeats); the tools' own output for
@@ -157,7 +161,10 @@ def run_once(scenario, args, log_dir, index):
         sender = subprocess.Popen(
             [str(args.bin / "ratcast-send"), "--source", "pattern", "--size", args.size,
              "--bitrate", str(args.bitrate), "--fps", str(args.fps), "--latency",
-             str(args.latency), "--codec", args.codec, "--port", str(PORT), *args.send_args],
+             str(args.latency), "--codec", args.codec, "--port", str(PORT),
+             *(["--audio", "tone"] if args.audio else []),
+             *(["--keyframe-every", str(args.keyframe_every)] if args.keyframe_every else []),
+             *args.send_args],
             stdout=send_log, stderr=subprocess.STDOUT, text=True)
         try:
             deadline = time.monotonic() + 15
@@ -203,6 +210,8 @@ def table(results, args):
     rows = [
         f"{args.size} at {args.fps} fps, {args.codec}, {args.bitrate} kbit/s at most, frame "
         f"lifetime {args.latency} ms"
+        + (f", a keyframe every {args.keyframe_every} s" if args.keyframe_every else "")
+        + (", with sound (a tone, Opus voice)" if args.audio else "")
         + (f", sender {' '.join(args.send_args)}" if args.send_args else "")
         + f"; {args.duration} s a run, medians of {args.repeat}.",
         "",
@@ -225,6 +234,27 @@ def table(results, args):
             f"| {cell(median(runs, 0, 'keyframes'))} "
             f"| {cell(100 * (median(runs, 0, 'repair_share') or 0), 1)}% "
             f"| {cell(median(runs, 0, 'cpu'))} / {cell(median(runs, 1, 'cpu'))} |")
+    if args.audio:
+        rows += [
+            "",
+            "| scenario | first sound, ms | latency p50 / p95 / p99 / max, ms | jitter buffer "
+            "delay / target, ms | lost / late | FEC / concealed, ms | breaks | kbit/s |",
+            "|---|---:|---:|---:|---:|---:|---:|---:|",
+        ]
+        for scenario, runs in results:
+            rows.append(
+                f"| {scenario.name} | {cell(median(runs, 1, 'first_sound_ms'))} "
+                f"| {cell(median(runs, 1, 'audio_latency_p50_ms'), 1)} / "
+                f"{cell(median(runs, 1, 'audio_latency_p95_ms'), 1)} / "
+                f"{cell(median(runs, 1, 'audio_latency_p99_ms'), 1)} / "
+                f"{cell(median(runs, 1, 'audio_latency_max_ms'), 1)} "
+                f"| {cell(median(runs, 1, 'audio_delay_ms'))} / "
+                f"{cell(median(runs, 1, 'audio_target_ms'))} "
+                f"| {cell(median(runs, 1, 'audio_lost'))} / {cell(median(runs, 1, 'audio_late'))} "
+                f"| {cell(median(runs, 1, 'audio_recovered_ms'))} / "
+                f"{cell(median(runs, 1, 'audio_concealed_ms'))} "
+                f"| {cell(median(runs, 1, 'audio_breaks'))} "
+                f"| {cell(median(runs, 0, 'audio_kbps'), 1)} |")
     return "\n".join(rows)
 
 
@@ -245,6 +275,9 @@ def main():
     parser.add_argument("--codec", default="av1")
     parser.add_argument("--join-after", type=float, default=1.0,
                         help="seconds the sender streams before the viewer joins")
+    parser.add_argument("--audio", action="store_true", help="send a tone too, and measure it")
+    parser.add_argument("--keyframe-every", type=int, default=0,
+                        help="seconds between keyframes the sender makes unasked (0: none)")
     parser.add_argument("--send-arg", dest="send_args", action="append", default=[],
                         help="one more option for ratcast-send (repeatable)")
     args = parser.parse_args()

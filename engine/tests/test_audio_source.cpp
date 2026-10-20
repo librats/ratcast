@@ -1,7 +1,8 @@
 // Sound sources: the tone, whose samples follow on wherever a block is cut and
 // whose blocks come in real time stamped as a device's are; the clock that
-// stamps a real device's blocks; and what opening a device refuses, here or
-// not. The devices themselves are tested in linux/test_pipewire_audio.cpp.
+// stamps a real device's blocks; the output without a device; and what
+// opening a device refuses, here or not. The devices themselves are tested in
+// linux/test_pipewire_audio.cpp.
 
 #include "ratcast/engine/tone_source.h"
 
@@ -15,6 +16,7 @@
 
 #include "audio/sample_clock.h"
 #include "ratcast/engine/audio_device.h"
+#include "ratcast/engine/virtual_output.h"
 
 using namespace ratcast;
 using namespace std::chrono_literals;
@@ -79,6 +81,49 @@ TEST(ToneSourceTest, HandsOutBlocksInRealTimeThatFollowOnFromTheFirst) {
 
     // And again, from the start.
     EXPECT_TRUE(source.start([](AudioFrame) {}, {}));
+}
+
+TEST(VirtualOutputTest, PullsBlocksInRealTimeAndTapsThem) {
+    ManualClock clock(kStart);
+    struct Pulled {
+        size_t samples;
+        Timestamp play_time;
+        float first;
+    };
+    std::mutex mutex;
+    std::condition_variable changed;
+    std::vector<Pulled> pulled;
+    VirtualOutput output(
+        {.format = {48'000, 2}, .block = 10ms, .latency = 15ms},
+        [&](std::span<const float> samples, Timestamp play_time) {
+            std::lock_guard lock(mutex);
+            pulled.push_back({samples.size(), play_time, samples[0]});
+            changed.notify_all();
+        },
+        clock);
+    float next = 0;
+    const auto began = std::chrono::steady_clock::now();
+    ASSERT_TRUE(output.start(
+        [&](std::span<float> out, Timestamp) {
+            std::fill(out.begin(), out.end(), next);
+            next += 1;
+        },
+        {}));
+    {
+        std::unique_lock lock(mutex);
+        changed.wait_for(lock, 5s, [&] { return pulled.size() >= 20; });
+    }
+    const auto took = std::chrono::steady_clock::now() - began;
+    output.stop();
+
+    ASSERT_GE(pulled.size(), 20u);
+    EXPECT_GE(took, 185ms);  // the first at once, 19 more 10 ms apart
+    for (size_t i = 0; i < pulled.size(); ++i) {
+        EXPECT_EQ(pulled[i].samples, 2 * 480u);
+        EXPECT_EQ(pulled[i].play_time, kStart + 15ms);  // the clock stood still
+        EXPECT_EQ(pulled[i].first, float(i));           // what the pull filled in
+    }
+    EXPECT_FALSE(output.start({}, {}));  // nothing to pull from
 }
 
 TEST(SampleClockTest, RunsOnFromBlockToBlockThroughLateWakeUps) {
