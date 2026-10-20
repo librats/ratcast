@@ -484,3 +484,77 @@ the path — the two runs after it had none.) Left at 200 ms RTT: the keyframe
 still needs ~3 round trips through the 4-packet window, and BBR's Startup paces at its floor
 meanwhile, by which librats sheds the frames behind it — the stall after the first picture is
 the keyframe that has to follow (L2 (a, b)).
+
+
+## Stage 1, measured whole
+
+After 1.1, 1.2 (with librats L3) and 1.3: ratcast 694f0b7, librats 3548423.
+`bench/netem.py --repeat 3`, rate-controlled (the default: 2 Mbit/s up to 8):
+
+| scenario | path | first picture, ms | fps | Mbit/s (cuts) | latency p50 / p95 / p99, ms | stalls (ms) | lost / dropped | expired / sent | keyframes | repair | CPU send / recv, % |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| local | veth, no shaping | 36 | 60 | 6.3 (0) | 29.7 / 32.3 / 37.9 | 0 (0) | 0 / 0 | 0 / 891 | 6 | 0.0% | 142 / 24 |
+| rtt-20 | 20 ms RTT | 154 | 60 | 6.3 (0) | 45.1 / 48.1 / 64.5 | 0 (0) | 0 / 0 | 0 / 894 | 6 | 0.0% | 142 / 24 |
+| rtt-50 | 50 ms RTT | 328 | 60 | 6.2 (0) | 65.5 / 69.6 / 151.6 | 0 (0) | 0 / 0 | 0 / 886 | 6 | 0.0% | 144 / 24 |
+| rtt-100 | 100 ms RTT | 616 | 60 | 6.2 (0) | 90.1 / 94.2 / 147.5 | 1 (147) | 2 / 0 | 2 / 881 | 8 | 0.0% | 144 / 23 |
+| rtt-200 | 200 ms RTT | 1178 | 59 | 6.0 (0) | 143.4 / 147.5 / 393.2 | 1 (419) | 9 / 17 | 9 / 865 | 10 | 0.0% | 142 / 22 |
+| jitter | 50 ms RTT, ±10 ms jitter, in order | 385 | 60 | 6.2 (0) | 60.4 / 84.0 / 208.9 | 1 (142) | 0 / 0 | 0 / 881 | 6 | 0.0% | 141 / 23 |
+| reorder-2 | 50 ms RTT, 2% of packets 25 ms early | 334 | 60 | 6.2 (0) | 49.2 / 71.7 / 172.0 | 0 (0) | 0 / 0 | 0 / 889 | 6 | 0.0% | 144 / 23 |
+| reorder | 50 ms RTT, ±10 ms jitter, every packet on its own | 322 | 58 | 5.6 (2) | 67.6 / 86.0 / 188.4 | 3 (574) | 9 / 0 | 9 / 885 | 10 | 0.0% | 142 / 22 |
+| loss-1 | 50 ms RTT, 1% loss | 333 | 60 | 6.2 (0) | 110.6 / 118.8 / 167.9 | 0 (0) | 0 / 0 | 0 / 882 | 6 | 3.3% | 141 / 24 |
+| loss-2 | 50 ms RTT, 2% loss | 330 | 60 | 6.2 (0) | 108.5 / 118.8 / 151.6 | 0 (0) | 0 / 0 | 0 / 889 | 6 | 5.1% | 142 / 24 |
+| loss-5 | 50 ms RTT, 5% loss | 365 | 60 | 6.2 (0) | 155.6 / 155.6 / 213.0 | 0 (0) | 1 / 0 | 0 / 888 | 6 | 10.7% | 144 / 24 |
+| loss-both | 50 ms RTT, 2% loss both ways | 393 | 60 | 6.1 (0) | 114.7 / 129.0 / 233.5 | 1 (116) | 0 / 0 | 0 / 877 | 6 | 5.2% | 141 / 23 |
+| burst | 50 ms RTT, bursts of loss (~4%) | 325 | 60 | 6.2 (0) | 122.9 / 129.0 / 155.6 | 0 (0) | 0 / 0 | 0 / 884 | 6 | 7.8% | 141 / 24 |
+| cap-20 | 50 ms RTT, 20 Mbit/s, 100 ms buffer | 329 | 60 | 6.2 (0) | 69.6 / 73.7 / 151.6 | 0 (0) | 0 / 0 | 0 / 881 | 6 | 0.0% | 143 / 24 |
+| cap-6 | 50 ms RTT, 6 Mbit/s (below the stream) | 337 | 60 | 3.9 (2) | 92.2 / 159.7 / 204.8 | 1 (125) | 0 / 0 | 0 / 881 | 13 | 0.0% | 142 / 20 |
+| cap-drop | 50 ms RTT, 20 Mbit/s, 4 Mbit/s from 5 s to 10 s | 329 | 52 | 3.2 (6) | 79.9 / 192.5 / 270.3 | 10 (2454) | 48 / 41 | 48 / 881 | 24 | 1.4% | 143 / 17 |
+
+The same at a fixed 8 Mbit/s (`--send-arg=--fixed-bitrate`):
+
+| scenario | path | first picture, ms | fps | Mbit/s (cuts) | latency p50 / p95 / p99, ms | stalls (ms) | lost / dropped | expired / sent | keyframes | repair | CPU send / recv, % |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| local | veth, no shaping | 47 | 60 | 7.5 (0) | 27.6 / 29.7 / 32.3 | 0 (0) | 0 / 0 | 0 / 896 | 2 | 0.0% | 143 / 25 |
+| rtt-20 | 20 ms RTT | 206 | 60 | 7.5 (0) | 43.0 / 46.1 / 48.1 | 0 (0) | 0 / 0 | 0 / 894 | 2 | 0.0% | 143 / 25 |
+| rtt-50 | 50 ms RTT | 412 | 61 | 7.4 (0) | 58.4 / 62.5 / 192.5 | 0 (0) | 0 / 0 | 0 / 890 | 2 | 0.0% | 144 / 26 |
+| rtt-100 | 100 ms RTT | 762 | 60 | 7.2 (0) | 88.1 / 90.1 / 147.5 | 1 (182) | 10 / 0 | 10 / 882 | 4 | 0.0% | 145 / 24 |
+| rtt-200 | 200 ms RTT | 1468 | 59 | 6.8 (0) | 139.3 / 143.4 / 344.1 | 1 (402) | 32 / 15 | 32 / 867 | 7 | 0.0% | 146 / 23 |
+| jitter | 50 ms RTT, ±10 ms jitter, in order | 457 | 60 | 7.3 (0) | 84.0 / 86.0 / 200.7 | 1 (198) | 1 / 0 | 1 / 888 | 3 | 0.0% | 145 / 24 |
+| reorder-2 | 50 ms RTT, 2% of packets 25 ms early | 409 | 60 | 7.4 (0) | 55.3 / 60.4 / 180.2 | 1 (142) | 1 / 0 | 1 / 882 | 3 | 0.1% | 143 / 25 |
+| reorder | 50 ms RTT, ±10 ms jitter, every packet on its own | 422 | 60 | 7.4 (0) | 79.9 / 86.0 / 233.5 | 0 (0) | 0 / 0 | 0 / 891 | 2 | 0.0% | 146 / 25 |
+| loss-1 | 50 ms RTT, 1% loss | 404 | 60 | 7.4 (0) | 108.5 / 116.7 / 120.8 | 0 (0) | 1 / 0 | 1 / 887 | 3 | 2.7% | 144 / 26 |
+| loss-2 | 50 ms RTT, 2% loss | 414 | 60 | 7.4 (0) | 108.5 / 118.8 / 135.2 | 0 (0) | 1 / 0 | 1 / 890 | 3 | 5.5% | 146 / 26 |
+| loss-5 | 50 ms RTT, 5% loss | 453 | 60 | 7.3 (0) | 116.7 / 167.9 / 188.4 | 1 (128) | 2 / 0 | 3 / 884 | 3 | 10.6% | 145 / 25 |
+| loss-both | 50 ms RTT, 2% loss both ways | 413 | 60 | 7.4 (0) | 110.6 / 120.8 / 192.5 | 0 (0) | 1 / 0 | 1 / 890 | 3 | 5.6% | 143 / 25 |
+| burst | 50 ms RTT, bursts of loss (~4%) | 402 | 60 | 7.4 (0) | 139.3 / 159.7 / 180.2 | 1 (151) | 1 / 0 | 1 / 884 | 3 | 9.0% | 147 / 26 |
+| cap-20 | 50 ms RTT, 20 Mbit/s, 100 ms buffer | 414 | 60 | 7.4 (0) | 71.7 / 75.8 / 86.0 | 0 (0) | 1 / 0 | 1 / 888 | 3 | 0.0% | 145 / 25 |
+| cap-6 | 50 ms RTT, 6 Mbit/s (below the stream) | 420 | 40 | 5.3 (0) | 163.8 / 221.2 / 254.0 | 17 (4770) | 53 / 210 | 53 / 882 | 36 | 0.0% | 155 / 18 |
+| cap-drop | 50 ms RTT, 20 Mbit/s, 4 Mbit/s from 5 s to 10 s | 412 | 39 | 5.5 (0) | 73.7 / 217.1 / 360.4 | 4 (4956) | 129 / 180 | 129 / 885 | 25 | 1.0% | 151 / 18 |
+
+Against the stage's *done when* (`PLAN.md`, stage 1):
+
+- **≥ 55 fps everywhere but `cap-drop`**: met — 58–60 fps, `reorder` the lowest.
+- **`cap-drop` back to full rate within 2 s of each change**: met when the path widens again,
+  not when it narrows. After the fall to 4 Mbit/s the picture runs at 12–40 fps for about
+  three seconds (seconds 6–8 of every run) before it is back at 60: each of the 4–7 cuts is a new
+  encoder and a keyframe, on a path that has no room for them (21–25 keyframes a run).
+- **First picture within about four round trips + 150 ms, no stall after it**: met up to 50 ms
+  RTT (154 ms at 20, 328 at 50, no stall). Not at 100 ms (616 against ~550, then a 0.15 s stall)
+  or 200 ms (1178 against ~950, then 0.4 s): librats L2 (a, b), put off.
+- **No scenario worse with rate control than at a fixed bitrate**: met everywhere but `reorder`.
+  There rate control loses a few frames at its bitrate changes, 9–15 in two runs of three (58 fps,
+  0.6 s of stalls), where the fixed stream loses none. Every change is a keyframe on a path that
+  reorders every packet. Rate control wins clearly where the path is narrow: `cap-6` 40 → 60 fps,
+  4.8 → 0.1 s of stalls; `cap-drop` 39 → 52 fps, 5.0 → 2.5 s. It also starts sooner everywhere,
+  with a smaller first keyframe: 412 → 328 ms at 50 ms RTT.
+
+The `cap-drop` row above is the unluckiest of several series. Built from c35002f (before 1.2;
+librats 19d711b, before L3) and run against this code on the same machine, two series of three
+each: `cap-drop` old 52 / 51 fps with 2.3 / 2.6 s of stalls, new 56 / 56 fps with 1.2 / 1.4 s;
+`reorder` old 59 / 58 fps with 0.3 / 0.4 s, new 59 / 59 fps with 0.4 / 0.7 s, the same within
+its spread. The rows that moved since the last full table: `loss-*` and `burst` (1.3), 0–1
+stalls where there were 3–8, at ~110–155 ms p50 for ~50; `rtt-100` and `rtt-200` (1.2), first
+picture 681 → 616 and 1448 → 1178 ms.
+
+What is left, in both cases: fewer keyframes at bitrate changes (1.1's leftover — on `reorder`
+and `cap-drop`), and librats L2 (a, b) for joining on long paths.

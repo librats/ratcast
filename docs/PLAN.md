@@ -149,8 +149,8 @@ final place and shape: stage 0 is a walking skeleton, not a throwaway prototype.
 | Stage | Result | librats needs |
 |---|---|---|
 | **0. Skeleton** ✅ | screen → encoder → libratcast → librats → decoder → window, on Linux; latency and behaviour on emulated networks measured | L1 ✅ |
-| **1. A stream that holds** ← now | one video stream to a few viewers plays on every emulated path: rate control, fast joining, smooth playback on lossy paths | L2 (c) ✅, L3 |
-| **2. Sound** | audio, A/V sync, latency profiles `call` / `game` / `cinema` end to end | L4 |
+| **1. A stream that holds** ✅ | one video stream to a few viewers plays on every emulated path: rate control, fast joining, smooth playback on lossy paths | L2 (c) ✅, L3 ✅; L2 (a, b) put off |
+| **2. Sound** ← now | audio, A/V sync, latency profiles `call` / `game` / `cinema` end to end | L4 |
 | **3. Standalone library** | netsim, C API, MPEG-TS, `rats://` URLs, a benchmark against librist and SRT | — |
 | **4. Platforms** | GPU paths and hardware codecs; Windows and macOS capture | — |
 | **5. Watch together** | one-to-many: forwarding tree, simulcast / SVC, SFU, SFrame E2EE, synchronized playout | L5 |
@@ -261,7 +261,7 @@ keyframe out slower than its lifetime; the frame behind it is shed by Startup's 
 0.5 integration test's expired frame); 2% reordering reads as 20% loss and leaves 26 fps; jitter
 ends BBR's Startup early. Hence the order of the librats track below.
 
-### Stage 1 — A stream that holds ← now
+### Stage 1 — A stream that holds ✅
 
 One sender, one video stream, a few viewers. The stream adapts to the path, starts quickly and
 gets over losses without the viewer noticing — on every path `bench/netem.py` emulates. Audio,
@@ -275,8 +275,18 @@ many viewers and other platforms are later stages.
 - no scenario playing worse with rate control than at a fixed bitrate (✅ since L2 (c): `jitter`,
   `reorder` and `reorder-2` play at 59–60 fps like the clean paths).
 
-Order: 1.3 ✅, 1.2 with L3 ✅ — and now L2 (a, b), which the first-picture target at 200 ms
-asks for (1.2's notes); 1.1's leftovers when a measurement asks.
+Measured whole after 1.1–1.3 (`docs/bench.md`, "Stage 1, measured whole"), and closed with two
+gaps put off rather than chased now:
+- 58–60 fps everywhere ✅; `cap-drop` back at full rate within a second when the path widens ✅,
+  but about three seconds after it narrows, and `reorder` loses a few frames at bitrate changes
+  that a fixed bitrate does not (58 against 60 fps). Both are keyframes: each change of a
+  software encoder's bitrate is one. That is 1.1's leftover "fewer keyframes", for when a
+  measurement or a user asks;
+- the first picture within four round trips + 150 ms with no stall after it up to 50 ms RTT ✅
+  (328 ms at 50); at 100 and 200 ms 616 and 1178 ms, then 0.15 and 0.4 s of stall — librats
+  L2 (a, b), put off: joining faster is not urgent.
+
+Order it was done in: 1.1, 1.3, 1.2 with L3.
 
 **1.1 Rate control.** ✅ The encoder's bitrate from the viewers' `PathStats`: fast down on expiring
 frames or a growing queue, careful up, starting low so that the first keyframe is small. Left:
@@ -322,7 +332,8 @@ opens comes with it), which leaves a 0.1–0.2 s stall after the first picture �
 **1.2 Joining.** A joining viewer's keyframe is allowed to arrive late, and the viewer is caught
 up rather than asked again; keyframe requests from several viewers in one window are answered
 with one keyframe. *Done:* the first-picture target above at every distance. Done in ratcast with
-L3 ✅; left: L2 (a, b), without which the target is out of reach from ~150 ms RTT up (below).
+L3 ✅; left, put off: L2 (a, b), without which the target is out of reach from ~150 ms RTT up
+(below).
 librats: **needs** L3 ✅ (the sender learns the keyframe is on its way or expired) and, for the
 long paths, L2 (a, b) (initial window, shedding by Startup's rate).
 
@@ -461,8 +472,8 @@ and the list is in priority order:
 | | L1 | Reordering is not loss for live data | needed | 0.6 | ✅ |
 | | L2 (c) | BBR on a jittery path | needed | 1.1 | ✅ |
 | | L3 | Per-message delivered / expired feedback | needed | 1.2 | ✅ |
-| 1 | L2 (a, b) | A live flow's start: initial window, shedding | needed | 1.2 (long paths) | **next** |
-| 2 | L4 | Priorities inside `Priority::Live` | needed | 2.1 | |
+| 1 | L4 | Priorities inside `Priority::Live` | needed | 2.1 | **next** |
+| 2 | L2 (a, b) | A live flow's start: initial window, shedding | needed | 1.2 (long paths) | put off |
 | 3 | L5 | Absolute deadlines when forwarding | needed | stage 5 (tree) | |
 | 4 | L8 | `send_many` with a shared buffer | improves | stage 5 (SFU) | |
 | 5 | L11 | One copy fewer on the send path | improves | with L8 | |
@@ -479,7 +490,8 @@ every viewer still meets is the first second, which ratcast has taken as far as 
 joining keyframe arrives late instead of being sent again, 1.45 → 1.2 s at 200 ms RTT): the
 keyframe behind a 4-packet initial window and the frames behind it shed by Startup's floor rate
 — 0.6 s to the first picture at 100 ms RTT, 1.2 s at 200 ms, and a stall of up to 0.4 s after
-it. That is L2 (a, b), next.
+it. That is L2 (a, b), put off with stage 1 closed (joining faster is not urgent); next is L4,
+for stage 2's audio.
 
 **L1 — Reordering is not loss for live data.** ✅ RACK's reordering adaptation was off while a
 live message was outstanding, so with live video always outstanding every reordered packet was a
