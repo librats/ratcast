@@ -50,9 +50,14 @@ EncodedFrame received(EncodedAudio& audio) {
 
 class AudioCodecTest : public ::testing::Test {
 protected:
+    void SetUp() override {
+        const Result<std::unique_ptr<AudioEncoder>> encoder = open_audio_encoder({});
+        if (!encoder) GTEST_SKIP() << "no Opus here: " << to_string(encoder.error());
+    }
+
     void open(AudioEncoderConfig config) {
         Result<std::unique_ptr<AudioEncoder>> encoder = open_audio_encoder(config);
-        if (!encoder) GTEST_SKIP() << "no Opus here: " << to_string(encoder.error());
+        ASSERT_TRUE(encoder) << to_string(encoder.error());
         encoder_ = std::move(*encoder);
         Result<std::unique_ptr<AudioDecoder>> decoder =
             open_audio_decoder({config.codec, config.format, {}});

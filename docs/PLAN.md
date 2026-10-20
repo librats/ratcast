@@ -111,7 +111,7 @@ per room for delivery, librats storage for history when it is built.
 | Dependency | For | Linux | Windows / macOS |
 |---|---|---|---|
 | FFmpeg ≥ 6 (avcodec, avformat, avutil, swscale) | encode, decode, demux | system | vcpkg, LGPL build we ship |
-| PipeWire ≥ 0.3.40 | screen capture, audio | system | — |
+| PipeWire ≥ 0.3.50 | screen capture, audio | system | — |
 | GIO (GLib) | xdg-desktop-portal over D-Bus | system | — |
 | libdrm, GBM, EGL, Vulkan | DMA-BUF import, GPU colour conversion (stage 4) | system | — |
 | SDL3 | windows of the CLI tools | system | vcpkg |
@@ -409,8 +409,10 @@ take `--latency call|game|cinema`.
     brings a single lost frame back nearly whole; of two in a row the first is concealed and
     the second, from FEC after concealment, comes out at a quarter of its level — bursts are
     what RED or L6 would be for, if a measurement asks;
-  - (b) sound in and out: `AudioSource` / `AudioSink`, PipeWire capture (a microphone, or what a
-    node plays) and playback, a tone pattern source;
+  - (b) ✅ sound in and out: `AudioSource` and `AudioOutput` (pulled by the device, told when
+    the sound will be heard), PipeWire capture — a microphone, the whole of what the computer
+    plays, or one node — and playback, the tone source. The PipeWire plumbing video capture had
+    is shared now (`pipewire::StreamThread`);
   - (c) audio over the session: audio streams in `MediaSession`, an adaptive jitter buffer, L4;
   - (d) client and tools: `AudioPublisher` / `AudioPlayer`, `--audio` in `ratcast-send` /
     `ratcast-recv`, netem: 2% loss, a keyframe's burst next to the audio.

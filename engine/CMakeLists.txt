@@ -7,9 +7,11 @@ include(RatcastPipeWire)
 
 add_library(ratcast_engine STATIC
     src/audio/audio_codec.cpp
+    src/audio/audio_device.cpp
     src/audio/audio_frame.cpp
     src/pattern/pattern.cpp
     src/pattern/pattern_source.cpp
+    src/pattern/tone_source.cpp
     src/video/video_codec.cpp
     src/video/video_convert.cpp
     src/video/video_frame.cpp
@@ -47,13 +49,19 @@ endif()
 
 if(RATCAST_PIPEWIRE_FOUND)
     target_sources(ratcast_engine PRIVATE
+        src/linux/audio_device.cpp
+        src/linux/pipewire_audio.cpp
         src/linux/pipewire_capture.cpp
+        src/linux/pipewire_stream.cpp
         src/linux/portal.cpp
         src/linux/screen_capture.cpp
     )
     target_link_libraries(ratcast_engine PRIVATE ratcast::pipewire ratcast::gio)
 else()
-    target_sources(ratcast_engine PRIVATE src/capture/screen_capture_unavailable.cpp)
+    target_sources(ratcast_engine PRIVATE
+        src/audio/audio_device_unavailable.cpp
+        src/capture/screen_capture_unavailable.cpp
+    )
 endif()
 
 target_include_directories(ratcast_engine
