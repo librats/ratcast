@@ -143,6 +143,8 @@ before its needs are met, with the gap measured in `docs/bench.md`; the librats 
 when it is first in the librats order or when nothing else in the stage can move without it.
 
 The current stage and the next are broken into steps; later ones stay coarse until reached.
+Stages keep their numbers when their order changes (steps and `docs/bench.md` refer to them):
+the app (6) comes before watching together (5), as one viewer is enough for its first version.
 Every step ends with tests (and benchmarks when it moves a number) and leaves the code in its
 final place and shape: stage 0 is a walking skeleton, not a throwaway prototype.
 
@@ -153,8 +155,8 @@ final place and shape: stage 0 is a walking skeleton, not a throwaway prototype.
 | **2. Sound** ✅ | audio, A/V sync; latency profiles put off to stages 5 and 6 | L4 ✅ |
 | **3. Standalone library** ✅ | MPEG-TS in and out, `rats://` URLs, a benchmark against librist and SRT, C API | — |
 | **4. Platforms** — put off | GPU paths and hardware codecs; Windows and macOS capture; netsim ✅ | — |
-| **5. Watch together** ← now | one-to-many: forwarding tree, simulcast / SVC, SFU, SFrame E2EE, synchronized playout | L5 |
-| **6. App** | Qt app MVP: rooms and invites, voice with AEC / NS, screen / window / app-audio share, camera, on Windows / Linux / macOS | — |
+| **5. Watch together** — after 6 | one-to-many: forwarding tree, simulcast / SVC, SFU, SFrame E2EE, synchronized playout | L5 |
+| **6. App** ← now | Qt app MVP, one to one: invites, voice with AEC / NS, screen / window / app-audio share, camera; on Linux first, the other OSes as stage 4 reaches them | — |
 | **7. Conferences** | active speaker, last-N, grid, moderation, text chat | — |
 | **8. Beyond** | Android, cinema mode, HDR, polish | — |
 
@@ -584,13 +586,14 @@ encoding, and a 1440p60 game is captured and encoded without a CPU copy.
   host's: on this VM up to 10 ms late.
 
 Put off after 4.5: 4.1–4.4 need machines the dev VM is not — an Intel or AMD GPU with VA-API,
-NVIDIA, Windows, a Mac — and are taken up a step at a time as one is at hand. Stage 5 goes ahead
-meanwhile on the software codecs, as nothing in it waits for hardware ones; the app (stage 6)
-does, and gathers what is left of this stage before it.
+NVIDIA, Windows, a Mac — and are taken up a step at a time as one is at hand. The app (stage 6)
+goes ahead meanwhile on Linux with the software codecs, which carry a one-to-one call and a
+1080p screen; high resolutions and the other OSes come to it with these steps.
 
 ### Stage 5 — Watch together
 
-The main use case: one person streams, many watch. Coarse until reached.
+The main use case: one person streams, many watch. After the app (stage 6), whose first
+version is one to one, over the path straight between the two. Coarse until reached.
 
 - Capacity-aware forwarding tree: viewers with spare uplink re-forward without transcoding.
   librats: **needs** L5.
