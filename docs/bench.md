@@ -949,3 +949,28 @@ and at the sender every frame handed to it wakes it with a `send` to that socket
 second) though one is already pending. That is librats work (L15). The feed reaches the
 sender's reactor and leaves the viewer's through a thread of its own, one hand-over more at
 each end than srt-live-transmit makes.
+
+### Fewer ACKs, tried (librats L13)
+
+The feedback after full frames: an ACK every second packet, ~440 a second for 8 Mbit/s — 0.22
+Mbit/s back, 2.7% of the feed (SRT: an ACK every 10 ms, 0.05). Tried in librats as QUIC's
+ACK_FREQUENCY, put off (`docs/PLAN.md`, L13): the sender asks the receiver to acknowledge
+packets of live data every max(2, window / 4), a packet out of order and the third past a gap
+still at once; BBR is told, so the batching it asked for is not read as a path that holds
+acknowledgements back. Measured in librats' own suites, in virtual time:
+
+- **In Startup**, with every 10: Startup's end on a burst that queues needs six groups of
+  acknowledgements rising in a row, and a video frame was one or two of them — five BBR tests
+  failed (Startup never ended, a call padded to verify a queue that was not there).
+- **Kept out of Startup** and BBR's probes, a constant-rate feed on a path it never fills stays
+  in Startup for good (a TS feed of 8 Mbit/s on an unlimited path, 6 s: Startup throughout), so
+  it gains nothing: 443 ACKs a second before and after.
+- **Between probes**, at most four to an ACK, `bench_path`'s realtime rows: beside a bulk flow
+  12.2 → 20.5% of the frames late; the link dropping to 3 Mbit/s, the longest freeze 638 → 2311
+  ms; a few rows a little better (3% in 100 ms fades 3.7 → 2.7% late).
+
+The acknowledgements are BBR's sensor — it reads the queue off them one by one — so fewer of
+them cost live video its controller's reactions. What would keep both: receive timestamps, the
+receiver reporting when each packet arrived, in batches, as WebRTC's transport-wide feedback
+does.
+

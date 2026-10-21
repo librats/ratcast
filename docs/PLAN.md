@@ -511,8 +511,9 @@ across the same paths. In steps:
        7.5 / 8.1% → 6.2 / 6.2% against SRT's 2.8 / 3.1% — the rest per reactor turn in
        librats (L15) and a timer wake-up per frame at the viewer's writer (`docs/bench.md`,
        "Full frames, the writer woken less");
-    4. librats L13: ACKs less often for live data on a clean path — the feedback from 0.38 Mbit/s
-       toward SRT's 0.05, and fewer system calls at the sender;
+    4. librats L13, tried and put off: the ACKs are what librats' BBR reads the queue off, and
+       fewer of them cost live video more than the 0.22 Mbit/s back they save (`docs/bench.md`,
+       "Fewer ACKs, tried"); doing it right takes receive timestamps;
     5. the full table: `bench/netem.py --feed --repeat 3`, every scenario, into `docs/bench.md`.
 
     Left as they are: joining ~100 ms slower than librist (the handshake, then the stream's
@@ -590,15 +591,15 @@ and the list is in priority order:
 | | L2 (b) | A live flow's start: shedding by Startup's rate | needed | 3.2 (feeds); 1.2 (long paths) | ✅ |
 | 1 | L2 (a) | A live flow's start: the initial window | needed | 1.2 (long paths) | put off; eased by (b) |
 | 2 | L5 | Absolute deadlines when forwarding | needed | stage 5 (tree) | |
-| 3 | L13 | Fewer ACKs for live data | improves | 3.2 (feedback, CPU) | |
-| 4 | L15 | Fewer system calls per reactor turn | improves | 3.2 (CPU) | |
-| 5 | L8 | `send_many` with a shared buffer | improves | stage 5 (SFU) | |
-| 6 | L11 | One copy fewer on the send path | improves | with L8 | |
-| 7 | L6 | FEC across messages | optional | 2.1 | if Opus FEC + RED fall short |
-| 8 | L9 | Path MTU discovery | optional | 3.4, 4K | |
-| 9 | L10 | A clock-sync service | optional | stage 5 (playout) | libratcast can do it over ping |
-| 10 | L7 | A delay-sensitive realtime mode | optional | — | mostly done with L2 (c) |
-| 11 | L12 | Live outcomes and ranks in the C ABI | optional | other bindings | when one needs them |
+| 3 | L15 | Fewer system calls per reactor turn | improves | 3.2 (CPU) | |
+| 4 | L8 | `send_many` with a shared buffer | improves | stage 5 (SFU) | |
+| 5 | L11 | One copy fewer on the send path | improves | with L8 | |
+| 6 | L6 | FEC across messages | optional | 2.1 | if Opus FEC + RED fall short |
+| 7 | L9 | Path MTU discovery | optional | 3.4, 4K | |
+| 8 | L10 | A clock-sync service | optional | stage 5 (playout) | libratcast can do it over ping |
+| 9 | L7 | A delay-sensitive realtime mode | optional | — | mostly done with L2 (c) |
+| 10 | L12 | Live outcomes and ranks in the C ABI | optional | other bindings | when one needs them |
+| 11 | L13 | Fewer ACKs for live data | optional | feedback on a narrow uplink | tried: needs receive timestamps |
 | 12 | L14 | A faster ChaCha20-Poly1305 | optional | — | ~0.5% of a core at 8 Mbit/s |
 
 Where it stands after L1, L2 (c) and L3: the steady state holds — one-way delay + ~18 ms on a
@@ -686,11 +687,25 @@ included — recorded by `LiveSender` / `SendQueue` and passed up from the trans
 entry points, never from inside `send()`. Tested from `LiveSender` and `SendQueue` up to two
 nodes over either transport.
 
-**L13 — Fewer ACKs for live data.** *Improves 3.2.* An ACK every second packet (RFC 9000) is
-760 a second for an 8 Mbit/s feed — 0.38 Mbit/s back where SRT sends 0.05 (an ACK every 10 ms),
-and a system call at each end for each. On a clean path, live data could be acknowledged every
-few packets or milliseconds (QUIC's ACK_FREQUENCY), at once on a gap or reordering as now. To be
-checked against `bench_path`: BBR's delivery-rate samples and the round trip get coarser.
+**L13 — Fewer ACKs for live data.** *Optional; tried, put off.* An ACK every second packet
+(RFC 9000) is ~440 a second for an 8 Mbit/s feed in full frames — 0.22 Mbit/s back (2.7% of the
+feed) where SRT sends 0.05 (an ACK every 10 ms). Tried as QUIC's ACK_FREQUENCY (a frame, wire
+v7): the sender asks for every max(2, window / 4) packets of live data, the receiver still
+acknowledging at once a packet out of order and the third past a gap, and BBR told how many
+come together so it does not read them as a path that holds acknowledgements back. It does not
+pay, because those acknowledgements are BBR's sensor: it reads the queue off them ack by ack
+(Startup ends on six groups of them rising in a row; a probe on one lifted past its bar), with
+allowances tuned to an ACK every second packet (`kAckedTogether`). Allowed in Startup, video's
+Startup never ended; kept out of it, a constant-rate feed on a path it never fills — the TS feed
+on every netem path but the capped ones — stays in Startup for good and gains nothing; between
+probes, even with at most four packets to an ACK, `bench_path` lost ground where live video
+needs the controller most: beside a bulk flow 12.2 → 20.5% of frames late, a link dropping to
+3 Mbit/s froze for 2.3 s instead of 0.6. Fewer ACKs without a blinder controller means
+receive timestamps (WebRTC's transport-wide feedback, QUIC's receive-timestamp drafts): the
+receiver says when each packet arrived, in batches, and the controller reads the queue off that
+instead of off when acknowledgements come back — a rework of BBR's queue signals, for when the
+viewers' uplinks ask for it. The attempt, should it be wanted: `docs/bench.md`, "Fewer ACKs,
+tried".
 
 **L15 — Fewer system calls per reactor turn.** *Improves 3.2.* At 886 packets a second the
 reactor makes system calls of its own each turn beyond the data's: it empties its wake-up socket
