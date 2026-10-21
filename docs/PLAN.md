@@ -477,7 +477,7 @@ across the same paths. In steps:
     `DataPublisher` finds the 188-byte packets and sends six to a frame — a librats datagram
     — and `DataPlayer` writes them out through a `DeliveryBuffer`, what it holds at the
     feed's end included. A feed piped through on one host comes out byte for byte.
-- **3.2 Benchmark** against librist and SRT (libwebrtc if practical). librats: L9 optional.
+- **3.2 Benchmark** ✅ against librist and SRT (libwebrtc if practical). librats: L9 optional.
   - (a) ✅ the harness: `ratcast-tsprobe` — a stamped constant-bitrate TS probe (`send`) and its
     meter (`meter`: latency, loss after repair, continuity-counter jumps, the longest gap; the
     client's `TsProbeWriter` / `TsProbeMeter`); `bench/peers.sh`, SRT 1.5.7's
@@ -514,7 +514,14 @@ across the same paths. In steps:
     4. librats L13, tried and put off: the ACKs are what librats' BBR reads the queue off, and
        fewer of them cost live video more than the 0.22 Mbit/s back they save (`docs/bench.md`,
        "Fewer ACKs, tried"); doing it right takes receive timestamps;
-    5. the full table: `bench/netem.py --feed --repeat 3`, every scenario, into `docs/bench.md`.
+    5. ✅ the full table: `bench/netem.py --feed --repeat 3`, every scenario (`docs/bench.md`,
+       "Against SRT and librist, measured whole"). Nothing lost where the path has room, by any
+       of the three; the same latency, ratcast's p99 the closest to its median (4–8 ms against
+       8–16); over capacity librist loses least, then ratcast, then SRT, which alone holds its
+       latency. Where ratcast is behind: joining (~2 round trips more than librist), CPU (twice
+       theirs: L15), feedback (0.2 Mbit/s against 0.02–0.05: L13), and `reorder` — every packet
+       on its own delay — 0.35% lost to BBR's ProbeRTT, whose window is half a BDP at an outlier
+       minimum round trip (L16).
 
     Left as they are: joining ~100 ms slower than librist (the handshake, then the stream's
     announcement and subscription, before the first frame: L2 (a) and 1.2's leftovers), and
@@ -592,15 +599,16 @@ and the list is in priority order:
 | 1 | L2 (a) | A live flow's start: the initial window | needed | 1.2 (long paths) | put off; eased by (b) |
 | 2 | L5 | Absolute deadlines when forwarding | needed | stage 5 (tree) | |
 | 3 | L15 | Fewer system calls per reactor turn | improves | 3.2 (CPU) | |
-| 4 | L8 | `send_many` with a shared buffer | improves | stage 5 (SFU) | |
-| 5 | L11 | One copy fewer on the send path | improves | with L8 | |
-| 6 | L6 | FEC across messages | optional | 2.1 | if Opus FEC + RED fall short |
-| 7 | L9 | Path MTU discovery | optional | 3.4, 4K | |
-| 8 | L10 | A clock-sync service | optional | stage 5 (playout) | libratcast can do it over ping |
-| 9 | L7 | A delay-sensitive realtime mode | optional | — | mostly done with L2 (c) |
-| 10 | L12 | Live outcomes and ranks in the C ABI | optional | other bindings | when one needs them |
-| 11 | L13 | Fewer ACKs for live data | optional | feedback on a narrow uplink | tried: needs receive timestamps |
-| 12 | L14 | A faster ChaCha20-Poly1305 | optional | — | ~0.5% of a core at 8 Mbit/s |
+| 4 | L16 | ProbeRTT that does not starve a live flow | improves | 3.2 (`reorder`) | |
+| 5 | L8 | `send_many` with a shared buffer | improves | stage 5 (SFU) | |
+| 6 | L11 | One copy fewer on the send path | improves | with L8 | |
+| 7 | L6 | FEC across messages | optional | 2.1 | if Opus FEC + RED fall short |
+| 8 | L9 | Path MTU discovery | optional | 3.4, 4K | |
+| 9 | L10 | A clock-sync service | optional | stage 5 (playout) | libratcast can do it over ping |
+| 10 | L7 | A delay-sensitive realtime mode | optional | — | mostly done with L2 (c) |
+| 11 | L12 | Live outcomes and ranks in the C ABI | optional | other bindings | when one needs them |
+| 12 | L13 | Fewer ACKs for live data | optional | feedback on a narrow uplink | tried: needs receive timestamps |
+| 13 | L14 | A faster ChaCha20-Poly1305 | optional | — | ~0.5% of a core at 8 Mbit/s |
 
 Where it stands after L1, L2 (c) and L3: the steady state holds — one-way delay + ~18 ms on a
 clean path, 59–60 fps under 1–5% loss, bursts, jitter and reordering, and BBR's estimate follows
@@ -715,6 +723,17 @@ sends a wake-up byte for every task though one may already be pending (~650 a se
 sender, one per frame). Drain only when the poller reported the socket (a byte written after
 the wait is still there for the next one), stop reading when a batch comes back short, and
 signal only when no wake-up is pending.
+
+**L16 — ProbeRTT that does not starve a live flow.** *Improves 3.2.* On a path that delays every
+packet on its own (netem's `reorder`: N(25 ms, 10 ms) each way) BBR's minimum round trip is an
+outlier — 3 ms where the round trip is ~50 — so an app-limited sender never sees it again
+within an eighth, never skips ProbeRTT, and enters it every 5–8 s with a window of half a BDP
+at that minimum: 6.4 KB where an 8 Mbit/s feed keeps ~50 KB in flight. 32–72 frames are shed an
+episode (in virtual time, three seeds; on netem one burst of 36–45 in each 15 s run, 0.35% of
+the feed), once followed by the estimate falling to 1.1 Mbit/s. Either a ProbeRTT window no
+smaller than the live floor (`cc::live_floor_window()`, as Startup's since L2 (b)), or the skip
+taken while samples stay within the path's own swing of the minimum. `docs/bench.md`, "Why
+ratcast loses on `reorder`: ProbeRTT".
 
 **L14 — A faster ChaCha20-Poly1305.** *Optional.* The vendored portable code costs ~15
 instructions a byte, a third of librats' user time — still ~0.5% of a core at 8 Mbit/s, so

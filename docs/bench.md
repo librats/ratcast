@@ -974,3 +974,111 @@ them cost live video its controller's reactions. What would keep both: receive t
 receiver reporting when each packet arrived, in batches, as WebRTC's transport-wide feedback
 does.
 
+## Against SRT and librist, measured whole (3.2)
+
+ratcast f1f8ffa (3.2 (b) 1–3 in, L13 not), librats 3669d2c, SRT 1.5.7, librist 0.2.20 (main
+profile), each built as `bench/peers.sh` builds it — SRT and librist without encryption, ratcast
+always encrypted. `bench/netem.py --feed --repeat 3`: the stamped probe at 8 Mbit/s, held 200 ms
+by each transport, 15 s a run, medians of three.
+
+| scenario | transport | first packet, ms | latency p50 / p99 / max, ms | lost, % | glitches | longest gap, ms | link → / ←, Mbit/s | CPU send / recv, % |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| local | ratcast | 206 | 200.7 / 208.9 / 218.4 | 0.000 | 0 | 21 | 8.58 / 0.22 | 5.5 / 6.3 |
+| local | srt | 196 | 208.9 / 217.1 / 223.5 | 0.000 | 0 | 23 | 8.40 / 0.06 | 2.6 / 2.8 |
+| local | rist | 198 | 204.8 / 213.0 / 226.2 | 0.000 | 0 | 37 | 8.45 / 0.02 | 3.1 / 2.4 |
+| rtt-20 | ratcast | 270 | 213.0 / 217.1 / 226.8 | 0.000 | 0 | 18 | 8.55 / 0.21 | 5.2 / 6.6 |
+| rtt-20 | srt | 248 | 217.1 / 225.3 / 238.4 | 0.000 | 0 | 28 | 8.38 / 0.06 | 2.5 / 2.8 |
+| rtt-20 | rist | 220 | 213.0 / 225.3 / 250.2 | 0.000 | 0 | 40 | 8.43 / 0.02 | 2.7 / 2.9 |
+| rtt-50 | ratcast | 358 | 229.4 / 233.5 / 251.2 | 0.000 | 0 | 28 | 8.50 / 0.20 | 5.4 / 6.8 |
+| rtt-50 | srt | 299 | 233.5 / 241.7 / 251.4 | 0.000 | 0 | 23 | 8.33 / 0.05 | 2.4 / 2.8 |
+| rtt-50 | rist | 251 | 229.4 / 237.6 / 251.5 | 0.000 | 0 | 25 | 8.42 / 0.02 | 2.7 / 2.9 |
+| rtt-100 | ratcast | 511 | 254.0 / 258.0 / 270.1 | 0.000 | 0 | 24 | 8.43 / 0.21 | 5.3 / 6.8 |
+| rtt-100 | srt | 399 | 258.0 / 270.3 / 300.1 | 0.000 | 0 | 48 | 8.27 / 0.05 | 2.5 / 2.7 |
+| rtt-100 | rist | 297 | 254.0 / 270.3 / 275.6 | 0.000 | 0 | 27 | 8.39 / 0.02 | 2.7 / 2.9 |
+| rtt-200 | ratcast | 811 | 303.1 / 311.3 / 319.2 | 0.008 | 1 | 20 | 8.25 / 0.21 | 5.2 / 6.5 |
+| rtt-200 | srt | 600 | 311.3 / 319.5 / 326.3 | 0.000 | 0 | 26 | 8.16 / 0.05 | 2.4 / 2.7 |
+| rtt-200 | rist | 402 | 303.1 / 311.3 / 321.0 | 0.000 | 0 | 21 | 8.33 / 0.02 | 2.6 / 2.8 |
+| jitter | ratcast | 361 | 221.2 / 225.3 / 229.7 | 0.000 | 0 | 13 | 8.69 / 0.08 | 4.9 / 6.0 |
+| jitter | srt | 313 | 221.2 / 229.4 / 242.9 | 0.000 | 0 | 26 | 8.31 / 0.05 | 2.2 / 2.7 |
+| jitter | rist | 270 | 241.7 / 245.8 / 257.6 | 0.000 | 0 | 26 | 8.40 / 0.02 | 2.7 / 2.5 |
+| reorder-2 | ratcast | 336 | 200.7 / 208.9 / 227.0 | 0.000 | 0 | 22 | 8.68 / 0.26 | 5.2 / 6.6 |
+| reorder-2 | srt | 301 | 233.5 / 241.7 / 250.1 | 0.000 | 0 | 21 | 10.84 / 0.06 | 2.6 / 2.9 |
+| reorder-2 | rist | 255 | 229.4 / 237.6 / 247.1 | 0.000 | 0 | 25 | 8.44 / 0.02 | 2.7 / 2.8 |
+| reorder | ratcast | 327 | 200.7 / 204.8 / 212.3 | 0.354 | 4 | 33 | 8.62 / 0.31 | 5.2 / 6.2 |
+| reorder | srt | 304 | 237.6 / 245.8 / 267.3 | 0.000 | 0 | 46 | 15.56 / 0.13 | 2.9 / 3.6 |
+| reorder | rist | 240 | 225.3 / 229.4 / 239.7 | 0.000 | 0 | 30 | 8.83 / 0.04 | 2.7 / 2.9 |
+| loss-1 | ratcast | 356 | 229.4 / 229.4 / 237.6 | 0.000 | 0 | 15 | 8.51 / 0.21 | 5.2 / 6.9 |
+| loss-1 | srt | 300 | 233.5 / 241.7 / 248.9 | 0.000 | 0 | 19 | 8.33 / 0.05 | 2.2 / 2.7 |
+| loss-1 | rist | 250 | 229.4 / 241.7 / 265.0 | 0.000 | 0 | 41 | 8.42 / 0.03 | 2.7 / 2.9 |
+| loss-2 | ratcast | 361 | 229.4 / 233.5 / 246.8 | 0.000 | 0 | 24 | 8.51 / 0.22 | 5.2 / 6.7 |
+| loss-2 | srt | 299 | 233.5 / 241.7 / 249.8 | 0.000 | 0 | 30 | 8.34 / 0.05 | 2.3 / 2.6 |
+| loss-2 | rist | 249 | 229.4 / 241.7 / 256.1 | 0.000 | 0 | 30 | 8.42 / 0.03 | 2.7 / 2.8 |
+| loss-5 | ratcast | 360 | 229.4 / 233.5 / 246.4 | 0.000 | 0 | 23 | 8.50 / 0.22 | 5.3 / 6.7 |
+| loss-5 | srt | 305 | 233.5 / 241.7 / 257.8 | 0.000 | 0 | 35 | 8.39 / 0.06 | 2.4 / 2.7 |
+| loss-5 | rist | 250 | 229.4 / 237.6 / 250.0 | 0.009 | 1 | 27 | 8.42 / 0.05 | 2.7 / 2.9 |
+| loss-both | ratcast | 358 | 229.4 / 233.5 / 244.7 | 0.000 | 0 | 20 | 8.51 / 0.21 | 5.2 / 6.7 |
+| loss-both | srt | 299 | 233.5 / 241.7 / 247.9 | 0.000 | 0 | 22 | 8.34 / 0.05 | 2.2 / 2.5 |
+| loss-both | rist | 248 | 229.4 / 237.6 / 247.9 | 0.000 | 0 | 24 | 8.42 / 0.03 | 2.7 / 2.9 |
+| burst | ratcast | 358 | 229.4 / 233.5 / 251.3 | 0.000 | 0 | 31 | 8.53 / 0.21 | 5.3 / 6.9 |
+| burst | srt | 299 | 233.5 / 241.7 / 250.5 | 0.000 | 0 | 24 | 8.40 / 0.05 | 2.3 / 2.6 |
+| burst | rist | 249 | 229.4 / 241.7 / 259.1 | 0.009 | 1 | 37 | 8.43 / 0.03 | 2.7 / 2.9 |
+| cap-20 | ratcast | 363 | 229.4 / 229.4 / 238.7 | 0.000 | 0 | 15 | 8.51 / 0.21 | 5.2 / 7.0 |
+| cap-20 | srt | 303 | 233.5 / 241.7 / 254.1 | 0.000 | 0 | 27 | 8.33 / 0.05 | 2.5 / 3.1 |
+| cap-20 | rist | 254 | 229.4 / 237.6 / 249.8 | 0.000 | 0 | 25 | 8.42 / 0.02 | 2.6 / 3.0 |
+| cap-6 | ratcast | 361 | 229.4 / 368.6 / 375.2 | 32.245 | 2649 | 135 | 5.77 / 0.16 | 6.1 / 5.8 |
+| cap-6 | srt | 300 | 233.5 / 241.7 / 242.7 | 51.051 | 1334 | 28 | 5.96 / 0.11 | 2.7 / 2.9 |
+| cap-6 | rist | 254 | 344.1 / 344.1 / 352.2 | 28.734 | 2785 | 109 | 5.98 / 0.14 | 2.7 / 2.8 |
+| cap-drop | ratcast | 358 | 229.4 / 278.5 / 319.2 | 19.860 | 1093 | 73 | 6.89 / 0.18 | 5.5 / 5.6 |
+| cap-drop | srt | 298 | 233.5 / 241.7 / 250.8 | 23.011 | 410 | 31 | 6.97 / 0.07 | 2.6 / 3.0 |
+| cap-drop | rist | 251 | 229.4 / 237.6 / 252.4 | 17.796 | 1297 | 28 | 6.97 / 0.07 | 2.7 / 2.8 |
+
+- **Nothing lost where the path has room**, by any of the three: every delay, loss (1–5%, both
+  ways, bursts) and jitter scenario comes through whole after repair. The exceptions are
+  small: ratcast 0.35% on `reorder` (below) and 0.008% on `rtt-200` (1–3 frames shed on joining
+  in two runs of three, what is left of L2 (b) at a 200 ms round trip); librist 0.009% on
+  `loss-5` and `burst`.
+- **The same latency, ratcast the steadiest.** All three play the feed at the buffer past the
+  path's one-way delay (`loss-2`: 229 / 234 / 229 ms at the median). ratcast's p99 is 4–8 ms over
+  its median, SRT's and librist's 8–16. On `jitter` librist plays 20 ms later than the other two.
+  On `reorder` and `reorder-2` ratcast plays 25–35 ms sooner: it counts the buffer from the
+  fastest transit it has seen, the other two from a typical one.
+- **Joining: ratcast is slowest**, about two round trips more than librist — the handshake, then
+  the stream's announcement and subscription before the first frame. To the first packet out:
+  `rtt-50` 358 / 299 / 251 ms (ratcast / SRT / librist), `rtt-100` 511 / 399 / 297, `rtt-200`
+  811 / 600 / 402.
+- **On the link:** ratcast +3–9% over the feed, SRT +2–5% and librist +4–6% — except where
+  packets are reordered: SRT sends 10.8 Mbit/s on `reorder-2` and 15.6 on `reorder`, nearly the
+  feed twice over (it takes reordering for loss and sends again), librist 8.8, ratcast 8.6–8.7.
+  Back: ratcast 0.2–0.3 Mbit/s (an ACK every second packet; L13 put off), SRT 0.05, librist
+  0.02–0.05.
+- **CPU: ratcast twice theirs**, 5–6% at the sender and 6–7% at the viewer against 2–3.5%: system
+  calls per reactor turn in librats (L15) and the hand-over to and from a thread of the feed's
+  own at each end ("Full frames, the writer woken less").
+- **Over capacity** (`cap-6`: 6 Mbit/s for an 8 Mbit/s feed, a quarter must go; `cap-drop`: 4
+  Mbit/s for 5 s, a sixth of the run's feed) no transport of a fixed-rate feed can help, and
+  they differ in how they fail. librist loses the least (28.7 / 17.8%), ratcast a little more
+  (32.2 / 19.9%), SRT the most (51.1 / 23.0%) but holds its latency, dropping what is late at the
+  receiver; ratcast and librist play later instead (ratcast's p99 369 ms on `cap-6`, librist's
+  median 344 ms), the backlog lifting the transit they count from. A feed that can be made
+  smaller is what ratcast's own media has rate control for.
+
+### Why ratcast loses on `reorder`: ProbeRTT
+
+Every packet on its own delay, N(25 ms, 10 ms) each way, as netem's `reorder`: each run loses
+one burst, 36–45 frames shed by the sender at once 10–14 s in. The same feed in librats' virtual
+time, over a path that delays each packet the same way, shows what it is (three seeds):
+
+1. BBR's minimum round trip is an outlier — 3 ms, both legs near zero at once — where the
+   round trip is ~50 ms.
+2. BBR skips ProbeRTT while an app-limited sender sees the minimum again, give or take an
+   eighth; with this one it never does, so every 5–8 s it enters ProbeRTT, whose window is half
+   a BDP *at that minimum*: 6.4 KB where an 8 Mbit/s feed over 50 ms keeps ~50 KB in flight.
+3. For ProbeRTT's 200 ms and a round trip the feed waits behind that window: 32–72 frames shed
+   an episode, and once (seed 1) another ~100 just after it, the bandwidth estimate briefly down
+   to 1.1 Mbit/s.
+
+Paths that delay every packet independently, by tens of milliseconds, are rare (netem's
+`jitter`, where packets keep their order, loses nothing), so this is an *improves*:
+librats L16, a ProbeRTT that does not starve a live flow (its window no smaller than the live
+floor, as Startup's is since L2 (b); or skipped while samples stay within the path's own swing
+of the minimum).
