@@ -152,6 +152,12 @@ struct MediaSession::OutgoingStream {
     std::optional<RateController> rate;  ///< for a rate-controlled stream
     OutgoingStreamStats stats;
 
+    Subscriber* subscriber_of(const PeerId& peer) {
+        const auto it = std::ranges::find_if(
+            subscribers, [&](const Subscriber& subscriber) { return subscriber.peer->id == peer; });
+        return it == subscribers.end() ? nullptr : &*it;
+    }
+
     /// Counts a change rate control made and passes it on.
     std::optional<uint32_t> count(std::optional<uint32_t> bitrate, uint32_t before) {
         if (bitrate) (*bitrate < before ? stats.bitrate_cuts : stats.bitrate_raises) += 1;
@@ -527,16 +533,25 @@ void MediaSession::on_peer_path(const PeerId& peer, const PathStats& sample) {
         signal = state->path.update(sample, now);
     }
 
+    // The rate-controlled streams the peer watches share its path, each in
+    // proportion to the most it may take.
+    double most = 0;
+    std::erase_if(streams, [&](const auto& entry) {
+        std::lock_guard lock(entry.second->mutex);
+        OutgoingStream& s = *entry.second;
+        if (!s.rate || !s.subscriber_of(peer)) return true;
+        most += s.rate->limits().max;
+        return false;
+    });
     for (const auto& [id, stream] : streams) {
         std::optional<uint32_t> bitrate;
         {
             std::lock_guard lock(stream->mutex);
             OutgoingStream& s = *stream;
-            if (!s.rate) continue;
-            const auto subscriber = std::ranges::find_if(
-                s.subscribers, [&](const auto& subscriber) { return subscriber.peer->id == peer; });
-            if (subscriber == s.subscribers.end()) continue;
-            bitrate = s.follow(*subscriber, signal, now);
+            // Gone since, or unsubscribed: the others' parts stay as they were.
+            OutgoingStream::Subscriber* subscriber = s.rate ? s.subscriber_of(peer) : nullptr;
+            if (!subscriber) continue;
+            bitrate = s.follow(*subscriber, share_of(signal, s.rate->limits().max / most), now);
         }
         if (bitrate) notify(handlers_.bitrate_changed, id, *bitrate);
     }
@@ -560,9 +575,8 @@ void MediaSession::on_live_outcome(const PeerId& peer, uint64_t tag, bool delive
     {
         std::lock_guard lock(stream->mutex);
         OutgoingStream& s = *stream;
-        const auto subscriber = std::ranges::find_if(
-            s.subscribers, [&](const auto& subscriber) { return subscriber.peer->id == peer; });
-        if (subscriber == s.subscribers.end()) return;
+        OutgoingStream::Subscriber* subscriber = s.subscriber_of(peer);
+        if (!subscriber) return;
         // Sooner than the receiver could say: it would ask only once a frame
         // after it arrived, a round trip later.
         ask = s.settle(*subscriber, number, delivered) && ask_keyframe(s, clock_.now());
@@ -719,9 +733,8 @@ void MediaSession::on_keyframe_request(const PeerId& peer, StreamId stream_id) {
     {
         std::lock_guard lock(stream->mutex);
         OutgoingStream& s = *stream;
-        const auto subscriber = std::ranges::find_if(
-            s.subscribers, [&](const auto& subscriber) { return subscriber.peer->id == peer; });
-        if (subscriber == s.subscribers.end()) return;
+        OutgoingStream::Subscriber* subscriber = s.subscriber_of(peer);
+        if (!subscriber) return;
         s.stats.keyframe_requests += 1;
         if (s.stands_alone()) return;  // every frame is a keyframe
         // Its first keyframe is on its way, and the network will say if it is

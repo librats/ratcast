@@ -25,6 +25,7 @@ endif()
 if(RATCAST_PIPEWIRE_FOUND)
     target_sources(engine_tests PRIVATE
         linux/fake_portal.cpp
+        linux/test_camera_capture.cpp
         linux/test_pipewire_audio.cpp
         linux/test_pipewire_capture.cpp
         linux/test_portal.cpp

@@ -667,8 +667,25 @@ on the same call code.
   whole-system sound also carried the viewers' voices as the sharer's speaker played them — they
   heard themselves, late — and the sharer's microphone heard the screen's sound with nothing to
   cancel it against.
-- **6.5 Camera, and two streams on one path:** a camera beside the screen; each stream takes the
-  whole path today (1.1), so the path's rate is shared between them.
+- **6.5 Camera, and two streams on one path:** a camera beside the screen; each stream took the
+  whole path (1.1), so the path's rate is shared between them now.
+  - **(a) The path shared, the camera in engine** ✅: the rate-controlled streams a peer watches
+    share its path — each told of its part of what the path carries and delivered (`share_of()`),
+    in proportion to the most it may take, which leaves nothing over for a stream at its most
+    while the others want more; an overused path cuts them all, together to 85% of what it
+    delivered (tested in virtual time: a screen of 8 Mbit/s and a camera of 2, 1.36 and
+    0.34 Mbit/s from 2 delivered; a stream the peer does not watch takes no part).
+    `list_cameras()` / `open_camera()`: PipeWire's video sources of a camera's role (V4L2 and
+    libcamera devices both), captured as a screen is, in the formats cameras send — YUY2 (a new
+    read-only `PixelFormat`, into 4:2:0 by `convert_frame()`: 46 µs at 720p), NV12, I420, BGRx, a
+    block for all planes or one each — in their own colour space (BT.601 unless they say); the
+    first mode no larger than asked at 15 pictures a second or more, else no larger, else any.
+    MJPEG modes are not taken yet (a USB 2 camera's 720p at 30 is often only MJPEG). Tested
+    against a stand-in camera node: listed, a screen not; each format and layout back into 4:2:0
+    exactly; one with only larger modes taken as it is; the end when it goes; ASan / TSan clean.
+    `ratcast-send --source camera`. No camera on the dev VM: not tried on a real one yet.
+  - **(b) The camera in a call:** both sides may send one beside the rest; a call plays the
+    other side's camera apart from its screen; the app shows it over the picture, and one's own.
 - **6.6 App audio** ✅: a share's sound is what the applications play, never the call's own
   voices: `open_audio_capture()`'s `Applications` source, on Linux a PipeWire filter of its own
   with a left and a right input, which links itself to the output ports of every node playing

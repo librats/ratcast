@@ -20,6 +20,7 @@
 #include "ratcast/client/call.h"
 #include "ratcast/client/screen_share.h"
 #include "ratcast/engine/audio_device.h"
+#include "ratcast/engine/camera_capture.h"
 #include "ratcast/engine/file_source.h"
 #include "ratcast/engine/pattern_source.h"
 #include "ratcast/engine/tone_source.h"
@@ -37,10 +38,11 @@ constexpr StreamId kFeedStream = 3;
 constexpr const char* kUsage = R"(usage: ratcast-send [options]
 
 What to send:
-  --source screen|window|file|pattern   default: screen (the desktop asks which)
+  --source screen|window|camera|file|pattern   default: screen (the desktop asks
+                       which); camera: the first there is, no larger than --size
   --file PATH          the file for --source file (implied by --file)
   --once               play the file once instead of looping
-  --size WxH           the pattern's size (default 1280x720)
+  --size WxH           the pattern's size, the camera's largest (default 1280x720)
   --input URL          an MPEG-TS feed instead, carried as it is, as librist and SRT
                        carry it: udp://[host]:port (a multicast group is joined), - for
                        standard input, or a .ts file (played in real time)
@@ -147,9 +149,9 @@ std::optional<Options> parse(int argc, char** argv) {
 
     const std::vector<std::string> errors = args.errors();
     for (const std::string& e : errors) std::cerr << "ratcast-send: " << e << "\n";
-    if (o.source != "screen" && o.source != "window" && o.source != "file" &&
-        o.source != "pattern") {
-        std::cerr << "ratcast-send: --source wants screen, window, file or pattern\n";
+    if (o.source != "screen" && o.source != "window" && o.source != "camera" &&
+        o.source != "file" && o.source != "pattern") {
+        std::cerr << "ratcast-send: --source wants screen, window, camera, file or pattern\n";
         return std::nullopt;
     }
     if (!o.input.empty() && (args_gave_source || !o.audio.empty())) {
@@ -195,6 +197,17 @@ std::unique_ptr<VideoSource> open_source(Options& o) {
             PatternConfig{PixelFormat::NV12, o.width & ~1u, o.height & ~1u,
                           o.encoder.frame_rate_num, 1},
             WallClock::instance());
+    }
+    if (o.source == "camera") {
+        Result<std::unique_ptr<VideoSource>> camera =
+            open_camera({.max_width = o.width,
+                         .max_height = o.height,
+                         .max_frame_rate = o.encoder.frame_rate_num});
+        if (!camera) {
+            std::cerr << "ratcast-send: no camera: " << to_string(camera.error()) << "\n";
+            return nullptr;
+        }
+        return std::move(*camera);
     }
     if (o.source == "file") {
         Result<std::unique_ptr<FileSource>> file =

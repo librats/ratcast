@@ -9,6 +9,7 @@ include(RatcastWebRtcApm)
 add_library(ratcast_engine STATIC
     src/audio/audio_codec.cpp
     src/audio/audio_device.cpp
+    src/capture/camera_capture.cpp
     src/audio/audio_frame.cpp
     src/audio/audio_mixer.cpp
     src/pattern/pattern.cpp
@@ -60,6 +61,7 @@ endif()
 if(RATCAST_PIPEWIRE_FOUND)
     target_sources(ratcast_engine PRIVATE
         src/linux/audio_device.cpp
+        src/linux/camera_capture.cpp
         src/linux/pipewire_applications.cpp
         src/linux/pipewire_audio.cpp
         src/linux/pipewire_capture.cpp
@@ -71,6 +73,7 @@ if(RATCAST_PIPEWIRE_FOUND)
 else()
     target_sources(ratcast_engine PRIVATE
         src/audio/audio_device_unavailable.cpp
+        src/capture/camera_capture_unavailable.cpp
         src/capture/screen_capture_unavailable.cpp
     )
 endif()

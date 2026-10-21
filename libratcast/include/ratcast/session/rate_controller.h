@@ -44,6 +44,13 @@
  * least 5%: an encoder that cannot change its rate in flight starts over, with
  * a keyframe, for each.
  *
+ * Streams that go to the same peer share its path: each is told of its part
+ * of what the path carries (share_of()), in proportion to the most it may
+ * take — a screen of 8 Mbit/s beside a camera of 2 takes four fifths. With
+ * parts in proportion to the most, a stream gets more than its most only on a
+ * path that carries more than all of them together, so none is left over for
+ * the others. All of them hear an overused path, and each cuts to its part.
+ *
  * Not thread-safe: MediaSession locks around it.
  */
 
@@ -98,6 +105,10 @@ struct PathSignal {
     std::optional<uint64_t> delivered;
 };
 
+/// `path` as one of the streams sharing it sees it: `share` (0–1] of what it
+/// carries and delivered; the rest is the path's, the same for every stream.
+RATCAST_EXPORT PathSignal share_of(const PathSignal& path, double share) noexcept;
+
 /// Turns one peer's path samples into signals: the counters in a sample run
 /// from the connection's start, a signal is about the time since the last.
 class RATCAST_EXPORT PathMonitor {
@@ -117,6 +128,7 @@ public:
 
     /// What the encoder should aim at now.
     uint32_t target() const noexcept { return target_; }
+    const BitrateLimits& limits() const noexcept { return limits_; }
 
     /// Whether `signal` reports a path this stream overuses.
     bool overused(const PathSignal& signal) const noexcept;

@@ -12,7 +12,7 @@ cmake --preset release -DRATCAST_BUILD_BENCH=ON && cmake --build --preset releas
 ./build/release/bin/bench_core      # Buffer, frame header
 ./build/release/bin/bench_session   # MediaSession per frame
 ./build/release/bin/bench_codec     # video encoders and decoders, Opus
-./build/release/bin/bench_convert   # BGRA -> NV12 / I420, against libswscale
+./build/release/bin/bench_convert   # BGRA -> NV12 / I420, against libswscale; YUY2 -> NV12
 ```
 
 **The whole pipeline over an emulated network** (`bench/netem.py`): `ratcast-send --source
@@ -76,7 +76,7 @@ CPU, per thread from `/proc` over 8 s at 1080p60, 8 Mbit/s (100% = one core):
 | librats reactor | 0.8% | | |
 
 The test pattern's drawing is the test source's own cost; screen capture converts a picture in
-~1 ms (`bench_convert`). librats moves 8 Mbit/s for under 1% of a core, so the second copy on its
+~1 ms (`bench_convert`), a camera's YUY2 one in 46 µs at 720p (it is all copies and means). librats moves 8 Mbit/s for under 1% of a core, so the second copy on its
 send path is not worth removing before fan-out needs it.
 
 ### Across an emulated network

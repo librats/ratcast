@@ -1,6 +1,7 @@
 // BGRA into the YUV encoders take: what every captured picture costs before it
 // reaches the encoder, at the sizes screens have. Next to it, FFmpeg's
-// libswscale doing the same, when the build has FFmpeg.
+// libswscale doing the same, when the build has FFmpeg. Then a camera's YUY2
+// into NV12, at the sizes cameras have.
 
 #include <cstdio>
 #include <memory>
@@ -78,6 +79,24 @@ void convert_benchmarks(bench::Bench& b, const Size& size, PixelFormat format) {
 #endif
 }
 
+/// A camera's packed 4:2:2, its bytes whatever they are: the loops do not care.
+void camera_benchmarks(bench::Bench& b, const Size& size) {
+    b.group(std::string("YUY2 to NV12, ") + size.name);
+    b.items(1);
+    b.bytes(double(size.width) * size.height * 2);
+    MutableVideoFrame packed =
+        MutableVideoFrame::allocate(PixelFormat::YUY2, size.width, size.height);
+    for (uint32_t y = 0; y < size.height; ++y) {
+        uint8_t* row = packed.plane(0).data + y * packed.plane(0).stride;
+        for (size_t x = 0; x < size_t{size.width} * 2; ++x) row[x] = static_cast<uint8_t>(x + y);
+    }
+    const VideoFrame yuy2 = std::move(packed).freeze({});
+    b.run("convert_frame", [&] {
+        Result<VideoFrame> nv12 = convert_frame(yuy2, PixelFormat::NV12);
+        bench::do_not_optimize(nv12->plane(0).data[0]);
+    });
+}
+
 }  // namespace
 
 int main() {
@@ -87,6 +106,10 @@ int main() {
         for (PixelFormat format : {PixelFormat::NV12, PixelFormat::I420}) {
             convert_benchmarks(b, size, format);
         }
+    }
+    for (const Size& size :
+         {Size{"480p", 640, 480}, Size{"720p", 1280, 720}, Size{"1080p", 1920, 1080}}) {
+        camera_benchmarks(b, size);
     }
     b.report();
 

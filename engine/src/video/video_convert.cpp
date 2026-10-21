@@ -1,6 +1,6 @@
-// BGRA into 4:2:0 YUV in fixed point. The loops are plain C++ on purpose:
-// compilers turn them into SIMD (this file is built with -O3), which keeps one
-// version of the code for every architecture and runs near memory speed.
+// BGRA into 4:2:0 YUV in fixed point, and a camera's 4:2:2 into 4:2:0. The loops are plain C++ on
+// purpose: compilers turn them into SIMD (this file is built with -O3), which keeps one version of
+// the code for every architecture and runs near memory speed.
 //
 // The arithmetic is 16-bit, so that a vector holds eight lanes rather than
 // four: each term is the high half of a 16 x 16-bit product (what SIMD calls
@@ -207,19 +207,54 @@ void relayout_yuv(const VideoFrame& in, MutableVideoFrame& out) {
     }
 }
 
+/// 4:2:2 packed into 4:2:0: luma as it is, chroma the mean of two rows'.
+void yuy2_to_yuv(const VideoFrame& in, MutableVideoFrame& out) {
+    const size_t pairs = (size_t{in.width()} + 1) / 2;
+    const size_t width = in.width();
+    const VideoFrame::Plane& src = in.plane(0);
+    for (uint32_t y = 0; y < in.height(); y += 2) {
+        const uint8_t* __restrict a = src.data + y * src.stride;
+        const uint8_t* __restrict b = y + 1 < in.height() ? a + src.stride : a;
+        uint8_t* __restrict luma_a = out.plane(0).data + y * out.plane(0).stride;
+        for (size_t x = 0; x < width; ++x) luma_a[x] = a[2 * x];
+        if (b != a) {
+            uint8_t* __restrict luma_b = luma_a + out.plane(0).stride;
+            for (size_t x = 0; x < width; ++x) luma_b[x] = b[2 * x];
+        }
+        const auto mean = [](uint8_t p, uint8_t q) { return uint8_t((p + q + 1) / 2); };
+        const size_t line = y / 2;
+        if (out.format() == PixelFormat::NV12) {
+            uint8_t* __restrict uv = out.plane(1).data + line * out.plane(1).stride;
+            for (size_t x = 0; x < 2 * pairs; ++x) uv[x] = mean(a[2 * x + 1], b[2 * x + 1]);
+        } else {
+            uint8_t* __restrict u = out.plane(1).data + line * out.plane(1).stride;
+            uint8_t* __restrict v = out.plane(2).data + line * out.plane(2).stride;
+            for (size_t x = 0; x < pairs; ++x) {
+                u[x] = mean(a[4 * x + 1], b[4 * x + 1]);
+                v[x] = mean(a[4 * x + 3], b[4 * x + 3]);
+            }
+        }
+    }
+}
+
 bool is_yuv(PixelFormat format) { return format != PixelFormat::BGRA; }
+bool is_420(PixelFormat format) {
+    return format == PixelFormat::I420 || format == PixelFormat::NV12;
+}
 
 }  // namespace
 
 Result<VideoFrame> convert_frame(const VideoFrame& picture, PixelFormat format,
                                  ColorSpace color_space, BufferPool& pool) {
     if (picture.empty()) return fail(Errc::InvalidArgument);
-    if (!is_yuv(format) && is_yuv(picture.format())) return fail(Errc::Unsupported);
+    if (picture.format() != format && !is_420(format)) return fail(Errc::Unsupported);
 
     MutableVideoFrame out =
         MutableVideoFrame::allocate(format, picture.width(), picture.height(), pool);
     if (picture.format() == format) {
         copy_planes(picture, out);
+    } else if (picture.format() == PixelFormat::YUY2) {
+        yuy2_to_yuv(picture, out);
     } else if (is_yuv(picture.format())) {
         relayout_yuv(picture, out);
     } else {

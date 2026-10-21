@@ -48,6 +48,22 @@ protected:
 
 // ── PathMonitor ─────────────────────────────────────────────────────────────
 
+TEST(PathShare, IsAPartOfWhatThePathCarriesAndAllElseOfThePath) {
+    PathSignal path;
+    path.expired = true;
+    path.queue_delay = 30ms;
+    path.rtt = 50ms;
+    path.capacity = 5'000'000;
+    path.delivered = 4'000'000;
+    const PathSignal part = share_of(path, 0.2);
+    EXPECT_EQ(part.capacity, 1'000'000u);
+    EXPECT_EQ(part.delivered, 800'000u);
+    EXPECT_TRUE(part.expired);
+    EXPECT_EQ(part.queue_delay, 30ms);
+    EXPECT_EQ(part.rtt, 50ms);
+    EXPECT_FALSE(share_of(PathSignal{}, 0.5).capacity) << "unknown stays unknown";
+}
+
 TEST(PathMonitor, SaysNothingOfAnInvalidSample) {
     PathMonitor monitor;
     PathStats invalid = sample(8'000'000, false);

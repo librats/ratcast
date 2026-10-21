@@ -5,14 +5,18 @@
  * @brief Pictures from a PipeWire video node.
  *
  * The node is a screen or window that the portal handed out, over the
- * connection the portal opened, or in tests any video source on the user's
- * own PipeWire daemon. Pictures arrive in shared memory as BGRx — the
- * compositor has already copied them out of GPU memory — and are converted
- * straight into the format asked for: one pass, after which the buffer goes
- * back to the compositor at once.
+ * connection the portal opened, a camera on the user's own daemon, or in tests
+ * any video source there. Pictures arrive in shared memory — a screen's as
+ * BGRx, the compositor having copied them out of GPU memory; a camera's as
+ * YUY2, NV12, I420 or BGRx, in one block or a block a plane — and are
+ * converted straight into the format asked for: one pass, after which the
+ * buffer goes back at once.
  *
- * The cursor is whatever the node draws into its pictures; the portal asks the
- * compositor to draw it.
+ * A screen sends pictures as it changes, of any size, cropped as its metadata
+ * says; the cursor is whatever the node draws into them (the portal asks the
+ * compositor to draw it). A camera sends them at its own pace in one of its
+ * modes, the first of them that suits: no larger than `max_size` and 15
+ * pictures a second or more, else no larger, else any.
  */
 
 #include <cstdint>
@@ -26,6 +30,9 @@
 namespace ratcast::pipewire {
 
 struct CaptureConfig {
+    enum class Kind : uint8_t { Screen, Camera };
+
+    Kind kind = Kind::Screen;
     /// A connection to PipeWire (the portal's OpenPipeWireRemote), or -1 for
     /// the user's daemon. Duplicated, not taken over.
     int fd = -1;
@@ -33,6 +40,9 @@ struct CaptureConfig {
     PixelFormat format = PixelFormat::NV12;
     ColorSpace color_space;
     uint32_t max_frame_rate = 60;  ///< 0 for as many as the node sends
+    /// A camera's largest picture.
+    uint32_t max_width = 1280;
+    uint32_t max_height = 720;
 };
 
 class Capture final : public VideoSource {

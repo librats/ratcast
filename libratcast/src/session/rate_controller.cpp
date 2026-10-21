@@ -35,6 +35,17 @@ bool is_valid(const BitrateLimits& limits) noexcept {
     return limits.min > 0 && limits.min <= limits.start && limits.start <= limits.max;
 }
 
+PathSignal share_of(const PathSignal& path, double share) noexcept {
+    const auto part = [share](std::optional<uint64_t> bits) -> std::optional<uint64_t> {
+        if (!bits) return std::nullopt;
+        return static_cast<uint64_t>(std::round(double(*bits) * share));
+    };
+    PathSignal shared = path;
+    shared.capacity = part(path.capacity);
+    shared.delivered = part(path.delivered);
+    return shared;
+}
+
 // ── PathMonitor ─────────────────────────────────────────────────────────────
 
 PathSignal PathMonitor::update(const PathStats& sample, Timestamp now) {

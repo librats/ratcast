@@ -14,6 +14,7 @@ SDL_PixelFormat sdl_format(PixelFormat format) {
         case PixelFormat::I420: return SDL_PIXELFORMAT_IYUV;
         case PixelFormat::NV12: return SDL_PIXELFORMAT_NV12;
         case PixelFormat::BGRA: return SDL_PIXELFORMAT_BGRA32;
+        case PixelFormat::YUY2: return SDL_PIXELFORMAT_YUY2;
     }
     return SDL_PIXELFORMAT_UNKNOWN;
 }
@@ -108,6 +109,7 @@ bool VideoWindow::draw(const VideoFrame& picture) {
                                  stride(2));
             break;
         case PixelFormat::BGRA:
+        case PixelFormat::YUY2:
             SDL_UpdateTexture(texture_, nullptr, picture.plane(0).data, stride(0));
             break;
     }

@@ -4,10 +4,11 @@
  * @file video_convert.h
  * @brief Pictures from one pixel format into another, on the CPU.
  *
- * What capture gives (BGRA) into what encoders take (NV12, I420), and one
- * 4:2:0 layout into the other, in one pass over the picture written so that
- * compilers vectorise it. From BGRA, luma is exact to within a level and
- * chroma is the mean of each 2 x 2 block, sited at its centre. Back to RGB is
+ * What capture gives (a screen's BGRA, a camera's YUY2) into what encoders
+ * take (NV12, I420), and one 4:2:0 layout into the other, in one pass over the
+ * picture written so that compilers vectorise it. From BGRA, luma is exact to
+ * within a level and chroma is the mean of each 2 x 2 block, sited at its
+ * centre; from YUY2, chroma is the mean of each two rows'. Back to RGB is
  * a GPU's work; rgb_from_yuv() is the matrix it needs.
  */
 
@@ -22,7 +23,7 @@ namespace ratcast {
 /// `picture` in `format`: always a new frame, from `pool`, with the same size
 /// and capture time. YUV made from BGRA is in `color_space`; YUV into the other
 /// 4:2:0 layout, or a picture already in `format`, keeps its own colour space.
-/// Fails with Unsupported for YUV into BGRA.
+/// Fails with Unsupported into BGRA or YUY2 from another format.
 Result<VideoFrame> convert_frame(const VideoFrame& picture, PixelFormat format,
                                  ColorSpace color_space, BufferPool& pool);
 Result<VideoFrame> convert_frame(const VideoFrame& picture, PixelFormat format,

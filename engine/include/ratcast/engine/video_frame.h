@@ -34,6 +34,9 @@ enum class PixelFormat : uint8_t {
     I420,  ///< 8-bit 4:2:0 in three planes: Y, then U and V at half size
     NV12,  ///< 8-bit 4:2:0 in two planes: Y, then U and V interleaved at half size
     BGRA,  ///< 8-bit packed blue, green, red, alpha (alpha may be undefined)
+    /// 8-bit 4:2:2 packed, Y0 U Y1 V for each two pixels: what cameras give.
+    /// Read only, into 4:2:0; no encoder takes it.
+    YUY2,
 };
 
 /// The matrix that turns RGB into YUV. Primaries and transfer are always
@@ -62,7 +65,8 @@ constexpr size_t plane_count(PixelFormat format) noexcept {
     switch (format) {
         case PixelFormat::I420: return 3;
         case PixelFormat::NV12: return 2;
-        case PixelFormat::BGRA: return 1;
+        case PixelFormat::BGRA:
+        case PixelFormat::YUY2: return 1;
     }
     return 0;
 }

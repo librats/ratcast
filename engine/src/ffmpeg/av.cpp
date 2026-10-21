@@ -53,6 +53,7 @@ AVPixelFormat pixel_format(PixelFormat format) noexcept {
         case PixelFormat::I420: return AV_PIX_FMT_YUV420P;
         case PixelFormat::NV12: return AV_PIX_FMT_NV12;
         case PixelFormat::BGRA: return AV_PIX_FMT_BGRA;
+        case PixelFormat::YUY2: return AV_PIX_FMT_YUYV422;
     }
     return AV_PIX_FMT_NONE;
 }

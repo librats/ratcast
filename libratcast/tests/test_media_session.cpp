@@ -718,6 +718,48 @@ TEST_F(MediaSessionTest, AFullQueueIsOveruse) {
     EXPECT_EQ(sender.bitrates, Bitrates{1'700'000});
 }
 
+/// A path of 2 Mbit/s the sender keeps busy, `bytes` delivered and
+/// `expired` live messages expired since it opened.
+PathStats busy_path(uint64_t bytes, uint64_t expired = 0) {
+    PathStats s = path(expired);
+    s.bandwidth_bps = 2'000'000;
+    s.app_limited = false;
+    s.bytes_delivered = bytes;
+    return s;
+}
+
+/// Stream 3 beside stream 2: a camera, at most a quarter of the screen.
+constexpr BitrateLimits kCamera{.min = 100'000, .start = 500'000, .max = 2'000'000};
+
+TEST_F(MediaSessionTest, StreamsToOnePeerShareItsPath) {
+    add_rated_stream();
+    ASSERT_TRUE(sender.session.add_stream(screen(3), kCamera));
+    hub.deliver_all();
+    subscribe(receiver, 2);
+    subscribe(receiver, 3);
+
+    // 2 Mbit/s delivered, and frames expired: together they come down to
+    // 85% of it, the screen with four fifths, the camera with one.
+    sender.session.on_peer_path(receiver.id, busy_path(0));
+    clock.advance(100ms);
+    sender.session.on_peer_path(receiver.id, busy_path(25'000, 1));
+    EXPECT_EQ(sender.session.outgoing_stats(2)->bitrate, 1'360'000u);
+    EXPECT_EQ(sender.session.outgoing_stats(3)->bitrate, 340'000u);
+}
+
+TEST_F(MediaSessionTest, AStreamThePeerDoesNotWatchTakesNoPartOfItsPath) {
+    add_rated_stream();
+    ASSERT_TRUE(sender.session.add_stream(screen(3), kCamera));
+    hub.deliver_all();
+    subscribe(receiver, 2);
+
+    sender.session.on_peer_path(receiver.id, busy_path(0));
+    clock.advance(100ms);
+    sender.session.on_peer_path(receiver.id, busy_path(25'000, 1));
+    EXPECT_EQ(sender.session.outgoing_stats(2)->bitrate, 1'700'000u);
+    EXPECT_EQ(sender.session.outgoing_stats(3)->bitrate, kCamera.start);
+}
+
 TEST_F(MediaSessionTest, AStreamNobodyWatchesStartsAfresh) {
     add_rated_stream();
     subscribe(receiver, 2);

@@ -209,9 +209,51 @@ TEST(VideoConvert, OneYuvLayoutIntoTheOther) {
     }
 }
 
+TEST(VideoConvert, ACamerasPackedPicturesInto420) {
+    // Odd on both sides: the last column's chroma is its pair's, the last
+    // row's chroma its own.
+    constexpr uint32_t kWidth = 101;
+    constexpr uint32_t kHeight = 67;
+    MutableVideoFrame packed = MutableVideoFrame::allocate(PixelFormat::YUY2, kWidth, kHeight);
+    std::mt19937 rng(5);
+    for (uint32_t y = 0; y < kHeight; ++y) {
+        uint8_t* row = packed.plane(0).data + y * packed.plane(0).stride;
+        for (size_t x = 0; x < plane_row_bytes(PixelFormat::YUY2, 0, kWidth); ++x)
+            row[x] = static_cast<uint8_t>(rng());
+    }
+    const VideoFrame yuy2 = std::move(packed).freeze(Timestamp{4s}, {ColorMatrix::BT601});
+    const auto sample = [&](uint32_t x, uint32_t y) {  // byte x of row y
+        return yuy2.plane(0).data[y * yuy2.plane(0).stride + x];
+    };
+    const auto mean = [&](uint32_t x, uint32_t y) {
+        return uint8_t((sample(x, 2 * y) + sample(x, std::min(2 * y + 1, kHeight - 1)) + 1) / 2);
+    };
+
+    for (PixelFormat format : {PixelFormat::NV12, PixelFormat::I420}) {
+        Result<VideoFrame> out = convert_frame(yuy2, format);
+        ASSERT_TRUE(out);
+        EXPECT_EQ(out->color_space(), yuy2.color_space());
+        EXPECT_EQ(out->capture_time(), yuy2.capture_time());
+        for (uint32_t y = 0; y < kHeight; ++y) {
+            for (uint32_t x = 0; x < kWidth; ++x) ASSERT_EQ(pixel(*out, 0, x, y), sample(2 * x, y));
+        }
+        for (uint32_t y = 0; y < (kHeight + 1) / 2; ++y) {
+            for (uint32_t x = 0; x < (kWidth + 1) / 2; ++x) {
+                const uint8_t u =
+                    format == PixelFormat::NV12 ? pixel(*out, 1, 2 * x, y) : pixel(*out, 1, x, y);
+                const uint8_t v = format == PixelFormat::NV12 ? pixel(*out, 1, 2 * x + 1, y)
+                                                              : pixel(*out, 2, x, y);
+                ASSERT_EQ(u, mean(4 * x + 1, y)) << x << "," << y;
+                ASSERT_EQ(v, mean(4 * x + 3, y)) << x << "," << y;
+            }
+        }
+    }
+}
+
 TEST(VideoConvert, RefusesWhatItCannotDo) {
     const VideoFrame i420 = draw_pattern({PixelFormat::I420, 64, 64}, 0, Timestamp{});
     EXPECT_EQ(convert_frame(i420, PixelFormat::BGRA).error(), Errc::Unsupported);
+    EXPECT_EQ(convert_frame(i420, PixelFormat::YUY2).error(), Errc::Unsupported);
     EXPECT_EQ(convert_frame(VideoFrame{}, PixelFormat::NV12).error(), Errc::InvalidArgument);
 }
 
