@@ -1,13 +1,15 @@
 // Calls on loopback, between real librats nodes: each side sending and
-// playing, hanging up, streams withdrawn and offered again, sources that run
-// out, and the invites a call hands out.
+// playing, a camera beside the screen, hanging up, streams withdrawn and
+// offered again, sources that run out, and the invites a call hands out.
 
 #include "ratcast/client/call.h"
+#include "ratcast/client/camera.h"
 #include "ratcast/client/screen_share.h"
 
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <memory>
 #include <mutex>
@@ -77,11 +79,17 @@ class Side {
 public:
     ~Side() { hang_up(); }
 
-    void start(CallConfig config, bool pictures = true) {
+    void start(CallConfig config, bool pictures = true, bool camera = true) {
         if (pictures) {
             config.playback.pictures = [this](VideoFrame) {
                 std::lock_guard lock(mutex_);
                 ++pictures_;
+            };
+        }
+        if (camera) {
+            config.playback.camera = [this](VideoFrame) {
+                std::lock_guard lock(mutex_);
+                ++camera_pictures_;
             };
         }
         config.playback.sound = &speaker_;
@@ -123,6 +131,10 @@ public:
         std::lock_guard lock(mutex_);
         return heard_;
     }
+    size_t camera_pictures() {
+        std::lock_guard lock(mutex_);
+        return camera_pictures_;
+    }
     /// What it was told, in order: "joined", "playing tone", "ended tone",
     /// "source 2 ended", ...
     std::vector<std::string> events() {
@@ -162,6 +174,7 @@ private:
 
     std::mutex mutex_;
     size_t pictures_ = 0;
+    size_t camera_pictures_ = 0;
     size_t heard_ = 0;
     std::vector<std::string> events_;
     VirtualOutput speaker_{VirtualOutputConfig{}};
@@ -251,6 +264,63 @@ TEST_F(CallTest, AScreenShareGoesAsPicturesAndMusic) {
     EXPECT_LE(pictures->bitrate, 1'000'000u);
     ASSERT_TRUE(guest->sound_stats());
     EXPECT_EQ(guest->sound_stats()->jitter.lost, 0u);
+}
+
+TEST_F(CallTest, ACameraPlaysApartFromTheScreen) {
+    VideoEncoderConfig probe;
+    probe.width = 320;
+    probe.height = 240;
+    if (!open_video_encoder(probe)) GTEST_SKIP() << "no AV1 encoder here";
+
+    Side host;
+    host.start(config());
+    host.publish_pattern();
+    std::atomic<size_t> previewed{0};
+    ASSERT_TRUE(publish_camera(*host, with_preview(std::make_unique<PatternSource>(PatternConfig{
+                                                       PixelFormat::NV12, 160, 120, 30, 1}),
+                                                   [&](const VideoFrame&) { ++previewed; })));
+    Side guest;
+    guest.start(config(RatsUrl{host.address()}));
+    ASSERT_TRUE(wait_for([&] { return guest.pictures() >= 10 && guest.camera_pictures() >= 10; }))
+        << guest.pictures() << " pictures, " << guest.camera_pictures() << " of the camera";
+    EXPECT_TRUE(guest.told("playing pattern"));
+    EXPECT_TRUE(guest.told("playing camera"));
+    ASSERT_TRUE(guest->video_stats());
+    ASSERT_TRUE(guest->camera_stats());
+    EXPECT_EQ(guest->video_stats()->player.width, 320u);
+    EXPECT_EQ(guest->camera_stats()->player.width, 160u);
+    EXPECT_GT(previewed.load(), 0u) << "the sender sees its camera";
+    const std::optional<OutgoingStreamStats> camera = host->session().outgoing_stats(3);
+    ASSERT_TRUE(camera);
+    EXPECT_LE(camera->bitrate, 1'000'000u);
+
+    // The camera off, the screen goes on.
+    host->unpublish(3);
+    ASSERT_TRUE(wait_for([&] { return guest.told("ended camera"); }));
+    EXPECT_FALSE(guest->camera_stats());
+    const size_t before = guest.pictures();
+    EXPECT_TRUE(wait_for([&] { return guest.pictures() >= before + 10; }));
+}
+
+TEST_F(CallTest, ACameraNobodyShowsIsNotReceived) {
+    VideoEncoderConfig probe;
+    probe.width = 160;
+    probe.height = 120;
+    if (!open_video_encoder(probe)) GTEST_SKIP() << "no AV1 encoder here";
+
+    Side host;
+    host.start(config());
+    ASSERT_TRUE(publish_camera(
+        *host, std::make_unique<PatternSource>(PatternConfig{PixelFormat::NV12, 160, 120, 30, 1})));
+    host.publish_tone();
+    Side guest;
+    guest.start(config(RatsUrl{host.address()}), /*pictures=*/true, /*camera=*/false);
+    ASSERT_TRUE(wait_for([&] { return guest.told("playing tone"); }));
+    // Announced once its first picture is coded.
+    ASSERT_TRUE(wait_for([&] { return host->session().outgoing_stats(3).has_value(); }));
+    std::this_thread::sleep_for(200ms);  // as long as an answer would take on loopback
+    EXPECT_FALSE(guest.told("playing camera")) << "not as the pictures either";
+    EXPECT_EQ(host->session().outgoing_stats(3)->subscribers, 0u);
 }
 
 TEST_F(CallTest, AScreenShareThatCannotPublishLeavesNothing) {

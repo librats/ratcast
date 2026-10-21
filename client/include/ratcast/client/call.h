@@ -13,12 +13,13 @@
  * encoder hears the keyframes receivers ask for and the bitrate rate control
  * aims at. Whoever connects may subscribe to it.
  *
- * What is played is the first video, sound, voice and feed offered — from
- * the peer dialed, if it was dialed by peer id, from anyone otherwise — each
- * where the playback config says. A voice is a sound stream labelled
- * kVoiceLabel: it keeps its own time, while the other sound and the pictures
- * play in step (PlayoutClock); the two sounds are mixed into the one output
- * (AudioMixer). When one ends, the next of its kind announced plays.
+ * What is played is the first video, camera, sound, voice and feed offered —
+ * from the peer dialed, if it was dialed by peer id, from anyone otherwise —
+ * each where the playback config says. A voice is a sound stream labelled
+ * kVoiceLabel, a camera a video stream labelled kCameraLabel: both keep their
+ * own time, while the other sound and pictures play in step (PlayoutClock);
+ * the two sounds are mixed into the one output (AudioMixer). When one ends,
+ * the next of its kind announced plays.
  *
  * The other side gets here by an invite (invites()): a rats:// link with this
  * node's peer id, looked for through the DHT if the call is discoverable, or
@@ -64,6 +65,9 @@ class MediaService;
 /// The label of a sound stream that is someone's voice: played as soon as it
 /// can be, not held to pictures.
 inline constexpr std::string_view kVoiceLabel = "voice";
+/// The label of a video stream that is someone's camera: played beside the
+/// other pictures, in its own time.
+inline constexpr std::string_view kCameraLabel = "camera";
 
 /// What plays, and where. Each kind left without a destination is not
 /// received at all.
@@ -71,6 +75,8 @@ struct CallPlayback {
     /// Pictures, on the video player's thread.
     VideoPlayer::Sink pictures = {};
     VideoPlayerConfig video = {};  ///< its `sync` is the call's own
+    /// A camera's pictures, on its player's thread, with `video`'s config.
+    VideoPlayer::Sink camera = {};
     /// The device the sound and the voice play into; must outlive the call.
     AudioOutput* sound = nullptr;
     AudioPlayer::Observer heard = {};
@@ -168,6 +174,7 @@ public:
     // ── What plays ──────────────────────────────────────────────────────────
 
     std::optional<ReceivedVideoStats> video_stats() const;
+    std::optional<ReceivedVideoStats> camera_stats() const;
     std::optional<AudioPlayerStats> sound_stats() const;
     std::optional<AudioPlayerStats> voice_stats() const;
     /// The feed playing, or the last one, writing out what it held or done.
@@ -210,6 +217,7 @@ private:
               std::vector<std::function<void()>>& events);
     template <typename Player>
     static bool plays(const Playing<Player>& slot, const PeerId& peer, StreamId stream);
+    std::optional<ReceivedVideoStats> stats_of(const Playing<VideoPlayer>& slot) const;
     template <typename Handler, typename... Args>
     void notify(const Handler& handler, const Args&... args) const;
 
@@ -227,6 +235,7 @@ private:
     std::optional<AudioMixer> mixer_;  ///< over playback.sound, if any
     mutable std::mutex playing_;
     Playing<VideoPlayer> video_;
+    Playing<VideoPlayer> camera_;
     Playing<AudioPlayer> sound_;
     Playing<AudioPlayer> voice_;
     Playing<DataPlayer> feed_;

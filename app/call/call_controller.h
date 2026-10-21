@@ -13,7 +13,9 @@
  *
  * and leave() goes back to Idle from anywhere. Either way both sides talk:
  * the microphone, cleaned of the echo of all the computer plays and of noise,
- * goes as a voice (VoiceChannel), muted or not as the user says. What went
+ * goes as a voice (VoiceChannel), muted or not as the user says; and either
+ * side may turn its camera on, which the other sees beside the screen and it
+ * sees itself. What went
  * wrong, or ended without the user, is the notice: a share the desktop could
  * not make, a link that is none, the other side gone. The user calling off the
  * desktop's dialog is no news.
@@ -39,6 +41,7 @@
 #include <thread>
 
 #include "ratcast/client/call.h"
+#include "ratcast/client/camera.h"
 #include "ratcast/client/screen_share.h"
 #include "ratcast/client/voice.h"
 #include "ratcast/engine/audio_device.h"
@@ -61,8 +64,17 @@ class CallController : public QObject {
     /// This side's voice on the microphone, and the other side's on the speaker.
     Q_PROPERTY(bool speaking READ speaking NOTIFY speakingChanged)
     Q_PROPERTY(bool hearing READ hearing NOTIFY hearingChanged)
-    /// Where the other side's pictures are drawn.
+    /// This side's camera on: sent while in a call, and with the next one;
+    /// kept from one call to the next. Off again if there is none.
+    Q_PROPERTY(bool camera READ camera WRITE setCamera NOTIFY cameraChanged)
+    /// The other side's camera playing.
+    Q_PROPERTY(bool cameraShown READ cameraShown NOTIFY cameraShownChanged)
+    /// Where the other side's pictures are drawn, its camera, and this
+    /// side's own camera as it goes.
     Q_PROPERTY(ratcast::app::VideoView* video READ video WRITE setVideo NOTIFY videoChanged)
+    Q_PROPERTY(ratcast::app::VideoView* cameraView READ cameraView WRITE setCameraView NOTIFY
+                   cameraViewChanged)
+    Q_PROPERTY(ratcast::app::VideoView* preview READ preview WRITE setPreview NOTIFY previewChanged)
 
 public:
     enum class State { Idle, Choosing, Sharing, Joining, Watching };
@@ -83,6 +95,8 @@ public:
         /// What the computer plays, in the speaker's format: the echo the
         /// microphone is cleaned of, a shared film's too; null: the speaker's.
         std::function<std::unique_ptr<AudioSource>()> open_system_sound = {};
+        /// The camera; null: there is none.
+        std::function<std::unique_ptr<VideoSource>()> open_camera = {};
         /// How the voice is cleaned: its devices' formats and what is done.
         VoiceConfig voice = {};
 
@@ -112,6 +126,13 @@ public:
     QString notice() const { return notice_; }
     VideoView* video() const { return video_; }
     void setVideo(VideoView* video);
+    VideoView* cameraView() const { return camera_view_; }
+    void setCameraView(VideoView* view);
+    VideoView* preview() const { return preview_; }
+    void setPreview(VideoView* view);
+    bool camera() const { return camera_; }
+    void setCamera(bool on);
+    bool cameraShown() const { return camera_shown_; }
     bool muted() const { return muted_; }
     void setMuted(bool muted);
     bool speaking() const { return speaking_; }
@@ -123,6 +144,10 @@ Q_SIGNALS:
     void viewersChanged();
     void noticeChanged();
     void videoChanged();
+    void cameraViewChanged();
+    void previewChanged();
+    void cameraChanged();
+    void cameraShownChanged();
     void mutedChanged();
     void speakingChanged();
     void hearingChanged();
@@ -144,8 +169,15 @@ private:
     /// The speaker, through a voice channel of its own, for a call about to
     /// start.
     void open_voice();
-    /// This side's voice on the call just started, if there is a microphone.
+    /// This side's voice on the call just started, if there is a microphone,
+    /// and its camera if on.
     void talk();
+    /// The camera, sent and seen; off with `notice` if it cannot be.
+    void start_camera();
+    void camera_off(QString notice = {});
+    void set_camera_shown(bool shown);
+    /// Draw what `pictures` gets into `view` from now on, as `slot` keeps it.
+    static bool attach(QPointer<VideoView>& slot, Pictures& pictures, VideoView* view);
     /// Who is speaking, as the voice channel says: a few times a second.
     void update_levels();
     /// Back to Idle; `notice` says why, if it was not the user.
@@ -156,13 +188,21 @@ private:
     QStringList invites_;
     int viewers_ = 0;
     QString notice_;
+    bool other_side_left_ = false;  ///< what the notice says, until it says another
     bool muted_ = false;
     bool speaking_ = false;
     bool hearing_ = false;
+    bool camera_ = false;
+    bool camera_shown_ = false;
     QTimer levels_;
     QPointer<VideoView> video_;
-    /// Where the call's pictures go: the view, as it changes.
+    QPointer<VideoView> camera_view_;
+    QPointer<VideoView> preview_;
+    /// Where the call's pictures go, the other side's camera's and this
+    /// side's: each its view, as it changes.
     std::shared_ptr<Pictures> pictures_;
+    std::shared_ptr<Pictures> camera_pictures_;
+    std::shared_ptr<Pictures> preview_pictures_;
 
     /// Counts calls and shares begun: events of an earlier one are dropped.
     uint64_t generation_ = 0;

@@ -452,7 +452,8 @@ int main(int argc, char** argv) {
     if (source) {
         VideoPublisherConfig config;
         config.stream = kVideoStream;
-        config.label = o.source;
+        // A camera here is the picture itself, not one beside it (kCameraLabel).
+        config.label = o.source == "camera" ? "camera picture" : o.source;
         config.lifetime = o.latency;
         config.encoder = o.encoder;
         config.rate_control = o.rate_control;

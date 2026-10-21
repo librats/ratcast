@@ -6,7 +6,8 @@ import Ratcast.Video
 
 // One window, three faces: the start (share, or join from a link), the
 // sharer's (who is watching, the links to send) and the viewer's (the
-// picture). CallController says which.
+// picture). CallController says which. In a call, the cameras over it: the
+// other side's, and this side's own.
 ApplicationWindow {
     id: root
 
@@ -30,6 +31,8 @@ ApplicationWindow {
     CallController {
         id: call
         video: picture
+        cameraView: theirCamera
+        preview: ownCamera
     }
 
     Component.onCompleted: if (root.link.length > 0) call.join(root.link)
@@ -197,6 +200,56 @@ ApplicationWindow {
 
     // ── In a call, either side ──────────────────────────────────────────────
 
+    component CameraFrame: Rectangle {
+        default property alias content: holder.data
+        color: "#111214"
+        radius: 6
+        border.color: "#4e5058"
+        clip: true
+
+        Item {
+            id: holder
+            anchors.fill: parent
+            anchors.margins: 2
+        }
+    }
+
+    ColumnLayout {
+        anchors.right: parent.right
+        anchors.top: parent.top
+        anchors.margins: 16
+        spacing: 8
+        visible: root.inCall
+
+        CameraFrame {
+            Layout.preferredWidth: 240
+            Layout.preferredHeight: 180
+            Layout.alignment: Qt.AlignRight
+            visible: call.cameraShown
+
+            VideoView {
+                id: theirCamera
+                anchors.fill: parent
+            }
+        }
+        CameraFrame {
+            Layout.preferredWidth: 160
+            Layout.preferredHeight: 120
+            Layout.alignment: Qt.AlignRight
+            visible: call.camera
+
+            // As a mirror shows one: what is left of the user is on the left.
+            VideoView {
+                id: ownCamera
+                anchors.fill: parent
+                transform: Scale {
+                    origin.x: ownCamera.width / 2
+                    xScale: -1
+                }
+            }
+        }
+    }
+
     component Speaker: RowLayout {
         property alias text: name.text
         property bool active
@@ -236,6 +289,12 @@ ApplicationWindow {
                 checkable: true
                 checked: call.muted
                 onToggled: call.muted = checked
+            }
+            Button {
+                text: call.camera ? qsTr("Camera off") : qsTr("Camera")
+                checkable: true
+                checked: call.camera
+                onToggled: call.camera = checked
             }
             Button {
                 text: call.state === CallController.Sharing ? qsTr("Stop sharing")

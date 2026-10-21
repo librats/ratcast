@@ -129,6 +129,9 @@ int main(void) {
         CHECK(ratcast_send_frame(sender, &frame) == RATCAST_OK);
         sleep_ms(1);
     }
+    /* Every frame played before the stream goes: withdrawn at once, it could
+       overtake the last ones, which the viewer would then drop. */
+    CHECK(wait_until(&v.frames, kFrames));
     ratcast_remove_stream(sender, kStream);
     CHECK(wait_until(&v.withdrawn, 1));
     CHECK(atomic_load(&v.frames) == kFrames);

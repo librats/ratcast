@@ -16,7 +16,7 @@ QString describe(Errc error) { return QString::fromLatin1(to_string(error)); }
 
 }  // namespace
 
-/// Where the call's pictures go: whichever view is set, from the player's
+/// Where pictures go: whichever view is set, from a player's or a source's
 /// thread.
 struct CallController::Pictures {
     std::mutex mutex;
@@ -48,6 +48,10 @@ CallController::Environment CallController::Environment::system() {
         Result<std::unique_ptr<AudioSource>> microphone = open_audio_capture({.format = format});
         return microphone ? std::move(*microphone) : nullptr;
     };
+    environment.open_camera = []() -> std::unique_ptr<VideoSource> {
+        Result<std::unique_ptr<VideoSource>> camera = ratcast::open_camera(call_camera_options());
+        return camera ? std::move(*camera) : nullptr;
+    };
     environment.open_system_sound = [format = environment.voice.speaker] {
         Result<std::unique_ptr<AudioSource>> sound =
             open_audio_capture({.format = format, .source = AudioCaptureSource::SystemSound});
@@ -59,7 +63,9 @@ CallController::Environment CallController::Environment::system() {
 CallController::CallController(QObject* parent)
     : QObject(parent),
       environment_(Environment::system()),
-      pictures_(std::make_shared<Pictures>()) {
+      pictures_(std::make_shared<Pictures>()),
+      camera_pictures_(std::make_shared<Pictures>()),
+      preview_pictures_(std::make_shared<Pictures>()) {
     levels_.setInterval(100);
     connect(&levels_, &QTimer::timeout, this, &CallController::update_levels);
 }
@@ -77,11 +83,23 @@ void CallController::setEnvironment(Environment environment) {
     environment_ = std::move(environment);
 }
 
+bool CallController::attach(QPointer<VideoView>& slot, Pictures& pictures, VideoView* view) {
+    if (view == slot) return false;
+    slot = view;
+    pictures.set(view ? view->sink() : VideoView::Sink{});
+    return true;
+}
+
 void CallController::setVideo(VideoView* video) {
-    if (video == video_) return;
-    video_ = video;
-    pictures_->set(video ? video->sink() : VideoView::Sink{});
-    Q_EMIT videoChanged();
+    if (attach(video_, *pictures_, video)) Q_EMIT videoChanged();
+}
+
+void CallController::setCameraView(VideoView* view) {
+    if (attach(camera_view_, *camera_pictures_, view)) Q_EMIT cameraViewChanged();
+}
+
+void CallController::setPreview(VideoView* view) {
+    if (attach(preview_, *preview_pictures_, view)) Q_EMIT previewChanged();
 }
 
 // ── Sharing ─────────────────────────────────────────────────────────────────
@@ -121,6 +139,9 @@ void CallController::share_opened(uint64_t generation, const ScreenShareConfig& 
     CallConfig config_of_call = environment_.call;
     config_of_call.data_dir = environment_.data_dir;
     config_of_call.playback.sound = speaker_.get();  // the viewers' voices
+    config_of_call.playback.camera = [pictures = camera_pictures_](VideoFrame picture) {
+        (*pictures)(std::move(picture));
+    };
     Result<std::unique_ptr<Call>> started =
         Call::start(std::move(config_of_call), handlers(generation));
     if (!started) {
@@ -166,6 +187,9 @@ void CallController::join(const QString& link) {
     config.playback.pictures = [pictures = pictures_](VideoFrame picture) {
         (*pictures)(std::move(picture));
     };
+    config.playback.camera = [pictures = camera_pictures_](VideoFrame picture) {
+        (*pictures)(std::move(picture));
+    };
     config.playback.sound = speaker_.get();
     Result<std::unique_ptr<Call>> started = Call::start(std::move(config), handlers(generation));
     if (!started) {
@@ -189,6 +213,7 @@ void CallController::open_voice() {
 
 void CallController::talk() {
     levels_.start();
+    if (camera_) start_camera();
     std::unique_ptr<AudioSource> device =
         environment_.open_microphone ? environment_.open_microphone() : nullptr;
     // Not heard is no reason to end the call: said, and the call goes on.
@@ -203,6 +228,48 @@ void CallController::talk() {
         !published) {
         set_notice(tr("The microphone cannot be used (%1).").arg(describe(published.error())));
     }
+}
+
+void CallController::setCamera(bool on) {
+    if (on == camera_) return;
+    if (!on) {
+        camera_off();
+        return;
+    }
+    camera_ = true;
+    Q_EMIT cameraChanged();
+    if (call_) start_camera();
+}
+
+void CallController::start_camera() {
+    std::unique_ptr<VideoSource> device =
+        environment_.open_camera ? environment_.open_camera() : nullptr;
+    if (!device) {
+        camera_off(tr("There is no camera."));
+        return;
+    }
+    std::unique_ptr<VideoSource> seen = with_preview(
+        std::move(device),
+        [pictures = preview_pictures_](const VideoFrame& picture) { (*pictures)(picture); });
+    if (Result<VideoPublisher*> published = publish_camera(*call_, std::move(seen)); !published) {
+        camera_off(tr("The camera cannot be used (%1).").arg(describe(published.error())));
+    }
+}
+
+void CallController::camera_off(QString notice) {
+    if (call_) call_->unpublish(kCameraStream);
+    if (preview_) preview_->clear();
+    if (!notice.isEmpty()) set_notice(std::move(notice));
+    if (!camera_) return;
+    camera_ = false;
+    Q_EMIT cameraChanged();
+}
+
+void CallController::set_camera_shown(bool shown) {
+    if (!shown && camera_view_) camera_view_->clear();
+    if (shown == camera_shown_) return;
+    camera_shown_ = shown;
+    Q_EMIT cameraShownChanged();
 }
 
 void CallController::setMuted(bool muted) {
@@ -240,6 +307,8 @@ void CallController::end(QString notice) {
     voice_.reset();
     update_levels();
     if (video_) video_->clear();
+    if (preview_) preview_->clear();
+    set_camera_shown(false);
     if (!invites_.isEmpty()) {
         invites_.clear();
         Q_EMIT invitesChanged();
@@ -260,9 +329,11 @@ CallHandlers CallController::handlers(uint64_t generation) {
             [this, generation](const PeerId&) {
                 post(generation, [this] {
                     count_viewers();
+                    set_camera_shown(false);
                     if (state_ != State::Watching && state_ != State::Joining) return;
                     if (video_) video_->clear();
                     set_notice(tr("The other side left."));
+                    other_side_left_ = true;
                     set_state(State::Joining);
                 });
             },
@@ -271,27 +342,46 @@ CallHandlers CallController::handlers(uint64_t generation) {
                                Result<void> outcome) {
                 if (stream.kind() != MediaKind::Video && outcome) return;
                 const QString label = QString::fromStdString(stream.label);
-                post(generation, [this, outcome, label] {
+                const bool camera = stream.label == kCameraLabel;
+                post(generation, [this, outcome, label, camera] {
                     if (!outcome) {
                         set_notice(tr("'%1' cannot be played (%2).")
                                        .arg(label, describe(outcome.error())));
                         return;
                     }
-                    set_notice({});
+                    if (camera) {
+                        set_camera_shown(true);
+                        return;
+                    }
+                    // Back: no longer news. What else was said stands.
+                    if (other_side_left_) set_notice({});
                     set_state(State::Watching);
                 });
             },
         .ended =
             [this, generation](const PeerId&, const StreamDescription& stream) {
                 if (stream.kind() != MediaKind::Video) return;
-                post(generation, [this] {
+                const bool camera = stream.label == kCameraLabel;
+                post(generation, [this, camera] {
+                    if (camera) {
+                        set_camera_shown(false);
+                        return;
+                    }
                     if (video_) video_->clear();
                     if (state_ == State::Watching) set_state(State::Joining);
                 });
             },
         .source_ended =
-            [this, generation](StreamId, Result<void> outcome) {
-                post(generation, [this, outcome] {
+            [this, generation](StreamId stream, Result<void> outcome) {
+                post(generation, [this, stream, outcome] {
+                    // The camera going is the camera's business; the screen's,
+                    // the share's.
+                    if (stream == kCameraStream) {
+                        camera_off(
+                            outcome ? tr("The camera went.")
+                                    : tr("The camera failed (%1).").arg(describe(outcome.error())));
+                        return;
+                    }
                     end(outcome ? tr("Sharing stopped.")
                                 : tr("Sharing failed (%1).").arg(describe(outcome.error())));
                 });
@@ -324,6 +414,7 @@ void CallController::set_state(State state) {
 }
 
 void CallController::set_notice(QString notice) {
+    other_side_left_ = false;
     if (notice == notice_) return;
     notice_ = std::move(notice);
     Q_EMIT noticeChanged();

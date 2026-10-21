@@ -684,8 +684,21 @@ on the same call code.
     against a stand-in camera node: listed, a screen not; each format and layout back into 4:2:0
     exactly; one with only larger modes taken as it is; the end when it goes; ASan / TSan clean.
     `ratcast-send --source camera`. No camera on the dev VM: not tried on a real one yet.
-  - **(b) The camera in a call:** both sides may send one beside the rest; a call plays the
-    other side's camera apart from its screen; the app shows it over the picture, and one's own.
+  - **(b) The camera in a call** ✅: either side may send its camera beside the rest — a video
+    stream labelled `camera` (`kCameraLabel`), small (640 x 480, 30 a second, 1 Mbit/s at most,
+    a ninth of a path shared with an 8 Mbit/s screen) — and a call plays the other side's camera
+    apart from its screen, in its own time, as a voice is apart from the screen's sound;
+    `with_preview()` shows the sender what goes. The app: a camera button that holds from one call
+    to the next and turns itself off (said) where there is no camera; the other side's camera in
+    a corner over the picture, one's own below it as a mirror shows it; a camera going ends the
+    camera, not the share. `ratcast-send --source camera` sends it as the picture itself.
+    Found on the way: a picture starting to play wiped any notice, so "no microphone" and "no
+    camera" were gone a moment after they were said; only "the other side left" goes now.
+    Tested through calls on loopback (each picture where it belongs, at its size; a camera
+    turned off, the screen going on; a camera nobody shows, never received) and two controllers
+    (each side's camera at both ends, off again, kept across calls; none there: off, said, the
+    call going on); ASan / TSan clean. The C API's test withdrew its feed before the last frames
+    were in, which a loaded machine could see overtaken; it waits for them now.
 - **6.6 App audio** ✅: a share's sound is what the applications play, never the call's own
   voices: `open_audio_capture()`'s `Applications` source, on Linux a PipeWire filter of its own
   with a left and a right input, which links itself to the output ports of every node playing
@@ -709,9 +722,12 @@ on the same call code.
   now. Later: a choice of one application (a picker; the desktop's dialog does not say whose a
   window is); linking needs the daemon's permission to make links, which a Flatpak sandbox will
   have to be given.
-- **6.7 Latency profiles** (from 2.3): `call` / `game` as the user's choice — lifetimes,
-  jitter-buffer depth, keyframe policy, encoder settings, whether a game's pictures wait for its
-  sound; the sound's frame for FEC only on lossy paths.
+- **6.7 Latency profiles** (from 2.3) — put off again: nothing in a one-to-one call asks for a
+  choice yet, every knob a profile would set already follows the path, and the one setting there
+  is (200 ms) serves both a film and a talk. Back when a use wants another — a game's pictures
+  not waiting for its sound, `cinema`'s seconds of buffer in stage 5 — as `call` / `game` for the
+  user to choose: lifetimes, jitter-buffer depth, keyframe policy, encoder settings, the sound's
+  frame for FEC only on lossy paths.
 
 ### Stage 7 — Conferences
 

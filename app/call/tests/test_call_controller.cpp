@@ -1,7 +1,8 @@
 // CallController between two of its kind on loopback: one shares (the test
 // pattern and a tone standing in for the desktop's screen and sound), the
-// other joins by an invite and watches, each going through its states; and
-// the ways a share or a join ends without the user.
+// other joins by an invite and watches, each going through its states; both
+// talking, either side's camera seen by the other and by itself; and the
+// ways a share or a join ends without the user.
 
 #include "call_controller.h"
 
@@ -85,6 +86,9 @@ CallController::Environment environment() {
     environment.open_microphone = [] {
         return std::make_unique<ToneSource>(ToneConfig{.frequency = 300, .level = 0.3f});
     };
+    environment.open_camera = [] {
+        return std::make_unique<PatternSource>(PatternConfig{PixelFormat::NV12, 160, 120, 30, 1});
+    };
     // Tones for voices: not for the echo canceller or the noise suppressor.
     environment.voice.processing.echo_cancellation = false;
     environment.voice.processing.noise_suppression = false;
@@ -160,7 +164,57 @@ TEST_F(CallControllerTest, WithoutAMicrophoneTheCallGoesOn) {
     viewer_.setEnvironment(deaf);
     viewer_.join(share());
     ASSERT_TRUE(wait_for([&] { return viewer_.state() == State::Watching; }));
+    EXPECT_FALSE(viewer_.notice().isEmpty()) << "still said once the picture plays";
     EXPECT_TRUE(wait_for([&] { return !sharer_.hearing() && viewer_.hearing(); }));
+}
+
+TEST_F(CallControllerTest, EachSeesTheOthersCameraAndItsOwn) {
+    VideoView sharer_camera;
+    VideoView sharer_preview;
+    VideoView viewer_camera;
+    VideoView viewer_preview;
+    sharer_.setCameraView(&sharer_camera);
+    sharer_.setPreview(&sharer_preview);
+    viewer_.setCameraView(&viewer_camera);
+    viewer_.setPreview(&viewer_preview);
+
+    // The viewer's on before it joins; the sharer's while it shares.
+    viewer_.setCamera(true);
+    viewer_.join(share());
+    ASSERT_TRUE(wait_for([&] { return viewer_.state() == State::Watching; }));
+    sharer_.setCamera(true);
+    ASSERT_TRUE(wait_for([&] { return sharer_.cameraShown() && viewer_.cameraShown(); }));
+    EXPECT_TRUE(wait_for([&] {
+        return sharer_camera.pictureSize() == QSize(160, 120) &&
+               viewer_camera.pictureSize() == QSize(160, 120) &&
+               sharer_preview.pictureSize() == QSize(160, 120) &&
+               viewer_preview.pictureSize() == QSize(160, 120);
+    })) << "each camera seen at both ends";
+    EXPECT_EQ(view_.pictureSize(), QSize(320, 240)) << "the screen apart";
+
+    // A camera off is not the screen gone.
+    viewer_.setCamera(false);
+    EXPECT_TRUE(viewer_preview.pictureSize().isEmpty());
+    EXPECT_TRUE(wait_for([&] { return !sharer_.cameraShown(); }));
+    EXPECT_TRUE(sharer_camera.pictureSize().isEmpty());
+    EXPECT_EQ(viewer_.state(), State::Watching);
+    EXPECT_TRUE(viewer_.cameraShown());
+
+    viewer_.leave();
+    EXPECT_FALSE(viewer_.cameraShown());
+    EXPECT_TRUE(viewer_camera.pictureSize().isEmpty());
+    EXPECT_TRUE(sharer_.camera()) << "kept on, as the user left it";
+}
+
+TEST_F(CallControllerTest, WithoutACameraItIsTurnedOffAndTheCallGoesOn) {
+    CallController::Environment blind = environment();
+    blind.open_camera = [] { return std::unique_ptr<VideoSource>{}; };
+    viewer_.setEnvironment(blind);
+    viewer_.setCamera(true);
+    viewer_.join(share());
+    EXPECT_FALSE(viewer_.camera());
+    ASSERT_TRUE(wait_for([&] { return viewer_.state() == State::Watching; }));
+    EXPECT_FALSE(viewer_.notice().isEmpty()) << "still said once the picture plays";
 }
 
 TEST_F(CallControllerTest, TheSharerLeavingIsNews) {
