@@ -1,8 +1,10 @@
 # libratcast — media transport over librats: encoded frames in, encoded frames
 # out. Knows nothing of capture, codecs or UI, so it stands on its own as a
 # library (the librist / SRT counterpart) and the SFU links it without the rest.
+# Its C API (ratcast/ratcast.h) stands on librats' C ABI.
 
 add_library(ratcast
+    src/capi/ratcast.cpp
     src/core/buffer.cpp
     src/core/result.cpp
     src/core/time.cpp
@@ -11,6 +13,7 @@ add_library(ratcast
     src/session/media_session.cpp
     src/session/rate_controller.cpp
     src/stream/delivery_buffer.cpp
+    src/stream/delivery_thread.cpp
     src/stream/fastest_transit.cpp
     src/stream/frame_tracker.cpp
     src/stream/jitter_buffer.cpp

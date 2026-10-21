@@ -25,6 +25,29 @@ libraries still build.
 
 Already cloned without `--recursive`: `git submodule update --init --recursive`.
 
+## C API
+
+libratcast has a C API, [`ratcast/ratcast.h`](libratcast/include/ratcast/ratcast.h), on top of
+librats' own ([`rats.h`](external/librats/src/librats/bindings/rats.h)): librats makes the node
+and connects it, ratcast carries the media.
+
+```c
+rats_config_t config = {.protocol = RATCAST_PROTOCOL};  /* reaches ratcast-send */
+rats_t node = rats_create(&config);
+ratcast_t media;
+ratcast_handlers_t handlers = {.user = app, .stream_announced = on_stream,
+                               .frame_received = on_frame};
+ratcast_attach(node, &handlers, NULL, &media);  /* before rats_start() */
+rats_start(node);
+rats_connect(node, "sender.example", 7700);
+
+/* on_stream: subscribe to what the sender offers; a feed in order, 200 ms behind */
+ratcast_subscribe(media, peer_id, stream->id, 200000);
+```
+
+A sender offers streams with `ratcast_add_stream()` and sends encoded frames with
+`ratcast_send_frame()`. [`test_capi_c.c`](libratcast/tests/test_capi_c.c) is a whole program.
+
 ## License
 
 [MIT](LICENSE)

@@ -526,7 +526,23 @@ across the same paths. In steps:
     Left as they are: joining ~100 ms slower than librist (the handshake, then the stream's
     announcement and subscription, before the first frame: L2 (a) and 1.2's leftovers), and
     librats' portable cipher (L14).
-- **3.3 C API.**
+- **3.3 C API** ✅ (`ratcast/ratcast.h`, in libratcast): media streams over a librats node made
+  in C. librats' C ABI makes the node and connects it — discovery, NAT traversal, relays —
+  and `ratcast_attach()` adds ratcast to it before `rats_start()`, through librats'
+  `rats_attach_subsystem()` (`bindings/rats_extend.h`, C++ only: the door for libraries that
+  layer a C API of their own on librats'). A sender offers streams — a description, bitrate
+  limits if rate-controlled — and sends their encoded frames (copied once); a receiver
+  subscribes to what peers announce and gets frames at a handler, with the announcements,
+  withdrawals, keyframe and bitrate requests as handlers too, and the stats. A stream
+  subscribed with a delay comes out in order and evenly on a thread of its own, as SRT and
+  librist hand on a feed: a `DeliveryThread` (`stream/`: a DeliveryBuffer played out, which
+  the client's `DataPlayer` now runs on too), its withdrawal told once what it held has gone
+  out; a handler may unsubscribe its own stream. Zero-initialisable structs, every enum
+  int-based, nothing unwinds across it. Tested on two real nodes from C++ (`test_capi.cpp`) and
+  from C (`test_capi_c.c`, built as C11). Not in it: a feed's packet framing (`DataPublisher`'s
+  six packets to a frame — a C sender sends whole packets, `RATCAST_DATA_FRAME_SIZE` bytes at
+  most a frame) and the engine's capture and codecs, which bindings of the app will want
+  (Android, stage 8).
 
 netsim, the userspace impairment proxy (delay, jitter, loss, bursts, bandwidth caps; no root, any
 OS; scripted scenarios in CI), moved to stage 4: it is for the other platforms, and

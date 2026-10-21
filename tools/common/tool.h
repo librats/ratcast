@@ -14,6 +14,7 @@
 #include <utility>
 
 #include "ratcast/core/time.h"
+#include "ratcast/ratcast.h"
 #include "ratcast/session/media_network.h"
 #include "ratcast/stream/stream_description.h"
 
@@ -24,7 +25,7 @@ namespace ratcast::tools {
 
 /// The handshake protocol of every ratcast node: tools of another protocol
 /// version do not connect at all.
-inline constexpr const char* kProtocol = "ratcast/0";
+inline constexpr const char* kProtocol = RATCAST_PROTOCOL;
 
 /// A node for a tool: listening on `port` (0 for any) if `listen`, with a
 /// stable identity when `data_dir` is not empty.

@@ -22,7 +22,8 @@ endmacro()
 ratcast_librats_default(RATS_BUILD_CLIENT   OFF)
 ratcast_librats_default(RATS_BUILD_EXAMPLES OFF)
 ratcast_librats_default(RATS_BUILD_TESTS    OFF)
-ratcast_librats_default(RATS_BINDINGS       OFF)
+# The C ABI: libratcast's C API is built on it.
+ratcast_librats_default(RATS_BINDINGS       ON)
 ratcast_librats_default(RATS_INSTALL        OFF)
 
 add_subdirectory("${RATCAST_LIBRATS_DIR}" "${PROJECT_BINARY_DIR}/external/librats")

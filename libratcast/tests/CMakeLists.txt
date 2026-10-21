@@ -1,10 +1,12 @@
 ratcast_add_test(libratcast_tests
     SOURCES
         test_buffer.cpp
+        test_capi.cpp
         test_control_codec.cpp
         test_frame_codec.cpp
         test_frame_tracker.cpp
         test_delivery_buffer.cpp
+        test_delivery_thread.cpp
         test_fastest_transit.cpp
         test_jitter_buffer.cpp
         test_media_service.cpp
@@ -21,3 +23,10 @@ ratcast_add_test(libratcast_tests
 
 # White-box tests reach the private headers (wire/…) as the library does.
 target_include_directories(libratcast_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../src")
+
+# The C API from C: the header compiles as C11, and a feed crosses two nodes.
+add_executable(libratcast_c_test test_capi_c.c)
+target_link_libraries(libratcast_c_test PRIVATE ratcast::ratcast)
+set_target_properties(libratcast_c_test PROPERTIES C_STANDARD 11 C_STANDARD_REQUIRED ON)
+ratcast_target_defaults(libratcast_c_test)
+add_test(NAME CApiFromC COMMAND libratcast_c_test)
