@@ -73,6 +73,24 @@ std::optional<std::pair<std::string, uint16_t>> parse_endpoint(std::string_view 
     return std::pair{std::string(host), static_cast<uint16_t>(*number)};
 }
 
+std::optional<SenderAddress> parse_rats_url(std::string_view url) {
+    constexpr std::string_view kScheme = "rats://";
+    if (!url.starts_with(kScheme)) return std::nullopt;
+    url.remove_prefix(kScheme.size());
+    if (url.ends_with('/')) url.remove_suffix(1);
+    if (auto endpoint = parse_endpoint(url)) return SenderAddress{.endpoint = std::move(endpoint)};
+    if (auto peer = PeerId::from_hex(url)) return SenderAddress{.peer = peer};
+    return std::nullopt;
+}
+
+std::string rats_url(std::string_view host, uint16_t port) {
+    const bool ipv6 = host.find(':') != std::string_view::npos;
+    return "rats://" + (ipv6 ? "[" + std::string(host) + "]" : std::string(host)) + ":" +
+           std::to_string(port);
+}
+
+std::string rats_url(const PeerId& peer) { return "rats://" + peer.to_hex(); }
+
 std::optional<Codec> parse_codec(std::string_view name) {
     if (name == "av1") return Codec::AV1;
     if (name == "h265" || name == "hevc") return Codec::H265;
@@ -92,6 +110,9 @@ std::optional<std::pair<uint32_t, uint32_t>> parse_size(std::string_view text) {
 void catch_interrupts() {
     std::signal(SIGINT, on_interrupt);
     std::signal(SIGTERM, on_interrupt);
+#ifdef SIGPIPE
+    std::signal(SIGPIPE, SIG_IGN);  // a reader of a feed out that went: a failed write
+#endif
 }
 
 bool interrupted() noexcept { return g_interrupted.load(); }

@@ -41,13 +41,28 @@ std::string discovery_key(const PeerId& sender);
 /// "host:port" or "[ipv6]:port".
 std::optional<std::pair<std::string, uint16_t>> parse_endpoint(std::string_view text);
 
+/// Where a sender is: an address to dial, or a peer id to find through the
+/// DHT (a sender that runs --announce).
+struct SenderAddress {
+    std::optional<std::pair<std::string, uint16_t>> endpoint{};
+    std::optional<PeerId> peer{};
+};
+
+/// "rats://host:port", "rats://[ipv6]:port" or "rats://<peer id in hex>".
+std::optional<SenderAddress> parse_rats_url(std::string_view url);
+
+/// The URL a viewer reaches a sender by.
+std::string rats_url(std::string_view host, uint16_t port);
+std::string rats_url(const PeerId& peer);
+
 /// "av1", "h265" (or "hevc"), "h264".
 std::optional<Codec> parse_codec(std::string_view name);
 
 /// "1280x720".
 std::optional<std::pair<uint32_t, uint32_t>> parse_size(std::string_view text);
 
-/// From now on Ctrl-C (or SIGTERM) sets interrupted() instead of killing.
+/// From now on Ctrl-C (or SIGTERM) sets interrupted() instead of killing, and
+/// a pipe whose reader went fails a write instead of killing.
 void catch_interrupts();
 bool interrupted() noexcept;
 

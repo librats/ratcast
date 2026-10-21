@@ -470,8 +470,13 @@ across the same paths. In steps:
     (`stream/`, tested in virtual time) that hands them on in order at a fixed delay past the
     fastest, skipping what did not come in time: what SRT calls TSBPD with too-late drop, and
     librist its buffer;
-  - (b) the tools: `ratcast-send --input` and `ratcast-recv --output` for TS over UDP, files and
-    pipes; `rats://` URLs for where a stream is.
+  - (b) ✅ the tools: `ratcast-send --input` and `ratcast-recv --output` for TS over UDP
+    (multicast joined), files (a recording played in real time by its PCR) and pipes;
+    `ratcast-recv rats://host:port` or `rats://<peer id>`. The engine reads and writes the
+    feeds (`open_ts_input()` / `open_ts_output()`, POSIX for now); the client's
+    `DataPublisher` finds the 188-byte packets and sends six to a frame — a librats datagram
+    — and `DataPlayer` writes them out through a `DeliveryBuffer`, what it holds at the
+    feed's end included. A feed piped through on one host comes out byte for byte.
 - **3.2 Benchmark** against librist and SRT (libwebrtc if practical). librats: L9 optional.
   - (a) the harness: a stamped constant-bitrate TS probe (sender and meter: latency, loss,
     continuity), librist's and SRT's own tools built from pinned sources without root,

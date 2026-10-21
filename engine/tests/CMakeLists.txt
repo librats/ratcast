@@ -4,6 +4,7 @@ ratcast_add_test(engine_tests
         test_file_source.cpp
         test_frame_pacer.cpp
         test_pattern.cpp
+        test_ts_io.cpp
         test_audio_source.cpp
         test_video_codec.cpp
         test_video_convert.cpp

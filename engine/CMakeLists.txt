@@ -65,6 +65,12 @@ else()
     )
 endif()
 
+if(UNIX)
+    target_sources(ratcast_engine PRIVATE src/posix/ts_io.cpp)
+else()
+    target_sources(ratcast_engine PRIVATE src/ts/ts_io_unavailable.cpp)
+endif()
+
 target_include_directories(ratcast_engine
     PUBLIC  "${CMAKE_CURRENT_SOURCE_DIR}/include"
     PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src"

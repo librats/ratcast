@@ -35,10 +35,18 @@ TEST(Arguments, EveryMistakeIsReported) {
         parse({"stray", "--fps", "1000", "--port", "x1", "--typo", "--once", "now", "--codec"});
     EXPECT_EQ(args.number("fps", 1, 240), std::nullopt);     // out of range
     EXPECT_EQ(args.number("port", 0, 65535), std::nullopt);  // not a number
-    EXPECT_TRUE(args.flag("once"));                          // but given a value
+    EXPECT_TRUE(args.flag("once"));                          // "now" is no value of it
     EXPECT_EQ(args.text("codec"), std::nullopt);             // no value
-    // stray, fps, port, typo (never asked for), once, codec
+    // stray and now (never asked for), fps, port, typo (never asked for), codec
     EXPECT_EQ(args.errors().size(), 6u);
+}
+
+TEST(Arguments, ArgumentsWithoutANameAnywhere) {
+    Arguments args = parse({"--headless", "rats://host:7700", "--duration", "5", "extra"});
+    EXPECT_TRUE(args.flag("headless"));
+    EXPECT_EQ(args.number("duration", 1, 10), 5u);
+    EXPECT_EQ(args.positional(), (std::vector<std::string>{"extra", "rats://host:7700"}));
+    EXPECT_TRUE(args.errors().empty());
 }
 
 TEST(Tool, ParsesEndpointsSizesAndCodecs) {
@@ -53,6 +61,20 @@ TEST(Tool, ParsesEndpointsSizesAndCodecs) {
     EXPECT_EQ(parse_size("1920x1080"), (std::pair<uint32_t, uint32_t>{1920, 1080}));
     EXPECT_EQ(parse_size("1920"), std::nullopt);
     EXPECT_EQ(parse_size("0x10"), std::nullopt);
+
+    const std::optional<SenderAddress> dial = parse_rats_url("rats://[::1]:7700/");
+    ASSERT_TRUE(dial && dial->endpoint);
+    EXPECT_EQ(*dial->endpoint, (std::pair<std::string, uint16_t>{"::1", 7700}));
+    EXPECT_FALSE(dial->peer);
+    const PeerId peer = PeerId::from_public_key(reinterpret_cast<const uint8_t*>("key"), 3);
+    const std::optional<SenderAddress> find = parse_rats_url(rats_url(peer));
+    ASSERT_TRUE(find && find->peer);
+    EXPECT_EQ(*find->peer, peer);
+    EXPECT_EQ(rats_url("::1", 7700), "rats://[::1]:7700");
+    EXPECT_EQ(rats_url("example.org", 7700), "rats://example.org:7700");
+    EXPECT_FALSE(parse_rats_url("rats://"));
+    EXPECT_FALSE(parse_rats_url("rats://nonsense"));
+    EXPECT_FALSE(parse_rats_url("http://host:7700"));
 
     EXPECT_EQ(parse_codec("hevc"), Codec::H265);
     EXPECT_EQ(parse_codec("vp9"), std::nullopt);
