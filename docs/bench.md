@@ -651,3 +651,74 @@ are late. Single runs, a keyframe every 2 s.
   `game` profiles have to start from it. On lossy paths the sound waits for the pictures
   instead: its jitter buffer is held at what they need (`loss-2` 42 → 72 ms, 98 → 108 ms from
   capture to speaker), reached by making up a frame now and then (40–60 ms over a run).
+
+## Stage 2, measured whole
+
+After 2.1 and 2.2: ratcast b5ab89a, librats 2141d8b. `bench/netem.py --audio
+--repeat 3`: the pattern, rate-controlled (2 Mbit/s up to 8), with the stamped tone beside it,
+played in step.
+
+| scenario | path | first picture, ms | fps | Mbit/s (cuts) | latency p50 / p95 / p99, ms | stalls (ms) | lost / dropped | expired / sent | keyframes | repair | CPU send / recv, % |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| local | veth, no shaping | 55 | 60 | 6.3 (0) | 57.3 / 60.4 / 61.4 | 0 (0) | 0 / 0 | 0 / 1639 | 6 | 0.0% | 146 / 25 |
+| rtt-20 | 20 ms RTT | 169 | 60 | 6.3 (0) | 69.6 / 73.7 / 77.8 | 0 (0) | 0 / 0 | 0 / 1638 | 6 | 0.0% | 146 / 25 |
+| rtt-50 | 50 ms RTT | 329 | 60 | 6.2 (0) | 88.1 / 90.1 / 151.6 | 0 (0) | 0 / 0 | 0 / 1631 | 6 | 0.0% | 147 / 25 |
+| rtt-100 | 100 ms RTT | 638 | 60 | 6.1 (0) | 131.1 / 135.2 / 262.1 | 0 (0) | 13 / 0 | 1 / 1617 | 7 | 0.0% | 149 / 25 |
+| rtt-200 | 200 ms RTT | 1201 | 58 | 6.0 (0) | 184.3 / 225.3 / 385.0 | 3 (344) | 51 / 0 | 22 / 1587 | 9 | 0.0% | 148 / 23 |
+| jitter | 50 ms RTT, ±10 ms jitter, in order | 330 | 60 | 6.2 (0) | 104.4 / 106.5 / 184.3 | 1 (141) | 0 / 0 | 0 / 1628 | 6 | 0.0% | 146 / 24 |
+| reorder-2 | 50 ms RTT, 2% of packets 25 ms early | 326 | 60 | 6.2 (0) | 81.9 / 86.0 / 151.6 | 0 (0) | 0 / 0 | 0 / 1628 | 6 | 0.0% | 145 / 25 |
+| reorder | 50 ms RTT, ±10 ms jitter, every packet on its own | 306 | 59 | 5.8 (1) | 90.1 / 96.3 / 172.0 | 2 (282) | 18 / 0 | 9 / 1634 | 9 | 0.0% | 151 / 24 |
+| loss-1 | 50 ms RTT, 1% loss | 332 | 60 | 6.2 (0) | 120.8 / 122.9 / 176.1 | 1 (110) | 0 / 0 | 0 / 1623 | 6 | 3.2% | 146 / 25 |
+| loss-2 | 50 ms RTT, 2% loss | 329 | 59 | 6.1 (0) | 127.0 / 131.1 / 184.3 | 1 (101) | 0 / 0 | 0 / 1623 | 6 | 5.6% | 146 / 25 |
+| loss-5 | 50 ms RTT, 5% loss | 338 | 60 | 6.2 (0) | 139.3 / 143.4 / 176.1 | 0 (0) | 0 / 0 | 0 / 1619 | 6 | 10.3% | 148 / 25 |
+| loss-both | 50 ms RTT, 2% loss both ways | 361 | 60 | 6.2 (0) | 120.8 / 124.9 / 167.9 | 0 (0) | 0 / 0 | 0 / 1630 | 6 | 5.3% | 149 / 25 |
+| burst | 50 ms RTT, bursts of loss (~4%) | 329 | 60 | 6.2 (0) | 143.4 / 143.4 / 163.8 | 0 (0) | 1 / 0 | 0 / 1629 | 6 | 6.8% | 147 / 25 |
+| cap-20 | 50 ms RTT, 20 Mbit/s, 100 ms buffer | 334 | 60 | 6.2 (0) | 88.1 / 90.1 / 155.6 | 0 (0) | 0 / 0 | 0 / 1619 | 6 | 0.0% | 149 / 25 |
+| cap-6 | 50 ms RTT, 6 Mbit/s (below the stream) | 335 | 59 | 4.1 (2) | 108.5 / 147.5 / 196.6 | 0 (0) | 8 / 0 | 1 / 1612 | 13 | 0.0% | 146 / 22 |
+| cap-drop | 50 ms RTT, 20 Mbit/s, 4 Mbit/s from 5 s to 10 s | 331 | 55 | 3.3 (5) | 208.9 / 225.3 / 245.8 | 5 (1135) | 38 / 9 | 29 / 1627 | 19 | 0.6% | 150 / 20 |
+
+| scenario | first sound, ms | latency p50 / p95 / p99 / max, ms | jitter buffer delay / target, ms | lost / late | FEC / concealed, ms | breaks | kbit/s | pictures apart p50 / p95 / max (mean), ms |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| local | 35 | 56.3 / 57.3 / 58.4 / 59.5 | 25 / 22 | 0 / 0 | 0 / 0 | 0 | 33.3 | 0.5 / 4.0 / 8.1 (0.7) |
+| rtt-20 | 107 | 69.6 / 69.6 / 71.7 / 78.6 | 28 / 24 | 0 / 0 | 0 / 0 | 0 | 33.3 | 0.6 / 3.6 / 34.6 (0.8) |
+| rtt-50 | 206 | 88.1 / 88.1 / 88.1 / 90.7 | 32 / 24 | 1 / 1 | 0 / 20 | 0 | 33.3 | 0.6 / 3.3 / 126.5 (1.8) |
+| rtt-100 | 346 | 129.0 / 131.1 / 131.1 / 132.8 | 48 / 24 | 3 / 3 | 0 / 80 | 0 | 33.3 | 0.6 / 3.3 / 243.2 (3.1) |
+| rtt-200 | 658 | 184.3 / 221.2 / 222.3 / 222.3 | 51 / 24 | 7 / 4 | 0 / 200 | 1 | 33.3 | 0.6 / 3.8 / 469.0 (4.6) |
+| jitter | 201 | 104.4 / 104.4 / 106.5 / 172.4 | 65 / 60 | 2 / 2 | 0 / 60 | 0 | 33.3 | 0.7 / 4.0 / 179.0 (2.6) |
+| reorder-2 | 198 | 81.9 / 84.0 / 84.0 / 84.2 | 52 / 48 | 1 / 1 | 0 / 20 | 0 | 33.3 | 0.7 / 4.2 / 133.8 (2.2) |
+| reorder | 188 | 90.1 / 92.2 / 92.2 / 93.4 | 60 / 66 | 2 / 2 | 0 / 60 | 0 | 33.3 | 0.6 / 5.5 / 142.8 (2.2) |
+| loss-1 | 199 | 118.8 / 120.8 / 127.0 / 156.9 | 64 / 58 | 8 / 8 | 60 / 120 | 0 | 33.3 | 0.9 / 10.0 / 140.7 (3.5) |
+| loss-2 | 200 | 127.0 / 127.0 / 135.2 / 192.9 | 70 / 58 | 10 / 10 | 100 / 100 | 0 | 33.3 | 0.6 / 6.5 / 141.9 (4.5) |
+| loss-5 | 198 | 139.3 / 139.3 / 139.3 / 148.4 | 81 / 78 | 3 / 3 | 60 / 80 | 0 | 33.3 | 0.6 / 3.8 / 132.7 (1.8) |
+| loss-both | 200 | 120.8 / 120.8 / 122.9 / 123.7 | 64 / 59 | 8 / 8 | 160 / 60 | 0 | 33.3 | 0.8 / 7.2 / 158.6 (4.4) |
+| burst | 199 | 139.3 / 140.8 / 143.4 / 166.2 | 84 / 79 | 5 / 5 | 40 / 120 | 0 | 33.3 | 0.6 / 4.2 / 135.7 (2.3) |
+| cap-20 | 206 | 88.1 / 88.1 / 90.1 / 98.9 | 32 / 28 | 0 / 0 | 0 / 0 | 0 | 33.3 | 0.6 / 3.0 / 136.0 (1.9) |
+| cap-6 | 200 | 108.5 / 110.6 / 110.6 / 120.3 | 52 / 50 | 2 / 2 | 0 / 80 | 0 | 33.3 | 0.7 / 33.8 / 155.4 (5.1) |
+| cap-drop | 198 | 208.9 / 225.3 / 225.3 / 232.0 | 146 / 122 | 13 / 12 | 20 / 380 | 1 | 33.3 | 0.6 / 12.0 / 137.5 (3.8) |
+
+Against stage 1's rows: the pictures' latency at the median, before → now, ms.
+
+| local | rtt-20 | rtt-50 | rtt-100 | rtt-200 | jitter | reorder-2 | reorder | loss-1 | loss-2 | loss-5 | loss-both | burst | cap-20 | cap-6 | cap-drop |
+|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 30 → 57 | 45 → 70 | 66 → 88 | 90 → 131 | 143 → 184 | 60 → 104 | 49 → 82 | 68 → 90 | 111 → 121 | 109 → 127 | 156 → 139 | 115 → 121 | 123 → 143 | 70 → 88 | 92 → 109 | 80 → 209 |
+
+- **Lip sync: met everywhere.** Pictures and sound play within 1 ms of each other at the median,
+  within 10 ms at p95 on every path but the narrowed ones (`cap-6` 34 ms, `cap-drop` 12 ms).
+  The maximum, 100–470 ms, is pictures that are late on their own: the joining keyframe on long
+  round trips, a stall.
+- **The sound holds.** No break under any loss (1–5%, both ways, bursts). FEC and concealment
+  cover what was lost, 100–200 ms of 15 s. One break each on `rtt-200` (a 200 ms lifetime that
+  repair cannot meet) and `cap-drop` (the path at 4 Mbit/s under a 6 Mbit/s stream). Next to the
+  keyframes on `cap-6` (13 a run) there is none.
+- **The pictures got slower, and the sound is why.** They wait for it now, and its latency has
+  three parts the pictures never had: a frame to fill and one for FEC (40 ms on any path), and a
+  jitter buffer that stays wherever losses pushed it. With no silence to cut, the delay comes
+  back only once it is more than a frame and a half over target for a second (`rtt-100`: 48 ms
+  for a target of 24, so +41 ms to the pictures). `cap-drop` shows it worst: the 5 s at 4 Mbit/s
+  push the sound's target to 122 ms, it stays there, and the pictures follow, 80 → 209 ms at the
+  median. Video-only, this row was 80 ms.
+
+What it leaves for the stages that take the latency profiles up (5 and 6): the frame for FEC only
+on lossy paths, and the sound's delay brought down after a spike without waiting for silence
+(a tighter drop threshold, or time-stretching). Until then, a viewer who wants the pictures soonest
+plays them out of step (`--no-sync`): stage 1's latencies.

@@ -150,8 +150,8 @@ final place and shape: stage 0 is a walking skeleton, not a throwaway prototype.
 |---|---|---|
 | **0. Skeleton** ✅ | screen → encoder → libratcast → librats → decoder → window, on Linux; latency and behaviour on emulated networks measured | L1 ✅ |
 | **1. A stream that holds** ✅ | one video stream to a few viewers plays on every emulated path: rate control, fast joining, smooth playback on lossy paths | L2 (c) ✅, L3 ✅; L2 (a, b) put off |
-| **2. Sound** ← now | audio, A/V sync, latency profiles `call` / `game` / `cinema` end to end | L4 ✅ |
-| **3. Standalone library** | netsim, C API, MPEG-TS, `rats://` URLs, a benchmark against librist and SRT | — |
+| **2. Sound** ✅ | audio, A/V sync; latency profiles put off to stages 5 and 6 | L4 ✅ |
+| **3. Standalone library** ← now | netsim, C API, MPEG-TS, `rats://` URLs, a benchmark against librist and SRT | — |
 | **4. Platforms** | GPU paths and hardware codecs; Windows and macOS capture | — |
 | **5. Watch together** | one-to-many: forwarding tree, simulcast / SVC, SFU, SFrame E2EE, synchronized playout | L5 |
 | **6. App** | Qt app MVP: rooms and invites, voice with AEC / NS, screen / window / app-audio share, camera, on Windows / Linux / macOS | — |
@@ -398,7 +398,7 @@ at 49 → 111 ms, `rtt-50` 48 → 66 ms, `local` 16 → 34 ms.
 Audio next to the video, in sync, and the latency profile as the one knob over both.
 *Done when* the pattern source's audio and video play in sync (within 40 ms) across the netem
 scenarios, audio stays uninterrupted under 2% loss and next to a keyframe's burst, and the tools
-take `--latency call|game|cinema`.
+take `--latency call|game|cinema`. The profiles were put off (2.3): the stage closed on the rest.
 
 - **2.1 Audio:** ✅ PipeWire capture and playback, Opus (voice with DTX + FEC, music stereo),
   adaptive jitter buffer. librats: **needs** L4 (audio must not wait behind a keyframe);
@@ -439,8 +439,22 @@ take `--latency call|game|cinema`.
   in step. The 1% beyond are pictures late on their own, as late without it. The cost: on a
   clean path the pictures wait for the sound's 56 ms, which 2.3's `call` and `game` profiles
   start from.
-- **2.3 Latency profiles** `call` / `game` / `cinema` end to end: lifetimes, jitter-buffer depth,
-  keyframe policy and encoder settings from one choice.
+- **2.3 Latency profiles** — put off. Every knob a profile would set already follows the path
+  (the jitter buffer, the playout schedule, rate control, lip sync), and the one left, the
+  frames' lifetime, is `--latency MS`; a profile is the user's choice, which waits for the app.
+  `call` / `game` go to stage 6, `cinema` to stage 5, where it is real work (seconds of buffer,
+  held encoded rather than decoded). Left with them, as the stage's closing run shows
+  (`docs/bench.md`, "Stage 2, measured whole"): lip sync makes the pictures wait for the sound,
+  so the sound's latency is theirs — 30 → 57 ms on `local`, 80 → 209 ms on `cap-drop`. Two
+  things to take out of it: the frame for FEC kept on clean paths (keep it only where the path
+  loses packets), and a jitter-buffer delay that stays wherever a spike pushed it while there is
+  no silence to cut (a tighter drop threshold, or time-stretching). Meanwhile `--no-sync` plays
+  the pictures at stage 1's latencies.
+
+Closed with all 16 scenarios measured three times (`docs/bench.md`): the pictures within 1 ms of
+the sound at the median and 34 ms at p95 at worst (`cap-6`); the sound without a break under
+every loss and next to keyframes, one break each where the path cannot carry the lifetime or the
+stream (`rtt-200`, `cap-drop`).
 
 ### Stage 3 — Standalone library
 
@@ -477,12 +491,17 @@ The main use case: one person streams, many watch. Coarse until reached.
 - SFU mode and the `server` node for big rooms and hard NATs. librats: **better with** L8, L11.
 - SFrame E2EE, room key from the owner over Noise (MLS later).
 - Synchronized playout: clock sync, a common playout delay. librats: L10 optional.
+- The `cinema` latency profile (from 2.3): seconds of buffer for retransmission to repair
+  anything, held as encoded frames (decoded 1080p is ~3 MB a picture), lip sync over it.
 
 ### Stage 6 — App
 
 Qt 6 / QML MVP on Windows, Linux and macOS: rooms and invites, voice with AEC / NS (WebRTC
 AudioProcessing), screen / window / app-audio share, camera. Camera and screen to one viewer
-share the path (each stream takes the whole path today, 1.1).
+share the path (each stream takes the whole path today, 1.1). Latency profiles `call` / `game`
+as the user's choice (from 2.3): lifetimes, jitter-buffer depth, keyframe policy, encoder
+settings, whether a game's pictures wait for its sound; the sound's frame for FEC only on lossy
+paths.
 
 ### Stage 7 — Conferences
 
