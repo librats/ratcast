@@ -20,7 +20,6 @@
 #include <mutex>
 #include <span>
 #include <string>
-#include <vector>
 
 #include "ratcast/core/result.h"
 #include "ratcast/core/time.h"
@@ -81,7 +80,7 @@ private:
     TsInput* input_ = nullptr;
 
     // The input thread's own.
-    std::vector<uint8_t> pending_;  ///< read, not yet sent: a packet's start
+    TsPacketFinder finder_;
     FrameNumber next_number_ = 0;
 
     mutable std::mutex stats_mutex_;

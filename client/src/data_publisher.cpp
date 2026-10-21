@@ -1,6 +1,5 @@
 #include "ratcast/client/data_publisher.h"
 
-#include <algorithm>
 #include <cstring>
 #include <utility>
 
@@ -25,7 +24,7 @@ Result<void> DataPublisher::start(TsInput& input, EndHandler ended) {
     description.label = config_.label;
     if (Result<void> added = session_.add_stream(description); !added) return added;
 
-    pending_.clear();
+    finder_ = {};
     next_number_ = 0;
     Result<void> started = input.start(
         [this](std::span<const uint8_t> bytes, Timestamp received) { take(bytes, received); },
@@ -53,29 +52,11 @@ DataPublisherStats DataPublisher::stats() const {
 
 // The input's thread: the whole packets read so far go out now.
 void DataPublisher::take(std::span<const uint8_t> bytes, Timestamp received) {
-    pending_.insert(pending_.end(), bytes.begin(), bytes.end());
-    const auto begin = pending_.begin();
-    size_t at = 0;
-    size_t run = 0;  // where the packets not yet sent start
-    uint64_t skipped = 0;
     uint64_t packets = 0;
-    while (pending_.size() - at >= kTsPacketSize) {
-        if (pending_[at] == kTsSyncByte) {
-            at += kTsPacketSize;
-            ++packets;
-            continue;
-        }
-        // Not a packet: what came before goes, and the bytes up to the next
-        // sync byte are skipped.
-        send({pending_.data() + run, at - run}, received);
-        const size_t next = static_cast<size_t>(
-            std::find(begin + static_cast<ptrdiff_t>(at) + 1, pending_.end(), kTsSyncByte) - begin);
-        skipped += next - at;
-        at = run = next;
-    }
-    send({pending_.data() + run, at - run}, received);
-    pending_.erase(begin, begin + static_cast<ptrdiff_t>(at));
-
+    const uint64_t skipped = finder_.take(bytes, [&](std::span<const uint8_t> run) {
+        packets += run.size() / kTsPacketSize;
+        send(run, received);
+    });
     std::lock_guard lock(stats_mutex_);
     stats_.bytes_read += bytes.size();
     stats_.packets += packets;

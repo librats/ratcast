@@ -1,5 +1,6 @@
 # Command-line tools: ratcast-send streams a screen, window, file or test
-# pattern; ratcast-recv plays it in a window (SDL3, when found) or headless.
+# pattern; ratcast-recv plays it in a window (SDL3, when found) or headless;
+# ratcast-tsprobe sends and measures a stamped MPEG-TS feed.
 # Thin over client/: what they do beyond parsing options and printing stats
 # belongs in the libraries.
 
@@ -20,6 +21,11 @@ add_executable(ratcast_recv recv/main.cpp)
 set_target_properties(ratcast_recv PROPERTIES OUTPUT_NAME ratcast-recv)
 target_link_libraries(ratcast_recv PRIVATE ratcast_tool_common)
 ratcast_target_defaults(ratcast_recv)
+
+add_executable(ratcast_tsprobe probe/main.cpp)
+set_target_properties(ratcast_tsprobe PROPERTIES OUTPUT_NAME ratcast-tsprobe)
+target_link_libraries(ratcast_tsprobe PRIVATE ratcast_tool_common)
+ratcast_target_defaults(ratcast_tsprobe)
 
 find_package(SDL3 QUIET CONFIG)
 if(SDL3_FOUND)

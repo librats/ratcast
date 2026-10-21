@@ -722,3 +722,42 @@ What it leaves for the stages that take the latency profiles up (5 and 6): the f
 on lossy paths, and the sound's delay brought down after a spike without waiting for silence
 (a tighter drop threshold, or time-stretching). Until then, a viewer who wants the pictures soonest
 plays them out of step (`--no-sync`): stage 1's latencies.
+
+## Against SRT and librist: a first look (3.2 a)
+
+The harness's first run, before any change for it: ratcast 6541c39 + the probe, librats 2141d8b,
+SRT 1.5.7, librist 0.2.20 (main profile). `bench/netem.py --feed --duration 8 local loss-2`:
+the probe at 8 Mbit/s, held 200 ms by each transport; one run each, so a direction rather than
+a result.
+
+| scenario | transport | first packet, ms | latency p50 / p99 / max, ms | lost, % | glitches | longest gap, ms | link → / ←, Mbit/s | CPU send / recv, % |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| local | ratcast | 205 | 200.7 / 208.9 / 242.0 | 0.000 | 0 | 43 | 8.85 / 0.37 | 6.0 / 7.1 |
+| local | srt | 195 | 208.9 / 213.0 / 217.5 | 0.000 | 0 | 18 | 8.39 / 0.06 | 2.3 / 2.7 |
+| local | rist | 195 | 204.8 / 213.0 / 220.9 | 0.000 | 0 | 26 | 8.45 / 0.02 | 2.9 / 2.2 |
+| loss-2 | ratcast | 357 | 229.4 / 233.5 / 271.6 | 0.910 | 33 | 47 | 8.61 / 0.34 | 6.0 / 8.0 |
+| loss-2 | srt | 549 | 233.5 / 241.7 / 245.1 | 0.000 | 0 | 21 | 8.03 / 0.05 | 2.3 / 2.7 |
+| loss-2 | rist | 249 | 229.4 / 233.5 / 240.7 | 0.000 | 0 | 20 | 8.39 / 0.04 | 2.6 / 2.9 |
+
+- **Latency is the buffer, for all three:** 200 ms past the path, give or take the meter's
+  4 ms buckets. ratcast keeps it tightest (p99 − p50 = 4–8 ms), and its maximum is the
+  highest (242 / 272 ms): a frame held up by the machine, not the path, since the longest gap
+  is too (43–47 ms against 18–26).
+- **ratcast loses 0.9% on `loss-2`, the others nothing — all of it on joining.** The viewer's
+  first second lost 106 frames (636 packets); every second after, none. They expired in the
+  sender's queue (`live_expired=106` of 11932): the connection starts slower than the feed and
+  cannot catch up under loss while their lifetime runs. SRT and librist send at the input's
+  rate from the first packet. Repair itself holds: no loss after that second.
+- **More back, a little more forth.** ratcast's viewer sends 0.35 Mbit/s back, against
+  0.02–0.06 for the other two; what it is (acknowledgements, path probes) is still to be
+  looked at. Forward, it puts 8.6–8.9 Mbit/s on the link for an 8 Mbit/s feed (+8–11%), SRT
+  and librist 8.0–8.5 (+0–6%): likely librats' headers and encryption on 1128-byte frames,
+  against their 1316-byte payloads.
+- **2–3× the CPU** at each end (6–8% against 2–3% of a core). Part of it is encryption,
+  which SRT and librist are built without here.
+- **Joining**: on `local` all three take about the buffer (195–205 ms) to the first packet out.
+  On `loss-2` SRT took 549 ms, ratcast 357, librist 249 — one run each, the handshake's
+  packets lost or not.
+
+For 3.2 (b): the start (frames sent at the feed's rate from the first one, or kept alive until
+the connection can take them), then the feedback's volume and the CPU, then the full table.

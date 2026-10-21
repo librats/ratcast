@@ -16,9 +16,18 @@ says how the sound fared: from capture to the speaker, what was lost, brought
 back by FEC or made up, how long the jitter buffer held it, and how far apart
 the pictures played from it (lip sync).
 
+With --feed it measures transports of MPEG-TS feeds instead, ratcast's data
+stream next to SRT and librist (their own tools, built by bench/peers.sh): each
+carries the same stamped constant-bitrate probe, sent into it on the sender's
+side and measured where it comes out on the viewer's (ratcast-tsprobe). Every
+transport holds the feed for --latency to repair it in; the table says how
+late it came, what was lost anyway, what crossed the link and the CPU it took.
+
     bench/netem.py                            # every scenario, once
     bench/netem.py --repeat 3 rtt-100 loss-2  # some of them, three times each
     bench/netem.py --audio --keyframe-every 2 local cap-20   # sound next to keyframes
+    bench/netem.py --feed loss-2 burst        # ratcast, SRT and librist
+    bench/netem.py --feed --transport ratcast,srt local
     bench/netem.py --list
 
 Prints a Markdown table (medians over the repeats); the tools' own output for
@@ -26,6 +35,7 @@ every run is kept in --out.
 """
 
 import argparse
+import json
 import os
 import re
 import signal
@@ -41,6 +51,11 @@ ROOT = Path(__file__).resolve().parent.parent
 SENDER_ADDRESS = "10.77.0.1"
 VIEWER_ADDRESS = "10.77.0.2"
 PORT = 7700
+# Where a feed goes into the transport, on the sender's side, and comes out of
+# it, on the viewer's.
+FEED_IN = "udp://127.0.0.1:5000"
+FEED_OUT = "udp://127.0.0.1:5001"
+TRANSPORTS = ("ratcast", "srt", "rist")
 
 
 @dataclass
@@ -189,13 +204,105 @@ def run_once(scenario, args, log_dir, index):
             for change in changes:
                 change.join()
         finally:
-            sender.send_signal(signal.SIGINT)
-            try:
-                sender.wait(timeout=15)
-            except subprocess.TimeoutExpired:
-                sender.kill()
-                sender.wait()
+            stop(sender)
     return parse_summary(Path(f"{stem}.send.log").read_text()), parse_summary(viewer.stdout)
+
+
+def stop(process):
+    process.send_signal(signal.SIGINT)
+    try:
+        process.wait(timeout=15)
+    except subprocess.TimeoutExpired:
+        process.kill()
+        process.wait()
+
+
+def cpu_percent(process, started):
+    """CPU the process has used since `started` (time.monotonic()), a share of
+    one core."""
+    stat = Path(f"/proc/{process.pid}/stat").read_text().rsplit(")", 1)[1].split()
+    ticks = int(stat[11]) + int(stat[12])  # utime and stime
+    return 100 * ticks / os.sysconf("SC_CLK_TCK") / (time.monotonic() - started)
+
+
+def link_bytes():
+    """Bytes the sender's end of the link has sent and received so far."""
+    stats = json.loads(sh("ip", "-j", "-s", "link", "show", "dev", "va").stdout)[0]["stats64"]
+    return stats["tx"]["bytes"], stats["rx"]["bytes"]
+
+
+def feed_commands(transport, args):
+    """The transport's sender (listening, as ratcast-send does) and receiver
+    (connecting), each told to hold the feed for --latency."""
+    latency = str(args.latency)
+    if transport == "ratcast":
+        return ([str(args.bin / "ratcast-send"), "--input", FEED_IN, "--port", str(PORT),
+                 "--latency", latency, *args.send_args],
+                [str(args.bin / "ratcast-recv"), f"rats://{SENDER_ADDRESS}:{PORT}", "--output",
+                 FEED_OUT, *args.recv_args])
+    if transport == "srt":
+        tool = str(args.peers / "srt-live-transmit")
+        return ([tool, FEED_IN, f"srt://:{PORT}?mode=listener&latency={latency}", *args.send_args],
+                [tool, f"srt://{SENDER_ADDRESS}:{PORT}?latency={latency}", FEED_OUT,
+                 *args.recv_args])
+    # librist's main profile, which SRT's live mode and ratcast compare with.
+    return ([str(args.peers / "ristsender"), "--profile", "1", "--inputurl", FEED_IN,
+             "--outputurl", f"rist://@{SENDER_ADDRESS}:{PORT}?buffer={latency}", *args.send_args],
+            [str(args.peers / "ristreceiver"), "--profile", "1", "--inputurl",
+             f"rist://{SENDER_ADDRESS}:{PORT}?buffer={latency}", "--outputurl", FEED_OUT,
+             *args.recv_args])
+
+
+def run_feed(scenario, transport, args, log_dir, index):
+    """The probe through `transport`: the meter's summary, with what crossed
+    the link (Mbit/s each way) and the CPU the transport's two ends took."""
+    shape(scenario)
+    stem = log_dir / f"{scenario.name}.{transport}.{index}"
+    send_command, recv_command = feed_commands(transport, args)
+    logs = {name: open(f"{stem}.{name}.log", "w") for name in ("send", "probe", "recv", "meter")}
+    started = {}
+
+    def start(name, command):
+        started[name] = time.monotonic()
+        return subprocess.Popen(command, stdout=logs[name], stderr=subprocess.STDOUT, text=True)
+
+    processes = []
+    try:
+        sender = start("send", send_command)
+        processes.append(sender)
+        processes.append(start("probe", [str(args.bin / "ratcast-tsprobe"), "send", FEED_IN,
+                                         "--bitrate", str(args.bitrate)]))
+        # The viewer joins a feed that is already going.
+        time.sleep(args.join_after)
+        if sender.poll() is not None:
+            raise RuntimeError(f"the sender did not start, see {stem}.send.log")
+        meter = start("meter", in_viewer(str(args.bin / "ratcast-tsprobe"), "meter", FEED_OUT,
+                                         "--duration", str(args.duration)))
+        processes.append(meter)
+        receiver = start("recv", in_viewer(*recv_command))
+        processes.append(receiver)
+        changes = [threading.Timer(at, shape_forward, (options,))
+                   for at, options in scenario.changes]
+        for change in changes:
+            change.start()
+        sent_before, received_before = link_bytes()
+        meter.wait(timeout=args.duration + 30)
+        took = time.monotonic() - started["recv"]
+        sent, received = link_bytes()
+        cpu = (cpu_percent(sender, started["send"]), cpu_percent(receiver, started["recv"]))
+        for change in changes:
+            change.join()
+    finally:
+        for process in reversed(processes):
+            if process.poll() is None:
+                stop(process)
+        for log in logs.values():
+            log.close()
+    summary = parse_summary(Path(f"{stem}.meter.log").read_text()) or {}
+    summary.update(wire_forward_mbps=(sent - sent_before) * 8 / took / 1e6,
+                   wire_backward_mbps=(received - received_before) * 8 / took / 1e6,
+                   cpu_send=cpu[0], cpu_recv=cpu[1])
+    return summary
 
 
 def median(runs, side, key):
@@ -265,6 +372,32 @@ def table(results, args):
     return "\n".join(rows)
 
 
+def feed_table(results, args):
+    rows = [
+        f"A stamped MPEG-TS probe at {args.bitrate} kbit/s, held {args.latency} ms by each "
+        f"transport" + (f", sender {' '.join(args.send_args)}" if args.send_args else "")
+        + (f", viewer {' '.join(args.recv_args)}" if args.recv_args else "")
+        + f"; {args.duration} s a run, medians of {args.repeat}.",
+        "",
+        "| scenario | transport | first packet, ms | latency p50 / p99 / max, ms | lost, % "
+        "| glitches | longest gap, ms | link → / ←, Mbit/s | CPU send / recv, % |",
+        "|---|---|---:|---:|---:|---:|---:|---:|---:|",
+    ]
+    for scenario, transport, runs in results:
+        def m(key):
+            values = [r[key] for r in runs if key in r]
+            return statistics.median(values) if values else None
+
+        rows.append(
+            f"| {scenario.name} | {transport} | {cell(m('first_packet_ms'))} "
+            f"| {cell(m('latency_p50_ms'), 1)} / {cell(m('latency_p99_ms'), 1)} / "
+            f"{cell(m('latency_max_ms'), 1)} | {cell(m('loss_pct'), 3)} "
+            f"| {cell(m('discontinuities'))} | {cell(m('longest_gap_ms'))} "
+            f"| {cell(m('wire_forward_mbps'), 2)} / {cell(m('wire_backward_mbps'), 2)} "
+            f"| {cell(m('cpu_send'), 1)} / {cell(m('cpu_recv'), 1)} |")
+    return "\n".join(rows)
+
+
 def main():
     parser = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -289,6 +422,12 @@ def main():
                         help="one more option for ratcast-send (repeatable)")
     parser.add_argument("--recv-arg", dest="recv_args", action="append", default=[],
                         help="one more option for ratcast-recv (repeatable)")
+    parser.add_argument("--feed", action="store_true",
+                        help="measure transports of an MPEG-TS feed instead")
+    parser.add_argument("--transport", default=",".join(TRANSPORTS),
+                        help=f"with --feed: which, comma-separated (default {','.join(TRANSPORTS)})")
+    parser.add_argument("--peers", type=Path, default=ROOT / "build" / "peers" / "bin",
+                        help="SRT's and librist's tools (bench/peers.sh builds them)")
     args = parser.parse_args()
 
     if args.list:
@@ -301,9 +440,17 @@ def main():
     unknown = set(args.scenarios) - {s.name for s in SCENARIOS}
     if unknown:
         parser.error(f"no such scenario: {', '.join(sorted(unknown))} (see --list)")
-    for tool in ("ratcast-send", "ratcast-recv"):
+    transports = args.transport.split(",")
+    if not set(transports) <= set(TRANSPORTS):
+        parser.error(f"--transport: of {', '.join(TRANSPORTS)}, please")
+    for tool in ("ratcast-send", "ratcast-recv", *(["ratcast-tsprobe"] if args.feed else [])):
         if not (args.bin / tool).exists():
             parser.error(f"no {tool} in {args.bin}: build the release preset, or pass --bin")
+    if args.feed:
+        peers = {"srt": ["srt-live-transmit"], "rist": ["ristsender", "ristreceiver"]}
+        for tool in (t for transport in transports for t in peers.get(transport, [])):
+            if not (args.peers / tool).exists():
+                parser.error(f"no {tool} in {args.peers}: run bench/peers.sh, or pass --peers")
 
     # Into namespaces of our own: the process starts over inside them.
     if os.environ.get("RATCAST_NETEM_INSIDE") != "1":
@@ -316,6 +463,21 @@ def main():
     log_dir = args.out / time.strftime("%Y%m%d-%H%M%S")
     log_dir.mkdir(parents=True)
     chosen = [s for s in SCENARIOS if not args.scenarios or s.name in args.scenarios]
+    if args.feed:
+        results = []
+        for scenario in chosen:
+            for transport in transports:
+                runs = []
+                for index in range(args.repeat):
+                    run = run_feed(scenario, transport, args, log_dir, index)
+                    runs.append(run)
+                    print(f"{scenario.name} {transport} #{index + 1}: p99 "
+                          f"{cell(run.get('latency_p99_ms'), 1)} ms, lost "
+                          f"{cell(run.get('loss_pct'), 3)}%", file=sys.stderr)
+                results.append((scenario, transport, runs))
+        print(feed_table(results, args))
+        print(f"\nlogs: {log_dir}", file=sys.stderr)
+        return 0
     results = []
     for scenario in chosen:
         runs = []
