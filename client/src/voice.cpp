@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <atomic>
 #include <cmath>
+#include <mutex>
 #include <utility>
 
 #include "librats/util/logger.h"
@@ -47,9 +48,23 @@ struct VoiceChannel::State {
         when.store(clock.now().time_since_epoch().count(), std::memory_order_relaxed);
     }
 
+    /// What can come back to the microphone, from the speaker or from the
+    /// whole system's sound, whichever is the echo now: the processor hears
+    /// one side of the switch at a time.
+    void played(bool from_system, std::span<const float> samples, Timestamp play_time) {
+        std::lock_guard lock(echo_mutex);
+        if (from_system == echo_from_system) processor->played(samples, play_time);
+    }
+    void take_echo_from_system(bool yes) {
+        std::lock_guard lock(echo_mutex);
+        echo_from_system = yes;
+    }
+
     const VoiceConfig config;
     Clock& clock;
     std::unique_ptr<AudioProcessor> processor;  ///< null: none
+    std::mutex echo_mutex;                      ///< held by each played()
+    bool echo_from_system = false;              ///< rather than the speaker's
     std::atomic<bool> muted{false};
     std::atomic<int64_t> spoke_us{0};  ///< when a voice was last on the microphone
     std::atomic<int64_t> heard_us{0};  ///< when the speaker last played something
@@ -57,17 +72,28 @@ struct VoiceChannel::State {
 
 class VoiceChannel::Microphone final : public AudioSource {
 public:
-    Microphone(std::unique_ptr<AudioSource> device, std::shared_ptr<State> state)
+    Microphone(std::unique_ptr<AudioSource> device, std::unique_ptr<AudioSource> echo,
+               std::shared_ptr<State> state)
         : device_(std::move(device)),
           state_(std::move(state)),
           processor_(device_->format() == state_->config.microphone ? state_->processor.get()
-                                                                    : nullptr) {}
+                                                                    : nullptr) {
+        if (!processor_ || !echo) return;
+        if (echo->format() == state_->config.speaker) {
+            echo_ = std::move(echo);
+        } else {
+            LOG_WARN("client",
+                     "the system's sound is not in the speaker's format: the "
+                     "speaker's is the echo taken out");
+        }
+    }
     ~Microphone() override { stop(); }
 
     const AudioFormat& format() const noexcept override { return device_->format(); }
 
     Result<void> start(Sink sink, EndHandler ended) override {
-        return device_->start(
+        if (echo_) listen_to_system();
+        Result<void> started = device_->start(
             [this, sink = std::move(sink)](AudioFrame block) {
                 if (processor_) {
                     std::optional<AudioFrame> cleaned = processor_->process(block);
@@ -80,11 +106,39 @@ public:
                 sink(muted ? silence(block) : std::move(block));
             },
             std::move(ended));
+        if (!started) stop_listening();
+        return started;
     }
 
-    void stop() override { device_->stop(); }
+    void stop() override {
+        device_->stop();
+        stop_listening();
+    }
 
 private:
+    /// The system's sound as the echo, while it runs; the speaker's before
+    /// and after.
+    void listen_to_system() {
+        state_->take_echo_from_system(true);
+        const Result<void> started = echo_->start(
+            // Taken as it goes to the device: heard a device's latency
+            // later, which the canceller finds for itself.
+            [state = state_.get()](AudioFrame block) {
+                state->played(true, block.samples(), block.capture_time());
+            },
+            [state = state_.get()](Result<void>) { state->take_echo_from_system(false); });
+        if (!started) {
+            LOG_WARN("client", "cannot hear the system's sound ("
+                                   << to_string(started.error()) << "): the speaker's is the echo");
+            state_->take_echo_from_system(false);
+        }
+    }
+    void stop_listening() {
+        if (!echo_) return;
+        echo_->stop();
+        state_->take_echo_from_system(false);
+    }
+
     static AudioFrame silence(const AudioFrame& like) {
         MutableAudioFrame frame = MutableAudioFrame::allocate(like.format(), like.length());
         std::ranges::fill(frame.samples(), 0.0f);
@@ -93,7 +147,8 @@ private:
 
     std::unique_ptr<AudioSource> device_;
     std::shared_ptr<State> state_;
-    AudioProcessor* const processor_;  ///< the state's, if the format is its
+    AudioProcessor* const processor_;    ///< the state's, if the format is its
+    std::unique_ptr<AudioSource> echo_;  ///< the system's sound; none: the speaker's
 };
 
 class VoiceChannel::Speaker final : public AudioOutput {
@@ -101,8 +156,7 @@ public:
     Speaker(std::unique_ptr<AudioOutput> device, std::shared_ptr<State> state)
         : device_(std::move(device)),
           state_(std::move(state)),
-          processor_(device_->format() == state_->config.speaker ? state_->processor.get()
-                                                                 : nullptr) {}
+          processes_(state_->processor && device_->format() == state_->config.speaker) {}
     ~Speaker() override { stop(); }
 
     const AudioFormat& format() const noexcept override { return device_->format(); }
@@ -111,7 +165,7 @@ public:
         return device_->start(
             [this, pull = std::move(pull)](std::span<float> out, Timestamp play_time) {
                 pull(out, play_time);
-                if (processor_) processor_->played(out, play_time);
+                if (processes_) state_->played(false, out, play_time);
                 if (audible(out)) state_->mark(state_->heard_us);
             },
             std::move(ended));
@@ -122,14 +176,15 @@ public:
 private:
     std::unique_ptr<AudioOutput> device_;
     std::shared_ptr<State> state_;
-    AudioProcessor* const processor_;
+    const bool processes_;  ///< the processor hears it: the format is its
 };
 
 VoiceChannel::VoiceChannel(VoiceConfig config, Clock& clock)
     : state_(std::make_shared<State>(config, clock)) {}
 
-std::unique_ptr<AudioSource> VoiceChannel::microphone(std::unique_ptr<AudioSource> device) {
-    return std::make_unique<Microphone>(std::move(device), state_);
+std::unique_ptr<AudioSource> VoiceChannel::microphone(std::unique_ptr<AudioSource> device,
+                                                      std::unique_ptr<AudioSource> echo) {
+    return std::make_unique<Microphone>(std::move(device), std::move(echo), state_);
 }
 
 std::unique_ptr<AudioOutput> VoiceChannel::speaker(std::unique_ptr<AudioOutput> device) {

@@ -48,6 +48,11 @@ CallController::Environment CallController::Environment::system() {
         Result<std::unique_ptr<AudioSource>> microphone = open_audio_capture({.format = format});
         return microphone ? std::move(*microphone) : nullptr;
     };
+    environment.open_system_sound = [format = environment.voice.speaker] {
+        Result<std::unique_ptr<AudioSource>> sound =
+            open_audio_capture({.format = format, .source = AudioCaptureSource::SystemSound});
+        return sound ? std::move(*sound) : nullptr;
+    };
     return environment;
 }
 
@@ -191,8 +196,10 @@ void CallController::talk() {
         set_notice(tr("There is no microphone: the others will not hear you."));
         return;
     }
+    std::unique_ptr<AudioSource> echo =
+        environment_.open_system_sound ? environment_.open_system_sound() : nullptr;
     if (Result<AudioPublisher*> published =
-            publish_voice(*call_, voice_->microphone(std::move(device)));
+            publish_voice(*call_, voice_->microphone(std::move(device), std::move(echo)));
         !published) {
         set_notice(tr("The microphone cannot be used (%1).").arg(describe(published.error())));
     }

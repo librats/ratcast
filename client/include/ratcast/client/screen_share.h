@@ -6,9 +6,10 @@
  *
  * Two steps, as a UI takes them: open_screen_share() asks the desktop what to
  * share — its own dialog, which waits on the user, so off the UI thread — and
- * opens the computer's sound beside it; publish_screen_share() puts both on a
- * call. The desktop's choice is kept in a data directory, so the next share of
- * the same kind asks no more where the desktop allows that (GNOME, KDE).
+ * opens the computer's sound beside it: what the applications play, never this
+ * one's own, so that a call's voices do not go back out with the film; publish_screen_share() puts
+ * both on a call. The desktop's choice is kept in a data directory, so the next share of the same
+ * kind asks no more where the desktop allows that (GNOME, KDE).
  *
  * The pictures go as a rate-controlled video stream (1), the sound as music:
  * stereo, full band, no DTX or FEC (2).
@@ -30,7 +31,7 @@ namespace ratcast {
 
 struct ScreenShareConfig {
     bool window = false;  ///< a single window, not a whole screen
-    bool sound = true;    ///< and what this computer plays
+    bool sound = true;    ///< and what the other applications play
     /// Where the desktop's choice is kept, one file per kind; "": asked each
     /// time.
     std::string data_dir = {};
@@ -55,7 +56,7 @@ struct ScreenShareSources {
 };
 
 /// Ask the desktop for a screen or a window (the dialog, unless the choice
-/// kept from last time stands) and open the computer's sound. Fails with
+/// kept from last time stands) and open the other applications' sound. Fails with
 /// Cancelled when the user declined or `cancel` was requested, Unavailable
 /// when this system cannot capture the screen or its sound.
 Result<ScreenShareSources> open_screen_share(const ScreenShareConfig& config,

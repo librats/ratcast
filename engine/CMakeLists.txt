@@ -60,6 +60,7 @@ endif()
 if(RATCAST_PIPEWIRE_FOUND)
     target_sources(ratcast_engine PRIVATE
         src/linux/audio_device.cpp
+        src/linux/pipewire_applications.cpp
         src/linux/pipewire_audio.cpp
         src/linux/pipewire_capture.cpp
         src/linux/pipewire_stream.cpp

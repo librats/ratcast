@@ -9,9 +9,12 @@
  * AudioProcessor: microphone() wraps the microphone, whose sound it cleans —
  * the speaker's echo taken out, noise suppressed, the level evened — and
  * speaker() wraps the speaker, so that what it plays, the other side, reaches
- * the processor as the echo to take out. Where there is no processor (a build
- * without one, or devices of another format than configured) the microphone's
- * sound goes as it is.
+ * the processor as the echo to take out. Better still is all the computer
+ * plays — a film shared beside the call comes back to the microphone too —
+ * which the microphone, given the system's sound, takes as the echo in the
+ * speaker's place while it runs. Where there is no processor (a build without
+ * one, or devices of another format than configured) the microphone's sound
+ * goes as it is.
  *
  * Muted, the microphone sends silence, which the voice encoder's DTX makes
  * next to nothing; the stream stays, so unmuting is at once. speaking() is
@@ -43,8 +46,12 @@ class VoiceChannel {
 public:
     explicit VoiceChannel(VoiceConfig config = {}, Clock& clock = SteadyClock::instance());
 
-    /// `device`'s sound, cleaned, and silent while muted.
-    std::unique_ptr<AudioSource> microphone(std::unique_ptr<AudioSource> device);
+    /// `device`'s sound, cleaned, and silent while muted. `echo`, if given, is
+    /// what the computer plays (a capture of the system's sound, in the
+    /// speaker's format): the echo taken out in place of the speaker's while
+    /// the microphone runs, started and stopped with it.
+    std::unique_ptr<AudioSource> microphone(std::unique_ptr<AudioSource> device,
+                                            std::unique_ptr<AudioSource> echo = nullptr);
     /// `device`, telling the processor what it plays.
     std::unique_ptr<AudioOutput> speaker(std::unique_ptr<AudioOutput> device);
 

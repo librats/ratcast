@@ -12,11 +12,11 @@
  *                                                  waited for)
  *
  * and leave() goes back to Idle from anywhere. Either way both sides talk:
- * the microphone, cleaned of the speaker's echo and of noise, goes as a voice
- * (VoiceChannel), muted or not as the user says. What went wrong, or ended
- * without the user, is the notice: a share the desktop could not make, a link
- * that is none, the other side gone. The user calling off the desktop's
- * dialog is no news.
+ * the microphone, cleaned of the echo of all the computer plays and of noise,
+ * goes as a voice (VoiceChannel), muted or not as the user says. What went
+ * wrong, or ended without the user, is the notice: a share the desktop could
+ * not make, a link that is none, the other side gone. The user calling off the
+ * desktop's dialog is no news.
  *
  * Everything that is not about the UI — the sources, what is published and
  * how, playing — is client's (Call, screen_share.h); this keeps the state, runs
@@ -80,6 +80,9 @@ public:
         std::function<std::unique_ptr<AudioOutput>()> open_speaker = {};
         /// The microphone; null: this side is not heard.
         std::function<std::unique_ptr<AudioSource>()> open_microphone = {};
+        /// What the computer plays, in the speaker's format: the echo the
+        /// microphone is cleaned of, a shared film's too; null: the speaker's.
+        std::function<std::unique_ptr<AudioSource>()> open_system_sound = {};
         /// How the voice is cleaned: its devices' formats and what is done.
         VoiceConfig voice = {};
 

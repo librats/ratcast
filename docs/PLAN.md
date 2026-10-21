@@ -663,14 +663,35 @@ on the same call code.
   and who is heard, held 300 ms. The app: a microphone and a voice for each side, a mute button
   that holds from one call to the next, a dot for each side speaking; no microphone is said and
   the call goes on. Tested through calls on loopback (each hears the other, a muted side is not
-  heard) and through two controllers; ASan / TSan clean. Left for 6.6: a sharer's whole-system
-  sound also carries the viewers' voices as the sharer's speaker plays them — they hear
-  themselves, late — and the sharer's microphone hears the screen's sound with nothing to cancel
-  it against (headphones help the second, not the first); per-application capture, and the
-  system's sound as the echo reference, are the cure.
+  heard) and through two controllers; ASan / TSan clean. Left for 6.6, and done there: a sharer's
+  whole-system sound also carried the viewers' voices as the sharer's speaker played them — they
+  heard themselves, late — and the sharer's microphone heard the screen's sound with nothing to
+  cancel it against.
 - **6.5 Camera, and two streams on one path:** a camera beside the screen; each stream takes the
   whole path today (1.1), so the path's rate is shared between them.
-- **6.6 App audio:** one application's sound through PipeWire, never the call's own playback.
+- **6.6 App audio** ✅: a share's sound is what the applications play, never the call's own
+  voices: `open_audio_capture()`'s `Applications` source, on Linux a PipeWire filter of its own
+  with a left and a right input, which links itself to the output ports of every node playing
+  sound ("Stream/Output/Audio") whose client is not this process (its `application.process.id`,
+  so a sandbox would not fool it; the daemon's pid where it says none) — left to left, right to
+  right, centres and mono to both, the LFE to neither, PipeWire adding up what comes in; mono is
+  the two sides' mean. Clients, nodes and ports are followed in the registry, so a player started
+  later is heard as it starts; the filter is processed with nothing linked, so the sound runs on,
+  silent. It has no converter: a graph at another rate than 48 kHz ends it (Unsupported; the
+  graph is asked for 48 kHz). The echo: `VoiceChannel` takes the system's sound (the default
+  output's monitor) as what can come back in place of what its speaker plays, while the
+  microphone runs — the film the sharer's microphone hears is cancelled, the viewers' voices
+  still are, and so is any other application on either side. `ratcast-send --audio apps` shares
+  the same. Tested on the user's daemon, each test at a pitch of its own, measured there
+  (Goertzel), as tests run side by side: this process's tone heard in both channels when another
+  is left out, not heard when it is, the sound going on without it, a player starting later heard
+  at the two sides' mean; the system's sound as the echo in virtual time (a film the speaker never
+  played: 84% of it comes back without, < 1% with); ASan / TSan clean. Found on the way: the
+  daemon's word that an object just went (a port before its link was made, a client as it was
+  bound) came as an error on the core, which ended the capture; only the connection lost does
+  now. Later: a choice of one application (a picker; the desktop's dialog does not say whose a
+  window is); linking needs the daemon's permission to make links, which a Flatpak sandbox will
+  have to be given.
 - **6.7 Latency profiles** (from 2.3): `call` / `game` as the user's choice — lifetimes,
   jitter-buffer depth, keyframe policy, encoder settings, whether a game's pictures wait for its
   sound; the sound's frame for FEC only on lossy paths.

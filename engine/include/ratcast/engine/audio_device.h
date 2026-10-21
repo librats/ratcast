@@ -30,21 +30,33 @@ namespace ratcast {
 
 // ── Capture ─────────────────────────────────────────────────────────────────
 
+/// What a capture of no particular node hears.
+enum class AudioCaptureSource : uint8_t {
+    Microphone,   ///< the default input
+    SystemSound,  ///< what the default output plays, this process's sound too
+    /// What the applications play — each one's sound, added up as the output
+    /// would — other than one process's: what to share beside a screen while
+    /// a call's voices play, which must not go back out. Applications that
+    /// start playing later are heard as they start; it runs on in silence
+    /// while none plays.
+    Applications,
+};
+
 struct AudioCaptureOptions {
     AudioFormat format{48'000, 1};
-    /// What to capture: 0 for the default microphone, or a device's or an
-    /// application's node (on Linux a PipeWire node id), whose sound the
-    /// capture ends with.
+    /// What to capture: 0 for `source`, or a device's or an application's
+    /// node (on Linux a PipeWire node id), whose sound the capture ends with.
     uint32_t node = 0;
-    /// With node 0: what the default output plays rather than a microphone.
-    bool system_sound = false;
+    AudioCaptureSource source = AudioCaptureSource::Microphone;
+    /// With Applications: the process whose sound is left out; 0 for this one.
+    int excluded_process = 0;
     Duration latency = std::chrono::milliseconds(10);
 };
 
 /// A capture as `options` say, ready to start. Fails with InvalidArgument for
-/// a format with no channels or rate, or a latency outside 1–100 ms;
-/// Unavailable where this system has no audio capture. A node that does not
-/// exist ends the capture as it starts.
+/// a format with no channels or rate, a latency outside 1–100 ms, or
+/// Applications in more than two channels; Unavailable where this system has
+/// no audio capture. A node that does not exist ends the capture as it starts.
 Result<std::unique_ptr<AudioSource>> open_audio_capture(const AudioCaptureOptions& options);
 
 // ── Playback ────────────────────────────────────────────────────────────────

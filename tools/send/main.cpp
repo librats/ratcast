@@ -59,10 +59,11 @@ How:
                        when asked); bursts to measure what else waits behind them
 
 Sound:
-  --audio tone|mic|system   send sound too: a tone (stamped like the pattern), the
-                       microphone, or what this computer plays
+  --audio tone|mic|system|apps   send sound too: a tone (stamped like the pattern),
+                       the microphone, what this computer plays, or what its other
+                       applications play
   --music              code it as music: stereo, full band, without DTX or FEC
-                       (implied by --audio system)
+                       (implied by --audio system and apps)
   --audio-bitrate KBPS default 32, or 128 for music
 
 Network:
@@ -130,7 +131,7 @@ std::optional<Options> parse(int argc, char** argv) {
     o.latency = std::chrono::milliseconds(args.number("latency", 10, 30'000).value_or(200));
     o.keyframe_every = args.number("keyframe-every", 1, 3600).value_or(0);
     o.audio = args.text("audio").value_or("");
-    const bool music = args.flag("music") || o.audio == "system";
+    const bool music = args.flag("music") || o.audio == "system" || o.audio == "apps";
     o.audio_encoder.content = music ? AudioContent::Music : AudioContent::Voice;
     o.audio_encoder.format = {48'000, music ? uint8_t{2} : uint8_t{1}};
     o.audio_encoder.bitrate =
@@ -155,8 +156,9 @@ std::optional<Options> parse(int argc, char** argv) {
         std::cerr << "ratcast-send: --input is a feed instead of a source and sound\n";
         return std::nullopt;
     }
-    if (!o.audio.empty() && o.audio != "tone" && o.audio != "mic" && o.audio != "system") {
-        std::cerr << "ratcast-send: --audio wants tone, mic or system\n";
+    if (!o.audio.empty() && o.audio != "tone" && o.audio != "mic" && o.audio != "system" &&
+        o.audio != "apps") {
+        std::cerr << "ratcast-send: --audio wants tone, mic, system or apps\n";
         return std::nullopt;
     }
     if (o.source == "file" && o.file.empty()) {
@@ -218,8 +220,10 @@ std::unique_ptr<AudioSource> open_audio(const Options& o) {
         return std::make_unique<ToneSource>(
             ToneConfig{.format = o.audio_encoder.format, .level = 0.5f}, WallClock::instance());
     }
-    Result<std::unique_ptr<AudioSource>> capture =
-        open_audio_capture({.format = o.audio_encoder.format, .system_sound = o.audio == "system"});
+    AudioCaptureOptions options{.format = o.audio_encoder.format};
+    if (o.audio == "system") options.source = AudioCaptureSource::SystemSound;
+    if (o.audio == "apps") options.source = AudioCaptureSource::Applications;
+    Result<std::unique_ptr<AudioSource>> capture = open_audio_capture(options);
     if (!capture) {
         std::cerr << "ratcast-send: no sound capture: " << to_string(capture.error()) << "\n";
         return nullptr;

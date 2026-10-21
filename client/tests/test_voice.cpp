@@ -1,12 +1,14 @@
 // VoiceChannel: the microphone silenced when muted, who is speaking and who
-// is heard held for a moment, and two sides of a call talking — each hearing
-// the other's voice, and no longer once it is muted.
+// is heard held for a moment, the system's sound taken out of the microphone
+// as the echo in the speaker's place, and two sides of a call talking — each
+// hearing the other's voice, and no longer once it is muted.
 
 #include "ratcast/client/voice.h"
 
 #include <gtest/gtest.h>
 
 #include <chrono>
+#include <random>
 #include <thread>
 #include <vector>
 
@@ -28,7 +30,7 @@ bool wait_for(Predicate predicate, std::chrono::milliseconds timeout = 10s) {
     return predicate();
 }
 
-/// A microphone the test speaks into by hand.
+/// A capture the test speaks into by hand: a microphone, the system's sound.
 class HandMicrophone final : public AudioSource {
 public:
     explicit HandMicrophone(AudioFormat format) : format_(format) {}
@@ -38,6 +40,14 @@ public:
         return {};
     }
     void stop() override { sink_ = {}; }
+    bool started() const { return bool(sink_); }
+
+    void give(std::span<const float> samples, Timestamp captured) {
+        MutableAudioFrame block =
+            MutableAudioFrame::allocate(format_, samples.size() / format_.channels);
+        std::ranges::copy(samples, block.samples().begin());
+        sink_(std::move(block).freeze(captured));
+    }
 
     /// 10 ms at `level`, alternating in sign: not a level the high-pass
     /// filter takes out.
@@ -71,6 +81,20 @@ private:
     const AudioFormat format_{48'000, 2};
     Pull pull_;
 };
+
+std::vector<float> noise(size_t length, float level, uint32_t seed) {
+    std::mt19937 random(seed);
+    std::uniform_real_distribution<float> unit(-level, level);
+    std::vector<float> samples(length);
+    for (float& s : samples) s = unit(random);
+    return samples;
+}
+
+double energy(std::span<const float> samples) {
+    double sum = 0;
+    for (float s : samples) sum += double(s) * s;
+    return sum;
+}
 
 TEST(VoiceChannel, MutedTheMicrophoneSendsSilence) {
     VoiceChannel voice(
@@ -132,6 +156,68 @@ TEST(VoiceChannel, SpeakingAndHearingHoldAMoment) {
     clock.advance(400ms);
     speaker.play(clock.now());
     EXPECT_FALSE(voice.hearing());
+}
+
+TEST(VoiceChannel, TheSystemsSoundIsTheEchoInTheSpeakersPlace) {
+    // A film another application plays comes back to the microphone, half
+    // as loud, 10 ms after it went to the device; the call's speaker plays
+    // something else meanwhile. Eight seconds in virtual time, the last two
+    // judged.
+    ManualClock clock{Timestamp{100s}};
+    VoiceChannel voice({.processing = {.noise_suppression = false, .gain_control = false}}, clock);
+    if (!voice.processed()) GTEST_SKIP() << "built without WebRTC AudioProcessing";
+    auto microphone_device = std::make_unique<HandMicrophone>(AudioFormat{48'000, 1});
+    auto system_device = std::make_unique<HandMicrophone>(AudioFormat{48'000, 2});
+    HandMicrophone& hand = *microphone_device;
+    HandMicrophone& system = *system_device;
+    std::unique_ptr<AudioSource> microphone =
+        voice.microphone(std::move(microphone_device), std::move(system_device));
+    auto speaker_device = std::make_unique<HandSpeaker>();
+    HandSpeaker& speaker = *speaker_device;
+    std::unique_ptr<AudioOutput> output = voice.speaker(std::move(speaker_device));
+
+    constexpr size_t kChunk = 480;
+    const std::vector<float> film = noise(8 * 48'000, 0.3f, 1);
+    const std::vector<float> other = noise(film.size() * 2, 0.3f, 2);
+    size_t other_at = 0;
+    ASSERT_TRUE(output->start(
+        [&](std::span<float> out, Timestamp) {
+            std::ranges::copy(std::span(other).subspan(other_at, out.size()), out.begin());
+            other_at += out.size();
+        },
+        {}));
+    std::vector<float> in;
+    std::vector<float> out;
+    EXPECT_FALSE(system.started());
+    ASSERT_TRUE(microphone->start(
+        [&](AudioFrame block) {
+            out.insert(out.end(), block.samples().begin(), block.samples().end());
+        },
+        {}));
+    EXPECT_TRUE(system.started()) << "with the microphone";
+
+    std::vector<float> stereo(2 * kChunk);
+    std::vector<float> heard(kChunk);
+    const Timestamp start = clock.now();
+    for (size_t k = 0; k < film.size() / kChunk; ++k) {
+        const Timestamp now = start + Duration(10ms) * int64_t(k);
+        clock.set(now);
+        speaker.play(now + 20ms);
+        for (size_t i = 0; i < kChunk; ++i)
+            stereo[2 * i] = stereo[2 * i + 1] = film[k * kChunk + i];
+        system.give(stereo, now);
+        if (k < 2) continue;
+        for (size_t i = 0; i < kChunk; ++i) heard[i] = 0.5f * film[(k - 2) * kChunk + i];
+        in.insert(in.end(), heard.begin(), heard.end());
+        hand.give(heard, now - 10ms);
+    }
+    const size_t tail = 2 * 48'000;
+    ASSERT_GE(out.size(), tail);
+    EXPECT_LT(energy(std::span(out).last(tail)) / energy(std::span(in).last(tail)), 0.01)
+        << "at least 20 dB of the film taken out";
+
+    microphone->stop();
+    EXPECT_FALSE(system.started()) << "with the microphone";
 }
 
 /// One side: its voice, a speaker that plays to nobody, its call.

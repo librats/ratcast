@@ -15,6 +15,10 @@ bool is_valid(const AudioFormat& format, Duration latency) {
 
 Result<std::unique_ptr<AudioSource>> open_audio_capture(const AudioCaptureOptions& options) {
     if (!is_valid(options.format, options.latency)) return fail(Errc::InvalidArgument);
+    if (options.node == 0 && options.source == AudioCaptureSource::Applications &&
+        options.format.channels > 2) {
+        return fail(Errc::InvalidArgument);
+    }
     return backend::open_audio_capture(options);
 }
 

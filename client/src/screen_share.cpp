@@ -43,7 +43,7 @@ Result<ScreenShareSources> open_screen_share(const ScreenShareConfig& config,
     ScreenShareSources sources{.pictures = std::move(*capture)};
     if (config.sound) {
         Result<std::unique_ptr<AudioSource>> sound =
-            open_audio_capture({.format = {48'000, 2}, .system_sound = true});
+            open_audio_capture({.format = {48'000, 2}, .source = AudioCaptureSource::Applications});
         if (!sound) return fail(sound.error());
         sources.sound = std::move(*sound);
     }

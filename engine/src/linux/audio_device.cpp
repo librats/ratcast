@@ -2,11 +2,15 @@
 // the session's to use.
 
 #include "audio/device_backend.h"
+#include "linux/pipewire_applications.h"
 #include "linux/pipewire_audio.h"
 
 namespace ratcast::backend {
 
 Result<std::unique_ptr<AudioSource>> open_audio_capture(const AudioCaptureOptions& options) {
+    if (options.node == 0 && options.source == AudioCaptureSource::Applications)
+        return std::unique_ptr<AudioSource>(
+            std::make_unique<pipewire::ApplicationsCapture>(options));
     return std::unique_ptr<AudioSource>(std::make_unique<pipewire::AudioCapture>(options));
 }
 

@@ -66,7 +66,7 @@ public:
         const spa_pod* params[] = {audio_format(b, format_)};
         pw_properties* properties = audio_properties("Capture", format_, options.latency);
         // What the default output plays: the monitor of its sink.
-        if (options.node == 0 && options.system_sound)
+        if (options.node == 0 && options.source == AudioCaptureSource::SystemSound)
             pw_properties_set(properties, PW_KEY_STREAM_CAPTURE_SINK, "true");
         StreamThread::Config config;
         config.node = options.node;
