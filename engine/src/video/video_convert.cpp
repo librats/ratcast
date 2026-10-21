@@ -234,4 +234,28 @@ Result<VideoFrame> convert_frame(const VideoFrame& picture, PixelFormat format,
     return convert_frame(picture, format, color_space, BufferPool::shared());
 }
 
+YuvToRgb rgb_from_yuv(ColorSpace color_space) noexcept {
+    const bool bt709 = color_space.matrix == ColorMatrix::BT709;
+    const double kr = bt709 ? 0.2126 : 0.299;
+    const double kb = bt709 ? 0.0722 : 0.114;
+    const double kg = 1 - kr - kb;
+    // Y' = luma_scale · Y + luma_offset, and the same for Cb and Cr about 0.
+    const bool full = color_space.range == ColorRange::Full;
+    const double luma_scale = full ? 1.0 : 255.0 / 219;
+    const double luma_offset = full ? 0.0 : -16.0 / 219;
+    const double chroma_scale = full ? 1.0 : 255.0 / 224;
+    const double chroma_offset = full ? -128.0 / 255 : -128.0 / 224;
+
+    // R = Y' + 2 (1 - Kr) Cr, B = Y' + 2 (1 - Kb) Cb, and G what is left of Y'.
+    const double r_cr = 2 * (1 - kr);
+    const double b_cb = 2 * (1 - kb);
+    const double g_cb = -kb * b_cb / kg;
+    const double g_cr = -kr * r_cr / kg;
+    const auto row = [&](double cb, double cr) {
+        return std::array{float(luma_scale), float(cb * chroma_scale), float(cr * chroma_scale),
+                          float(luma_offset + (cb + cr) * chroma_offset)};
+    };
+    return {row(0, r_cr), row(g_cb, g_cr), row(b_cb, 0)};
+}
+
 }  // namespace ratcast

@@ -88,10 +88,16 @@ jobs:
       - uses: jurplel/install-qt-action@v4
         with:
           version: '6.8.*'
+          modules: 'qtshadertools'
           cache: true
-      - run: sudo apt-get update && sudo apt-get install -y ninja-build libgl-dev
-      - run: cmake --preset release -DRATCAST_BUILD_APP=ON
+      - run: >
+          sudo apt-get update && sudo apt-get install -y ninja-build libgl-dev xvfb
+          libgl1-mesa-dri
+      - run: cmake --preset release -DRATCAST_BUILD_APP=ON -DRATCAST_BUILD_TESTS=ON
       - run: cmake --build --preset release
+      # Pictures drawn for real: Mesa's software rasteriser behind Xvfb.
+      - name: Video drawing
+        run: xvfb-run -a ctest --test-dir build/release -R 'VideoView|VideoNode' --output-on-failure
 
   format:
     name: clang-format

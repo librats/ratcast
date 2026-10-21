@@ -1,0 +1,8 @@
+# LeakSanitizer suppressions for the asan test preset. Third-party code only:
+# never ratcast's or librats'.
+
+# Mesa's drivers keep allocations for the process's life: Qt Quick drawing the
+# video tests.
+leak:libgallium
+# fontconfig's cache, filled when Qt's platform theme asks for fonts.
+leak:libfontconfig

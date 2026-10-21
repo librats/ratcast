@@ -214,3 +214,39 @@ TEST(VideoConvert, RefusesWhatItCannotDo) {
     EXPECT_EQ(convert_frame(i420, PixelFormat::BGRA).error(), Errc::Unsupported);
     EXPECT_EQ(convert_frame(VideoFrame{}, PixelFormat::NV12).error(), Errc::InvalidArgument);
 }
+
+TEST(VideoConvert, RgbFromYuvUndoesTheConversion) {
+    // Colours in 2 x 2 blocks, so that chroma is each block's own.
+    constexpr uint8_t kColours[][3] = {{0, 0, 0},   {255, 255, 255}, {255, 0, 0},    {0, 255, 0},
+                                       {0, 0, 255}, {128, 128, 128}, {200, 120, 40}, {17, 90, 230}};
+    MutableVideoFrame frame = MutableVideoFrame::allocate(PixelFormat::BGRA, 16, 2);
+    for (uint32_t y = 0; y < 2; ++y) {
+        uint8_t* row = frame.plane(0).data + y * frame.plane(0).stride;
+        for (uint32_t x = 0; x < 16; ++x) {
+            const uint8_t* rgb = kColours[x / 2];
+            row[4 * x] = rgb[2];
+            row[4 * x + 1] = rgb[1];
+            row[4 * x + 2] = rgb[0];
+            row[4 * x + 3] = 0xFF;
+        }
+    }
+    const VideoFrame bgra = std::move(frame).freeze(Timestamp{});
+    for (const ColorSpace& cs : kColorSpaces) {
+        Result<VideoFrame> yuv = convert_frame(bgra, PixelFormat::I420, cs);
+        ASSERT_TRUE(yuv);
+        const YuvToRgb matrix = rgb_from_yuv(cs);
+        for (uint32_t x = 0; x < 16; x += 2) {
+            const float sample[3] = {pixel(*yuv, 0, x, 0) / 255.0f,
+                                     pixel(*yuv, 1, x / 2, 0) / 255.0f,
+                                     pixel(*yuv, 2, x / 2, 0) / 255.0f};
+            for (int c = 0; c < 3; ++c) {
+                const auto& m = matrix[c];
+                const float value = m[0] * sample[0] + m[1] * sample[1] + m[2] * sample[2] + m[3];
+                // Within the levels the 8-bit samples round away.
+                EXPECT_NEAR(value * 255, kColours[x / 2][c], 1.5)
+                    << "colour " << x / 2 << " channel " << c << " " << int(cs.matrix)
+                    << int(cs.range);
+            }
+        }
+    }
+}

@@ -1,8 +1,12 @@
 #include "ratcast/version.h"
 
+#include <QtQml/qqmlextensionplugin.h>
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
 #include <QString>
+
+// Ratcast.Video, linked in statically.
+Q_IMPORT_QML_PLUGIN(Ratcast_VideoPlugin)
 
 int main(int argc, char* argv[]) {
     QGuiApplication app(argc, argv);

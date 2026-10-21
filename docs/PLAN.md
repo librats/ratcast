@@ -115,7 +115,7 @@ per room for delivery, librats storage for history when it is built.
 | GIO (GLib) | xdg-desktop-portal over D-Bus | system | — |
 | libdrm, GBM, EGL, Vulkan | DMA-BUF import, GPU colour conversion (stage 4) | system | — |
 | SDL3 | windows of the CLI tools | system | vcpkg |
-| Qt ≥ 6.5 with Quick | app | system | official installer / aqtinstall |
+| Qt ≥ 6.6 with Quick, Shader Tools, QtGui private headers (QRhi) | app | system | official installer / aqtinstall |
 | libopus ≥ 1.3 | audio | system (`libopus-dev`) | vcpkg |
 | WebRTC AudioProcessing | AEC, AGC, NS (stage 6) | system | vcpkg or vendored |
 | GoogleTest | tests | fetched by CMake | fetched by CMake |
@@ -625,9 +625,18 @@ on the same call code.
   between real nodes on loopback: both sides sending pictures and sound and playing the other's,
   hanging up ending what the other played, a stream withdrawn and offered again, a call that plays
   nothing never subscribing, a source running out, ids in use, invites; TSan and ASan clean.
-- **6.2 Pictures in QML:** a Qt Quick item that draws the player's pictures — NV12 / I420 as
-  textures through QRhi, converted in a shader, no Qt Multimedia — fitted to the window, with the
-  sound through `AudioOutput`.
+- **6.2 Pictures in QML** ✅: `VideoView` (`app/video`, QML module `Ratcast.Video`), a Qt Quick
+  item that draws the newest picture a player hands its `sink()` from any thread, the older ones
+  skipped. The planes go up as they are — R8 for Y, U and V, RG8 for NV12's chroma, rows read in
+  place at their stride — into textures made through QRhi when the size changes, and a shader
+  (Qt Shader Tools at build time) turns them into colour with `rgb_from_yuv()`, the engine's
+  inverse of its conversion (BT.709 / BT.601, limited / full); no Qt Multimedia. Fitted, its shape
+  kept, centred; the newest picture is kept so that a scene graph made anew (the window hidden and
+  shown, the GPU lost) draws it again. The sound needs nothing from Qt: `AudioOutput` plays it.
+  Tested drawn for real, read back from windows never shown: both layouts in the four colour
+  spaces, an odd size, a picture of another shape and a resized view refitted, clearing; the
+  matrix against the conversion on the CPU. CI draws them on Mesa behind Xvfb; ASan clean (Mesa's
+  and fontconfig's lifelong allocations suppressed). Qt 6.6 is the floor now, for QRhi.
 - **6.3 The first app:** share a screen or a window (the portal) with its sound, or join from a
   link; the call's window with the picture, stop and leave. Two people can watch together from
   here.

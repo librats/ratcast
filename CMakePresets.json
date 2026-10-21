@@ -108,7 +108,8 @@
       },
       "environment": {
         "PIPEWIRE_DLCLOSE": "false",
-        "UBSAN_OPTIONS": "halt_on_error=1:print_stacktrace=1"
+        "UBSAN_OPTIONS": "halt_on_error=1:print_stacktrace=1",
+        "LSAN_OPTIONS": "suppressions=${sourceDir}/cmake/lsan.supp"
       }
     },
     {

@@ -7,8 +7,11 @@
  * What capture gives (BGRA) into what encoders take (NV12, I420), and one
  * 4:2:0 layout into the other, in one pass over the picture written so that
  * compilers vectorise it. From BGRA, luma is exact to within a level and
- * chroma is the mean of each 2 x 2 block, sited at its centre.
+ * chroma is the mean of each 2 x 2 block, sited at its centre. Back to RGB is
+ * a GPU's work; rgb_from_yuv() is the matrix it needs.
  */
+
+#include <array>
 
 #include "ratcast/core/buffer.h"
 #include "ratcast/core/result.h"
@@ -24,5 +27,12 @@ Result<VideoFrame> convert_frame(const VideoFrame& picture, PixelFormat format,
                                  ColorSpace color_space, BufferPool& pool);
 Result<VideoFrame> convert_frame(const VideoFrame& picture, PixelFormat format,
                                  ColorSpace color_space = {});
+
+/// The other way, for whoever draws YUV pictures (a shader): R, G and B, each
+/// a row `a, b, c, d` meaning `a·Y + b·Cb + c·Cr + d`, of samples read as a
+/// GPU reads 8-bit values, from 0 to 1, and giving 0 to 1. Not clamped: limited
+/// range has values beyond black and white.
+using YuvToRgb = std::array<std::array<float, 4>, 3>;
+YuvToRgb rgb_from_yuv(ColorSpace color_space) noexcept;
 
 }  // namespace ratcast

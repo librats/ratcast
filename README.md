@@ -19,9 +19,10 @@ cmake --build --preset debug
 ctest --preset debug
 ```
 
-Requirements: CMake 3.21+, Ninja, a C++20 compiler, and Qt 6.5+ with Qt Quick for the app
-(Debian/Ubuntu: `qt6-declarative-dev`). Without Qt Quick the app is skipped and the
-libraries still build.
+Requirements: CMake 3.21+, Ninja, a C++20 compiler, and for the app Qt 6.6+ with Qt Quick, Qt
+Shader Tools and QtGui's private headers, for QRhi (Debian/Ubuntu: `qt6-declarative-dev
+qt6-shadertools-dev qt6-base-private-dev`; the Qt installer: add the Qt Shader Tools module).
+Without them the app is skipped and the libraries still build.
 
 Already cloned without `--recursive`: `git submodule update --init --recursive`.
 
