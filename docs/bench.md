@@ -30,6 +30,11 @@ The test pattern carries its capture time (the time of day) in every picture, so
 the latency from capture to decoded picture off each one. Both tools end with a `summary` line
 of `key=value` pairs; the table is made from those.
 
+**Without namespaces** (`bench/netem.py --netsim`, any OS): the same scenarios through
+`ratcast-netsim`, a UDP proxy on loopback whose two directions follow netem's rules in user space;
+the viewer dials the proxy, which forwards to the sender. How its paths compare with netem's:
+"netsim, against netem" below.
+
 **Two hosts:** `ratcast-send --source pattern` on one, `ratcast-recv --connect HOST:7700` on the
 other. With the clocks synchronised (chrony / NTP on a LAN is within a millisecond) the viewer
 prints the latency as on one host; otherwise it prints none.
@@ -1082,3 +1087,55 @@ Paths that delay every packet independently, by tens of milliseconds, are rare (
 librats L16, a ProbeRTT that does not starve a live flow (its window no smaller than the live
 floor, as Startup's is since L2 (b); or skipped while samples stay within the path's own swing
 of the minimum).
+
+## netsim, against netem (4.5)
+
+`ratcast-netsim` emulates a path in user space: a UDP proxy whose two directions follow netem's
+rules — loss at random or in Gilbert-Elliott bursts, then a queue of `limit` packets, then the
+delay, each packet's own jitter or, with a `rate`, in order at that rate; `reorder` sends a share
+at once — and read netem's own words, so a scenario is written once (`bench/netem.py --netsim`).
+The same feed, ratcast only, one run each (12 s; the left half is netem, the right netsim):
+
+| scenario | first packet, ms | p50 / p99, ms | lost, % | first packet, ms | p50 / p99, ms | lost, % |
+|---|---:|---:|---:|---:|---:|---:|
+| rtt-100 | 514 | 254.0 / 258.0 | 0.000 | 512 | 254.0 / 256.0 | 0.000 |
+| jitter | 332 | 221.2 / 229.4 | 0.000 | 356 | 221.2 / 225.3 | 0.000 |
+| reorder | 340 | 200.7 / 204.8 | 1.034 | 335 | 200.7 / 208.9 | 0.590 |
+| burst | 357 | 229.4 / 229.4 | 0.000 | 358 | 229.4 / 233.5 | 0.000 |
+| cap-6 | 362 | 229.4 / 385.0 | 32.160 | 362 | 229.4 / 383.1 | 32.116 |
+| cap-drop | 359 | 229.4 / 294.9 | 24.947 | 361 | 229.4 / 249.9 | 25.381 |
+
+And all three transports through netsim (8 s, one run), next to netem's full table (15 s,
+medians of three): `local` ratcast 203 ms / 200.7 / 204.8 (netem 206 / 200.7 / 208.9), SRT 196 /
+208.9 / 213.0 (196 / 208.9 / 217.1), librist 201 / 204.8 / 204.8 (198 / 204.8 / 213.0); `loss-2`
+ratcast 356 / 229.4 / 229.4 (361 / 229.4 / 233.5), SRT 298 / 233.5 / 241.7 (299 / 233.5 /
+241.7), librist 250 / 229.4 / 241.7, 0.017% lost (249 / 229.4 / 241.7) — first packet, p50, p99.
+
+- **The same paths**, to a few milliseconds and the run-to-run spread, but for one: under a cap
+  (below). `reorder` loses on both, a burst a run or two to BBR's ProbeRTT (L16). The netsim
+  `rtt-100` row is the median of two runs after a third that stalled 423 ms in its last second,
+  the VM's (none of the others did).
+- **netsim's timers wake as late as the host's.** On this VM `epoll_wait` and `nanosleep` for
+  10 ms come back 0–10 ms late (both, a few hundred times: the vCPU asleep), so a packet's delay
+  is never short and sometimes up to 10 ms long; the medians above show nothing of it. netem's
+  hrtimers in the kernel do better.
+- **Under a cap, netem shapes ratcast with GSO's batches.** librats sends a run of packets to a
+  peer as one buffer (UDP GSO), and netem on the sender's own veth takes it as one packet: one
+  loss draw for the run, one place in `limit` for all of it. `cap-drop`, 15 s, two runs each:
+
+  | | p99, ms | lost, % |
+  |---|---:|---:|
+  | netem (the tables above, GSO on) | 287 | 19.9 |
+  | netem, GSO off | 256 | 24.1 |
+  | netsim (GSO on: the kernel splits the runs before the proxy reads them) | 252 | 19.8 |
+  | netsim, GSO off | 256 | 19.6 |
+
+  The extra 30 ms of netem's are its queue of 51 *runs* holding more than 51 packets would; a
+  router sees packets, as netsim does. Why netem without GSO loses 4% more than netsim is not
+  measured; likely that packets in netem's queue still count against the sender's socket buffer
+  (it is on the sender's own egress), which librats takes for a full socket (`ENOBUFS`, `EAGAIN`)
+  and stops sending for — backpressure no path beyond the host gives. SRT and librist send no
+  GSO, so their rows are not touched. The comparison tables stand (all three crossed the same
+  netem, and ratcast's cap rows are the gentler for it), but a cap's latency for ratcast reads
+  truer from netsim.
+

@@ -47,6 +47,14 @@ jobs:
       - name: Test
         run: ctest --test-dir build --build-config ${{ matrix.build-type }} --output-on-failure
 
+      # A few emulated paths, through ratcast-netsim (netem's rules in user
+      # space, no root): the tools, a feed and the script run end to end.
+      - name: Emulated paths
+        if: runner.os == 'Linux' && matrix.build-type == 'Release'
+        run: >
+          python3 bench/netem.py --netsim --feed --transport ratcast --bin build/bin
+          --duration 5 local loss-2 cap-6
+
   sanitizers:
     name: ${{ matrix.preset }}
     runs-on: ubuntu-24.04

@@ -151,9 +151,9 @@ final place and shape: stage 0 is a walking skeleton, not a throwaway prototype.
 | **0. Skeleton** ✅ | screen → encoder → libratcast → librats → decoder → window, on Linux; latency and behaviour on emulated networks measured | L1 ✅ |
 | **1. A stream that holds** ✅ | one video stream to a few viewers plays on every emulated path: rate control, fast joining, smooth playback on lossy paths | L2 (c) ✅, L3 ✅; L2 (a, b) put off |
 | **2. Sound** ✅ | audio, A/V sync; latency profiles put off to stages 5 and 6 | L4 ✅ |
-| **3. Standalone library** ← now | MPEG-TS in and out, `rats://` URLs, a benchmark against librist and SRT, C API | — |
-| **4. Platforms** | GPU paths and hardware codecs; Windows and macOS capture; netsim | — |
-| **5. Watch together** | one-to-many: forwarding tree, simulcast / SVC, SFU, SFrame E2EE, synchronized playout | L5 |
+| **3. Standalone library** ✅ | MPEG-TS in and out, `rats://` URLs, a benchmark against librist and SRT, C API | — |
+| **4. Platforms** — put off | GPU paths and hardware codecs; Windows and macOS capture; netsim ✅ | — |
+| **5. Watch together** ← now | one-to-many: forwarding tree, simulcast / SVC, SFU, SFrame E2EE, synchronized playout | L5 |
 | **6. App** | Qt app MVP: rooms and invites, voice with AEC / NS, screen / window / app-audio share, camera, on Windows / Linux / macOS | — |
 | **7. Conferences** | active speaker, last-N, grid, moderation, text chat | — |
 | **8. Beyond** | Android, cinema mode, HDR, polish | — |
@@ -393,7 +393,7 @@ one is slow for a few after — counted, a ramp held the delay at 50 ms on a cle
 `netem` run each: `burst` 8 → 1 stalls at 47 → 125 ms (p50), `loss-2` 3 → 2 (both at the start)
 at 49 → 111 ms, `rtt-50` 48 → 66 ms, `local` 16 → 34 ms.
 
-### Stage 2 — Sound
+### Stage 2 — Sound ✅
 
 Audio next to the video, in sync, and the latency profile as the one knob over both.
 *Done when* the pattern source's audio and video play in sync (within 40 ms) across the netem
@@ -456,7 +456,7 @@ the sound at the median and 34 ms at p95 at worst (`cap-6`); the sound without a
 every loss and next to keyframes, one break each where the path cannot carry the lifetime or the
 stream (`rtt-200`, `cap-drop`).
 
-### Stage 3 — Standalone library
+### Stage 3 — Standalone library ✅
 
 libratcast usable and measured on its own, against what it is meant to replace.
 *Done when* `docs/bench.md` has the comparison with librist and SRT on the same scenarios.
@@ -548,6 +548,15 @@ netsim, the userspace impairment proxy (delay, jitter, loss, bursts, bandwidth c
 OS; scripted scenarios in CI), moved to stage 4: it is for the other platforms, and
 `bench/netem.py` covers Linux.
 
+Closed with the full table, every scenario measured three times against SRT and librist (3.2 (b)
+5; `docs/bench.md`, "Against SRT and librist, measured whole"): nothing lost where the path has
+room, the same latency with ratcast's p99 the closest to its median, and over capacity between
+librist and SRT. 3.3 moved nothing on the wire; what it touched of the feed's path, `DataPlayer`
+now on a `DeliveryThread`, was checked with a small run (`local`, `loss-2` three times: as in
+the table). Left where ratcast is behind, each with its librats item: joining ~2 round trips
+slower than librist (L2 (a), 1.2's leftovers), CPU twice theirs (L15), feedback 0.2 Mbit/s
+against 0.02–0.05 (L13), and `reorder`'s 0.35% lost to ProbeRTT (L16).
+
 ### Stage 4 — Platforms
 
 The engine on every desktop OS, with the GPU paths high resolutions need, before the app is built
@@ -561,9 +570,23 @@ encoding, and a 1440p60 game is captured and encoded without a CPU copy.
   keyframes and LTR / reference invalidation where the encoder has them (from 1.3).
 - **4.3 Windows:** Windows.Graphics.Capture + D3D11 → hardware encoder.
 - **4.4 macOS:** ScreenCaptureKit + VideoToolbox.
-- **4.5 netsim** (from stage 3): a userspace impairment proxy (delay, jitter, loss, bursts,
-  bandwidth caps; no root, any OS) with scripted scenarios in CI, for where `bench/netem.py`
-  cannot run.
+- **4.5 netsim** ✅ (from stage 3): `ratcast-netsim`, a UDP proxy whose two directions are
+  emulated links following netem's rules — loss at random or in Gilbert-Elliott bursts, a queue
+  of `limit` packets, a delay with each packet's own jitter or, with a `rate`, in order at it,
+  `reorder` — in netem's own words, so `bench/netem.py --netsim` runs every scenario through it
+  on loopback: no namespaces, no tc, no root, any OS (librats' sockets and poller). The link is
+  tested in virtual time against netem's shares and orders, the proxy on loopback, and ratcast
+  repairing 5% loss across it between two real nodes (`tools/tests`, every OS in CI); CI's
+  Linux release job runs three scenarios through it end to end. Against netem (`docs/bench.md`,
+  "netsim, against netem") the same paths to a few milliseconds, but under a cap: netem on the
+  sender's own veth takes librats' GSO runs for one packet each, which adds ~30 ms to ratcast's
+  p99 on `cap-drop`; netsim, which sees packets as a router does, does not. Its timers are the
+  host's: on this VM up to 10 ms late.
+
+Put off after 4.5: 4.1–4.4 need machines the dev VM is not — an Intel or AMD GPU with VA-API,
+NVIDIA, Windows, a Mac — and are taken up a step at a time as one is at hand. Stage 5 goes ahead
+meanwhile on the software codecs, as nothing in it waits for hardware ones; the app (stage 6)
+does, and gathers what is left of this stage before it.
 
 ### Stage 5 — Watch together
 

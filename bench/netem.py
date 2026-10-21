@@ -30,6 +30,14 @@ late it came, what was lost anyway, what crossed the link and the CPU it took.
     bench/netem.py --feed --transport ratcast,srt local
     bench/netem.py --list
 
+With --netsim the same scenarios run through ratcast-netsim instead: a proxy
+on loopback whose two directions follow netem's rules in user space, with no
+namespaces, no tc, no root, on any OS. The viewer dials the proxy, which
+forwards to the sender. Its timers wake as late as the host's do: on a virtual
+machine that sleeps, up to ten milliseconds.
+
+    bench/netem.py --netsim --feed --transport ratcast loss-2
+
 Prints a Markdown table (medians over the repeats); the tools' own output for
 every run is kept in --out.
 """
@@ -56,6 +64,9 @@ PORT = 7700
 FEED_IN = "udp://127.0.0.1:5000"
 FEED_OUT = "udp://127.0.0.1:5001"
 TRANSPORTS = ("ratcast", "srt", "rist")
+# With --netsim: everything on loopback, the viewer dialing the proxy.
+LOOPBACK = "127.0.0.1"
+NETSIM_PORT = 7710
 
 
 @dataclass
@@ -163,6 +174,86 @@ def shape_forward(options):
     sh("tc", "qdisc", "replace", "dev", "va", "root", "netem", *options.split())
 
 
+class Netem:
+    """The path as tc netem shapes the veth pair between the two namespaces
+    (make_network): the sender in this one, the viewer in the other."""
+
+    sender = SENDER_ADDRESS
+
+    def __init__(self, scenario):
+        self.scenario = scenario
+        self.changes = []
+        shape(scenario)
+
+    def dial(self):
+        return f"{SENDER_ADDRESS}:{PORT}"
+
+    def viewer(self, command):
+        return in_viewer(*command)
+
+    def viewer_started(self):
+        """The path's changes run from here."""
+        self.changes = [threading.Timer(at, shape_forward, (options,))
+                        for at, options in self.scenario.changes]
+        for change in self.changes:
+            change.start()
+
+    def link_bytes(self):
+        """Bytes the sender's end of the link has sent and received so far."""
+        stats = json.loads(sh("ip", "-j", "-s", "link", "show", "dev", "va").stdout)[0]["stats64"]
+        return stats["tx"]["bytes"], stats["rx"]["bytes"]
+
+    def close(self):
+        for change in self.changes:
+            change.join()
+
+
+class Netsim:
+    """The path as ratcast-netsim emulates it on loopback: the viewer dials
+    the proxy, which forwards to the sender."""
+
+    sender = LOOPBACK
+
+    def __init__(self, scenario, args, stem):
+        changes = "; ".join(f"{at} {options}" for at, options in scenario.changes)
+        self.log = open(f"{stem}.netsim.log", "w+")
+        self.process = subprocess.Popen(
+            [str(args.bin / "ratcast-netsim"), "--listen", f"{LOOPBACK}:{NETSIM_PORT}", "--to",
+             f"{LOOPBACK}:{PORT}", "--forward", scenario.forward, "--backward", scenario.backward,
+             *(["--changes", changes] if changes else [])],
+            stdout=self.log, stderr=subprocess.STDOUT, text=True)
+        deadline = time.monotonic() + 5
+        while "netsim: dial" not in Path(self.log.name).read_text():
+            if self.process.poll() is not None or time.monotonic() > deadline:
+                raise RuntimeError(f"ratcast-netsim did not start, see {self.log.name}")
+            time.sleep(0.02)
+        self.summary = {}
+
+    def dial(self):
+        return f"{LOOPBACK}:{NETSIM_PORT}"
+
+    def viewer(self, command):
+        return command
+
+    def viewer_started(self):
+        pass  # the proxy runs the path's changes from the viewer's first datagram
+
+    def link_bytes(self):
+        # Nothing crosses the proxy before the viewer dials, so its totals at
+        # the end are the run's.
+        return 0, 0
+
+    def close(self):
+        stop(self.process)
+        self.log.close()
+        self.summary = parse_summary(Path(self.log.name).read_text()) or {}
+        return self.summary.get("forward_wire_bytes", 0), self.summary.get("backward_wire_bytes", 0)
+
+
+def open_path(scenario, args, stem):
+    return Netsim(scenario, args, stem) if args.netsim else Netem(scenario)
+
+
 def parse_summary(text):
     for line in text.splitlines():
         if line.startswith("summary "):
@@ -171,40 +262,38 @@ def parse_summary(text):
 
 
 def run_once(scenario, args, log_dir, index):
-    shape(scenario)
     stem = log_dir / f"{scenario.name}.{index}"
-    with open(f"{stem}.send.log", "w+") as send_log:
-        sender = subprocess.Popen(
-            [str(args.bin / "ratcast-send"), "--source", "pattern", "--size", args.size,
-             "--bitrate", str(args.bitrate), "--fps", str(args.fps), "--latency",
-             str(args.latency), "--codec", args.codec, "--port", str(PORT),
-             *(["--audio", "tone"] if args.audio else []),
-             *(["--keyframe-every", str(args.keyframe_every)] if args.keyframe_every else []),
-             *args.send_args],
-            stdout=send_log, stderr=subprocess.STDOUT, text=True)
-        try:
-            deadline = time.monotonic() + 15
-            while "viewers connect" not in Path(send_log.name).read_text():
-                if sender.poll() is not None or time.monotonic() > deadline:
-                    raise RuntimeError(f"the sender did not start, see {send_log.name}")
-                time.sleep(0.05)
-            # A viewer joins a stream that is already going, as in a real call:
-            # not within the sender's first keyframe interval.
-            time.sleep(args.join_after)
-            changes = [threading.Timer(at, shape_forward, (options,))
-                       for at, options in scenario.changes]
-            for change in changes:
-                change.start()
-            viewer = subprocess.run(
-                in_viewer(str(args.bin / "ratcast-recv"), "--connect", f"{SENDER_ADDRESS}:{PORT}",
-                          "--headless", "--duration", str(args.duration), *args.recv_args),
-                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
-                timeout=args.duration + 30)
-            Path(f"{stem}.recv.log").write_text(viewer.stdout)
-            for change in changes:
-                change.join()
-        finally:
-            stop(sender)
+    path = open_path(scenario, args, stem)
+    try:
+        with open(f"{stem}.send.log", "w+") as send_log:
+            sender = subprocess.Popen(
+                [str(args.bin / "ratcast-send"), "--source", "pattern", "--size", args.size,
+                 "--bitrate", str(args.bitrate), "--fps", str(args.fps), "--latency",
+                 str(args.latency), "--codec", args.codec, "--port", str(PORT),
+                 *(["--audio", "tone"] if args.audio else []),
+                 *(["--keyframe-every", str(args.keyframe_every)] if args.keyframe_every else []),
+                 *args.send_args],
+                stdout=send_log, stderr=subprocess.STDOUT, text=True)
+            try:
+                deadline = time.monotonic() + 15
+                while "viewers connect" not in Path(send_log.name).read_text():
+                    if sender.poll() is not None or time.monotonic() > deadline:
+                        raise RuntimeError(f"the sender did not start, see {send_log.name}")
+                    time.sleep(0.05)
+                # A viewer joins a stream that is already going, as in a real
+                # call: not within the sender's first keyframe interval.
+                time.sleep(args.join_after)
+                path.viewer_started()
+                viewer = subprocess.run(
+                    path.viewer([str(args.bin / "ratcast-recv"), "--connect", path.dial(),
+                                 "--headless", "--duration", str(args.duration), *args.recv_args]),
+                    stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                    timeout=args.duration + 30)
+                Path(f"{stem}.recv.log").write_text(viewer.stdout)
+            finally:
+                stop(sender)
+    finally:
+        path.close()
     return parse_summary(Path(f"{stem}.send.log").read_text()), parse_summary(viewer.stdout)
 
 
@@ -219,46 +308,42 @@ def stop(process):
 
 def cpu_percent(process, started):
     """CPU the process has used since `started` (time.monotonic()), a share of
-    one core."""
-    stat = Path(f"/proc/{process.pid}/stat").read_text().rsplit(")", 1)[1].split()
+    one core; None where there is no /proc to read it from."""
+    stat_file = Path(f"/proc/{process.pid}/stat")
+    if not stat_file.exists():
+        return None
+    stat = stat_file.read_text().rsplit(")", 1)[1].split()
     ticks = int(stat[11]) + int(stat[12])  # utime and stime
     return 100 * ticks / os.sysconf("SC_CLK_TCK") / (time.monotonic() - started)
 
 
-def link_bytes():
-    """Bytes the sender's end of the link has sent and received so far."""
-    stats = json.loads(sh("ip", "-j", "-s", "link", "show", "dev", "va").stdout)[0]["stats64"]
-    return stats["tx"]["bytes"], stats["rx"]["bytes"]
-
-
-def feed_commands(transport, args):
+def feed_commands(transport, args, path):
     """The transport's sender (listening, as ratcast-send does) and receiver
-    (connecting), each told to hold the feed for --latency."""
+    (connecting through `path`), each told to hold the feed for --latency."""
     latency = str(args.latency)
+    dial = path.dial()
     if transport == "ratcast":
         return ([str(args.bin / "ratcast-send"), "--input", FEED_IN, "--port", str(PORT),
                  "--latency", latency, *args.send_args],
-                [str(args.bin / "ratcast-recv"), f"rats://{SENDER_ADDRESS}:{PORT}", "--output",
-                 FEED_OUT, *args.recv_args])
+                [str(args.bin / "ratcast-recv"), f"rats://{dial}", "--output", FEED_OUT,
+                 *args.recv_args])
     if transport == "srt":
         tool = str(args.peers / "srt-live-transmit")
         return ([tool, FEED_IN, f"srt://:{PORT}?mode=listener&latency={latency}", *args.send_args],
-                [tool, f"srt://{SENDER_ADDRESS}:{PORT}?latency={latency}", FEED_OUT,
-                 *args.recv_args])
+                [tool, f"srt://{dial}?latency={latency}", FEED_OUT, *args.recv_args])
     # librist's main profile, which SRT's live mode and ratcast compare with.
     return ([str(args.peers / "ristsender"), "--profile", "1", "--inputurl", FEED_IN,
-             "--outputurl", f"rist://@{SENDER_ADDRESS}:{PORT}?buffer={latency}", *args.send_args],
+             "--outputurl", f"rist://@{path.sender}:{PORT}?buffer={latency}", *args.send_args],
             [str(args.peers / "ristreceiver"), "--profile", "1", "--inputurl",
-             f"rist://{SENDER_ADDRESS}:{PORT}?buffer={latency}", "--outputurl", FEED_OUT,
-             *args.recv_args])
+             f"rist://{dial}?buffer={latency}", "--outputurl", FEED_OUT, *args.recv_args])
 
 
 def run_feed(scenario, transport, args, log_dir, index):
     """The probe through `transport`: the meter's summary, with what crossed
     the link (Mbit/s each way) and the CPU the transport's two ends took."""
-    shape(scenario)
     stem = log_dir / f"{scenario.name}.{transport}.{index}"
-    send_command, recv_command = feed_commands(transport, args)
+    path = open_path(scenario, args, stem)
+    send_command, recv_command = feed_commands(transport, args, path)
     logs = {name: open(f"{stem}.{name}.log", "w") for name in ("send", "probe", "recv", "meter")}
     started = {}
 
@@ -276,32 +361,31 @@ def run_feed(scenario, transport, args, log_dir, index):
         time.sleep(args.join_after)
         if sender.poll() is not None:
             raise RuntimeError(f"the sender did not start, see {stem}.send.log")
-        meter = start("meter", in_viewer(str(args.bin / "ratcast-tsprobe"), "meter", FEED_OUT,
-                                         "--duration", str(args.duration)))
+        meter = start("meter", path.viewer([str(args.bin / "ratcast-tsprobe"), "meter", FEED_OUT,
+                                            "--duration", str(args.duration)]))
         processes.append(meter)
-        receiver = start("recv", in_viewer(*recv_command))
+        receiver = start("recv", path.viewer(recv_command))
         processes.append(receiver)
-        changes = [threading.Timer(at, shape_forward, (options,))
-                   for at, options in scenario.changes]
-        for change in changes:
-            change.start()
-        sent_before, received_before = link_bytes()
+        path.viewer_started()
+        sent_before, received_before = path.link_bytes()
         meter.wait(timeout=args.duration + 30)
         took = time.monotonic() - started["recv"]
-        sent, received = link_bytes()
+        sent, received = path.link_bytes()
         cpu = (cpu_percent(sender, started["send"]), cpu_percent(receiver, started["recv"]))
-        for change in changes:
-            change.join()
     finally:
         for process in reversed(processes):
             if process.poll() is None:
                 stop(process)
         for log in logs.values():
             log.close()
+        totals = path.close()
+    if totals:  # the proxy's, counted to its end
+        sent, received = totals
     summary = parse_summary(Path(f"{stem}.meter.log").read_text()) or {}
     summary.update(wire_forward_mbps=(sent - sent_before) * 8 / took / 1e6,
-                   wire_backward_mbps=(received - received_before) * 8 / took / 1e6,
-                   cpu_send=cpu[0], cpu_recv=cpu[1])
+                   wire_backward_mbps=(received - received_before) * 8 / took / 1e6)
+    if cpu[0] is not None:
+        summary.update(cpu_send=cpu[0], cpu_recv=cpu[1])
     return summary
 
 
@@ -322,6 +406,7 @@ def table(results, args):
         + (", with sound (a tone, Opus voice)" if args.audio else "")
         + (f", sender {' '.join(args.send_args)}" if args.send_args else "")
         + (f", viewer {' '.join(args.recv_args)}" if args.recv_args else "")
+        + (", the path through ratcast-netsim" if args.netsim else "")
         + f"; {args.duration} s a run, medians of {args.repeat}.",
         "",
         "| scenario | path | first picture, ms | fps | Mbit/s (cuts) | latency p50 / p95 / p99, ms "
@@ -377,6 +462,7 @@ def feed_table(results, args):
         f"A stamped MPEG-TS probe at {args.bitrate} kbit/s, held {args.latency} ms by each "
         f"transport" + (f", sender {' '.join(args.send_args)}" if args.send_args else "")
         + (f", viewer {' '.join(args.recv_args)}" if args.recv_args else "")
+        + (", the path through ratcast-netsim" if args.netsim else "")
         + f"; {args.duration} s a run, medians of {args.repeat}.",
         "",
         "| scenario | transport | first packet, ms | latency p50 / p99 / max, ms | lost, % "
@@ -428,6 +514,8 @@ def main():
                         help=f"with --feed: which, comma-separated (default {','.join(TRANSPORTS)})")
     parser.add_argument("--peers", type=Path, default=ROOT / "build" / "peers" / "bin",
                         help="SRT's and librist's tools (bench/peers.sh builds them)")
+    parser.add_argument("--netsim", action="store_true",
+                        help="the path through ratcast-netsim on loopback, not tc netem")
     args = parser.parse_args()
 
     if args.list:
@@ -443,7 +531,8 @@ def main():
     transports = args.transport.split(",")
     if not set(transports) <= set(TRANSPORTS):
         parser.error(f"--transport: of {', '.join(TRANSPORTS)}, please")
-    for tool in ("ratcast-send", "ratcast-recv", *(["ratcast-tsprobe"] if args.feed else [])):
+    for tool in ("ratcast-send", "ratcast-recv", *(["ratcast-tsprobe"] if args.feed else []),
+                 *(["ratcast-netsim"] if args.netsim else [])):
         if not (args.bin / tool).exists():
             parser.error(f"no {tool} in {args.bin}: build the release preset, or pass --bin")
     if args.feed:
@@ -452,14 +541,14 @@ def main():
             if not (args.peers / tool).exists():
                 parser.error(f"no {tool} in {args.peers}: run bench/peers.sh, or pass --peers")
 
-    # Into namespaces of our own: the process starts over inside them.
-    if os.environ.get("RATCAST_NETEM_INSIDE") != "1":
-        os.environ["RATCAST_NETEM_INSIDE"] = "1"
-        command = ["unshare", "--user", "--map-root-user", "--net", "--mount",
-                   "--propagation", "private", sys.executable, *sys.argv]
-        os.execvp(command[0], command)
-
-    make_network()
+    if not args.netsim:
+        # Into namespaces of our own: the process starts over inside them.
+        if os.environ.get("RATCAST_NETEM_INSIDE") != "1":
+            os.environ["RATCAST_NETEM_INSIDE"] = "1"
+            command = ["unshare", "--user", "--map-root-user", "--net", "--mount",
+                       "--propagation", "private", sys.executable, *sys.argv]
+            os.execvp(command[0], command)
+        make_network()
     log_dir = args.out / time.strftime("%Y%m%d-%H%M%S")
     log_dir.mkdir(parents=True)
     chosen = [s for s in SCENARIOS if not args.scenarios or s.name in args.scenarios]

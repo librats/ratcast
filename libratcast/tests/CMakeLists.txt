@@ -28,5 +28,9 @@ target_include_directories(libratcast_tests PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}
 add_executable(libratcast_c_test test_capi_c.c)
 target_link_libraries(libratcast_c_test PRIVATE ratcast::ratcast)
 set_target_properties(libratcast_c_test PROPERTIES C_STANDARD 11 C_STANDARD_REQUIRED ON)
+if(MSVC)
+    # <stdatomic.h> is behind a switch of its own there.
+    target_compile_options(libratcast_c_test PRIVATE /experimental:c11atomics)
+endif()
 ratcast_target_defaults(libratcast_c_test)
 add_test(NAME CApiFromC COMMAND libratcast_c_test)

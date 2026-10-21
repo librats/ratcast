@@ -1,6 +1,9 @@
 ratcast_add_test(tools_tests
     SOURCES
         test_arguments.cpp
+        test_netsim_link.cpp
+        test_netsim_proxy.cpp
     LIBS
         ratcast_tool_common
+        ratcast_netsim
 )
