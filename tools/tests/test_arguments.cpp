@@ -49,33 +49,10 @@ TEST(Arguments, ArgumentsWithoutANameAnywhere) {
     EXPECT_TRUE(args.errors().empty());
 }
 
-TEST(Tool, ParsesEndpointsSizesAndCodecs) {
-    EXPECT_EQ(parse_endpoint("example.org:7700"),
-              (std::pair<std::string, uint16_t>{"example.org", 7700}));
-    EXPECT_EQ(parse_endpoint("[::1]:80"), (std::pair<std::string, uint16_t>{"::1", 80}));
-    EXPECT_EQ(parse_endpoint("::1:80"), std::nullopt);  // ambiguous without brackets
-    EXPECT_EQ(parse_endpoint("host:0"), std::nullopt);
-    EXPECT_EQ(parse_endpoint("host:70000"), std::nullopt);
-    EXPECT_EQ(parse_endpoint("host"), std::nullopt);
-
+TEST(Tool, ParsesSizesAndCodecs) {
     EXPECT_EQ(parse_size("1920x1080"), (std::pair<uint32_t, uint32_t>{1920, 1080}));
     EXPECT_EQ(parse_size("1920"), std::nullopt);
     EXPECT_EQ(parse_size("0x10"), std::nullopt);
-
-    const std::optional<SenderAddress> dial = parse_rats_url("rats://[::1]:7700/");
-    ASSERT_TRUE(dial && dial->endpoint);
-    EXPECT_EQ(*dial->endpoint, (std::pair<std::string, uint16_t>{"::1", 7700}));
-    EXPECT_FALSE(dial->peer);
-    const PeerId peer = PeerId::from_public_key(reinterpret_cast<const uint8_t*>("key"), 3);
-    const std::optional<SenderAddress> find = parse_rats_url(rats_url(peer));
-    ASSERT_TRUE(find && find->peer);
-    EXPECT_EQ(*find->peer, peer);
-    EXPECT_EQ(rats_url("::1", 7700), "rats://[::1]:7700");
-    EXPECT_EQ(rats_url("example.org", 7700), "rats://example.org:7700");
-    EXPECT_FALSE(parse_rats_url("rats://"));
-    EXPECT_FALSE(parse_rats_url("rats://nonsense"));
-    EXPECT_FALSE(parse_rats_url("http://host:7700"));
-
     EXPECT_EQ(parse_codec("hevc"), Codec::H265);
     EXPECT_EQ(parse_codec("vp9"), std::nullopt);
 }

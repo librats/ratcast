@@ -2,59 +2,20 @@
 
 /**
  * @file tool.h
- * @brief What ratcast-send and ratcast-recv share: their librats node, the
- * names they parse, Ctrl-C.
+ * @brief What the tools share: the names they parse, Ctrl-C, logs, clocks and
+ * CPU meters.
  */
 
 #include <chrono>
 #include <cstdint>
 #include <optional>
-#include <string>
 #include <string_view>
 #include <utility>
 
 #include "ratcast/core/time.h"
-#include "ratcast/ratcast.h"
-#include "ratcast/session/media_network.h"
 #include "ratcast/stream/stream_description.h"
 
-#include "librats/node/config.h"
-#include "librats/node/node.h"
-
 namespace ratcast::tools {
-
-/// The handshake protocol of every ratcast node: tools of another protocol
-/// version do not connect at all.
-inline constexpr const char* kProtocol = RATCAST_PROTOCOL;
-
-/// A node for a tool: listening on `port` (0 for any) if `listen`, with a
-/// stable identity when `data_dir` is not empty.
-librats::NodeConfig node_config(uint16_t port, bool listen, const std::string& data_dir);
-
-/// Find peers through the DHT under `key`, announcing ourselves under it too:
-/// how a viewer finds a sender by its peer id alone. Takes a minute or two to
-/// converge on the open internet.
-void add_discovery(librats::Node& node, const std::string& key, const std::string& data_dir);
-
-/// The DHT key a sender is found under.
-std::string discovery_key(const PeerId& sender);
-
-/// "host:port" or "[ipv6]:port".
-std::optional<std::pair<std::string, uint16_t>> parse_endpoint(std::string_view text);
-
-/// Where a sender is: an address to dial, or a peer id to find through the
-/// DHT (a sender that runs --announce).
-struct SenderAddress {
-    std::optional<std::pair<std::string, uint16_t>> endpoint{};
-    std::optional<PeerId> peer{};
-};
-
-/// "rats://host:port", "rats://[ipv6]:port" or "rats://<peer id in hex>".
-std::optional<SenderAddress> parse_rats_url(std::string_view url);
-
-/// The URL a viewer reaches a sender by.
-std::string rats_url(std::string_view host, uint16_t port);
-std::string rats_url(const PeerId& peer);
 
 /// "av1", "h265" (or "hevc"), "h264".
 std::optional<Codec> parse_codec(std::string_view name);

@@ -1,0 +1,379 @@
+#include "ratcast/client/call.h"
+
+#include <algorithm>
+#include <type_traits>
+#include <utility>
+
+#include "ratcast/session/media_service.h"
+
+#include "librats/subsystems/dht_discovery.h"
+#include "librats/util/network_utils.h"
+
+namespace ratcast {
+namespace {
+
+/// The DHT key a discoverable call is found under: its own peer id, where it
+/// and whoever looks for it meet.
+std::string discovery_key(const PeerId& peer) { return "ratcast/stream/" + peer.to_hex(); }
+
+const PeerId* dialed_peer(const CallConfig& config) {
+    return config.dial ? std::get_if<PeerId>(&*config.dial) : nullptr;
+}
+
+/// A call dialing by peer id listens, for the other side to dial back.
+bool listens(const CallConfig& config) { return config.listen || dialed_peer(config); }
+
+librats::NodeConfig node_config(const CallConfig& config) {
+    librats::NodeConfig node;
+    node.listen_port = config.port;
+    node.enable_listen = listens(config);
+    node.bind_address = config.bind_address;
+    node.data_dir = config.data_dir;
+    node.protocol = config.protocol;
+    node.enable_network_monitor = config.watch_network;
+    // Paths are sampled every 100 ms, as MediaService's rate control asks.
+    return node;
+}
+
+/// An address the other side may reach: not loopback, not link-local (which
+/// would need an interface to go with it).
+bool invitable(std::string_view address) {
+    return !address.starts_with("127.") && address != "::1" && !address.starts_with("169.254.") &&
+           !address.starts_with("fe80:") && !address.starts_with("FE80:") &&
+           address.find('%') == std::string_view::npos;
+}
+
+bool is_ipv6(std::string_view address) { return address.find(':') != std::string_view::npos; }
+
+}  // namespace
+
+// ── Published streams ───────────────────────────────────────────────────────
+
+struct Call::Published {
+    virtual ~Published() = default;
+    virtual void stop() = 0;
+    virtual void request_keyframe() {}
+    virtual void set_bitrate(uint32_t) {}
+};
+
+/// A source and its publisher: stopped (or destroyed) before the source.
+template <typename Source, typename Publisher>
+struct Call::PublishedAs final : Published {
+    static constexpr bool kVideo = std::is_same_v<Publisher, VideoPublisher>;
+
+    template <typename Config>
+    PublishedAs(std::unique_ptr<Source> source, MediaSession& session, Config config)
+        : source(std::move(source)), publisher(session, std::move(config)) {}
+
+    void stop() override { publisher.stop(); }
+    void request_keyframe() override {
+        if constexpr (kVideo) publisher.request_keyframe();
+    }
+    void set_bitrate(uint32_t bits_per_second) override {
+        if constexpr (kVideo) publisher.set_bitrate(bits_per_second);
+    }
+
+    std::unique_ptr<Source> source;
+    Publisher publisher;
+};
+
+// ── The call ────────────────────────────────────────────────────────────────
+
+template <typename Handler, typename... Args>
+void Call::notify(const Handler& handler, const Args&... args) const {
+    if (handler && !closing_) handler(args...);
+}
+
+Result<std::unique_ptr<Call>> Call::start(CallConfig config, CallHandlers handlers) {
+    std::unique_ptr<Call> call(new Call(std::move(config), std::move(handlers)));
+    if (!call->node_.start()) return fail(Errc::Unavailable);
+    if (call->config_.dial) {
+        if (const auto* endpoint = std::get_if<librats::HostEndpoint>(&*call->config_.dial)) {
+            call->node_.connect(endpoint->host, endpoint->port);
+        }
+    }
+    return call;
+}
+
+Call::Call(CallConfig config, CallHandlers handlers)
+    : config_(std::move(config)),
+      handlers_(std::move(handlers)),
+      node_(node_config(config_)),
+      sync_(SteadyClock::instance(), config_.playback.sync) {
+    media_ = node_.add_subsystem(std::make_unique<MediaService>(session_handlers()));
+    // One key to meet under: the peer dialed, or this call's own.
+    const PeerId* dialed = dialed_peer(config_);
+    if (dialed || config_.discoverable) {
+        librats::DhtDiscovery::Config discovery;
+        discovery.discovery_key = discovery_key(dialed ? *dialed : node_.local_id());
+        discovery.data_dir = config_.data_dir;
+        discovery.search_interval = std::chrono::seconds(10);
+        node_.add_subsystem(std::make_unique<librats::DhtDiscovery>(std::move(discovery)));
+    }
+    node_.on_peer_connected(
+        [this](const librats::Peer& peer) { notify(handlers_.joined, peer.id()); });
+    node_.on_peer_disconnected(
+        [this](const PeerId& peer, librats::CloseReason) { notify(handlers_.left, peer); });
+}
+
+Call::~Call() {
+    closing_ = true;
+    std::map<StreamId, std::unique_ptr<Published>> published;
+    {
+        std::lock_guard lock(publishing_);
+        published.swap(published_);
+    }
+    for (auto& [stream, publisher] : published) publisher->stop();
+    published.clear();
+    {
+        // Players stop outside the lock: their threads may be in a handler
+        // that asks for stats.
+        Playing<VideoPlayer> video;
+        Playing<AudioPlayer> sound;
+        Playing<DataPlayer> feed;
+        std::unique_ptr<DataPlayer> ended_feed;
+        std::lock_guard lock(playing_);
+        video = std::move(video_);
+        sound = std::move(sound_);
+        feed = std::move(feed_);
+        ended_feed = std::move(ended_feed_);
+    }
+    node_.stop();
+}
+
+const PeerId& Call::id() const noexcept { return node_.local_id(); }
+
+uint16_t Call::port() const noexcept { return listens(config_) ? node_.listen_port() : 0; }
+
+std::vector<std::string> Call::invites() const {
+    std::vector<std::string> links;
+    if (config_.discoverable && !dialed_peer(config_)) links.push_back(to_string(RatsUrl{id()}));
+    const uint16_t listening = port();
+    if (listening == 0) return links;
+
+    const std::string& bound = config_.bind_address;
+    std::vector<std::string> hosts;
+    if (!bound.empty() && bound != "::" && bound != "0.0.0.0") {
+        hosts.push_back(bound);
+    } else {
+        for (std::string& address : librats::network_utils::get_local_interface_addresses()) {
+            if (!invitable(address) || (bound == "0.0.0.0" && is_ipv6(address)) ||
+                std::ranges::find(hosts, address) != hosts.end()) {
+                continue;
+            }
+            hosts.push_back(std::move(address));
+        }
+        std::ranges::stable_partition(hosts, [](const std::string& h) { return !is_ipv6(h); });
+    }
+    for (std::string& host : hosts) {
+        links.push_back(to_string(RatsUrl{librats::HostEndpoint{std::move(host), listening}}));
+    }
+    return links;
+}
+
+std::vector<PeerId> Call::peers() const { return node_.connected_peers(); }
+
+std::optional<librats::PathStats> Call::path(const PeerId& peer) const {
+    return node_.path_stats(peer);
+}
+
+MediaSession& Call::session() noexcept { return media_->session(); }
+
+SessionHandlers Call::session_handlers() {
+    return SessionHandlers{
+        .stream_announced = [this](const PeerId& peer,
+                                   const StreamDescription& d) { announced(peer, d); },
+        .stream_withdrawn = [this](const PeerId& peer, StreamId s) { withdrawn(peer, s); },
+        .frame_received = [this](const PeerId& peer,
+                                 EncodedFrame frame) { received(peer, std::move(frame)); },
+        .keyframe_needed =
+            [this](StreamId stream) {
+                std::lock_guard lock(publishing_);
+                if (const auto it = published_.find(stream); it != published_.end()) {
+                    it->second->request_keyframe();
+                }
+            },
+        .bitrate_changed =
+            [this](StreamId stream, uint32_t bits_per_second) {
+                std::lock_guard lock(publishing_);
+                if (const auto it = published_.find(stream); it != published_.end()) {
+                    it->second->set_bitrate(bits_per_second);
+                }
+            },
+    };
+}
+
+// ── What this side sends ────────────────────────────────────────────────────
+
+Result<VideoPublisher*> Call::publish(std::unique_ptr<VideoSource> source,
+                                      VideoPublisherConfig config) {
+    return add<VideoSource, VideoPublisher>(std::move(source), std::move(config));
+}
+
+Result<AudioPublisher*> Call::publish(std::unique_ptr<AudioSource> source,
+                                      AudioPublisherConfig config) {
+    return add<AudioSource, AudioPublisher>(std::move(source), std::move(config));
+}
+
+Result<DataPublisher*> Call::publish(std::unique_ptr<TsInput> input, DataPublisherConfig config) {
+    return add<TsInput, DataPublisher>(std::move(input), std::move(config));
+}
+
+template <typename Source, typename Publisher, typename Config>
+Result<Publisher*> Call::add(std::unique_ptr<Source> source, Config config) {
+    if (!source) return fail(Errc::InvalidArgument);
+    const StreamId stream = config.stream;
+    auto published = std::make_unique<PublishedAs<Source, Publisher>>(std::move(source), session(),
+                                                                      std::move(config));
+    Publisher& publisher = published->publisher;
+    Source& input = *published->source;
+    {
+        std::lock_guard lock(publishing_);
+        if (!published_.try_emplace(stream, std::move(published)).second) {
+            return fail(Errc::InvalidArgument);
+        }
+    }
+    const Result<void> started = publisher.start(input, [this, stream](Result<void> outcome) {
+        notify(handlers_.source_ended, stream, outcome);
+    });
+    if (!started) {
+        unpublish(stream);
+        return fail(started.error());
+    }
+    return &publisher;
+}
+
+void Call::unpublish(StreamId stream) {
+    std::unique_ptr<Published> published;
+    {
+        std::lock_guard lock(publishing_);
+        const auto it = published_.find(stream);
+        if (it == published_.end()) return;
+        published = std::move(it->second);
+        published_.erase(it);
+    }
+    published->stop();
+}
+
+// ── What plays ──────────────────────────────────────────────────────────────
+
+template <typename Player>
+bool Call::plays(const Playing<Player>& slot, const PeerId& peer, StreamId stream) {
+    return slot && slot.player->peer() == peer && slot.description.id == stream;
+}
+
+template <typename Player>
+void Call::play(Playing<Player>& slot, const PeerId& peer, const StreamDescription& description,
+                std::vector<std::function<void()>>& events) {
+    const CallPlayback& playback = config_.playback;
+    MediaSession& media = session();
+    std::unique_ptr<Player> player;
+    if constexpr (std::is_same_v<Player, VideoPlayer>) {
+        VideoPlayerConfig video = playback.video;
+        video.sync = &sync_;
+        player = std::make_unique<VideoPlayer>(media, peer, description, playback.pictures, video);
+    } else if constexpr (std::is_same_v<Player, AudioPlayer>) {
+        player = std::make_unique<AudioPlayer>(media, peer, description, *playback.sound,
+                                               AudioPlayerConfig{.sync = &sync_}, playback.heard);
+    } else {
+        player = std::make_unique<DataPlayer>(media, peer, description, *playback.feed,
+                                              playback.feed_config);
+    }
+    Result<void> started = player->start();
+    if (started) slot = {std::move(player), description};
+    events.push_back([this, peer, description, started] {
+        notify(handlers_.playing, peer, description, started);
+    });
+}
+
+void Call::announced(const PeerId& peer, const StreamDescription& description) {
+    std::vector<std::function<void()>> events;
+    {
+        std::lock_guard lock(playing_);
+        if (closing_) return;
+        if (plays(video_, peer, description.id)) {
+            video_.player->update(description);
+            video_.description = description;
+            return;
+        }
+        if (const PeerId* dialed = dialed_peer(config_); dialed && peer != *dialed) return;
+        const CallPlayback& playback = config_.playback;
+        switch (description.kind()) {
+            case MediaKind::Video:
+                if (!video_ && playback.pictures) play(video_, peer, description, events);
+                break;
+            case MediaKind::Audio:
+                if (!sound_ && playback.sound) play(sound_, peer, description, events);
+                break;
+            case MediaKind::Data:
+                if (!feed_ && playback.feed) play(feed_, peer, description, events);
+                break;
+        }
+    }
+    for (const auto& event : events) event();
+}
+
+void Call::withdrawn(const PeerId& peer, StreamId stream) {
+    // Stopped outside the lock, as in the destructor.
+    std::unique_ptr<VideoPlayer> video;
+    std::unique_ptr<AudioPlayer> sound;
+    std::unique_ptr<DataPlayer> replaced;  ///< the feed that ended before, done or not
+    std::optional<StreamDescription> ended;
+    {
+        std::lock_guard lock(playing_);
+        if (plays(video_, peer, stream)) {
+            ended = video_.description;
+            video = std::move(video_.player);
+        } else if (plays(sound_, peer, stream)) {
+            ended = sound_.description;
+            sound = std::move(sound_.player);
+        } else if (plays(feed_, peer, stream)) {
+            ended = feed_.description;
+            // What it holds is still to be written out, each at its time.
+            feed_.player->finish();
+            replaced = std::exchange(ended_feed_, std::move(feed_.player));
+        }
+    }
+    video.reset();
+    sound.reset();
+    replaced.reset();
+    if (ended) notify(handlers_.ended, peer, *ended);
+}
+
+void Call::received(const PeerId& peer, EncodedFrame frame) {
+    std::lock_guard lock(playing_);
+    const StreamId stream = frame.info.stream;
+    if (plays(video_, peer, stream)) {
+        video_.player->push(std::move(frame));
+    } else if (plays(sound_, peer, stream)) {
+        sound_.player->push(std::move(frame));
+    } else if (plays(feed_, peer, stream)) {
+        feed_.player->push(std::move(frame));
+    }
+}
+
+std::optional<ReceivedVideoStats> Call::video_stats() const {
+    std::lock_guard lock(playing_);
+    if (!video_) return std::nullopt;
+    const std::optional<IncomingStreamStats> stream =
+        media_->session().incoming_stats(video_.player->peer(), video_.player->stream());
+    if (!stream) return std::nullopt;
+    return ReceivedVideoStats{video_.player->stats(), *stream};
+}
+
+std::optional<AudioPlayerStats> Call::sound_stats() const {
+    std::lock_guard lock(playing_);
+    if (!sound_) return std::nullopt;
+    return sound_.player->stats();
+}
+
+std::optional<DataPlayerStats> Call::feed_stats() const {
+    std::lock_guard lock(playing_);
+    const DataPlayer* feed = feed_ ? feed_.player.get() : ended_feed_.get();
+    if (!feed) return std::nullopt;
+    return feed->stats();
+}
+
+PlayoutClockStats Call::sync_stats() const { return sync_.stats(); }
+
+}  // namespace ratcast

@@ -606,12 +606,39 @@ version is one to one, over the path straight between the two. Coarse until reac
 
 ### Stage 6 — App
 
-Qt 6 / QML MVP on Windows, Linux and macOS: rooms and invites, voice with AEC / NS (WebRTC
-AudioProcessing), screen / window / app-audio share, camera. Camera and screen to one viewer
-share the path (each stream takes the whole path today, 1.1). Latency profiles `call` / `game`
-as the user's choice (from 2.3): lifetimes, jitter-buffer depth, keyframe policy, encoder
-settings, whether a game's pictures wait for its sound; the sound's frame for FEC only on lossy
-paths.
+The Qt 6 / QML app, one to one: one shares a screen and talks, the other watches and talks back,
+over the path straight between them. Linux first, on the software codecs; Windows and macOS as
+stage 4 brings them. *Done when* two people on two hosts call each other from an invite link,
+one shares a screen with its sound, both talk with echo cancelled, and the tools and the app run
+on the same call code.
+
+- **6.1 A call in `client`** ✅: `Call`, what `ratcast-send` and `ratcast-recv` wired together by
+  hand, as one object the app and the tools share — a librats node with its identity kept in a
+  data directory; invites (`rats://PEER-ID` when discoverable through the DHT, `rats://ADDRESS:PORT`
+  for each of the host's addresses, loopback and link-local left out) and dialing one; publishing
+  sources it owns, each publisher hearing the keyframe requests and bitrates of its stream; playing
+  the first video, sound and feed the other side offers, in step, and the next of a kind when one
+  ends; events for a UI (joined, left, playing or failed to, ended, a source ran out), never under
+  its locks, none once it is being destroyed. `rats_url.h` reads and writes the links. Both tools
+  are a `Call` and a printer now, their output and summaries unchanged (a small netsim run of
+  video, sound and the feed: as in `docs/bench.md`); `ratcast-send` prints the real invites. Tested
+  between real nodes on loopback: both sides sending pictures and sound and playing the other's,
+  hanging up ending what the other played, a stream withdrawn and offered again, a call that plays
+  nothing never subscribing, a source running out, ids in use, invites; TSan and ASan clean.
+- **6.2 Pictures in QML:** a Qt Quick item that draws the player's pictures — NV12 / I420 as
+  textures through QRhi, converted in a shader, no Qt Multimedia — fitted to the window, with the
+  sound through `AudioOutput`.
+- **6.3 The first app:** share a screen or a window (the portal) with its sound, or join from a
+  link; the call's window with the picture, stop and leave. Two people can watch together from
+  here.
+- **6.4 Voice both ways:** the microphone with echo cancellation and noise suppression (WebRTC
+  AudioProcessing, BSD), muting, who is speaking.
+- **6.5 Camera, and two streams on one path:** a camera beside the screen; each stream takes the
+  whole path today (1.1), so the path's rate is shared between them.
+- **6.6 App audio:** one application's sound through PipeWire, never the call's own playback.
+- **6.7 Latency profiles** (from 2.3): `call` / `game` as the user's choice — lifetimes,
+  jitter-buffer depth, keyframe policy, encoder settings, whether a game's pictures wait for its
+  sound; the sound's frame for FEC only on lossy paths.
 
 ### Stage 7 — Conferences
 

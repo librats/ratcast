@@ -3,11 +3,9 @@
 #include <atomic>
 #include <charconv>
 #include <csignal>
-#include <memory>
 
 #include "ratcast/engine/video_codec.h"
 
-#include "librats/subsystems/dht_discovery.h"
 #include "librats/util/logger.h"
 
 // After librats: on Windows its headers bring in winsock2.h, which must come
@@ -33,63 +31,6 @@ std::optional<uint32_t> parse_number(std::string_view text) {
 }
 
 }  // namespace
-
-librats::NodeConfig node_config(uint16_t port, bool listen, const std::string& data_dir) {
-    librats::NodeConfig config;
-    config.listen_port = port;
-    config.enable_listen = listen;
-    config.protocol = kProtocol;
-    config.data_dir = data_dir;
-    // Paths are sampled every 100 ms, as MediaService's rate control asks.
-    return config;
-}
-
-void add_discovery(librats::Node& node, const std::string& key, const std::string& data_dir) {
-    librats::DhtDiscovery::Config config;
-    config.discovery_key = key;
-    config.data_dir = data_dir;
-    config.search_interval = std::chrono::seconds(10);
-    node.add_subsystem(std::make_unique<librats::DhtDiscovery>(std::move(config)));
-}
-
-std::string discovery_key(const PeerId& sender) { return "ratcast/stream/" + sender.to_hex(); }
-
-std::optional<std::pair<std::string, uint16_t>> parse_endpoint(std::string_view text) {
-    std::string_view host;
-    std::string_view port;
-    if (text.starts_with('[')) {  // [ipv6]:port
-        const size_t close = text.find("]:");
-        if (close == std::string_view::npos) return std::nullopt;
-        host = text.substr(1, close - 1);
-        port = text.substr(close + 2);
-    } else {
-        const size_t colon = text.rfind(':');
-        if (colon == std::string_view::npos || text.find(':') != colon) return std::nullopt;
-        host = text.substr(0, colon);
-        port = text.substr(colon + 1);
-    }
-    const std::optional<uint32_t> number = parse_number(port);
-    if (host.empty() || !number || *number == 0 || *number > 65535) return std::nullopt;
-    return std::pair{std::string(host), static_cast<uint16_t>(*number)};
-}
-
-std::optional<SenderAddress> parse_rats_url(std::string_view url) {
-    constexpr std::string_view kScheme = "rats://";
-    if (!url.starts_with(kScheme)) return std::nullopt;
-    url.remove_prefix(kScheme.size());
-    if (url.ends_with('/')) url.remove_suffix(1);
-    if (auto endpoint = parse_endpoint(url)) return SenderAddress{.endpoint = std::move(endpoint)};
-    if (auto peer = PeerId::from_hex(url)) return SenderAddress{.peer = peer};
-    return std::nullopt;
-}
-
-std::string rats_url(std::string_view host, uint16_t port) {
-    const bool ipv6 = host.find(':') != std::string_view::npos;
-    return "rats://" + (ipv6 ? "[" + std::string(host) + "]" : std::string(host)) + ":" +
-           std::to_string(port);
-}
-
-std::string rats_url(const PeerId& peer) { return "rats://" + peer.to_hex(); }
 
 std::optional<Codec> parse_codec(std::string_view name) {
     if (name == "av1") return Codec::AV1;

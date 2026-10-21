@@ -2,10 +2,12 @@ ratcast_add_test(client_tests
     SOURCES
         test_over_librats.cpp
         test_audio_pipeline.cpp
+        test_call.cpp
         test_data_pipeline.cpp
         test_playback_meter.cpp
         test_playout_clock.cpp
         test_playout_schedule.cpp
+        test_rats_url.cpp
         test_ts_probe.cpp
         test_video_pipeline.cpp
     LIBS

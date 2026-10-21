@@ -16,15 +16,12 @@
 
 #include "common/arguments.h"
 #include "common/tool.h"
-#include "ratcast/client/audio_player.h"
-#include "ratcast/client/data_player.h"
+#include "ratcast/client/call.h"
 #include "ratcast/client/playback_meter.h"
-#include "ratcast/client/video_player.h"
 #include "ratcast/engine/audio_device.h"
 #include "ratcast/engine/pattern_source.h"
 #include "ratcast/engine/ts_io.h"
 #include "ratcast/engine/virtual_output.h"
-#include "ratcast/session/media_service.h"
 
 #ifdef RATCAST_TOOLS_WINDOW
 #include "recv/video_window.h"
@@ -71,8 +68,7 @@ On exit a summary line, key=value, sums up the run.
 )";
 
 struct Options {
-    std::optional<std::pair<std::string, uint16_t>> connect;
-    std::optional<PeerId> peer;
+    std::optional<RatsUrl> sender;
     bool headless = false;
     std::string output;  ///< where a feed goes; none: not received
     std::string audio;
@@ -92,19 +88,21 @@ std::optional<Options> parse(int argc, char** argv) {
     }
     Options o;
     bool ok = true;
-    if (const auto connect = args.text("connect")) {
-        o.connect = parse_endpoint(*connect);
-        if (!o.connect) {
-            std::cerr << "ratcast-recv: --connect wants HOST:PORT\n";
+    const auto sender = [&](std::optional<RatsUrl> url, const std::string& text) {
+        if (url && !o.sender) {
+            o.sender = std::move(url);
+        } else {
+            std::cerr << "ratcast-recv: '" << text << "' is no sender, or one too many\n";
             ok = false;
         }
+    };
+    if (const auto connect = args.text("connect")) {
+        std::optional<librats::HostEndpoint> endpoint = librats::HostEndpoint::parse(*connect);
+        sender(endpoint ? std::optional<RatsUrl>(std::move(*endpoint)) : std::nullopt, *connect);
     }
     if (const auto peer = args.text("peer")) {
-        o.peer = PeerId::from_hex(*peer);
-        if (!o.peer) {
-            std::cerr << "ratcast-recv: --peer wants the sender's peer id (hex)\n";
-            ok = false;
-        }
+        const std::optional<PeerId> id = PeerId::from_hex(*peer);
+        sender(id ? std::optional<RatsUrl>(*id) : std::nullopt, *peer);
     }
     o.headless = args.flag("headless");
     o.sync = !args.flag("no-sync");
@@ -121,201 +119,47 @@ std::optional<Options> parse(int argc, char** argv) {
     o.data_dir = args.text("data-dir").value_or("");
     o.verbose = args.flag("verbose");
     o.output = args.text("output").value_or("");
-    for (const std::string& url : args.positional()) {  // after every flag
-        const std::optional<SenderAddress> address = parse_rats_url(url);
-        if (!address || o.connect || o.peer) {
-            std::cerr << "ratcast-recv: '" << url << "' is no rats:// URL of a sender\n";
-            ok = false;
-            continue;
-        }
-        o.connect = address->endpoint;
-        o.peer = address->peer;
-    }
+    for (const std::string& url : args.positional()) sender(parse_rats_url(url), url);
     for (const std::string& e : args.errors()) {
         std::cerr << "ratcast-recv: " << e << "\n";
         ok = false;
     }
-    if (ok && !o.connect && !o.peer) {
+    if (ok && !o.sender) {
         std::cerr << "ratcast-recv: say where the sender is: rats://HOST:PORT or rats://PEER-ID\n";
         ok = false;
     }
     return ok ? std::optional(o) : std::nullopt;
 }
 
-struct ViewerConfig {
-    std::optional<PeerId> sender;  ///< none: whoever connects
-    VideoPlayerConfig video;
-    VideoPlayer::Sink pictures;
-    AudioOutput* sound = nullptr;  ///< none: sound is not received
-    AudioPlayer::Observer heard;
-    bool sync = true;          ///< the sound and the pictures in step
-    TsOutput* feed = nullptr;  ///< none: a feed is not received
-    DataPlayerConfig feed_config;
-};
-
-/// Plays the first video stream the sender offers, its first audio stream and
-/// its first feed, each where the config says, and the next ones when they go
-/// and come back.
-class Viewer {
-public:
-    explicit Viewer(ViewerConfig config)
-        : config_(std::move(config)), sync_(SteadyClock::instance(), config_.sync) {
-        // Pictures and sound always tell the clock how they play, which
-        // measures how far apart they are; only in step do they follow it.
-        config_.video.sync = &sync_;
+const char* kind_name(MediaKind kind) {
+    switch (kind) {
+        case MediaKind::Video: return "stream";
+        case MediaKind::Audio: return "sound";
+        case MediaKind::Data: return "feed";
     }
+    return "stream";
+}
 
-    SessionHandlers handlers() {
-        return SessionHandlers{
-            .stream_announced = [this](const PeerId& peer,
-                                       const StreamDescription& d) { announced(peer, d); },
-            .stream_withdrawn = [this](const PeerId& peer, StreamId s) { withdrawn(peer, s); },
-            .frame_received =
-                [this](const PeerId& peer, EncodedFrame frame) {
-                    std::lock_guard lock(mutex_);
-                    if (playing(player_, peer, frame.info.stream)) {
-                        player_->push(std::move(frame));
-                    } else if (playing(sound_, peer, frame.info.stream)) {
-                        sound_->push(std::move(frame));
-                    } else if (playing(feed_, peer, frame.info.stream)) {
-                        feed_->push(std::move(frame));
-                    }
-                },
-        };
+/// What started playing, or why it could not.
+void print_playing(const PeerId& peer, const StreamDescription& stream, Result<void> outcome,
+                   std::optional<Duration> buffer) {
+    if (!outcome) {
+        std::cerr << "cannot play " << kind_name(stream.kind()) << " '" << stream.label
+                  << "': " << to_string(outcome.error()) << "\n";
+        return;
     }
-
-    void attach(MediaSession& session) { session_ = &session; }
-
-    void stop() {
-        std::lock_guard lock(mutex_);
-        player_.reset();
-        sound_.reset();
-        feed_.reset();
-        ended_feed_.reset();
-    }
-
-    /// What is playing: its player's and its stream's stats.
-    std::optional<std::pair<VideoPlayerStats, IncomingStreamStats>> stats() {
-        std::lock_guard lock(mutex_);
-        if (!player_) return std::nullopt;
-        const std::optional<IncomingStreamStats> stream =
-            session_->incoming_stats(player_->peer(), player_->stream());
-        if (!stream) return std::nullopt;
-        return std::pair{player_->stats(), *stream};
-    }
-
-    std::optional<AudioPlayerStats> sound_stats() {
-        std::lock_guard lock(mutex_);
-        if (!sound_) return std::nullopt;
-        return sound_->stats();
-    }
-
-    std::optional<DataPlayerStats> feed_stats() {
-        std::lock_guard lock(mutex_);
-        const std::unique_ptr<DataPlayer>& feed = feed_ ? feed_ : ended_feed_;
-        if (!feed) return std::nullopt;
-        return feed->stats();
-    }
-
-    /// Sound and pictures: how far apart they played, and what each needs.
-    PlayoutClockStats sync_stats() const { return sync_.stats(); }
-
-private:
-    template <typename Player>
-    static bool playing(const std::unique_ptr<Player>& player, const PeerId& peer,
-                        StreamId stream) {
-        return player && player->peer() == peer && player->stream() == stream;
-    }
-
-    void announced(const PeerId& peer, const StreamDescription& description) {
-        std::lock_guard lock(mutex_);
-        if (playing(player_, peer, description.id)) {
-            player_->update(description);
-            return;
-        }
-        if (config_.sender && peer != *config_.sender) return;
-        switch (description.kind()) {
-            case MediaKind::Video:
-                if (!player_) play_pictures(peer, description);
-                return;
-            case MediaKind::Audio:
-                if (!sound_ && config_.sound) play_sound(peer, description);
-                return;
-            case MediaKind::Data:
-                if (!feed_ && config_.feed) play_feed(peer, description);
-                return;
-        }
-    }
-
-    void play_pictures(const PeerId& peer, const StreamDescription& description) {
-        auto player = std::make_unique<VideoPlayer>(*session_, peer, description, config_.pictures,
-                                                    config_.video);
-        if (Result<void> started = player->start(); !started) {
-            std::cerr << "cannot play stream '" << description.label
-                      << "': " << to_string(started.error()) << "\n";
-            return;
-        }
-        const VideoFormat* format = description.video();
-        std::fprintf(g_out, "playing '%s' from %s: %ux%u\n", description.label.c_str(),
+    if (const VideoFormat* format = stream.video()) {
+        std::fprintf(g_out, "playing '%s' from %s: %ux%u\n", stream.label.c_str(),
                      peer.short_hex().c_str(), format->width, format->height);
-        player_ = std::move(player);
-    }
-
-    void play_sound(const PeerId& peer, const StreamDescription& description) {
-        auto sound =
-            std::make_unique<AudioPlayer>(*session_, peer, description, *config_.sound,
-                                          AudioPlayerConfig{.sync = &sync_}, config_.heard);
-        if (Result<void> started = sound->start(); !started) {
-            std::cerr << "cannot play sound '" << description.label
-                      << "': " << to_string(started.error()) << "\n";
-            return;
-        }
-        const AudioFormat* format = description.audio();
+    } else if (const AudioFormat* format = stream.audio()) {
         std::fprintf(g_out, "playing sound '%s' from %s: %u Hz, %u channel(s)\n",
-                     description.label.c_str(), peer.short_hex().c_str(), format->sample_rate,
+                     stream.label.c_str(), peer.short_hex().c_str(), format->sample_rate,
                      unsigned(format->channels));
-        sound_ = std::move(sound);
+    } else {
+        std::fprintf(g_out, "writing feed '%s' from %s out, %.0f ms behind\n", stream.label.c_str(),
+                     peer.short_hex().c_str(), ms(buffer.value_or(stream.lifetime)));
     }
-
-    void play_feed(const PeerId& peer, const StreamDescription& description) {
-        auto feed = std::make_unique<DataPlayer>(*session_, peer, description, *config_.feed,
-                                                 config_.feed_config);
-        if (Result<void> started = feed->start(); !started) {
-            std::cerr << "cannot play feed '" << description.label
-                      << "': " << to_string(started.error()) << "\n";
-            return;
-        }
-        std::fprintf(g_out, "writing feed '%s' from %s out, %.0f ms behind\n",
-                     description.label.c_str(), peer.short_hex().c_str(),
-                     ms(feed->stats().latency));
-        feed_ = std::move(feed);
-    }
-
-    void withdrawn(const PeerId& peer, StreamId stream) {
-        std::lock_guard lock(mutex_);
-        if (playing(player_, peer, stream)) {
-            std::fprintf(g_out, "the stream ended\n");
-            player_.reset();
-        } else if (playing(sound_, peer, stream)) {
-            std::fprintf(g_out, "the sound ended\n");
-            sound_.reset();
-        } else if (playing(feed_, peer, stream)) {
-            std::fprintf(g_out, "the feed ended\n");
-            // What it holds is still to be written out, each at its time.
-            feed_->finish();
-            ended_feed_ = std::move(feed_);
-        }
-    }
-
-    ViewerConfig config_;
-    PlayoutClock sync_;
-    MediaSession* session_ = nullptr;
-    std::mutex mutex_;
-    std::unique_ptr<VideoPlayer> player_;
-    std::unique_ptr<AudioPlayer> sound_;
-    std::unique_ptr<DataPlayer> feed_;
-    std::unique_ptr<DataPlayer> ended_feed_;  ///< writing out what it held
-};
+}
 
 /// Latency of a picture from its capture, if it carries the pattern's stamp
 /// and that stamp makes sense here: the sender's clock may be another's.
@@ -339,22 +183,22 @@ std::optional<Duration> latency_of(Timestamp capture_time, Timestamp play_time) 
 /// One line a second, and a summary at the end.
 class Reporter {
 public:
-    Reporter(Viewer& viewer, PlaybackMeter& decoded, PlaybackMeter* shown, PlaybackMeter& heard)
-        : viewer_(viewer), decoded_(decoded), shown_(shown), heard_(heard) {}
+    Reporter(Call& call, PlaybackMeter& decoded, PlaybackMeter* shown, PlaybackMeter& heard)
+        : call_(call), decoded_(decoded), shown_(shown), heard_(heard) {}
 
     void report() {
         std::fprintf(g_out, "[%4us]", seconds_++);
         const bool pictures = report_video();
-        const std::optional<DataPlayerStats> feed = viewer_.feed_stats();
+        const std::optional<DataPlayerStats> feed = call_.feed_stats();
         if (feed) report_feed(*feed);
-        if (!pictures && !feed && !viewer_.sound_stats())
+        if (!pictures && !feed && !call_.sound_stats())
             std::fprintf(g_out, " waiting for a stream");
         std::fprintf(g_out, "  cpu %3.0f%%\n", cpu_.take_interval());
         report_sound();
         std::fflush(g_out);
     }
 
-    /// The whole run as key=value pairs, for scripts. Call before the viewer stops.
+    /// The whole run as key=value pairs, for scripts. Call before the call ends.
     void summarise() {
         std::fprintf(g_out, "summary cpu=%.0f", cpu_.total());
         summarise_video();
@@ -366,7 +210,7 @@ public:
 
     /// Whether anything was played: pictures, sound, or a feed written out.
     bool played() {
-        const std::optional<DataPlayerStats> feed = viewer_.feed_stats();
+        const std::optional<DataPlayerStats> feed = call_.feed_stats();
         return decoded_.total().pictures > 0 || heard_.total().pictures > 0 ||
                (feed ? feed->bytes : last_feed_.bytes) > 0;
     }
@@ -377,9 +221,9 @@ private:
         const PlaybackStats decoded = decoded_.take_interval();
         const std::optional<PlaybackStats> shown =
             shown_ ? std::optional(shown_->take_interval()) : std::nullopt;
-        const auto stats = viewer_.stats();
+        const auto stats = call_.video_stats();
         if (!stats) return false;
-        const auto& [player, stream] = *stats;
+        const auto& [player, stream] = *stats;  // ReceivedVideoStats
         const uint64_t pictures = player.pictures - last_player_.pictures;
         const double mbps = double(stream.bytes - last_stream_.bytes) * 8 / 1e6;
         const double decode_ms =
@@ -416,7 +260,7 @@ private:
     /// brought back by FEC, the rest concealed.
     void report_sound() {
         const PlaybackStats heard = heard_.take_interval();
-        const std::optional<AudioPlayerStats> sound = viewer_.sound_stats();
+        const std::optional<AudioPlayerStats> sound = call_.sound_stats();
         if (!sound) return;
         const JitterBuffer::Stats& jitter = sound->jitter;
         const JitterBuffer::Stats& last = last_sound_.jitter;
@@ -430,7 +274,7 @@ private:
                      ms(sound->decoded.concealed - last_sound_.decoded.concealed),
                      static_cast<unsigned long long>(heard.stalls));
         print_latency("latency", heard.latency);
-        const PlayoutClockStats sync = viewer_.sync_stats();
+        const PlayoutClockStats sync = call_.sync_stats();
         if (sync.apart.count() > last_apart_) {
             // Since the start: the clock keeps no intervals.
             std::fprintf(g_out, "  apart %4.1f ms (p95 %4.1f, mean %+5.1f)  floor %3.0f ms",
@@ -443,7 +287,7 @@ private:
     }
 
     void summarise_feed() {
-        const DataPlayerStats feed = viewer_.feed_stats().value_or(last_feed_);
+        const DataPlayerStats feed = call_.feed_stats().value_or(last_feed_);
         if (feed.delivery.received == 0) return;
         const std::chrono::duration<double> elapsed = std::chrono::steady_clock::now() - started_;
         std::fprintf(g_out,
@@ -459,10 +303,10 @@ private:
 
     void summarise_video() {
         const PlaybackStats decoded = decoded_.total();
-        const auto stats = viewer_.stats();
+        const auto stats = call_.video_stats();
         if (!stats && last_stream_.bytes == 0) return;  // no pictures offered
-        const VideoPlayerStats player = stats ? stats->first : last_player_;
-        const IncomingStreamStats stream = stats ? stats->second : last_stream_;
+        const VideoPlayerStats player = stats ? stats->player : last_player_;
+        const IncomingStreamStats stream = stats ? stats->stream : last_stream_;
         const double first = decoded.first_picture ? ms(*decoded.first_picture) : -1;
         const std::chrono::duration<double> elapsed = std::chrono::steady_clock::now() - started_;
         // From the first picture on: what the viewer was shown, per second.
@@ -489,7 +333,7 @@ private:
     /// made up; a single lost frame is not one.
     void summarise_sound() {
         const PlaybackStats heard = heard_.total();
-        const std::optional<AudioPlayerStats> stats = viewer_.sound_stats();
+        const std::optional<AudioPlayerStats> stats = call_.sound_stats();
         if (!stats && heard.pictures == 0) return;
         const AudioPlayerStats sound = stats.value_or(last_sound_);
         const JitterBuffer::Stats& jitter = sound.jitter;
@@ -507,7 +351,7 @@ private:
             ms(sound.decoded.concealed), ms(jitter.expanded), ms(jitter.cut),
             static_cast<unsigned long long>(heard.stalls), ms(sound.delay), ms(sound.target));
         print_percentiles("audio_latency", heard.latency);
-        const PlayoutClockStats sync = viewer_.sync_stats();
+        const PlayoutClockStats sync = call_.sync_stats();
         if (sync.apart.count() == 0) return;
         print_percentiles("av_apart", sync.apart);
         std::fprintf(g_out, " av_apart_signed_mean_ms=%.1f", ms(sync.mean_apart));
@@ -533,7 +377,7 @@ private:
                      ms(latency.max()));
     }
 
-    Viewer& viewer_;
+    Call& call_;
     PlaybackMeter& decoded_;
     PlaybackMeter* const shown_;
     PlaybackMeter& heard_;
@@ -609,9 +453,7 @@ int main(int argc, char** argv) {
     if (window) shown.emplace();
 #endif
     PlaybackMeter heard;
-    Viewer viewer({
-        .sender = o.peer,
-        .video = {.max_delay = o.buffer},
+    const CallPlayback playback{
         .pictures =
             [&](VideoFrame picture) {
                 decoded.picture(latency_of(picture));
@@ -619,35 +461,42 @@ int main(int argc, char** argv) {
                 if (window) window->show(std::move(picture));
 #endif
             },
+        .video = {.max_delay = o.buffer},
         .sound = output.get(),
         .heard = [&](Timestamp capture_time,
                      Timestamp play_time) { heard.picture(latency_of(capture_time, play_time)); },
         .sync = o.sync,
         .feed = feed.get(),
         .feed_config = {.latency = o.buffer},
-    });
+    };
+    const CallHandlers handlers{
+        .playing = [&](const PeerId& peer, const StreamDescription& stream,
+                       Result<void> outcome) { print_playing(peer, stream, outcome, o.buffer); },
+        .ended =
+            [](const PeerId&, const StreamDescription& stream) {
+                std::fprintf(g_out, "the %s ended\n", kind_name(stream.kind()));
+            },
+    };
 
-    // A viewer found by peer id listens too, so that the sender can dial back.
-    librats::Node node(node_config(0, o.peer.has_value(), o.data_dir));
-    auto* media = node.add_subsystem(std::make_unique<MediaService>(viewer.handlers()));
-    viewer.attach(media->session());
-    if (o.peer) add_discovery(node, discovery_key(*o.peer), o.data_dir);
-    if (!node.start()) {
-        std::cerr << "ratcast-recv: the node did not start\n";
-        return 1;
-    }
     decoded.start();
     if (shown) shown->start();
     heard.start();
-    if (o.connect) {
-        node.connect(o.connect->first, o.connect->second);
-        std::fprintf(g_out, "connecting to %s:%u\n", o.connect->first.c_str(), o.connect->second);
+    Result<std::unique_ptr<Call>> started = Call::start(
+        {.listen = false, .data_dir = o.data_dir, .dial = o.sender, .playback = playback},
+        handlers);
+    if (!started) {
+        std::cerr << "ratcast-recv: the node did not start\n";
+        return 1;
+    }
+    Call& call = **started;
+    if (const auto* endpoint = std::get_if<librats::HostEndpoint>(&*o.sender)) {
+        std::fprintf(g_out, "connecting to %s\n", endpoint->to_string().c_str());
     } else {
         std::fprintf(g_out, "looking for %s through the DHT (can take a minute)\n",
-                     o.peer->short_hex().c_str());
+                     std::get<PeerId>(*o.sender).short_hex().c_str());
     }
 
-    Reporter reporter(viewer, decoded, shown ? &*shown : nullptr, heard);
+    Reporter reporter(call, decoded, shown ? &*shown : nullptr, heard);
     const auto start = std::chrono::steady_clock::now();
     auto next = start + 1s;
     const auto keep_going = [&] {
@@ -672,7 +521,6 @@ int main(int argc, char** argv) {
 
     reporter.summarise();
     const bool played = reporter.played();
-    viewer.stop();
-    node.stop();
+    started->reset();
     return played ? 0 : 1;
 }

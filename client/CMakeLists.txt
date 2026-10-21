@@ -1,15 +1,18 @@
-# client — what an application does with media, whatever its UI: publishing
-# sources as streams and playing the streams of others (later: rooms, calls,
-# chat). Glues engine to libratcast; the app and the tools sit on top.
+# client — what an application does with media, whatever its UI: a call
+# (its node, invites, dialing), publishing sources as streams and playing the
+# streams of others (later: rooms, chat). Glues engine to libratcast; the app
+# and the tools sit on top.
 
 add_library(ratcast_client STATIC
     src/audio_player.cpp
     src/audio_publisher.cpp
+    src/call.cpp
     src/data_player.cpp
     src/data_publisher.cpp
     src/playback_meter.cpp
     src/playout_clock.cpp
     src/playout_schedule.cpp
+    src/rats_url.cpp
     src/ts_probe.cpp
     src/video_player.cpp
     src/video_publisher.cpp
