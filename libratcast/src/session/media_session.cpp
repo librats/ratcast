@@ -86,14 +86,19 @@ struct MediaSession::OutgoingStream {
         if (bitrate) rate.emplace(*bitrate, description.lifetime);
     }
 
-    /// Every frame of it decodes on its own: nothing waits for a keyframe, and
-    /// no frame is worth more time than the others.
-    bool stands_alone() const noexcept { return description.kind() == MediaKind::Audio; }
+    /// Every frame of it decodes on its own — sound, or bytes ratcast does not
+    /// look into: nothing waits for a keyframe, and no frame is worth more
+    /// time than the others.
+    bool stands_alone() const noexcept { return description.kind() != MediaKind::Video; }
 
     /// Where a frame goes among the live messages to a peer: sound first, then
-    /// a keyframe, then the frames that depend on it.
+    /// a keyframe, then the frames that depend on it, and data with them.
     LiveRank rank_of(const FrameInfo& info) const noexcept {
-        if (stands_alone()) return LiveRank::Sound;
+        switch (description.kind()) {
+            case MediaKind::Audio: return LiveRank::Sound;
+            case MediaKind::Data: return LiveRank::Frame;
+            case MediaKind::Video: break;
+        }
         return info.keyframe ? LiveRank::Keyframe : LiveRank::Frame;
     }
 
@@ -251,7 +256,7 @@ FrameTracker::Config MediaSession::tracker_config(const StreamDescription& descr
         .patience = description.lifetime,
         .keyframe_retry = config_.keyframe_retry,
         .max_pending = config_.max_pending_frames,
-        .in_order = description.kind() != MediaKind::Audio,
+        .in_order = description.kind() == MediaKind::Video,
     };
 }
 

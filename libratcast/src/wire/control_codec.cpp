@@ -43,11 +43,10 @@ void write(Out& out, const Announce& announce) {
         out.varint(video->height);
         out.varint(video->frame_rate_num);
         out.varint(video->frame_rate_den);
-    } else {
-        const AudioFormat& audio = *d.audio();
-        out.varint(audio.sample_rate);
-        out.u8(audio.channels);
-    }
+    } else if (const AudioFormat* audio = d.audio()) {
+        out.varint(audio->sample_rate);
+        out.u8(audio->channels);
+    }  // a data stream's format has no fields
     out.varint(d.codec_config.size());
     out.bytes(d.codec_config.bytes());
 }
@@ -104,6 +103,7 @@ Result<ControlMessage> read_announce(Reader& in) {
             d.format = audio;
             break;
         }
+        case MediaKind::Data: d.format = DataFormat{}; break;
         default:
             if (!in.ok()) return fail(in.error());
             return fail(Errc::Unsupported);

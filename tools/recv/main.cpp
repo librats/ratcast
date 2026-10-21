@@ -198,7 +198,7 @@ private:
             if (!sound_ && output_) play_sound(peer, description);
             return;
         }
-        if (player_) return;
+        if (player_ || description.kind() != MediaKind::Video) return;
 
         auto player = std::make_unique<VideoPlayer>(*session_, peer, description, sink_, config_);
         if (Result<void> started = player->start(); !started) {

@@ -10,6 +10,7 @@ std::optional<MediaKind> media_kind_of(Codec codec) noexcept {
         case Codec::H265:
         case Codec::AV1: return MediaKind::Video;
         case Codec::Opus: return MediaKind::Audio;
+        case Codec::MpegTs: return MediaKind::Data;
     }
     return std::nullopt;
 }

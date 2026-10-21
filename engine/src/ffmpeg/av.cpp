@@ -38,6 +38,7 @@ AVCodecID codec_id(Codec codec) noexcept {
         case Codec::H265: return AV_CODEC_ID_HEVC;
         case Codec::AV1: return AV_CODEC_ID_AV1;
         case Codec::Opus: return AV_CODEC_ID_OPUS;
+        case Codec::MpegTs: break;  // a container: nothing to code
     }
     return AV_CODEC_ID_NONE;
 }

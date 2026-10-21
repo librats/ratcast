@@ -194,6 +194,16 @@ StreamDescription mic(StreamId id = 3) {
     return d;
 }
 
+StreamDescription feed(StreamId id = 4) {
+    StreamDescription d;
+    d.id = id;
+    d.codec = Codec::MpegTs;
+    d.format = DataFormat{};
+    d.lifetime = 500ms;
+    d.label = "feed";
+    return d;
+}
+
 MutableBuffer payload_for(FrameNumber number, size_t size = 300) {
     MutableBuffer payload = allocate_frame_payload(size);
     uint8_t* bytes = payload.append(size);
@@ -478,6 +488,22 @@ TEST_F(MediaSessionTest, AudioFramesAreHandedOnAsTheyArrive) {
     hub.reverse_live();
     hub.deliver_all();
     EXPECT_EQ(receiver.frames, (Frames{3, 2, 1, 0}));
+}
+
+// A data stream is carried as sound is, ranked with the pictures: nothing in
+// it is worth more than the rest.
+TEST_F(MediaSessionTest, ADataStreamIsCarriedAsSoundIs) {
+    ASSERT_TRUE(sender.session.add_stream(feed()));
+    hub.deliver_all();
+    subscribe(receiver, 4);
+    hub.lose = [](const Message& m) { return number_of(m) == 2; };
+    for (FrameNumber n = 0; n < 6; ++n) ASSERT_TRUE(send(n, true, 4));
+    hub.reverse_live();
+    advance(1s);
+    EXPECT_EQ(receiver.frames, (Frames{5, 4, 3, 1, 0}));
+    EXPECT_EQ(sender.keyframes_needed, 0);
+    for (uint64_t tag : sender.endpoint.tags) EXPECT_EQ(tag, 0u);
+    for (LiveRank rank : sender.endpoint.ranks) EXPECT_EQ(rank, LiveRank::Frame);
 }
 
 // ── Joining ─────────────────────────────────────────────────────────────────

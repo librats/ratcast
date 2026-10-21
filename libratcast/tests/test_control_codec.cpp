@@ -35,6 +35,16 @@ StreamDescription microphone() {
     return d;
 }
 
+StreamDescription feed() {
+    StreamDescription d;
+    d.id = 2;
+    d.codec = Codec::MpegTs;
+    d.format = DataFormat{};
+    d.lifetime = 1s;
+    d.label = "contribution";
+    return d;
+}
+
 std::vector<uint8_t> bytes_of(const Buffer& buffer) {
     return {buffer.data(), buffer.data() + buffer.size()};
 }
@@ -57,7 +67,7 @@ Message round_trip(const Message& message) {
 }  // namespace
 
 TEST(ControlCodec, RoundTripsAnnouncements) {
-    for (const StreamDescription& d : {screen(), microphone()}) {
+    for (const StreamDescription& d : {screen(), microphone(), feed()}) {
         EXPECT_EQ(round_trip(Announce{d}).description, d);
     }
 }

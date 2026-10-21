@@ -24,6 +24,7 @@ StreamDescription camera() {
 TEST(StreamDescription, KnowsTheKindOfEachCodec) {
     EXPECT_EQ(media_kind_of(Codec::AV1), MediaKind::Video);
     EXPECT_EQ(media_kind_of(Codec::Opus), MediaKind::Audio);
+    EXPECT_EQ(media_kind_of(Codec::MpegTs), MediaKind::Data);
     EXPECT_EQ(media_kind_of(static_cast<Codec>(250)), std::nullopt);
 }
 
@@ -55,6 +56,17 @@ TEST(StreamDescription, RefusesWhatCannotBeAnnounced) {
         d.codec = Codec::Opus;
         d.format = AudioFormat{48000, 0};
     });
+}
+
+TEST(StreamDescription, ADataStreamHasNoFormatToSpeakOf) {
+    StreamDescription d = camera();
+    d.codec = Codec::MpegTs;
+    EXPECT_FALSE(is_valid(d));  // a container announced as pictures
+    d.format = DataFormat{};
+    EXPECT_TRUE(is_valid(d));
+    EXPECT_EQ(d.kind(), MediaKind::Data);
+    EXPECT_EQ(d.video(), nullptr);
+    EXPECT_EQ(d.audio(), nullptr);
 }
 
 TEST(StreamDescription, AnUnknownCodecMayCarryEitherKind) {

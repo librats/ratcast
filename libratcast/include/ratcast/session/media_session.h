@@ -33,7 +33,8 @@
  * subscriber starts at once, never needs a keyframe, and a frame to it that
  * the network gave up on costs only itself. A receiver hands audio frames on
  * as they arrive, for a jitter buffer (JitterBuffer) to put in order and wait
- * for the late ones.
+ * for the late ones. A data stream (an MPEG-TS feed) is carried the same way,
+ * for a DeliveryBuffer to put in order.
  *
  * A stream added with BitrateLimits is rate-controlled: the session follows
  * the paths to its subscribers (on_peer_path) and tells the encoder the
@@ -47,7 +48,7 @@
  * into the session — and must not block: the frame handler in particular
  * runs on a network thread and should only queue the frame for a decoder.
  * Frames of one stream reach the handler one at a time, in decode order —
- * audio frames in the order they arrived.
+ * audio and data frames in the order they arrived.
  */
 
 #include <atomic>

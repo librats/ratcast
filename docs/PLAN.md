@@ -151,8 +151,8 @@ final place and shape: stage 0 is a walking skeleton, not a throwaway prototype.
 | **0. Skeleton** ✅ | screen → encoder → libratcast → librats → decoder → window, on Linux; latency and behaviour on emulated networks measured | L1 ✅ |
 | **1. A stream that holds** ✅ | one video stream to a few viewers plays on every emulated path: rate control, fast joining, smooth playback on lossy paths | L2 (c) ✅, L3 ✅; L2 (a, b) put off |
 | **2. Sound** ✅ | audio, A/V sync; latency profiles put off to stages 5 and 6 | L4 ✅ |
-| **3. Standalone library** ← now | netsim, C API, MPEG-TS, `rats://` URLs, a benchmark against librist and SRT | — |
-| **4. Platforms** | GPU paths and hardware codecs; Windows and macOS capture | — |
+| **3. Standalone library** ← now | MPEG-TS in and out, `rats://` URLs, a benchmark against librist and SRT, C API | — |
+| **4. Platforms** | GPU paths and hardware codecs; Windows and macOS capture; netsim | — |
 | **5. Watch together** | one-to-many: forwarding tree, simulcast / SVC, SFU, SFrame E2EE, synchronized playout | L5 |
 | **6. App** | Qt app MVP: rooms and invites, voice with AEC / NS, screen / window / app-audio share, camera, on Windows / Linux / macOS | — |
 | **7. Conferences** | active speaker, last-N, grid, moderation, text chat | — |
@@ -461,11 +461,27 @@ stream (`rtt-200`, `cap-drop`).
 libratcast usable and measured on its own, against what it is meant to replace.
 *Done when* `docs/bench.md` has the comparison with librist and SRT on the same scenarios.
 
-- **3.1 netsim:** a userspace impairment proxy (delay, jitter, loss, bursts, bandwidth caps;
-  no root, any OS) with scripted scenarios in CI; `bench/netem.py` covers Linux meanwhile.
-- **3.2 C API.**
-- **3.3 Interop in the tools:** MPEG-TS in / out, `rats://` URLs.
-- **3.4 Benchmark** against librist and SRT (libwebrtc if practical). librats: L9 optional.
+librist and SRT carry an MPEG-TS byte stream, so that comes first: the comparison is the same TS
+across the same paths. In steps:
+
+- **3.1 MPEG-TS through ratcast:**
+  - (a) ✅ libratcast: data streams (`MediaKind::Data`, `Codec::MpegTs`), carried as sound is —
+    every message stands alone, no keyframes, handed on as it arrives — and a `DeliveryBuffer`
+    (`stream/`, tested in virtual time) that hands them on in order at a fixed delay past the
+    fastest, skipping what did not come in time: what SRT calls TSBPD with too-late drop, and
+    librist its buffer;
+  - (b) the tools: `ratcast-send --input` and `ratcast-recv --output` for TS over UDP, files and
+    pipes; `rats://` URLs for where a stream is.
+- **3.2 Benchmark** against librist and SRT (libwebrtc if practical). librats: L9 optional.
+  - (a) the harness: a stamped constant-bitrate TS probe (sender and meter: latency, loss,
+    continuity), librist's and SRT's own tools built from pinned sources without root,
+    `bench/netem.py` running each of the three over the same scenarios;
+  - (b) the comparison, in `docs/bench.md`.
+- **3.3 C API.**
+
+netsim, the userspace impairment proxy (delay, jitter, loss, bursts, bandwidth caps; no root, any
+OS; scripted scenarios in CI), moved to stage 4: it is for the other platforms, and
+`bench/netem.py` covers Linux.
 
 ### Stage 4 — Platforms
 
@@ -480,6 +496,9 @@ encoding, and a 1440p60 game is captured and encoded without a CPU copy.
   keyframes and LTR / reference invalidation where the encoder has them (from 1.3).
 - **4.3 Windows:** Windows.Graphics.Capture + D3D11 → hardware encoder.
 - **4.4 macOS:** ScreenCaptureKit + VideoToolbox.
+- **4.5 netsim** (from stage 3): a userspace impairment proxy (delay, jitter, loss, bursts,
+  bandwidth caps; no root, any OS) with scripted scenarios in CI, for where `bench/netem.py`
+  cannot run.
 
 ### Stage 5 — Watch together
 

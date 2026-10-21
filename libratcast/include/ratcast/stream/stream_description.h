@@ -30,6 +30,9 @@ namespace ratcast {
 enum class MediaKind : uint8_t {
     Video = 1,
     Audio = 2,
+    /// Bytes ratcast does not look into, handed on in order at a fixed delay:
+    /// an MPEG-TS feed, as librist and SRT carry.
+    Data = 3,
 };
 
 /// The bitstream format of a stream's frames. libratcast never looks inside a
@@ -40,6 +43,8 @@ enum class Codec : uint8_t {
     H265 = 2,
     AV1 = 3,
     Opus = 64,
+    /// MPEG-TS packets, whole 188-byte ones, a few to a frame.
+    MpegTs = 128,
 };
 
 /// The kind of media `codec` carries; nullopt for a codec this build does not
@@ -64,6 +69,11 @@ struct AudioFormat {
     friend bool operator==(const AudioFormat&, const AudioFormat&) = default;
 };
 
+/// A data stream's: nothing yet, the bytes say it all.
+struct DataFormat {
+    friend bool operator==(const DataFormat&, const DataFormat&) = default;
+};
+
 struct StreamDescription {
     static constexpr size_t kMaxLabelSize = 64;
     static constexpr size_t kMaxCodecConfigSize = 64 * 1024;
@@ -72,7 +82,7 @@ struct StreamDescription {
 
     StreamId id = 0;
     Codec codec = Codec::H264;
-    std::variant<VideoFormat, AudioFormat> format;
+    std::variant<VideoFormat, AudioFormat, DataFormat> format;
     /// How long after it is sent a frame is still worth delivering — the
     /// latency profile of the stream. Past it a frame is dropped, not late.
     Duration lifetime{};
@@ -84,7 +94,8 @@ struct StreamDescription {
     Buffer codec_config;
 
     MediaKind kind() const noexcept {
-        return std::holds_alternative<VideoFormat>(format) ? MediaKind::Video : MediaKind::Audio;
+        if (std::holds_alternative<VideoFormat>(format)) return MediaKind::Video;
+        return std::holds_alternative<AudioFormat>(format) ? MediaKind::Audio : MediaKind::Data;
     }
     const VideoFormat* video() const noexcept { return std::get_if<VideoFormat>(&format); }
     const AudioFormat* audio() const noexcept { return std::get_if<AudioFormat>(&format); }

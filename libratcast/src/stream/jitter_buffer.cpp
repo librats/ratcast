@@ -23,7 +23,8 @@ constexpr Duration kDropEvery = 100ms;
 
 }  // namespace
 
-JitterBuffer::JitterBuffer(Config config) : config_(config), target_(config.min_delay) {
+JitterBuffer::JitterBuffer(Config config)
+    : config_(config), fastest_(config.memory), target_(config.min_delay) {
     assert(config.min_delay <= config.max_delay && config.max_frames > 0);
     frames_.reserve(config.max_frames + 1);
 }
@@ -83,18 +84,7 @@ void JitterBuffer::learn(const EncodedFrame& frame, Timestamp now) {
     last_pushed_ = frame.info;
 
     const Duration transit = now - frame.info.capture_time;
-    const Duration period = config_.memory / static_cast<int64_t>(kPeriods);
-    if (!period_start_ || now - *period_start_ >= period) {
-        std::shift_left(period_min_.begin(), period_min_.end(), 1);
-        period_min_.back() = transit;
-        period_start_ = now;
-    } else {
-        period_min_.back() = std::min(*period_min_.back(), transit);
-    }
-    base_.reset();
-    for (const std::optional<Duration>& least : period_min_) {
-        if (least) base_ = std::min(base_.value_or(*least), *least);
-    }
+    fastest_.add(transit, now);
 
     // Lateness beyond the base, into a histogram whose past fades over memory.
     const double fade = last_arrival_
@@ -103,7 +93,8 @@ void JitterBuffer::learn(const EncodedFrame& frame, Timestamp now) {
                             : 1.0;
     last_arrival_ = now;
     for (double& weight : lateness_) weight *= fade;
-    const auto bucket = static_cast<size_t>(std::max(transit - *base_, Duration::zero()) / kBucket);
+    const auto bucket =
+        static_cast<size_t>(std::max(transit - *fastest_.least(), Duration::zero()) / kBucket);
     lateness_[std::min(bucket, kBuckets - 1)] += 1.0;
     update_target();
 }
@@ -135,7 +126,7 @@ JitterBuffer::Next JitterBuffer::next(Timestamp now) {
     }
 
     for (;;) {
-        delay_ = now - cursor_ - *base_;
+        delay_ = now - cursor_ - *fastest_.least();
         // Frames the cursor went past while they waited (it cut silence, or
         // dropped a frame) are of no use now.
         while (!frames_.empty() && frames_.front().info.capture_time + kTolerance < cursor_) {

@@ -4,6 +4,8 @@ ratcast_add_test(libratcast_tests
         test_control_codec.cpp
         test_frame_codec.cpp
         test_frame_tracker.cpp
+        test_delivery_buffer.cpp
+        test_fastest_transit.cpp
         test_jitter_buffer.cpp
         test_media_service.cpp
         test_media_session.cpp

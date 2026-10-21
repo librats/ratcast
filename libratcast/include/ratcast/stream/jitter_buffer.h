@@ -50,6 +50,7 @@
 
 #include "ratcast/core/time.h"
 #include "ratcast/export.h"
+#include "ratcast/stream/fastest_transit.h"
 #include "ratcast/stream/frame.h"
 
 namespace ratcast {
@@ -133,9 +134,6 @@ private:
     static constexpr Duration kBucket = std::chrono::milliseconds(2);
     static constexpr size_t kBuckets = 256;  ///< up to half a second
 
-    /// The base transit is the least over this many periods of memory / kPeriods.
-    static constexpr size_t kPeriods = 4;
-
     void learn(const EncodedFrame& frame, Timestamp now);
     void update_target();
     std::optional<Next> play_front(Timestamp now);
@@ -147,10 +145,7 @@ private:
 
     std::vector<EncodedFrame> frames_;  ///< sorted by number, all >= next_number_
 
-    // The base transit: the least of each period, the oldest first out.
-    std::array<std::optional<Duration>, kPeriods> period_min_{};
-    std::optional<Timestamp> period_start_;
-    std::optional<Duration> base_;
+    FastestTransit fastest_;  ///< the base transit
 
     std::array<double, kBuckets> lateness_{};
     std::optional<Timestamp> last_arrival_;
