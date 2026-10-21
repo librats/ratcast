@@ -4,11 +4,13 @@
 include(RatcastFFmpeg)
 include(RatcastOpus)
 include(RatcastPipeWire)
+include(RatcastWebRtcApm)
 
 add_library(ratcast_engine STATIC
     src/audio/audio_codec.cpp
     src/audio/audio_device.cpp
     src/audio/audio_frame.cpp
+    src/audio/audio_mixer.cpp
     src/pattern/pattern.cpp
     src/pattern/pattern_source.cpp
     src/pattern/tone_source.cpp
@@ -46,6 +48,13 @@ if(RATCAST_OPUS_FOUND)
     target_link_libraries(ratcast_engine PRIVATE ratcast::opus)
 else()
     target_sources(ratcast_engine PRIVATE src/opus_unavailable.cpp)
+endif()
+
+if(RATCAST_WEBRTC_APM_FOUND)
+    target_sources(ratcast_engine PRIVATE src/webrtc/audio_processor.cpp)
+    target_link_libraries(ratcast_engine PRIVATE ratcast::webrtc_apm)
+else()
+    target_sources(ratcast_engine PRIVATE src/webrtc_apm_unavailable.cpp)
 endif()
 
 if(RATCAST_PIPEWIRE_FOUND)

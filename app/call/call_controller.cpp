@@ -40,9 +40,13 @@ CallController::Environment CallController::Environment::system() {
     environment.open_share = [](const ScreenShareConfig& config, std::stop_token cancel) {
         return open_screen_share(config, std::move(cancel));
     };
-    environment.open_speaker = []() -> std::unique_ptr<AudioOutput> {
-        Result<std::unique_ptr<AudioOutput>> speaker = open_audio_output({});
+    environment.open_speaker = [format = environment.voice.speaker] {
+        Result<std::unique_ptr<AudioOutput>> speaker = open_audio_output({.format = format});
         return speaker ? std::move(*speaker) : nullptr;
+    };
+    environment.open_microphone = [format = environment.voice.microphone] {
+        Result<std::unique_ptr<AudioSource>> microphone = open_audio_capture({.format = format});
+        return microphone ? std::move(*microphone) : nullptr;
     };
     return environment;
 }
@@ -50,7 +54,10 @@ CallController::Environment CallController::Environment::system() {
 CallController::CallController(QObject* parent)
     : QObject(parent),
       environment_(Environment::system()),
-      pictures_(std::make_shared<Pictures>()) {}
+      pictures_(std::make_shared<Pictures>()) {
+    levels_.setInterval(100);
+    connect(&levels_, &QTimer::timeout, this, &CallController::update_levels);
+}
 
 CallController::~CallController() {
     ++generation_;
@@ -58,6 +65,7 @@ CallController::~CallController() {
     if (choosing_.joinable()) choosing_.join();
     call_.reset();
     speaker_.reset();
+    voice_.reset();
 }
 
 void CallController::setEnvironment(Environment environment) {
@@ -104,8 +112,10 @@ void CallController::share_opened(uint64_t generation, const ScreenShareConfig& 
                 : tr("The screen cannot be shared (%1).").arg(describe(sources.error())));
         return;
     }
+    open_voice();
     CallConfig config_of_call = environment_.call;
     config_of_call.data_dir = environment_.data_dir;
+    config_of_call.playback.sound = speaker_.get();  // the viewers' voices
     Result<std::unique_ptr<Call>> started =
         Call::start(std::move(config_of_call), handlers(generation));
     if (!started) {
@@ -124,6 +134,7 @@ void CallController::share_opened(uint64_t generation, const ScreenShareConfig& 
     Q_EMIT invitesChanged();
     count_viewers();
     set_state(State::Sharing);
+    talk();
 }
 
 // ── Watching ────────────────────────────────────────────────────────────────
@@ -137,7 +148,7 @@ void CallController::join(const QString& link) {
     }
     set_notice({});
     const uint64_t generation = ++generation_;
-    speaker_ = environment_.open_speaker ? environment_.open_speaker() : nullptr;
+    open_voice();
 
     CallConfig config = environment_.call;
     // An identity of its own, so that a host can share and watch at once.
@@ -158,9 +169,55 @@ void CallController::join(const QString& link) {
     }
     call_ = std::move(*started);
     set_state(State::Joining);
+    talk();
 }
 
 // ── Either ──────────────────────────────────────────────────────────────────
+
+void CallController::open_voice() {
+    voice_ = std::make_unique<VoiceChannel>(environment_.voice);
+    voice_->set_muted(muted_);
+    std::unique_ptr<AudioOutput> device =
+        environment_.open_speaker ? environment_.open_speaker() : nullptr;
+    speaker_ = device ? voice_->speaker(std::move(device)) : nullptr;
+}
+
+void CallController::talk() {
+    levels_.start();
+    std::unique_ptr<AudioSource> device =
+        environment_.open_microphone ? environment_.open_microphone() : nullptr;
+    // Not heard is no reason to end the call: said, and the call goes on.
+    if (!device) {
+        set_notice(tr("There is no microphone: the others will not hear you."));
+        return;
+    }
+    if (Result<AudioPublisher*> published =
+            publish_voice(*call_, voice_->microphone(std::move(device)));
+        !published) {
+        set_notice(tr("The microphone cannot be used (%1).").arg(describe(published.error())));
+    }
+}
+
+void CallController::setMuted(bool muted) {
+    if (muted == muted_) return;
+    muted_ = muted;
+    if (voice_) voice_->set_muted(muted);
+    Q_EMIT mutedChanged();
+    update_levels();
+}
+
+void CallController::update_levels() {
+    const bool speaking = voice_ && voice_->speaking();
+    const bool hearing = voice_ && voice_->hearing();
+    if (speaking != speaking_) {
+        speaking_ = speaking;
+        Q_EMIT speakingChanged();
+    }
+    if (hearing != hearing_) {
+        hearing_ = hearing;
+        Q_EMIT hearingChanged();
+    }
+}
 
 void CallController::leave() { end(); }
 
@@ -170,8 +227,11 @@ void CallController::end(QString notice) {
     ++generation_;
     choosing_.request_stop();
     if (choosing_.joinable()) choosing_.join();
+    levels_.stop();
     call_.reset();
     speaker_.reset();
+    voice_.reset();
+    update_levels();
     if (video_) video_->clear();
     if (!invites_.isEmpty()) {
         invites_.clear();

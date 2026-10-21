@@ -1,6 +1,8 @@
 ratcast_add_test(engine_tests
     SOURCES
         test_audio_codec.cpp
+        test_audio_mixer.cpp
+        test_audio_processing.cpp
         test_file_source.cpp
         test_frame_pacer.cpp
         test_pattern.cpp

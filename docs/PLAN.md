@@ -117,6 +117,7 @@ per room for delivery, librats storage for history when it is built.
 | SDL3 | windows of the CLI tools | system | vcpkg |
 | Qt ≥ 6.6 with Quick, Shader Tools, QtGui private headers (QRhi) | app | system | official installer / aqtinstall |
 | libopus ≥ 1.3 | audio | system (`libopus-dev`) | vcpkg |
+| WebRTC AudioProcessing 1.x | voice: echo, noise, gain | system (`libwebrtc-audio-processing-dev`) | build from freedesktop.org's meson project |
 | WebRTC AudioProcessing | AEC, AGC, NS (stage 6) | system | vcpkg or vendored |
 | GoogleTest | tests | fetched by CMake | fetched by CMake |
 
@@ -650,8 +651,23 @@ on the same call code.
   for the desktop: share, join, watch, leave either side; a share that runs out, is declined,
   fails, or is called off while the dialog is open; a link that is none. Tried live: the app
   watching `ratcast-send`'s pattern, rate control climbing as with `ratcast-recv`.
-- **6.4 Voice both ways:** the microphone with echo cancellation and noise suppression (WebRTC
-  AudioProcessing, BSD), muting, who is speaking.
+- **6.4 Voice both ways** ✅: both sides talk. The engine's `AudioProcessor` is WebRTC's
+  AudioProcessing (BSD, `RATCAST_WITH_WEBRTC_APM`): AEC3 against what the speaker plays, noise
+  suppression, AGC2, voice detection; blocks of any length in, 10 ms out with their capture times,
+  the echo's delay from play and capture times (tested in virtual time: 36 dB of a speaker's echo
+  taken out, 18 dB of steady hiss, a vowel told from silence). `AudioMixer` lets several players
+  share one output, so a call plays the sharer's voice — a sound stream labelled `voice`, in its
+  own time — beside the screen's sound, which stays in step with the pictures. Client's
+  `VoiceChannel` puts the processor between the microphone and the speaker it wraps; muted, it
+  sends silence, which DTX makes next to nothing, so unmuting is at once; it says who is speaking
+  and who is heard, held 300 ms. The app: a microphone and a voice for each side, a mute button
+  that holds from one call to the next, a dot for each side speaking; no microphone is said and
+  the call goes on. Tested through calls on loopback (each hears the other, a muted side is not
+  heard) and through two controllers; ASan / TSan clean. Left for 6.6: a sharer's whole-system
+  sound also carries the viewers' voices as the sharer's speaker plays them — they hear
+  themselves, late — and the sharer's microphone hears the screen's sound with nothing to cancel
+  it against (headphones help the second, not the first); per-application capture, and the
+  system's sound as the echo reference, are the cure.
 - **6.5 Camera, and two streams on one path:** a camera beside the screen; each stream takes the
   whole path today (1.1), so the path's rate is shared between them.
 - **6.6 App audio:** one application's sound through PipeWire, never the call's own playback.

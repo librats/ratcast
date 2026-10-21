@@ -13,10 +13,12 @@
  * encoder hears the keyframes receivers ask for and the bitrate rate control
  * aims at. Whoever connects may subscribe to it.
  *
- * What is played is the first video, sound and feed offered — from the peer
- * dialed, if it was dialed by peer id, from anyone otherwise — each where the
- * playback config says, the pictures and the sound of one sender in step
- * (PlayoutClock). When one ends, the next of its kind announced plays.
+ * What is played is the first video, sound, voice and feed offered — from
+ * the peer dialed, if it was dialed by peer id, from anyone otherwise — each
+ * where the playback config says. A voice is a sound stream labelled
+ * kVoiceLabel: it keeps its own time, while the other sound and the pictures
+ * play in step (PlayoutClock); the two sounds are mixed into the one output
+ * (AudioMixer). When one ends, the next of its kind announced plays.
  *
  * The other side gets here by an invite (invites()): a rats:// link with this
  * node's peer id, looked for through the DHT if the call is discoverable, or
@@ -48,6 +50,7 @@
 #include "ratcast/client/video_publisher.h"
 #include "ratcast/core/result.h"
 #include "ratcast/engine/audio_device.h"
+#include "ratcast/engine/audio_mixer.h"
 #include "ratcast/engine/ts_io.h"
 #include "ratcast/ratcast.h"
 #include "ratcast/session/media_session.h"
@@ -58,13 +61,17 @@ namespace ratcast {
 
 class MediaService;
 
+/// The label of a sound stream that is someone's voice: played as soon as it
+/// can be, not held to pictures.
+inline constexpr std::string_view kVoiceLabel = "voice";
+
 /// What plays, and where. Each kind left without a destination is not
 /// received at all.
 struct CallPlayback {
     /// Pictures, on the video player's thread.
     VideoPlayer::Sink pictures = {};
     VideoPlayerConfig video = {};  ///< its `sync` is the call's own
-    /// The sound's device; must outlive the call.
+    /// The device the sound and the voice play into; must outlive the call.
     AudioOutput* sound = nullptr;
     AudioPlayer::Observer heard = {};
     /// Pictures and sound of one sender in step; apart, each keeps its own
@@ -162,6 +169,7 @@ public:
 
     std::optional<ReceivedVideoStats> video_stats() const;
     std::optional<AudioPlayerStats> sound_stats() const;
+    std::optional<AudioPlayerStats> voice_stats() const;
     /// The feed playing, or the last one, writing out what it held or done.
     std::optional<DataPlayerStats> feed_stats() const;
     /// Sound and pictures: how far apart they played, and what each needs.
@@ -176,9 +184,15 @@ private:
     struct PublishedAs;
     template <typename Player>
     struct Playing {
-        std::unique_ptr<Player> player;
+        std::unique_ptr<AudioOutput> output;  ///< a sound's input of the mixer
+        std::unique_ptr<Player> player;       ///< after its output: stopped before it
         StreamDescription description;
         explicit operator bool() const noexcept { return player != nullptr; }
+        /// The player first: it plays into the output.
+        void reset() {
+            player.reset();
+            output.reset();
+        }
     };
 
     Call(CallConfig config, CallHandlers handlers);
@@ -210,9 +224,11 @@ private:
     std::map<StreamId, std::unique_ptr<Published>> published_;
 
     PlayoutClock sync_;
+    std::optional<AudioMixer> mixer_;  ///< over playback.sound, if any
     mutable std::mutex playing_;
     Playing<VideoPlayer> video_;
     Playing<AudioPlayer> sound_;
+    Playing<AudioPlayer> voice_;
     Playing<DataPlayer> feed_;
     std::unique_ptr<DataPlayer> ended_feed_;  ///< writing out what it held
 };

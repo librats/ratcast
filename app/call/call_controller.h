@@ -11,7 +11,9 @@
  *     └──── join() ──▶ Joining ◀──▶ Watching      (the picture plays, or is
  *                                                  waited for)
  *
- * and leave() goes back to Idle from anywhere. What went wrong, or ended
+ * and leave() goes back to Idle from anywhere. Either way both sides talk:
+ * the microphone, cleaned of the speaker's echo and of noise, goes as a voice
+ * (VoiceChannel), muted or not as the user says. What went wrong, or ended
  * without the user, is the notice: a share the desktop could not make, a link
  * that is none, the other side gone. The user calling off the desktop's
  * dialog is no news.
@@ -27,6 +29,7 @@
 #include <QPointer>
 #include <QString>
 #include <QStringList>
+#include <QTimer>
 
 #include <cstdint>
 #include <functional>
@@ -37,6 +40,7 @@
 
 #include "ratcast/client/call.h"
 #include "ratcast/client/screen_share.h"
+#include "ratcast/client/voice.h"
 #include "ratcast/engine/audio_device.h"
 #include "video_view.h"
 
@@ -52,6 +56,11 @@ class CallController : public QObject {
     /// Peers connected while sharing.
     Q_PROPERTY(int viewers READ viewers NOTIFY viewersChanged)
     Q_PROPERTY(QString notice READ notice NOTIFY noticeChanged)
+    /// The microphone silenced; kept from one call to the next.
+    Q_PROPERTY(bool muted READ muted WRITE setMuted NOTIFY mutedChanged)
+    /// This side's voice on the microphone, and the other side's on the speaker.
+    Q_PROPERTY(bool speaking READ speaking NOTIFY speakingChanged)
+    Q_PROPERTY(bool hearing READ hearing NOTIFY hearingChanged)
     /// Where the other side's pictures are drawn.
     Q_PROPERTY(ratcast::app::VideoView* video READ video WRITE setVideo NOTIFY videoChanged)
 
@@ -69,6 +78,10 @@ public:
             open_share = {};
         /// The speaker; null: the sound is not played.
         std::function<std::unique_ptr<AudioOutput>()> open_speaker = {};
+        /// The microphone; null: this side is not heard.
+        std::function<std::unique_ptr<AudioSource>()> open_microphone = {};
+        /// How the voice is cleaned: its devices' formats and what is done.
+        VoiceConfig voice = {};
 
         /// This computer's: its desktop, its speaker, the user's data
         /// directory, discoverable through the DHT.
@@ -96,6 +109,10 @@ public:
     QString notice() const { return notice_; }
     VideoView* video() const { return video_; }
     void setVideo(VideoView* video);
+    bool muted() const { return muted_; }
+    void setMuted(bool muted);
+    bool speaking() const { return speaking_; }
+    bool hearing() const { return hearing_; }
 
 Q_SIGNALS:
     void stateChanged();
@@ -103,6 +120,9 @@ Q_SIGNALS:
     void viewersChanged();
     void noticeChanged();
     void videoChanged();
+    void mutedChanged();
+    void speakingChanged();
+    void hearingChanged();
 
 private:
     struct Pictures;
@@ -118,6 +138,13 @@ private:
     CallHandlers handlers(uint64_t generation);
     /// Run `event` on the GUI thread if the call of `generation` is still on.
     void post(uint64_t generation, std::function<void()> event);
+    /// The speaker, through a voice channel of its own, for a call about to
+    /// start.
+    void open_voice();
+    /// This side's voice on the call just started, if there is a microphone.
+    void talk();
+    /// Who is speaking, as the voice channel says: a few times a second.
+    void update_levels();
     /// Back to Idle; `notice` says why, if it was not the user.
     void end(QString notice = {});
 
@@ -126,6 +153,10 @@ private:
     QStringList invites_;
     int viewers_ = 0;
     QString notice_;
+    bool muted_ = false;
+    bool speaking_ = false;
+    bool hearing_ = false;
+    QTimer levels_;
     QPointer<VideoView> video_;
     /// Where the call's pictures go: the view, as it changes.
     std::shared_ptr<Pictures> pictures_;
@@ -133,8 +164,9 @@ private:
     /// Counts calls and shares begun: events of an earlier one are dropped.
     uint64_t generation_ = 0;
     std::jthread choosing_;  ///< the desktop's dialog
-    std::unique_ptr<AudioOutput> speaker_;
-    std::unique_ptr<Call> call_;  ///< after the speaker: it plays into it
+    std::unique_ptr<VoiceChannel> voice_;
+    std::unique_ptr<AudioOutput> speaker_;  ///< the voice channel's
+    std::unique_ptr<Call> call_;            ///< after the speaker: it plays into it
 };
 
 }  // namespace ratcast::app

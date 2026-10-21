@@ -100,6 +100,7 @@ Call::Call(CallConfig config, CallHandlers handlers)
       handlers_(std::move(handlers)),
       node_(node_config(config_)),
       sync_(SteadyClock::instance(), config_.playback.sync) {
+    if (config_.playback.sound) mixer_.emplace(*config_.playback.sound);
     media_ = node_.add_subsystem(std::make_unique<MediaService>(session_handlers()));
     // One key to meet under: the peer dialed, or this call's own.
     const PeerId* dialed = dialed_peer(config_);
@@ -130,11 +131,13 @@ Call::~Call() {
         // that asks for stats.
         Playing<VideoPlayer> video;
         Playing<AudioPlayer> sound;
+        Playing<AudioPlayer> voice;
         Playing<DataPlayer> feed;
         std::unique_ptr<DataPlayer> ended_feed;
         std::lock_guard lock(playing_);
         video = std::move(video_);
         sound = std::move(sound_);
+        voice = std::move(voice_);
         feed = std::move(feed_);
         ended_feed = std::move(ended_feed_);
     }
@@ -267,20 +270,25 @@ void Call::play(Playing<Player>& slot, const PeerId& peer, const StreamDescripti
                 std::vector<std::function<void()>>& events) {
     const CallPlayback& playback = config_.playback;
     MediaSession& media = session();
+    std::unique_ptr<AudioOutput> output;
     std::unique_ptr<Player> player;
     if constexpr (std::is_same_v<Player, VideoPlayer>) {
         VideoPlayerConfig video = playback.video;
         video.sync = &sync_;
         player = std::make_unique<VideoPlayer>(media, peer, description, playback.pictures, video);
     } else if constexpr (std::is_same_v<Player, AudioPlayer>) {
-        player = std::make_unique<AudioPlayer>(media, peer, description, *playback.sound,
-                                               AudioPlayerConfig{.sync = &sync_}, playback.heard);
+        // A voice keeps its own time; the other sound goes with the pictures.
+        const bool voice = description.label == kVoiceLabel;
+        output = mixer_->input();
+        player = std::make_unique<AudioPlayer>(media, peer, description, *output,
+                                               AudioPlayerConfig{.sync = voice ? nullptr : &sync_},
+                                               playback.heard);
     } else {
         player = std::make_unique<DataPlayer>(media, peer, description, *playback.feed,
                                               playback.feed_config);
     }
     Result<void> started = player->start();
-    if (started) slot = {std::move(player), description};
+    if (started) slot = {std::move(output), std::move(player), description};
     events.push_back([this, peer, description, started] {
         notify(handlers_.playing, peer, description, started);
     });
@@ -302,9 +310,11 @@ void Call::announced(const PeerId& peer, const StreamDescription& description) {
             case MediaKind::Video:
                 if (!video_ && playback.pictures) play(video_, peer, description, events);
                 break;
-            case MediaKind::Audio:
-                if (!sound_ && playback.sound) play(sound_, peer, description, events);
+            case MediaKind::Audio: {
+                Playing<AudioPlayer>& slot = description.label == kVoiceLabel ? voice_ : sound_;
+                if (!slot && playback.sound) play(slot, peer, description, events);
                 break;
+            }
             case MediaKind::Data:
                 if (!feed_ && playback.feed) play(feed_, peer, description, events);
                 break;
@@ -315,18 +325,19 @@ void Call::announced(const PeerId& peer, const StreamDescription& description) {
 
 void Call::withdrawn(const PeerId& peer, StreamId stream) {
     // Stopped outside the lock, as in the destructor.
-    std::unique_ptr<VideoPlayer> video;
-    std::unique_ptr<AudioPlayer> sound;
+    Playing<VideoPlayer> video;
+    Playing<AudioPlayer> sound;
     std::unique_ptr<DataPlayer> replaced;  ///< the feed that ended before, done or not
     std::optional<StreamDescription> ended;
     {
         std::lock_guard lock(playing_);
         if (plays(video_, peer, stream)) {
             ended = video_.description;
-            video = std::move(video_.player);
-        } else if (plays(sound_, peer, stream)) {
-            ended = sound_.description;
-            sound = std::move(sound_.player);
+            video = std::move(video_);
+        } else if (plays(sound_, peer, stream) || plays(voice_, peer, stream)) {
+            Playing<AudioPlayer>& slot = plays(sound_, peer, stream) ? sound_ : voice_;
+            ended = slot.description;
+            sound = std::move(slot);
         } else if (plays(feed_, peer, stream)) {
             ended = feed_.description;
             // What it holds is still to be written out, each at its time.
@@ -347,6 +358,8 @@ void Call::received(const PeerId& peer, EncodedFrame frame) {
         video_.player->push(std::move(frame));
     } else if (plays(sound_, peer, stream)) {
         sound_.player->push(std::move(frame));
+    } else if (plays(voice_, peer, stream)) {
+        voice_.player->push(std::move(frame));
     } else if (plays(feed_, peer, stream)) {
         feed_.player->push(std::move(frame));
     }
@@ -365,6 +378,12 @@ std::optional<AudioPlayerStats> Call::sound_stats() const {
     std::lock_guard lock(playing_);
     if (!sound_) return std::nullopt;
     return sound_.player->stats();
+}
+
+std::optional<AudioPlayerStats> Call::voice_stats() const {
+    std::lock_guard lock(playing_);
+    if (!voice_) return std::nullopt;
+    return voice_.player->stats();
 }
 
 std::optional<DataPlayerStats> Call::feed_stats() const {

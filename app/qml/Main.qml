@@ -17,6 +17,7 @@ ApplicationWindow {
 
     readonly property bool watching: call.state === CallController.Joining
                                      || call.state === CallController.Watching
+    readonly property bool inCall: watching || call.state === CallController.Sharing
 
     width: 960
     height: 600
@@ -169,10 +170,12 @@ ApplicationWindow {
             }
         }
 
-        Button {
-            Layout.topMargin: 12
-            text: qsTr("Stop sharing")
-            onClicked: call.leave()
+        Label {
+            Layout.fillWidth: true
+            wrapMode: Text.Wrap
+            text: call.notice
+            color: Material.color(Material.Orange)
+            visible: text.length > 0
         }
     }
 
@@ -192,12 +195,53 @@ ApplicationWindow {
         }
     }
 
-    Button {
+    // ── In a call, either side ──────────────────────────────────────────────
+
+    component Speaker: RowLayout {
+        property alias text: name.text
+        property bool active
+        spacing: 6
+
+        Rectangle {
+            implicitWidth: 10
+            implicitHeight: 10
+            radius: 5
+            color: parent.active ? Material.color(Material.Green) : "#4e5058"
+        }
+        Label {
+            id: name
+        }
+    }
+
+    Pane {
         anchors.right: parent.right
         anchors.bottom: parent.bottom
         anchors.margins: 16
-        visible: root.watching
-        text: qsTr("Leave")
-        onClicked: call.leave()
+        visible: root.inCall
+        Material.elevation: 4
+
+        RowLayout {
+            spacing: 16
+
+            Speaker {
+                text: call.muted ? qsTr("You (muted)") : qsTr("You")
+                active: call.speaking
+            }
+            Speaker {
+                text: call.state === CallController.Sharing ? qsTr("Viewers") : qsTr("Sharer")
+                active: call.hearing
+            }
+            Button {
+                text: call.muted ? qsTr("Unmute") : qsTr("Mute")
+                checkable: true
+                checked: call.muted
+                onToggled: call.muted = checked
+            }
+            Button {
+                text: call.state === CallController.Sharing ? qsTr("Stop sharing")
+                                                            : qsTr("Leave")
+                onClicked: call.leave()
+            }
+        }
     }
 }

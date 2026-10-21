@@ -10,6 +10,7 @@ ratcast_add_test(client_tests
         test_rats_url.cpp
         test_ts_probe.cpp
         test_video_pipeline.cpp
+        test_voice.cpp
     LIBS
         ratcast::client
 )

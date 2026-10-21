@@ -61,7 +61,8 @@ private:
 };
 
 /// The test's own: loopback, its own protocol, nothing kept, a pattern for
-/// the screen and a tone for its sound, a speaker that plays to nobody.
+/// the screen and a tone for its sound, another for each voice, a speaker
+/// that plays to nobody.
 CallController::Environment environment() {
     const auto* test = ::testing::UnitTest::GetInstance()->current_test_info();
     CallController::Environment environment;
@@ -81,6 +82,12 @@ CallController::Environment environment() {
     environment.open_speaker = [] {
         return std::make_unique<VirtualOutput>(VirtualOutputConfig{});
     };
+    environment.open_microphone = [] {
+        return std::make_unique<ToneSource>(ToneConfig{.frequency = 300, .level = 0.3f});
+    };
+    // Tones for voices: not for the echo canceller or the noise suppressor.
+    environment.voice.processing.echo_cancellation = false;
+    environment.voice.processing.noise_suppression = false;
     return environment;
 }
 
@@ -129,6 +136,31 @@ TEST_F(CallControllerTest, OneSharesTheOtherJoinsAndWatches) {
     EXPECT_TRUE(view_.pictureSize().isEmpty()) << "the view cleared";
     EXPECT_TRUE(wait_for([&] { return sharer_.viewers() == 0; }));
     EXPECT_EQ(sharer_.state(), State::Sharing) << "still sharing, for the next to join";
+}
+
+TEST_F(CallControllerTest, BothTalkAndAMutedOneIsNotHeard) {
+    viewer_.join(share());
+    ASSERT_TRUE(wait_for([&] { return viewer_.state() == State::Watching; }));
+    EXPECT_TRUE(wait_for([&] { return sharer_.hearing() && viewer_.hearing(); }))
+        << "the sharer hears the viewer's voice, the viewer the sharer's and the screen's";
+
+    viewer_.setMuted(true);
+    EXPECT_FALSE(viewer_.speaking());
+    EXPECT_TRUE(wait_for([&] { return !sharer_.hearing(); }));
+    viewer_.setMuted(false);
+    EXPECT_TRUE(wait_for([&] { return sharer_.hearing(); }));
+
+    viewer_.leave();
+    EXPECT_FALSE(viewer_.hearing());
+}
+
+TEST_F(CallControllerTest, WithoutAMicrophoneTheCallGoesOn) {
+    CallController::Environment deaf = environment();
+    deaf.open_microphone = [] { return std::unique_ptr<AudioSource>{}; };
+    viewer_.setEnvironment(deaf);
+    viewer_.join(share());
+    ASSERT_TRUE(wait_for([&] { return viewer_.state() == State::Watching; }));
+    EXPECT_TRUE(wait_for([&] { return !sharer_.hearing() && viewer_.hearing(); }));
 }
 
 TEST_F(CallControllerTest, TheSharerLeavingIsNews) {
