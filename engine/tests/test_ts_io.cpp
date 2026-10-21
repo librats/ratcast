@@ -123,6 +123,31 @@ TEST(TsUrlTest, TakesUdpPipesAndFiles) {
     EXPECT_FALSE(parse_ts_url("udp://host:99999"));
 }
 
+TEST(TsPacketFinderTest, FindsPacketsWhateverTheReads) {
+    std::vector<uint8_t> feed;
+    for (uint8_t i = 0; i < 5; ++i) {
+        const Packet p = packet(256, i);
+        feed.insert(feed.end(), p.begin(), p.end());
+        if (i == 2) feed.insert(feed.end(), {1, 2, 3});  // no packet
+    }
+    TsPacketFinder finder;
+    std::vector<uint8_t> found;
+    std::vector<size_t> runs;
+    uint64_t skipped = 0;
+    for (size_t at = 0; at < feed.size(); at += 100) {
+        const auto read = std::span(feed).subspan(at, std::min<size_t>(100, feed.size() - at));
+        skipped += finder.take(read, [&](std::span<const uint8_t> run) {
+            found.insert(found.end(), run.begin(), run.end());
+            runs.push_back(run.size() / kTsPacketSize);
+        });
+    }
+    EXPECT_EQ(skipped, 3u);
+    std::vector<uint8_t> expected = feed;
+    expected.erase(expected.begin() + 3 * kTsPacketSize, expected.begin() + 3 * kTsPacketSize + 3);
+    EXPECT_EQ(found, expected);
+    EXPECT_EQ(runs, (std::vector<size_t>{1, 1, 1, 1, 1}));  // a packet whenever one is whole
+}
+
 TEST(PcrPacerTest, ReadsThePcr) {
     const uint64_t pcr = (uint64_t{1} << 33) * 300 - 1;  // the largest there is
     EXPECT_EQ(read_pcr(packet(256, 0, pcr)), pcr);

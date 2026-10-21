@@ -478,9 +478,19 @@ across the same paths. In steps:
     — and `DataPlayer` writes them out through a `DeliveryBuffer`, what it holds at the
     feed's end included. A feed piped through on one host comes out byte for byte.
 - **3.2 Benchmark** against librist and SRT (libwebrtc if practical). librats: L9 optional.
-  - (a) the harness: a stamped constant-bitrate TS probe (sender and meter: latency, loss,
-    continuity), librist's and SRT's own tools built from pinned sources without root,
-    `bench/netem.py` running each of the three over the same scenarios;
+  - (a) ✅ the harness: `ratcast-tsprobe` — a stamped constant-bitrate TS probe (`send`) and its
+    meter (`meter`: latency, loss after repair, continuity-counter jumps, the longest gap; the
+    client's `TsProbeWriter` / `TsProbeMeter`); `bench/peers.sh`, SRT 1.5.7's
+    `srt-live-transmit` and librist 0.2.20's `ristsender` / `ristreceiver` built from pinned
+    commits without root; `bench/netem.py --feed`, each of the three over the same scenarios,
+    with what crossed the link each way and each end's CPU. A first look (one run, 8 s): on
+    `loss-2` ratcast loses 0.9% where SRT and librist lose nothing — all of it in the first
+    second after joining, frames that expired in the sender's queue (`live_expired`), none
+    after; it sends more back (0.35 Mbit/s against 0.05) and takes 2–3× their CPU. The
+    joining loss is the round trip, not the loss (`rtt-50` 1.4%, `rtt-100` 6.8%, `rtt-20`
+    none): librats' `LiveSender::shed` judges what cannot leave in time by BBR Startup's
+    pacing rate, a fraction of what it is a few round trips on, and drops frames of a
+    full-rate feed that would have made it (`docs/bench.md`, "Why ratcast loses on joining");
   - (b) the comparison, in `docs/bench.md`.
 - **3.3 C API.**
 

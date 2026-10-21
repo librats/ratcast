@@ -759,5 +759,34 @@ a result.
   On `loss-2` SRT took 549 ms, ratcast 357, librist 249 — one run each, the handshake's
   packets lost or not.
 
-For 3.2 (b): the start (frames sent at the feed's rate from the first one, or kept alive until
-the connection can take them), then the feedback's volume and the CPU, then the full table.
+### Why ratcast loses on joining
+
+Not the loss: the round trip. `bench/netem.py --feed --transport ratcast --duration 5`, and the
+same start driven through librats' `UdpConnection` in virtual time (a responder sending the feed
+as `DataPublisher` does — 752- and 564-byte live messages at 8 Mbit/s, 200 ms lifetime — from
+the moment the connection is up):
+
+| scenario | expired, virtual time | expired, netem | lost at the meter, % |
+|---|---:|---:|---:|
+| rtt-20 | 0 | 0 | 0 |
+| rtt-50 | 101 | 99 | 1.42 |
+| loss-2 (also 50 ms) | 101–112 (seeds) | 106 | 0.91 |
+| rtt-100 | 456 | 456 | 6.75 |
+
+1. A fresh connection starts in BBR's Startup with a ten-packet window: on a 50 ms round trip
+   it paces at 2.2 Mbit/s once the first round trip is measured, about doubles each round,
+   and reaches the feed's 8 Mbit/s after 200–250 ms (100 ms round trip: 1.1 Mbit/s, twice as
+   long).
+2. A TS feed comes at its full rate from the first packet and cannot be slowed. ratcast's video
+   never showed this: its rate control starts at 2 Mbit/s.
+3. `LiveSender::shed` (librats, `transport/udp_live.cpp`) gives up a message not yet started
+   when `now + one_way + rate.time_for(ahead + owed) > deadline`, `rate` the pacing rate *now*.
+   In Startup that is 3–10× below what it is a few round trips later, so messages are judged
+   hopeless that would have made it: in virtual time every one of the 101 goes between 75 and
+   150 ms, while the earliest deadline is 200 ms — shed, not expired — and by what was
+   delivered when, the backlog would have drained in time without them.
+
+SRT's live mode and librist have no congestion control to start up: they send at the input's
+rate from the first packet. Two ways out, both in librats: shed by the pacing rate only once
+Startup is over (before it, by deadline alone), or let the application say the rate a stream
+comes at, for the connection to start at.

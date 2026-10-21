@@ -21,12 +21,14 @@
  *     encoder would send it; out, written as it comes.
  */
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <memory>
 #include <span>
 #include <string_view>
+#include <vector>
 
 #include "ratcast/core/result.h"
 #include "ratcast/core/time.h"
@@ -35,6 +37,21 @@ namespace ratcast {
 
 inline constexpr size_t kTsPacketSize = 188;
 inline constexpr uint8_t kTsSyncByte = 0x47;
+
+/// The packets in a feed read in pieces of any size: a packet cut across two
+/// reads waits for its rest, and bytes that are no packet are skipped up to
+/// the next sync byte.
+class TsPacketFinder {
+public:
+    /// Hand `found(std::span<const uint8_t>)` the whole packets read so far,
+    /// in runs that follow on in memory, valid only during the call. Returns
+    /// the bytes skipped.
+    template <typename Found>
+    uint64_t take(std::span<const uint8_t> bytes, Found&& found);
+
+private:
+    std::vector<uint8_t> pending_;  ///< read, not yet handed on: a packet's start
+};
 
 /// Where a feed comes from, read on a thread of its own.
 class TsInput {
@@ -75,5 +92,28 @@ Result<std::unique_ptr<TsInput>> open_ts_input(std::string_view url,
 
 /// An output for `url`. Fails as open_ts_input() does.
 Result<std::unique_ptr<TsOutput>> open_ts_output(std::string_view url);
+
+template <typename Found>
+uint64_t TsPacketFinder::take(std::span<const uint8_t> bytes, Found&& found) {
+    pending_.insert(pending_.end(), bytes.begin(), bytes.end());
+    const auto begin = pending_.begin();
+    size_t at = 0;
+    size_t run = 0;  // where the packets not yet handed on start
+    uint64_t skipped = 0;
+    while (pending_.size() - at >= kTsPacketSize) {
+        if (pending_[at] == kTsSyncByte) {
+            at += kTsPacketSize;
+            continue;
+        }
+        if (at > run) found(std::span<const uint8_t>(pending_.data() + run, at - run));
+        const size_t next = static_cast<size_t>(
+            std::find(begin + static_cast<ptrdiff_t>(at) + 1, pending_.end(), kTsSyncByte) - begin);
+        skipped += next - at;
+        at = run = next;
+    }
+    if (at > run) found(std::span<const uint8_t>(pending_.data() + run, at - run));
+    pending_.erase(begin, begin + static_cast<ptrdiff_t>(at));
+    return skipped;
+}
 
 }  // namespace ratcast
