@@ -91,7 +91,10 @@ protected:
                             Timestamp{1s + std::chrono::microseconds(index * 16'667)});
     }
 
-    /// A picture of noise, which no encoder can squeeze below its bitrate.
+    /// A picture of noise, which no encoder can squeeze below its bitrate. A
+    /// quarter of the range around mid-grey: over all of it, even an encoder's
+    /// coarsest pictures here run past 2 Mbit/s (h264_nvenc: 6), so a lower rate
+    /// asked for changes nothing.
     VideoFrame noise(uint64_t index) {
         MutableVideoFrame frame =
             MutableVideoFrame::allocate(encoder_->info().input_format, kWidth, kHeight);
@@ -100,7 +103,7 @@ protected:
             for (size_t y = 0; y < plane_rows(frame.format(), i, kHeight); ++y) {
                 uint8_t* row = frame.plane(i).data + y * frame.plane(i).stride;
                 for (size_t x = 0; x < plane_row_bytes(frame.format(), i, kWidth); ++x)
-                    row[x] = uint8_t(rng());
+                    row[x] = uint8_t(96 + rng() % 64);
             }
         }
         return std::move(frame).freeze(Timestamp{1s + std::chrono::microseconds(index * 16'667)});
