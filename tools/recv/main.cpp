@@ -43,6 +43,7 @@ constexpr const char* kUsage = R"(usage: ratcast-recv (--connect HOST:PORT | --p
                        where the sound goes, if the sender sends any: the default
                        output, or nowhere but played all the same (the default with
                        --headless), or not received at all
+  --no-sync            play the sound and the pictures each in its own time, not in step
   --buffer MS          hold pictures back at most this long to play evenly past late
                        frames (default: the stream's frame lifetime; 0: show each at once)
   --frames N           exit once N pictures are decoded
@@ -62,6 +63,7 @@ struct Options {
     std::optional<PeerId> peer;
     bool headless = false;
     std::string audio;
+    bool sync = true;
     std::optional<Duration> buffer;
     uint64_t frames = 0;
     uint32_t duration = 0;
@@ -92,6 +94,7 @@ std::optional<Options> parse(int argc, char** argv) {
         }
     }
     o.headless = args.flag("headless");
+    o.sync = !args.flag("no-sync");
     o.audio = args.text("audio").value_or(o.headless ? "virtual" : "speaker");
     if (o.audio != "speaker" && o.audio != "virtual" && o.audio != "off") {
         std::cerr << "ratcast-recv: --audio wants speaker, virtual or off\n";
@@ -116,17 +119,22 @@ std::optional<Options> parse(int argc, char** argv) {
 }
 
 /// Plays the first video stream the sender offers, and its first audio
-/// stream into `output` (none: sound is not received), and the next ones when
-/// they go and come back.
+/// stream into `output` (none: sound is not received), in step if `sync`, and
+/// the next ones when they go and come back.
 class Viewer {
 public:
     Viewer(std::optional<PeerId> sender, VideoPlayerConfig config, VideoPlayer::Sink sink,
-           AudioOutput* output, AudioPlayer::Observer heard)
+           AudioOutput* output, AudioPlayer::Observer heard, bool sync)
         : sender_(std::move(sender)),
           config_(config),
           sink_(std::move(sink)),
           output_(output),
-          heard_(std::move(heard)) {}
+          heard_(std::move(heard)),
+          sync_(SteadyClock::instance(), sync) {
+        // Pictures and sound always tell the clock how they play, which
+        // measures how far apart they are; only in step do they follow it.
+        config_.sync = &sync_;
+    }
 
     SessionHandlers handlers() {
         return SessionHandlers{
@@ -169,6 +177,9 @@ public:
         return sound_->stats();
     }
 
+    /// Sound and pictures: how far apart they played, and what each needs.
+    PlayoutClockStats sync_stats() const { return sync_.stats(); }
+
 private:
     template <typename Player>
     static bool playing(const std::unique_ptr<Player>& player, const PeerId& peer,
@@ -203,7 +214,7 @@ private:
 
     void play_sound(const PeerId& peer, const StreamDescription& description) {
         auto sound = std::make_unique<AudioPlayer>(*session_, peer, description, *output_,
-                                                   AudioPlayerConfig{}, heard_);
+                                                   AudioPlayerConfig{.sync = &sync_}, heard_);
         if (Result<void> started = sound->start(); !started) {
             std::cerr << "cannot play sound '" << description.label
                       << "': " << to_string(started.error()) << "\n";
@@ -227,10 +238,11 @@ private:
     }
 
     const std::optional<PeerId> sender_;
-    const VideoPlayerConfig config_;
+    VideoPlayerConfig config_;
     const VideoPlayer::Sink sink_;
     AudioOutput* const output_;
     const AudioPlayer::Observer heard_;
+    PlayoutClock sync_;
     MediaSession* session_ = nullptr;
     std::mutex mutex_;
     std::unique_ptr<VideoPlayer> player_;
@@ -329,6 +341,14 @@ private:
             ms(sound->decoded.concealed - last_sound_.decoded.concealed),
             static_cast<unsigned long long>(heard.stalls));
         print_latency("latency", heard.latency);
+        const PlayoutClockStats sync = viewer_.sync_stats();
+        if (sync.apart.count() > last_apart_) {
+            // Since the start: the clock keeps no intervals.
+            std::printf("  apart %4.1f ms (p95 %4.1f, mean %+5.1f)  floor %3.0f ms",
+                        ms(sync.apart.percentile(0.5)), ms(sync.apart.percentile(0.95)),
+                        ms(sync.mean_apart), ms(sync.floor));
+            last_apart_ = sync.apart.count();
+        }
         std::printf("\n");
         last_sound_ = *sound;
     }
@@ -381,6 +401,10 @@ private:
             ms(sound.decoded.concealed), ms(jitter.expanded), ms(jitter.cut),
             static_cast<unsigned long long>(heard.stalls), ms(sound.delay), ms(sound.target));
         print_percentiles("audio_latency", heard.latency);
+        const PlayoutClockStats sync = viewer_.sync_stats();
+        if (sync.apart.count() == 0) return;
+        print_percentiles("av_apart", sync.apart);
+        std::printf(" av_apart_signed_mean_ms=%.1f", ms(sync.mean_apart));
     }
 
     /// Frames that reached this host and were never shown.
@@ -411,6 +435,7 @@ private:
     VideoPlayerStats last_player_;
     IncomingStreamStats last_stream_;
     AudioPlayerStats last_sound_;
+    uint64_t last_apart_ = 0;
     unsigned seconds_ = 1;
 };
 
@@ -473,7 +498,8 @@ int main(int argc, char** argv) {
         output.get(),
         [&](Timestamp capture_time, Timestamp play_time) {
             heard.picture(latency_of(capture_time, play_time));
-        });
+        },
+        o.sync);
 
     // A viewer found by peer id listens too, so that the sender can dial back.
     librats::Node node(node_config(0, o.peer.has_value(), o.data_dir));

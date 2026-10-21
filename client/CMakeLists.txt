@@ -6,6 +6,7 @@ add_library(ratcast_client STATIC
     src/audio_player.cpp
     src/audio_publisher.cpp
     src/playback_meter.cpp
+    src/playout_clock.cpp
     src/playout_schedule.cpp
     src/video_player.cpp
     src/video_publisher.cpp

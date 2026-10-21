@@ -62,6 +62,10 @@ public:
     /// How much later than the fastest frames pictures are shown now.
     Duration delay() const noexcept { return delay_; }
 
+    /// From capture to due, now: the fastest transit and the delay; zero
+    /// before any frame arrived.
+    Duration offset() const noexcept { return fastest_ ? fastest() + delay_ : Duration::zero(); }
+
     /// Forget everything: a new stream, or the same one starting over.
     void reset() noexcept;
 

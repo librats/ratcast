@@ -12,6 +12,10 @@
  * behind or fails, the player drops what it holds, asks the sender for a
  * keyframe and carries on from it: the picture stands still for a moment
  * rather than lagging for good.
+ *
+ * With a PlayoutClock shared with the sender's sound, pictures are held until
+ * the sound captured with them is heard, and the player says how long the
+ * pictures need for the sound to wait for them.
  */
 
 #include <condition_variable>
@@ -24,6 +28,7 @@
 #include <string>
 #include <thread>
 
+#include "ratcast/client/playout_clock.h"
 #include "ratcast/client/playout_schedule.h"
 #include "ratcast/core/result.h"
 #include "ratcast/core/time.h"
@@ -42,7 +47,10 @@ struct VideoPlayerConfig {
     /// The most a picture is held back to play evenly past late frames.
     /// nullopt: the stream's lifetime, past which no frame comes; zero: every
     /// picture as soon as it is decoded.
-    std::optional<Duration> max_delay;
+    std::optional<Duration> max_delay{};
+    /// Shared with the audio player of the same sender, for lip sync; must
+    /// outlive the player. Null: pictures keep their own time.
+    PlayoutClock* sync = nullptr;
 };
 
 struct VideoPlayerStats {
@@ -128,7 +136,8 @@ private:
     StreamDescription description_;
     std::unique_ptr<VideoDecoder> decoder_;
     PlayoutSchedule schedule_;
-    std::deque<Held> held_;  ///< decoded, until due
+    std::deque<Held> held_;       ///< decoded, until due
+    Duration decode_estimate_{};  ///< how long decoding takes, smoothed
 
     mutable std::mutex stats_mutex_;
     VideoPlayerStats stats_;

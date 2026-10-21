@@ -14,8 +14,9 @@
  * concealment otherwise.
  *
  * Each frame's capture time and the time it will be heard go to an optional
- * observer, on the output's thread: what latency and, later, lip sync are
- * measured with.
+ * observer, on the output's thread: what latency is measured with. With a
+ * PlayoutClock shared with the sender's pictures, the player says when its
+ * sound is heard, and keeps the delay the pictures ask of it.
  */
 
 #include <cstdint>
@@ -26,6 +27,7 @@
 #include <span>
 #include <string>
 
+#include "ratcast/client/playout_clock.h"
 #include "ratcast/core/result.h"
 #include "ratcast/core/time.h"
 #include "ratcast/engine/audio_codec.h"
@@ -41,7 +43,10 @@ namespace ratcast {
 struct AudioPlayerConfig {
     /// The most the jitter buffer waits for a frame. nullopt: the stream's
     /// lifetime, past which no frame comes.
-    std::optional<Duration> max_delay;
+    std::optional<Duration> max_delay{};
+    /// Shared with the video player of the same sender, for lip sync; must
+    /// outlive the player. Null: the sound keeps its own time.
+    PlayoutClock* sync = nullptr;
 };
 
 struct AudioPlayerStats {
@@ -97,6 +102,7 @@ private:
     const PeerId peer_;
     const StreamDescription description_;
     AudioOutput& output_;
+    PlayoutClock* const sync_;
     const Observer observer_;
     Clock& clock_;
 

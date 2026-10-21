@@ -44,6 +44,8 @@ public:
     Duration frame = kFrame;
     FrameNumber silent_from = ~FrameNumber{0};
     Duration silence = 0ms;
+    /// (how long after the start, the floor from then on)
+    std::vector<std::pair<Duration, Duration>> floors;
 
     Timestamp capture_of(FrameNumber number) const {
         return kSent + frame * static_cast<int64_t>(number) +
@@ -63,7 +65,12 @@ public:
         }
         Timestamp now = kReceived;
         auto next_arrival = arrivals.begin();
+        auto next_floor = floors.begin();
         while (now < kReceived + until) {
+            for (; next_floor != floors.end() && kReceived + next_floor->first <= now;
+                 ++next_floor) {
+                buffer_.set_min_delay(next_floor->second);
+            }
             for (; next_arrival != arrivals.end() && next_arrival->first <= now; ++next_arrival) {
                 EncodedFrame f;
                 f.info.number = next_arrival->second;
@@ -240,4 +247,38 @@ TEST(JitterBufferTest, DropsDuplicatesAndFramesPastTheirTime) {
     ASSERT_EQ(buffer.next(kReceived + target + 20ms).kind, Kind::Gap);  // 1 is not there
     buffer.push(frame(1), kReceived + target + 30ms);
     EXPECT_EQ(buffer.stats().late, 2u);
+}
+
+TEST(JitterBufferTest, AFloorIsReachedThroughSoundAndLeftWhenItGoes) {
+    Simulation sim;
+    // Pictures need 80 ms from 2 s to 6 s: the sound, steady without a pause,
+    // is to wait as long.
+    sim.floors = {{2s, 80ms}, {6s, 0ms}};
+    sim.run(4s, 1000);
+    EXPECT_EQ(sim.buffer().target(), 80ms);
+    EXPECT_GE(sim.buffer().delay(), 80ms - kFrame);
+    EXPECT_LE(sim.buffer().delay(), 80ms + 10ms);
+    // A second's wait, then a frame made up every 100 ms: from ~25 ms to 60+.
+    const Duration expanded = sim.buffer().stats().expanded;
+    EXPECT_GE(expanded, 40ms);
+    EXPECT_LE(expanded, 80ms);
+
+    Simulation after;
+    after.floors = sim.floors;
+    after.run(12s, 1000);
+    const JitterBuffer::Stats& stats = after.buffer().stats();
+    EXPECT_EQ(stats.lost, 0u);
+    EXPECT_EQ(stats.concealed, 0ms);
+    EXPECT_GT(stats.dropped, 0u);  // the floor gone, the delay comes back
+    EXPECT_LE(after.buffer().delay(), after.buffer().target() + kFrame * 3 / 2);
+}
+
+TEST(JitterBufferTest, AFloorOutlivesAReset) {
+    JitterBuffer buffer({});
+    buffer.set_min_delay(70ms);
+    EXPECT_EQ(buffer.target(), 70ms);
+    buffer.reset();
+    EXPECT_EQ(buffer.target(), 70ms);
+    buffer.set_min_delay(1s);
+    EXPECT_EQ(buffer.target(), JitterBuffer::Config{}.max_delay);
 }

@@ -30,6 +30,10 @@
  *     short.
  *     Only a delay well over target for a second together, in sound without
  *     silence, costs a frame: it is dropped.
+ *   - A floor under the target (set_min_delay(): lip sync, when the pictures
+ *     need longer than the sound) is pursued through sound too: a delay
+ *     more than a frame short of it for a second together has a frame's worth
+ *     made up every 100 ms until it is not, the drop's mirror image.
  *
  * Codec-agnostic: it reads frame numbers and capture times only. A gap in
  * numbers is a loss, a gap in time with none in numbers is silence (what the
@@ -98,8 +102,11 @@ public:
 
     explicit JitterBuffer(Config config);
 
-    /// Forget everything and start again with the next frame.
+    /// Forget everything and start again with the next frame; the floor stays.
     void reset();
+
+    /// Keep the target at `floor` at least (within max_delay); zero for none.
+    void set_min_delay(Duration floor) noexcept;
 
     /// Accept `frame`, received at `now`.
     void push(EncodedFrame frame, Timestamp now);
@@ -132,6 +139,7 @@ private:
     void learn(const EncodedFrame& frame, Timestamp now);
     void update_target();
     std::optional<Next> play_front(Timestamp now);
+    bool stretch(Timestamp now);
     Next gap(Duration duration, std::optional<EncodedFrame> after, bool advance);
 
     Config config_;
@@ -147,6 +155,7 @@ private:
     std::array<double, kBuckets> lateness_{};
     std::optional<Timestamp> last_arrival_;
     Duration target_;
+    Duration floor_{};
 
     Duration frame_duration_ = std::chrono::milliseconds(20);  ///< until learnt
     bool learnt_ = false;
@@ -162,7 +171,8 @@ private:
     /// Made up since the last frame played, while none was there: silence
     /// after all if the next frame turns out to follow on in numbers.
     Duration unexplained_{};
-    std::optional<Timestamp> over_since_;  ///< the delay has been well over target since
+    std::optional<Timestamp> over_since_;   ///< the delay has been well over target since
+    std::optional<Timestamp> under_since_;  ///< and well under the floor since
 };
 
 }  // namespace ratcast

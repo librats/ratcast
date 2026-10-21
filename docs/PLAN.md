@@ -429,7 +429,16 @@ take `--latency call|game|cinema`.
     `cap-6` 180 → 100 ms at the median, lost frames 16 → 8. A path narrower than the stream
     still breaks the sound for a moment, in the bottleneck's queue, which no rank overtakes:
     that is rate control's margin.
-- **2.2 A/V sync:** a common playout clock per sender, the video held to the audio.
+- **2.2 A/V sync:** ✅ a common playout clock per sender (`PlayoutClock`, client), shared by its
+  audio and video players. The pictures are held until the sound captured with them is heard.
+  Where the pictures need longer (decoding, frames sent again on lossy paths), the sound waits
+  for them: a floor under the jitter buffer's target, reached by making up a frame every 100 ms
+  after a second short of it (`JitterBuffer::set_min_delay()`). `ratcast-recv --no-sync` only
+  measures. On single runs (`docs/bench.md`): apart ≤ 2 ms at the median and ≤ 16 ms at p95 on
+  `local`, `jitter`, `loss-2` and `burst`, against 24 ms (clean) and 44 ms at p95 (2% loss) not
+  in step. The 1% beyond are pictures late on their own, as late without it. The cost: on a
+  clean path the pictures wait for the sound's 56 ms, which 2.3's `call` and `game` profiles
+  start from.
 - **2.3 Latency profiles** `call` / `game` / `cinema` end to end: lifetimes, jitter-buffer depth,
   keyframe policy and encoder settings from one choice.
 

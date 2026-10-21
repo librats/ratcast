@@ -16,7 +16,8 @@ constexpr Duration kTolerance = 1ms;
 
 /// A delay over target by more than a frame and a half (so that one frame
 /// fewer leaves it still over), for kOverFor together, costs a frame every
-/// kDropEvery until it is not.
+/// kDropEvery until it is not; one under the floor by more than a frame has a
+/// frame made up as often.
 constexpr Duration kOverFor = 1s;
 constexpr Duration kDropEvery = 100ms;
 
@@ -29,7 +30,20 @@ JitterBuffer::JitterBuffer(Config config) : config_(config), target_(config.min_
 
 void JitterBuffer::reset() {
     const Config config = config_;
+    const Duration floor = floor_;
     *this = JitterBuffer(config);
+    set_min_delay(floor);
+}
+
+void JitterBuffer::set_min_delay(Duration floor) noexcept {
+    floor = std::min(floor, config_.max_delay);
+    if (floor == floor_) return;  // asked for again and again, by every pull
+    floor_ = floor;
+    if (last_arrival_) {
+        update_target();
+    } else {
+        target_ = std::clamp(floor_, config_.min_delay, config_.max_delay);
+    }
 }
 
 void JitterBuffer::push(EncodedFrame frame, Timestamp now) {
@@ -96,7 +110,7 @@ void JitterBuffer::learn(const EncodedFrame& frame, Timestamp now) {
 
 // The lateness that `in_time` of what is remembered keeps within, and a frame
 // more: by the time a lost frame is due, the one after it is there, and its
-// FEC can stand in.
+// FEC can stand in. The floor, if higher.
 void JitterBuffer::update_target() {
     double total = 0;
     for (double weight : lateness_) total += weight;
@@ -106,8 +120,9 @@ void JitterBuffer::update_target() {
         within += lateness_[bucket];
         if (within >= config_.in_time * total) break;
     }
-    target_ = std::clamp(kBucket * static_cast<int64_t>(bucket + 1) + frame_duration_,
-                         config_.min_delay, config_.max_delay);
+    target_ =
+        std::clamp(std::max(kBucket * static_cast<int64_t>(bucket + 1) + frame_duration_, floor_),
+                   config_.min_delay, config_.max_delay);
 }
 
 JitterBuffer::Next JitterBuffer::next(Timestamp now) {
@@ -144,6 +159,10 @@ JitterBuffer::Next JitterBuffer::next(Timestamp now) {
         const EncodedFrame& front = frames_.front();
         const Duration ahead = front.info.capture_time - cursor_;
         if (ahead <= kTolerance) {
+            if (stretch(now)) {
+                stats_.expanded += frame;
+                return gap(frame, std::nullopt, false);
+            }
             if (std::optional<Next> played = play_front(now)) return std::move(*played);
             continue;  // dropped to bring the delay down
         }
@@ -212,6 +231,19 @@ std::optional<JitterBuffer::Next> JitterBuffer::play_front(Timestamp now) {
     next.duration = frame_duration_;
     next.frame = std::move(frame);
     return next;
+}
+
+// Whether to make up a frame's worth before the front frame, due now, the
+// delay having been well short of the floor for long enough.
+bool JitterBuffer::stretch(Timestamp now) {
+    if (delay_ + frame_duration_ >= floor_) {
+        under_since_.reset();
+        return false;
+    }
+    if (!under_since_) under_since_ = now;
+    if (now - *under_since_ < kOverFor) return false;
+    under_since_ = now - kOverFor + kDropEvery;
+    return true;
 }
 
 JitterBuffer::Next JitterBuffer::gap(Duration duration, std::optional<EncodedFrame> after,

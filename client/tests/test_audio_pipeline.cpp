@@ -1,6 +1,7 @@
 // A tone published on one session and played on another, joined by a
 // loopback, into an output without a device: what is heard is checked as
-// sound — a tone at its level — and as the player's and publisher's stats say.
+// sound — a tone at its level — and as the player's and publisher's stats say;
+// and with the test pattern beside it, played in step with it.
 // Real threads and real time, so the checks leave room for a slow machine.
 
 #include <gtest/gtest.h>
@@ -20,6 +21,10 @@
 #include "loopback.h"
 #include "ratcast/client/audio_player.h"
 #include "ratcast/client/audio_publisher.h"
+#include "ratcast/client/playout_clock.h"
+#include "ratcast/client/video_player.h"
+#include "ratcast/client/video_publisher.h"
+#include "ratcast/engine/pattern_source.h"
 #include "ratcast/engine/tone_source.h"
 #include "ratcast/engine/virtual_output.h"
 
@@ -54,18 +59,29 @@ protected:
     void SetUp() override {
         if (!open_audio_encoder({})) GTEST_SKIP() << "no Opus here";
 
-        sender_ = &loopback_.add(sender_id_, {});
+        sender_ = &loopback_.add(sender_id_, SessionHandlers{
+                                                 .keyframe_needed =
+                                                     [this](StreamId) {
+                                                         if (VideoPublisher* p = pictures_.load())
+                                                             p->request_keyframe();
+                                                     },
+                                             });
         receiver_ = &loopback_.add(
             receiver_id_,
             SessionHandlers{
                 .stream_announced =
                     [this](const PeerId&, const StreamDescription& description) {
                         std::lock_guard lock(mutex_);
-                        announced_ = description;
+                        (description.kind() == MediaKind::Audio ? announced_ : video_announced_) =
+                            description;
                     },
                 .stream_withdrawn = [this](const PeerId&, StreamId) { withdrawn_ = true; },
                 .frame_received =
                     [this](const PeerId&, EncodedFrame frame) {
+                        if (frame.info.stream == kVideo) {
+                            if (VideoPlayer* p = video_ptr_.load()) p->push(std::move(frame));
+                            return;
+                        }
                         if (lose_ && lose_(frame.info.number)) return;
                         if (AudioPlayer* p = player_ptr_.load()) p->push(std::move(frame));
                     },
@@ -75,8 +91,12 @@ protected:
 
     void TearDown() override {
         player_ptr_ = nullptr;
+        video_ptr_ = nullptr;
         if (player_) player_->stop();
+        if (video_player_) video_player_->stop();
         if (publisher_) publisher_->stop();
+        pictures_ = nullptr;
+        if (video_publisher_) video_publisher_->stop();
     }
 
     void publish() {
@@ -85,7 +105,7 @@ protected:
     }
 
     /// Once the stream is announced: a player for it, started.
-    void play() {
+    void play(AudioPlayerConfig config = {}) {
         ASSERT_TRUE(eventually([&] {
             std::lock_guard lock(mutex_);
             return announced_.has_value();
@@ -95,14 +115,40 @@ protected:
             std::lock_guard lock(mutex_);
             description = *announced_;
         }
-        player_ = std::make_unique<AudioPlayer>(
-            *receiver_, sender_id_, description, output_, AudioPlayerConfig{},
-            [this](Timestamp capture_time, Timestamp play_time) {
-                std::lock_guard lock(mutex_);
-                latencies_.push_back(play_time - capture_time);
-            });
+        player_ =
+            std::make_unique<AudioPlayer>(*receiver_, sender_id_, description, output_, config,
+                                          [this](Timestamp capture_time, Timestamp play_time) {
+                                              std::lock_guard lock(mutex_);
+                                              latencies_.push_back(play_time - capture_time);
+                                          });
         ASSERT_TRUE(player_->start());
         player_ptr_ = player_.get();
+    }
+
+    /// The pattern beside the sound, and a player for it, in step with the
+    /// sound's.
+    void publish_and_play_pictures() {
+        VideoPublisherConfig config;
+        config.stream = kVideo;
+        config.encoder.bitrate = 500'000;
+        video_publisher_ = std::make_unique<VideoPublisher>(*sender_, config);
+        pictures_ = video_publisher_.get();
+        ASSERT_TRUE(video_publisher_->start(pattern_));
+
+        ASSERT_TRUE(eventually([&] {
+            std::lock_guard lock(mutex_);
+            return video_announced_.has_value();
+        }));
+        StreamDescription description;
+        {
+            std::lock_guard lock(mutex_);
+            description = *video_announced_;
+        }
+        video_player_ = std::make_unique<VideoPlayer>(
+            *receiver_, sender_id_, description, [](VideoFrame) {},
+            VideoPlayerConfig{.sync = &sync_});
+        ASSERT_TRUE(video_player_->start());
+        video_ptr_ = video_player_.get();
     }
 
     /// The level of what was heard, 20 ms at a time, from the first frame on.
@@ -136,8 +182,17 @@ protected:
     std::atomic<AudioPlayer*> player_ptr_{nullptr};
     std::function<bool(FrameNumber)> lose_;  ///< frames the receiver never sees
 
+    static constexpr StreamId kVideo = 1;
+    PatternSource pattern_{{PixelFormat::NV12, 320, 240, 30, 1}};
+    std::unique_ptr<VideoPublisher> video_publisher_;
+    std::atomic<VideoPublisher*> pictures_{nullptr};
+    std::unique_ptr<VideoPlayer> video_player_;
+    std::atomic<VideoPlayer*> video_ptr_{nullptr};
+    PlayoutClock sync_;
+
     std::mutex mutex_;
     std::optional<StreamDescription> announced_;
+    std::optional<StreamDescription> video_announced_;
     std::atomic<bool> withdrawn_{false};
     std::vector<float> heard_;
     std::vector<Duration> latencies_;
@@ -240,4 +295,27 @@ TEST_F(AudioPipelineTest, APlayerTakesOnlyAnAudioStream) {
     video.lifetime = 200ms;
     AudioPlayer player(*receiver_, sender_id_, video, output_);
     EXPECT_FALSE(player.start());
+}
+
+TEST_F(AudioPipelineTest, PicturesPlayInStepWithTheSound) {
+    VideoEncoderConfig probe;
+    probe.width = 320;
+    probe.height = 240;
+    if (!open_video_encoder(probe)) GTEST_SKIP() << "no AV1 encoder here";
+
+    publish();
+    play({.sync = &sync_});
+    publish_and_play_pictures();
+    // Two seconds of pictures shown with sound playing.
+    ASSERT_TRUE(eventually([&] { return sync_.stats().apart.count() >= 60; }, 15s));
+    video_ptr_ = nullptr;
+    video_player_->stop();
+
+    // On a loopback the pictures would come some 50 ms before the sound —
+    // its frame, its jitter buffer, the output — and are held for it.
+    const PlayoutClockStats stats = sync_.stats();
+    ASSERT_TRUE(stats.sound);
+    EXPECT_GE(*stats.sound, 30ms);
+    EXPECT_LE(stats.apart.percentile(0.5), 15ms);
+    EXPECT_LE(stats.apart.percentile(0.95), 40ms);
 }

@@ -40,6 +40,7 @@ AudioPlayer::AudioPlayer(MediaSession& session, PeerId peer, StreamDescription d
       peer_(std::move(peer)),
       description_(std::move(description)),
       output_(output),
+      sync_(config.sync),
       observer_(std::move(observer)),
       clock_(clock),
       jitter_(jitter_config(description_, config)) {}
@@ -123,9 +124,12 @@ void AudioPlayer::pull(std::span<float> out, Timestamp play_time) {
         }
         const Duration offset = audio_duration(filled, format.sample_rate);
         JitterBuffer::Next next;
+        Duration buffered{};
         {
             std::lock_guard lock(mutex_);
+            if (sync_) jitter_.set_min_delay(sync_->sound_floor());
             next = jitter_.next(now + offset);
+            buffered = jitter_.delay();
         }
         if (next.kind == JitterBuffer::Next::Kind::Wait) {
             std::fill(out.begin() + static_cast<ptrdiff_t>(filled * format.channels), out.end(),
@@ -134,6 +138,7 @@ void AudioPlayer::pull(std::span<float> out, Timestamp play_time) {
         }
         pending_ = render(next);
         pending_played_ = 0;
+        if (sync_) sync_->sound_played(next.capture_time, play_time + offset, buffered);
         if (next.kind == JitterBuffer::Next::Kind::Frame && observer_) {
             observer_(next.capture_time, play_time + offset);
         }

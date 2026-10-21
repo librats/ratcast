@@ -622,3 +622,32 @@ frames lost, and the jitter buffer pushed to its 200 ms limit.
 Opus codes FEC only for frames its voice activity detector (SILK's) takes for speech. A steady
 tone qualifies only above about 0.45 of full scale, which is why the senders' tone plays at 0.5.
 A real voice qualifies as it is.
+
+## Lip sync (2.2)
+
+The same runs with the pictures and the sound played in step (`PlayoutClock`), and two of them
+with `--recv-arg=--no-sync` beside them. "Apart" is, for each picture shown, how far it is from
+the sound captured with it, either way. The mean, with its sign, is positive when the pictures
+are late. Single runs, a keyframe every 2 s.
+
+| scenario | apart p50 / p95 / p99 / max (mean), ms | sound latency p50, ms | picture latency p50 / p95, ms | jitter buffer delay, ms |
+|---|---:|---:|---:|---:|
+| local, not in step | 24.6 / 28.7 / 42.0 / 42.0 (−24.3) | 55.3 | 30.7 / 34.8 | 24 |
+| local | 0.5 / 1.6 / 4.6 / 7.7 (+0.5) | 57.3 | 57.3 / 58.4 | 26 |
+| loss-2, not in step | 14.3 / 44.0 / 122.9 / 151.4 (−4.4) | 98.3 | 108.5 / 116.7 | 42 |
+| loss-2 | 1.9 / 11.8 / 143.4 / 171.6 (+5.7) | 108.5 | 110.6 / 129.0 | 72 |
+| jitter | 0.6 / 7.9 / 131.1 / 196.1 (+4.6) | 96.3 | 98.3 / 102.4 | 65 |
+| burst | 0.9 / 15.9 / 108.5 / 138.1 (+5.2) | 100.4 | 104.4 / 143.4 | 84 |
+
+- **In step to within a few milliseconds** at the median, 16 at p95, on every path tried. Not in
+  step, the pictures ran 24 ms ahead of the sound on a clean path, and 44 ms apart at p95 on a
+  lossy one.
+- **The tail is the pictures' own lateness.** The 1% that are 100+ ms apart are pictures behind a
+  frame sent again (a late run the playout schedule chose not to cover) or the joining keyframe.
+  They are as late without lip sync. Covering them would hold the sound for the worst moment of
+  the pictures.
+- **What it costs.** On a clean path the pictures wait for the sound, 31 → 57 ms. The sound's
+  56 ms (a frame to fill, a frame for FEC) now sets the latency of both, so 2.3's `call` and
+  `game` profiles have to start from it. On lossy paths the sound waits for the pictures
+  instead: its jitter buffer is held at what they need (`loss-2` 42 → 72 ms, 98 → 108 ms from
+  capture to speaker), reached by making up a frame now and then (40–60 ms over a run).

@@ -31,6 +31,7 @@ Result<void> VideoPlayer::start() {
     }
     schedule_.reset();
     held_.clear();
+    decode_estimate_ = Duration::zero();
     thread_ = std::thread(&VideoPlayer::run, this);
     if (Result<void> subscribed = session_.subscribe(peer_, stream_); !subscribed) {
         {
@@ -148,11 +149,14 @@ void VideoPlayer::decode(const Arrival& arrival) {
     schedule_.on_frame(frame.info.capture_time, arrival.at, frame.info.keyframe);
     const auto start = std::chrono::steady_clock::now();
     const Result<void> decoded = decoder_->decode(frame, [this](VideoFrame&& picture) {
-        const Timestamp due = schedule_.due(picture.capture_time());
+        Timestamp due = schedule_.due(picture.capture_time());
+        if (config_.sync) due = config_.sync->due(picture.capture_time(), due, max_delay());
         held_.push_back({due, std::move(picture)});
     });
     const auto took =
         std::chrono::duration_cast<Duration>(std::chrono::steady_clock::now() - start);
+    decode_estimate_ += (took - decode_estimate_) / 8;
+    if (config_.sync) config_.sync->pictures_need(schedule_.offset() + decode_estimate_);
     {
         std::lock_guard lock(stats_mutex_);
         stats_.decode_time += took;
@@ -176,6 +180,7 @@ void VideoPlayer::show_due() {
     while (!held_.empty() && held_.front().due <= now) {
         VideoFrame picture = std::move(held_.front().picture);
         held_.pop_front();
+        const Timestamp capture = picture.capture_time();
         {
             std::lock_guard lock(stats_mutex_);
             ++stats_.pictures;
@@ -184,6 +189,7 @@ void VideoPlayer::show_due() {
             stats_.height = picture.height();
         }
         sink_(std::move(picture));
+        if (config_.sync) config_.sync->picture_shown(capture);
     }
 }
 

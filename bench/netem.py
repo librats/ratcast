@@ -13,7 +13,8 @@ The sender sends the stamped test pattern, so the viewer reads the latency from
 capture to decoded picture off every picture. With --audio it sends a stamped
 tone too, which the viewer plays in real time to nobody, and a second table
 says how the sound fared: from capture to the speaker, what was lost, brought
-back by FEC or made up, and how long the jitter buffer held it.
+back by FEC or made up, how long the jitter buffer held it, and how far apart
+the pictures played from it (lip sync).
 
     bench/netem.py                            # every scenario, once
     bench/netem.py --repeat 3 rtt-100 loss-2  # some of them, three times each
@@ -181,7 +182,7 @@ def run_once(scenario, args, log_dir, index):
                 change.start()
             viewer = subprocess.run(
                 in_viewer(str(args.bin / "ratcast-recv"), "--connect", f"{SENDER_ADDRESS}:{PORT}",
-                          "--headless", "--duration", str(args.duration)),
+                          "--headless", "--duration", str(args.duration), *args.recv_args),
                 stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
                 timeout=args.duration + 30)
             Path(f"{stem}.recv.log").write_text(viewer.stdout)
@@ -213,6 +214,7 @@ def table(results, args):
         + (f", a keyframe every {args.keyframe_every} s" if args.keyframe_every else "")
         + (", with sound (a tone, Opus voice)" if args.audio else "")
         + (f", sender {' '.join(args.send_args)}" if args.send_args else "")
+        + (f", viewer {' '.join(args.recv_args)}" if args.recv_args else "")
         + f"; {args.duration} s a run, medians of {args.repeat}.",
         "",
         "| scenario | path | first picture, ms | fps | Mbit/s (cuts) | latency p50 / p95 / p99, ms "
@@ -238,8 +240,9 @@ def table(results, args):
         rows += [
             "",
             "| scenario | first sound, ms | latency p50 / p95 / p99 / max, ms | jitter buffer "
-            "delay / target, ms | lost / late | FEC / concealed, ms | breaks | kbit/s |",
-            "|---|---:|---:|---:|---:|---:|---:|---:|",
+            "delay / target, ms | lost / late | FEC / concealed, ms | breaks | kbit/s "
+            "| pictures apart p50 / p95 / max (mean), ms |",
+            "|---|---:|---:|---:|---:|---:|---:|---:|---:|",
         ]
         for scenario, runs in results:
             rows.append(
@@ -254,7 +257,11 @@ def table(results, args):
                 f"| {cell(median(runs, 1, 'audio_recovered_ms'))} / "
                 f"{cell(median(runs, 1, 'audio_concealed_ms'))} "
                 f"| {cell(median(runs, 1, 'audio_breaks'))} "
-                f"| {cell(median(runs, 0, 'audio_kbps'), 1)} |")
+                f"| {cell(median(runs, 0, 'audio_kbps'), 1)} "
+                f"| {cell(median(runs, 1, 'av_apart_p50_ms'), 1)} / "
+                f"{cell(median(runs, 1, 'av_apart_p95_ms'), 1)} / "
+                f"{cell(median(runs, 1, 'av_apart_max_ms'), 1)} "
+                f"({cell(median(runs, 1, 'av_apart_signed_mean_ms'), 1)}) |")
     return "\n".join(rows)
 
 
@@ -280,6 +287,8 @@ def main():
                         help="seconds between keyframes the sender makes unasked (0: none)")
     parser.add_argument("--send-arg", dest="send_args", action="append", default=[],
                         help="one more option for ratcast-send (repeatable)")
+    parser.add_argument("--recv-arg", dest="recv_args", action="append", default=[],
+                        help="one more option for ratcast-recv (repeatable)")
     args = parser.parse_args()
 
     if args.list:
