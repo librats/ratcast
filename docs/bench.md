@@ -787,6 +787,165 @@ the moment the connection is up):
    delivered when, the backlog would have drained in time without them.
 
 SRT's live mode and librist have no congestion control to start up: they send at the input's
-rate from the first packet. Two ways out, both in librats: shed by the pacing rate only once
-Startup is over (before it, by deadline alone), or let the application say the rate a stream
-comes at, for the connection to start at.
+rate from the first packet. This is librats' L2 (b), put off with stage 1 for video on long paths
+(`docs/PLAN.md`); a full-rate feed meets it from a 50 ms round trip. Two ways out, both in
+librats: shed by the pacing rate only once Startup is over (before it, by deadline alone), or let
+the application say the rate a stream comes at, for the connection to start at.
+
+### Where the rest goes: overhead, feedback, CPU
+
+Measured the same three ways: librats in virtual time (3 s of steady state, the feed as
+`DataPublisher` sends it), the tools on one host with no shaping (8 s, per process: `/proc` for
+user and system time, `strace -c` for system calls), and `callgrind` at 2 Mbit/s for where user
+time goes (perf is not allowed in this VM).
+
+**Every datagram of the feed goes as two packets.** A UDP feed comes in datagrams of seven TS
+packets (1316 bytes); `DataPublisher` sends each read at once, in frames as even as they come —
+four packets and three (752 and 564 bytes) — and librats carries each in a packet of its own (a
+datagram holds 1220 bytes, so the two never share one). 8 Mbit/s is 1520 packets a second
+where SRT sends 760.
+
+| | packets/s | bytes a packet beyond the payload | on the link |
+|---|---:|---:|---:|
+| ratcast → | 1520 | 66 (IP/UDP 28, header and live frame ~22, AEAD 16) | +10.0% |
+| ratcast ← | 760 | 62: an ACK, every second packet | 0.38 Mbit/s |
+| SRT → | 760 | 44 (IP/UDP 28, SRT 16) | +4.9% (netem) |
+| SRT ← | ~100 | an ACK every 10 ms | 0.05 Mbit/s |
+
+Half the packets would make it +5%: most of the gap is the packet count, two half-full packets
+a datagram; the rest against SRT is a heavier packet (the connection id, the live frame's
+header, the AEAD tag). The feedback is RFC 9000's ACK every second packet, at twice the
+packets.
+
+**The CPU is in the kernel, not in the cipher.** On one host at 8 Mbit/s:
+
+| | user, % | system, % |
+|---|---:|---:|
+| ratcast-send | 1.9 | 5.6 |
+| ratcast-recv | 1.5 | 6.6 |
+| srt-live-transmit, sending | 0.6 | 2.2 |
+| srt-live-transmit, receiving | 1.1 | 2.0 |
+
+Three quarters of ratcast's CPU is system time: about 9500 system calls a second at the viewer
+and 6000 at the sender, against ~1000 packets a second of feed. At the viewer:
+- `futex` ~4000/s: `DataPlayer::push()` wakes the writer for every frame though it is due 200
+  ms later, and the writer wakes again at each frame's time;
+- `sendto` ~1500/s: `DataPlayer` writes each frame as it falls due, so the feed goes out in
+  datagrams of four and three packets, twice as many as came in;
+- `recvmmsg` ~1500/s and `sendmmsg` ~700/s: librats' packets in and its ACKs out.
+At the sender the same packets and ACKs the other way, and the input's `poll` and two
+`recvfrom` a datagram (the second finds nothing). The cipher is librats' portable ChaCha20-Poly1305,
+~15 instructions a byte — a third of user time, about 0.5% of a core: worth a faster one some
+day, not the gap to SRT.
+
+One `rtt-20` run had a 206 ms gap and a p99 of 369 ms with nothing expired; three more had
+neither (p99 217 ms, gaps of 10–11 ms): the VM, not the transport.
+
+Joining takes ratcast ~100 ms more than librist (`loss-2`: 357 ms against 249 to the first packet
+out): the handshake and the stream's announcement and subscription, a round trip each, before
+the first frame goes — L2's put-off parts and 1.2's, not this stage's.
+
+### Joining, fixed (3.2 (b) 1, librats L2 (b))
+
+What fixed it, and what did not (`docs/PLAN.md`, L2 (b)): not shedding in Startup saved the 50 ms
+path and lost more on longer ones — a feed faster than Startup's climb builds a backlog that
+shedding is what clears. Starting at the feed's own rate does: until the controller has a
+verdict on the path it paces no slower than live data is offered, through a window that lets
+that out. librats 2141d8b + the change, uncommitted.
+
+Virtual time (a responder sending 8 Mbit/s of live messages from the moment the connection is up,
+200 ms lifetime, 2% loss; three seeds):
+
+| round trip | expired before | after |
+|---|---:|---:|
+| 50 ms | 1.5% | 0 |
+| 100 ms | 6.4% | 0.05–0.17% |
+| 200 ms | 20% | 1.1–3.9% (no time to repair in 200 ms) |
+
+With a bottleneck and no loss: 10 or 20 Mbit/s, 50 or 100 ms, 1.3–5.3% → 0; 6 Mbit/s, below the
+feed, 28–32% before and after (8 into 6 does not go).
+
+netem, `bench/netem.py --feed --transport ratcast --duration 6`, one run each:
+
+| scenario | lost before, % | after, % | expired after |
+|---|---:|---:|---:|
+| local | 0 | 0 | 0 |
+| rtt-50 | 1.42 | 0 | 0 |
+| rtt-100 | 6.75 | 0 | 0 |
+| loss-2 | 0.91 | 0 | 0 |
+| burst | – | 0.02 | 2 |
+| cap-6 | – | 33.8 | 3167 (the feed is above the path) |
+
+`bench_path --realtime --seeds=8`, before → after, the rows that moved by more than noise:
+
+| row | before | after |
+|---|---:|---:|
+| fixed-rate video by class, far path (100 Mbit, 200 ms), % late | 2.6 / 3.6 / 4.3 / 6.7 / 3.5 | 0.5 / 0.9 / 0.8 / 1.3 / 2.3 |
+| 4 of 10 Mbit, its "200 ms, 1%" row, % late | 3.7 | 1.0 |
+| 4 of 10 Mbit + a bulk flow on the path, % late | 22.0 | 16.2 |
+| deep buffer + a bulk flow, % late | 30.0 | 24.5 |
+| seven peers joining 3 s apart on 20 Mbit, % late | 4.8 | 3.4 |
+| sized to the estimate, 1 Gbit at 200 ms: estimate, Mbit/s | 3.3 | 4.2 |
+| seven peers starting together on 20 Mbit, % late | 3.3 | 3.6 |
+| 1.5 of 2 Mbit, 40 ms, % late (six columns) | 5.0 / 4.6 / 4.1 / 5.6 / 5.8 / 5.1 | 5.3 / 3.9 / 4.0 / 5.7 / 6.2 / 5.5 |
+
+A floor a quarter over the feed drained the first round trip's backlog sooner (100 ms: 0.07%,
+200 ms: 1.8%) but made the seven peers starting together 4.3% late; the floor is the feed's own
+rate.
+
+Video, `bench/netem.py --audio`, against stage 2's medians: the joining keyframe comes sooner
+too. `rtt-100` (one run of 10 s) shows its first picture in 364 ms (638), 111 ms to the picture
+at the median (131); `cap-drop` 216 ms (331) and 82 (209); `local` as it was (55 ms, 54).
+`cap-6` over three runs of 15 s: first picture 230 ms (335), 102 / 135 / 172 ms at p50 / p95 /
+p99 (108 / 148 / 197) — and a stall a run (none in stage 2's medians): one on joining, two as
+rate control climbs into the 6 Mbit/s, to watch in the full table.
+
+Reviewed after the commit (librats 33f5e88), two fixes and a cost:
+- Reno reported its bandwidth as one `cwnd()` per round trip, and `cwnd()` holds the floor: a
+  source sizing itself to `PathStats::bandwidth_bps` was told twice its own rate, raised it, and
+  the floor with it, until a loss. `bench_path --cc=reno`, sized to the estimate, four peers
+  joining 5 s apart: 5.0% of frames late before the change, 8.7% with it, 6.2% now that Reno
+  reports its own window (`bandwidth()`). BBR reports its model and was never affected.
+- Reno paced the floor's window at slow start's gain — two and more times the feed; now at the
+  feed's rate, as BBR does.
+- `OfferedRate` kept its points on every connection: now nothing until something live is
+  pushed, and given back once the feed stops. What is left is 80 bytes a connection
+  (`bench_path` memory: an idle pair 18 → 19 KiB, rounded); every other section without live
+  data is bit for bit the same, and BBR's realtime section the same as the commit's.
+
+### Full frames, the writer woken less (3.2 (b) 2, 3)
+
+With librats' L2 (b) in ("Joining, fixed"), `DataPublisher` sends full frames — six packets, what is left of a read waiting for the next,
+or for the input to be quiet for 5 ms (`TsInput::start`'s `quiet`); `DataPlayer` is woken only
+by a frame due sooner than the one it waits for, and writes the frames due together at once.
+`bench/netem.py --feed --duration 8 local loss-2 rtt-100`, one run each:
+
+| scenario | transport | first packet, ms | latency p50 / p99 / max, ms | lost, % | glitches | longest gap, ms | link → / ←, Mbit/s | CPU send / recv, % |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| local | ratcast | 211 | 200.7 / 208.9 / 212.7 | 0.000 | 0 | 17 | 8.57 / 0.21 | 5.9 / 6.3 |
+| local | srt | 198 | 208.9 / 213.0 / 218.5 | 0.000 | 0 | 19 | 8.40 / 0.06 | 2.5 / 2.7 |
+| local | rist | 197 | 204.8 / 208.9 / 216.1 | 0.000 | 0 | 22 | 8.45 / 0.02 | 3.2 / 2.4 |
+| rtt-100 | ratcast | 513 | 254.0 / 258.0 / 282.6 | 0.000 | 0 | 34 | 8.26 / 0.20 | 6.0 / 7.1 |
+| rtt-100 | srt | 397 | 258.0 / 268.6 / 268.6 | 0.000 | 0 | 16 | 8.19 / 0.05 | 2.5 / 3.1 |
+| rtt-100 | rist | 300 | 254.0 / 258.0 / 269.7 | 0.000 | 0 | 23 | 8.34 / 0.02 | 2.9 / 3.1 |
+| loss-2 | ratcast | 358 | 229.4 / 229.4 / 237.7 | 0.000 | 0 | 15 | 8.42 / 0.22 | 6.0 / 7.6 |
+| loss-2 | srt | 297 | 233.5 / 241.0 / 241.0 | 0.000 | 0 | 16 | 8.28 / 0.05 | 2.3 / 2.9 |
+| loss-2 | rist | 248 | 229.4 / 233.5 / 238.4 | 0.000 | 0 | 13 | 8.39 / 0.04 | 2.9 / 3.1 |
+
+- **Nothing lost on joining** still, and ratcast keeps the tightest p99 of the three.
+- **Packets: 1520 → 886 a second** (5.99 TS packets a frame): the link's overhead +7–10% →
+  +3–7%, the feedback 0.37 → 0.21 Mbit/s (still an ACK every second packet: L13).
+- **System calls, one host, 8 Mbit/s:** the viewer's ~9500 a second → ~5650 (`futex` 4000 →
+  1300, `sendto` 1500 → 865), srt-live-transmit's ~3900. CPU, user + system: sender 7.5 → 6.2%,
+  viewer 8.1 → 6.2%; SRT 2.8 / 3.1%. The netem runs, a busier VM, show less of it (6.0 / 7.1 →
+  6.0 / 7.6 on `loss-2`, within a run's noise).
+
+What is left of the CPU, by thread at the viewer: the writer 3.5% (a timer wake-up and a
+`sendto` per frame — the feed's own pace; fewer would mean writing up to a millisecond or two
+early or late) and librats' reactor 2.8%. The reactor's share is per turn, not per byte: every
+turn empties its wake-up socket with a `recv` whether or not it was signalled (~830 a second,
+all of them failing), every `recvmmsg` that found datagrams is followed by one that finds none,
+and at the sender every frame handed to it wakes it with a `send` to that socket (~650 a
+second) though one is already pending. That is librats work (L15). The feed reaches the
+sender's reactor and leaves the viewer's through a thread of its own, one hand-over more at
+each end than srt-live-transmit makes.

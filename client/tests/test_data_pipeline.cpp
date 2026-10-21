@@ -50,26 +50,43 @@ std::vector<uint8_t> packets(size_t from, size_t count) {
     return out;
 }
 
-/// An input the test reads from by hand.
+/// An input the test reads from by hand, and says by hand when it went quiet
+/// or ended.
 class ManualInput final : public TsInput {
 public:
-    Result<void> start(Sink sink, EndHandler) override {
+    Result<void> start(Sink sink, EndHandler ended, Duration quiet) override {
         std::lock_guard lock(mutex_);
         sink_ = std::move(sink);
+        ended_ = std::move(ended);
+        quiet_ = quiet;
         return {};
     }
     void stop() override {
         std::lock_guard lock(mutex_);
         sink_ = nullptr;
+        ended_ = nullptr;
     }
     void read(std::span<const uint8_t> bytes) {
         std::lock_guard lock(mutex_);
         if (sink_) sink_(bytes, SteadyClock::instance().now());
     }
+    void quiet() { read({}); }
+    void end() {
+        std::lock_guard lock(mutex_);
+        if (ended_) ended_({});
+        sink_ = nullptr;
+        ended_ = nullptr;
+    }
+    Duration quiet_after() {
+        std::lock_guard lock(mutex_);
+        return quiet_;
+    }
 
 private:
     std::mutex mutex_;
     Sink sink_;
+    EndHandler ended_;
+    Duration quiet_{};
 };
 
 /// An output that keeps what it is given, and when.
@@ -79,21 +96,32 @@ public:
         std::lock_guard lock(mutex_);
         bytes_.insert(bytes_.end(), bytes.begin(), bytes.end());
         at_.push_back(SteadyClock::instance().now());
+        ends_.push_back(bytes_.size());
         return {};
     }
     std::vector<uint8_t> bytes() const {
         std::lock_guard lock(mutex_);
         return bytes_;
     }
+    /// When each write was made.
     std::vector<Timestamp> at() const {
         std::lock_guard lock(mutex_);
         return at_;
+    }
+    /// When the byte at `offset` was written, if it was.
+    std::optional<Timestamp> written_at(size_t offset) const {
+        std::lock_guard lock(mutex_);
+        for (size_t i = 0; i < ends_.size(); ++i) {
+            if (offset < ends_[i]) return at_[i];
+        }
+        return std::nullopt;
     }
 
 private:
     mutable std::mutex mutex_;
     std::vector<uint8_t> bytes_;
     std::vector<Timestamp> at_;
+    std::vector<size_t> ends_;  ///< where each write ended
 };
 
 class DataPipelineTest : public ::testing::Test {
@@ -111,6 +139,10 @@ protected:
                 .stream_withdrawn = [this](const PeerId&, StreamId) { withdrawn_ = true; },
                 .frame_received =
                     [this](const PeerId&, EncodedFrame frame) {
+                        {
+                            std::lock_guard lock(mutex_);
+                            sizes_.push_back(frame.payload.size());
+                        }
                         if (lose_ && lose_(frame.info.number)) return;
                         if (DataPlayer* p = player_ptr_.load()) p->push(std::move(frame));
                     },
@@ -154,8 +186,14 @@ protected:
     std::atomic<DataPlayer*> player_ptr_{nullptr};
     std::function<bool(FrameNumber)> lose_;  ///< frames the receiver never sees
 
+    std::vector<size_t> sizes() {
+        std::lock_guard lock(mutex_);
+        return sizes_;
+    }
+
     std::mutex mutex_;
     std::optional<StreamDescription> announced_;
+    std::vector<size_t> sizes_;  ///< of every frame received, lost ones too
     std::atomic<bool> withdrawn_{false};
 };
 
@@ -175,17 +213,16 @@ TEST_F(DataPipelineTest, TheFeedComesOutAsItWentInWhateverTheReads) {
     for (size_t at = 0; at < feed.size(); at += 1000) {
         input_.read(std::span(feed).subspan(at, std::min<size_t>(1000, feed.size() - at)));
     }
+    input_.quiet();  // the last four packets go
     ASSERT_TRUE(eventually([&] { return output_.bytes().size() >= feed.size(); }));
     EXPECT_EQ(output_.bytes(), feed);
 
     const DataPublisherStats sent = publisher_->stats();
     EXPECT_EQ(sent.packets, 100u);
     EXPECT_EQ(sent.skipped, 3u);
-    // Each read's whole packets — five, or six with the one cut before —
-    // in one frame.
-    EXPECT_EQ(sent.frames, 19u);
+    EXPECT_EQ(sent.frames, 17u);  // sixteen of six, then four
     const DataPlayerStats played = player_->stats();
-    EXPECT_EQ(played.delivery.delivered, 19u);
+    EXPECT_EQ(played.delivery.delivered, 17u);
     EXPECT_EQ(played.delivery.lost, 0u);
     EXPECT_EQ(played.bytes, feed.size());
 }
@@ -198,13 +235,13 @@ TEST_F(DataPipelineTest, FramesAreWrittenAFixedLatencyAfterTheyWereRead) {
         input_.read(packets(n * 6, 6));
         std::this_thread::sleep_for(5ms);
     }
-    ASSERT_TRUE(eventually([&] { return output_.at().size() >= 20; }));
-    const std::vector<Timestamp> written = output_.at();
+    ASSERT_TRUE(eventually([&] { return output_.bytes().size() == 120 * kTsPacketSize; }));
     std::vector<Duration> held;
     for (size_t n = 0; n < 20; ++n) {
         // The latency, past the loopback's fastest delivery (well under a ms).
-        EXPECT_GE(written[n] - read[n], 49ms) << "frame " << n;
-        held.push_back(written[n] - read[n]);
+        const Duration frame_held = *output_.written_at(n * 6 * kTsPacketSize) - read[n];
+        EXPECT_GE(frame_held, 49ms) << "frame " << n;
+        held.push_back(frame_held);
     }
     // Not much longer, but for a slow machine's odd stall.
     std::ranges::nth_element(held, held.begin() + 10);
@@ -215,10 +252,10 @@ TEST_F(DataPipelineTest, WhatTheNetworkLostIsSkipped) {
     lose_ = [](FrameNumber n) { return n == 5; };
     publish_and_play(20ms);
     for (size_t n = 0; n < 10; ++n) input_.read(packets(n * 6, 6));
-    ASSERT_TRUE(eventually([&] { return player_->stats().delivery.delivered >= 9; }));
     std::vector<uint8_t> expected = packets(0, 30);
     const std::vector<uint8_t> rest = packets(36, 24);
     expected.insert(expected.end(), rest.begin(), rest.end());
+    ASSERT_TRUE(eventually([&] { return output_.bytes().size() == expected.size(); }));
     EXPECT_EQ(output_.bytes(), expected);
     EXPECT_EQ(player_->stats().delivery.lost, 1u);
 }
@@ -242,4 +279,60 @@ TEST_F(DataPipelineTest, WhatIsHeldWhenTheStreamEndsIsStillWrittenOut) {
     player_->finish();
     EXPECT_TRUE(eventually([&] { return output_.bytes().size() == 60 * kTsPacketSize; }));
     EXPECT_EQ(output_.bytes(), packets(0, 60));
+}
+
+TEST_F(DataPipelineTest, FramesGoFullWhateverTheReads) {
+    publish_and_play(20ms);
+    EXPECT_EQ(input_.quiet_after(), DataPublisherConfig{}.hold);
+    // Datagrams of seven packets, as UDP feeds come: frames of six, the last
+    // three waiting for more until the input goes quiet.
+    for (size_t n = 0; n < 6; ++n) input_.read(packets(n * 7, 7));
+    input_.read(packets(42, 3));
+    ASSERT_TRUE(eventually([&] { return sizes().size() == 7; }));
+    std::this_thread::sleep_for(20ms);
+    EXPECT_EQ(sizes(), std::vector<size_t>(7, 6 * kTsPacketSize));
+    input_.quiet();
+    ASSERT_TRUE(eventually([&] { return output_.bytes().size() == 45 * kTsPacketSize; }));
+    EXPECT_EQ(sizes().back(), 3 * kTsPacketSize);
+    EXPECT_EQ(output_.bytes(), packets(0, 45));
+}
+
+TEST_F(DataPipelineTest, AFrameIsPlayedOutByItsFirstPacket) {
+    publish_and_play(50ms);
+    input_.read(packets(0, 6));  // a frame that waited for nothing: the fastest
+    const Timestamp first = SteadyClock::instance().now();
+    input_.read(packets(6, 3));
+    std::this_thread::sleep_for(20ms);
+    input_.read(packets(9, 3));  // the frame is full now
+    ASSERT_TRUE(eventually([&] { return output_.bytes().size() == 12 * kTsPacketSize; }));
+    // Out the latency after its first packet came in, as the feed went: what
+    // waited for the rest is not late.
+    const Duration held = *output_.written_at(6 * kTsPacketSize) - first;
+    EXPECT_GE(held, 49ms);
+    EXPECT_LE(held, 60ms);
+}
+
+TEST_F(DataPipelineTest, WhatIsHeldGoesWhenPublishingStops) {
+    publish_and_play(20ms);
+    input_.read(packets(0, 2));
+    publisher_->stop();
+    ASSERT_TRUE(eventually([&] { return withdrawn_.load(); }));
+    EXPECT_EQ(sizes(), std::vector<size_t>{2 * kTsPacketSize});
+}
+
+TEST_F(DataPipelineTest, WhatIsHeldGoesWhenTheInputEnds) {
+    publish_and_play(20ms);
+    input_.read(packets(0, 1));
+    input_.end();
+    ASSERT_TRUE(eventually([&] { return output_.bytes().size() == kTsPacketSize; }));
+    EXPECT_EQ(sizes(), std::vector<size_t>{kTsPacketSize});
+}
+
+TEST_F(DataPipelineTest, FramesDueTogetherAreWrittenTogether) {
+    publish_and_play(20ms);
+    input_.read(packets(0, 18));  // three frames, read at once: due at once
+    ASSERT_TRUE(eventually([&] { return output_.bytes().size() == 18 * kTsPacketSize; }));
+    EXPECT_EQ(output_.bytes(), packets(0, 18));
+    EXPECT_EQ(output_.at().size(), 1u);
+    EXPECT_EQ(player_->stats().delivery.delivered, 3u);
 }

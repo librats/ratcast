@@ -57,7 +57,7 @@ private:
 class TsInput {
 public:
     /// Bytes as they came, `received` on the input's clock; valid only during
-    /// the call.
+    /// the call. No bytes: the input has gone quiet (see start()).
     using Sink = std::function<void(std::span<const uint8_t> bytes, Timestamp received)>;
 
     /// Once, when the input ends by itself: with success at the end of a file
@@ -68,7 +68,11 @@ public:
 
     /// Start reading into `sink`; `ended` may be empty. Neither may call
     /// stop(). Fails if already started.
-    virtual Result<void> start(Sink sink, EndHandler ended) = 0;
+    ///
+    /// Once nothing has come for `quiet` after some bytes did, `sink` is told
+    /// so, once, with no bytes: a reader that holds part of what came, for the
+    /// rest to follow, lets it go then. Zero: never told.
+    virtual Result<void> start(Sink sink, EndHandler ended, Duration quiet) = 0;
 
     /// Stop. When this returns, neither handler is running or will be called
     /// again.

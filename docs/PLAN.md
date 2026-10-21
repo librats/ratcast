@@ -491,7 +491,33 @@ across the same paths. In steps:
     none): librats' `LiveSender::shed` judges what cannot leave in time by BBR Startup's
     pacing rate, a fraction of what it is a few round trips on, and drops frames of a
     full-rate feed that would have made it (`docs/bench.md`, "Why ratcast loses on joining");
-  - (b) the comparison, in `docs/bench.md`.
+  - (b) what the first look asks for (`docs/bench.md`, "Why ratcast loses on joining" and "Where
+    the rest goes"), each checked with a small run, then the comparison. In order:
+    1. ✅ librats L2 (b): until the controller has a verdict on the path it sends no slower than
+       live data is offered — the feed's own rate, measured by the connection — so shedding by
+       the pacing rate no longer judges a full-rate feed by Startup's first few packets a round
+       trip. Joining now loses nothing: `rtt-50` 1.4% → 0, `rtt-100` 6.8% → 0, `loss-2` 0.9% → 0
+       (`docs/bench.md`, "Joining, fixed");
+    2. ✅ `DataPublisher` sends full frames, six packets each; what is left of a read waits for
+       the next, or until the input has been quiet for `hold` (5 ms; `TsInput::start` takes the
+       quiet it reports, so no timer of the publisher's own), the input's end or stop(). A
+       frame's capture time is its first packet's read, so what waited plays out on time.
+       1520 → 886 packets a second at 8 Mbit/s, the link's overhead +7–10% → +3–7%, the
+       feedback 0.37 → 0.21 Mbit/s. A feed slower than ~2 Mbit/s, read more than 5 ms apart,
+       still goes as a full frame and a short one;
+    3. ✅ `DataPlayer` is woken only by a frame due sooner than the one it waits for, and writes
+       the frames due together at once: the viewer's `futex` 4000 → 1300 a second, `sendto`
+       1500 → 865, its system calls ~9500 → ~5650 (srt-live-transmit ~3900). CPU, one host:
+       7.5 / 8.1% → 6.2 / 6.2% against SRT's 2.8 / 3.1% — the rest per reactor turn in
+       librats (L15) and a timer wake-up per frame at the viewer's writer (`docs/bench.md`,
+       "Full frames, the writer woken less");
+    4. librats L13: ACKs less often for live data on a clean path — the feedback from 0.38 Mbit/s
+       toward SRT's 0.05, and fewer system calls at the sender;
+    5. the full table: `bench/netem.py --feed --repeat 3`, every scenario, into `docs/bench.md`.
+
+    Left as they are: joining ~100 ms slower than librist (the handshake, then the stream's
+    announcement and subscription, before the first frame: L2 (a) and 1.2's leftovers), and
+    librats' portable cipher (L14).
 - **3.3 C API.**
 
 netsim, the userspace impairment proxy (delay, jitter, loss, bursts, bandwidth caps; no root, any
@@ -561,15 +587,19 @@ and the list is in priority order:
 | | L2 (c) | BBR on a jittery path | needed | 1.1 | ✅ |
 | | L3 | Per-message delivered / expired feedback | needed | 1.2 | ✅ |
 | | L4 | Priorities inside `Priority::Live` | needed | 2.1 | ✅ |
-| 1 | L2 (a, b) | A live flow's start: initial window, shedding | needed | 1.2 (long paths) | put off |
+| | L2 (b) | A live flow's start: shedding by Startup's rate | needed | 3.2 (feeds); 1.2 (long paths) | ✅ |
+| 1 | L2 (a) | A live flow's start: the initial window | needed | 1.2 (long paths) | put off; eased by (b) |
 | 2 | L5 | Absolute deadlines when forwarding | needed | stage 5 (tree) | |
-| 3 | L8 | `send_many` with a shared buffer | improves | stage 5 (SFU) | |
-| 4 | L11 | One copy fewer on the send path | improves | with L8 | |
-| 5 | L6 | FEC across messages | optional | 2.1 | if Opus FEC + RED fall short |
-| 6 | L9 | Path MTU discovery | optional | 3.4, 4K | |
-| 7 | L10 | A clock-sync service | optional | stage 5 (playout) | libratcast can do it over ping |
-| 8 | L7 | A delay-sensitive realtime mode | optional | — | mostly done with L2 (c) |
-| 9 | L12 | Live outcomes and ranks in the C ABI | optional | other bindings | when one needs them |
+| 3 | L13 | Fewer ACKs for live data | improves | 3.2 (feedback, CPU) | |
+| 4 | L15 | Fewer system calls per reactor turn | improves | 3.2 (CPU) | |
+| 5 | L8 | `send_many` with a shared buffer | improves | stage 5 (SFU) | |
+| 6 | L11 | One copy fewer on the send path | improves | with L8 | |
+| 7 | L6 | FEC across messages | optional | 2.1 | if Opus FEC + RED fall short |
+| 8 | L9 | Path MTU discovery | optional | 3.4, 4K | |
+| 9 | L10 | A clock-sync service | optional | stage 5 (playout) | libratcast can do it over ping |
+| 10 | L7 | A delay-sensitive realtime mode | optional | — | mostly done with L2 (c) |
+| 11 | L12 | Live outcomes and ranks in the C ABI | optional | other bindings | when one needs them |
+| 12 | L14 | A faster ChaCha20-Poly1305 | optional | — | ~0.5% of a core at 8 Mbit/s |
 
 Where it stands after L1, L2 (c) and L3: the steady state holds — one-way delay + ~18 ms on a
 clean path, 59–60 fps under 1–5% loss, bursts, jitter and reordering, and BBR's estimate follows
@@ -615,10 +645,33 @@ now waits out the window too — rate control's headroom (1.1) covers it.
   smaller (rate control starting low, ✅) or to be allowed to arrive late (1.2 ✅, with L3) — and
   then it still takes ~3 round trips through the window: 1.2 s to the first picture at 200 ms
   RTT, where the target is ~0.95 s.
-- (b) *Needed by 1.2 on long paths.* Shedding by the pacing rate drops the frames behind a
-  keyframe while that rate is still Startup's floor (~0.5 Mbit/s at 200 ms RTT): with the joining
-  keyframe let arrive late (1.2), up to 8 frames behind it are shed, and the keyframe that has to
-  follow is a 0.4 s stall after the first picture.
+- (b) *Needed by 3.2, and by 1.2 on long paths.* Shedding by the pacing rate drops the frames
+  behind a keyframe while that rate is still Startup's floor (~0.5 Mbit/s at 200 ms RTT): with
+  the joining keyframe let arrive late (1.2), up to 8 frames behind it are shed, and the keyframe
+  that has to follow is a 0.4 s stall after the first picture. A TS feed, at its full rate from
+  the first packet, meets it from a 50 ms round trip: `LiveSender::shed` gives up a message when
+  `now + one_way + rate.time_for(ahead + owed) > deadline` by Startup's rate (2.2 Mbit/s at
+  50 ms, 1.1 at 100 ms, doubling each round), and 99 frames go at 50 ms, 456 at 100 ms — all
+  of them before the earliest deadline, and the backlog would have drained in time
+  (`docs/bench.md`, "Why ratcast loses on joining"). ✅ Not shedding in Startup was no way out:
+  in virtual time it saved the 50 ms path and lost more on longer ones (100 ms 6.4% → 7.9%,
+  200 ms 20% → 54%) — a feed faster than Startup's climb builds a backlog that shedding is what
+  clears. What does is a start at the feed's own rate: until the controller has a verdict on
+  the path (BBR's Startup while it has measured less than the feed, Reno's first slow start)
+  its pacing rate is no lower than what live data is offered at — `udp::OfferedRate`, over the
+  last second, sampled by the connection and passed in `CongestionController::on_live_offered`
+  — and its window lets that through (`cc::live_floor_window()`, twice what the rate holds over
+  the round trip). The floor is the feed's own load, never more; a quarter over drained the
+  first round trip's backlog sooner but made a third more frames late with seven connections
+  starting on one uplink. The shedding itself is unchanged. Virtual time, a feed of 8 Mbit/s
+  with 2% loss: 50 ms 1.5% → 0, 100 ms 6.4% → 0.1%, 200 ms 20% → 3% (its lifetime of 200 ms
+  leaves no time to repair). `bench_path --realtime` over 8 seeds: better or level nearly
+  everywhere — fixed-rate video on the far path 2.6–6.7% of frames late → 0.5–2.3%, 200 ms with
+  1% loss 3.7% → 1.0%, the bulk-flow rows 22% → 16% and 30% → 25%, seven peers joining 3 s apart
+  4.8% → 3.4%; worse by a few tenths: seven peers starting together on a 20 Mbit uplink (3.3% →
+  3.6%) and some columns of video near a 1–2 Mbit link's rate. It also brings the joining
+  keyframe sooner (L2 (a)): ratcast's video at `rtt-100` shows its first picture in 364 ms where
+  stage 2 took 638.
 
 The start's expired frames were also a false rate cut at the start of nearly every netem run,
 which 1.1 no longer takes them for. A joining scenario in `bench_path` to measure (a) and (b) on,
@@ -632,6 +685,25 @@ acknowledged (or FEC-complete) on UDP, sealed onto the stream on TCP, or given u
 included — recorded by `LiveSender` / `SendQueue` and passed up from the transport's reactor
 entry points, never from inside `send()`. Tested from `LiveSender` and `SendQueue` up to two
 nodes over either transport.
+
+**L13 — Fewer ACKs for live data.** *Improves 3.2.* An ACK every second packet (RFC 9000) is
+760 a second for an 8 Mbit/s feed — 0.38 Mbit/s back where SRT sends 0.05 (an ACK every 10 ms),
+and a system call at each end for each. On a clean path, live data could be acknowledged every
+few packets or milliseconds (QUIC's ACK_FREQUENCY), at once on a gap or reordering as now. To be
+checked against `bench_path`: BBR's delivery-rate samples and the round trip get coarser.
+
+**L15 — Fewer system calls per reactor turn.** *Improves 3.2.* At 886 packets a second the
+reactor makes system calls of its own each turn beyond the data's: it empties its wake-up socket
+with a `recv` every turn whether or not the poller reported it (all ~830 a second fail at the
+viewer), follows every `recvmmsg` that found datagrams with one that finds none, and `post()`
+sends a wake-up byte for every task though one may already be pending (~650 a second at a
+sender, one per frame). Drain only when the poller reported the socket (a byte written after
+the wait is still there for the next one), stop reading when a batch comes back short, and
+signal only when no wake-up is pending.
+
+**L14 — A faster ChaCha20-Poly1305.** *Optional.* The vendored portable code costs ~15
+instructions a byte, a third of librats' user time — still ~0.5% of a core at 8 Mbit/s, so
+nothing asks for it yet; a vectorised one when 4K or many viewers per sender do.
 
 **L12 — Live outcomes and ranks in the C ABI** (`rats_send` with a tag and a rank, a
 `rats_on_live_outcome`), for the bindings; nothing uses them yet.

@@ -1,6 +1,6 @@
 #include "ratcast/client/data_publisher.h"
 
-#include <cstring>
+#include <algorithm>
 #include <utility>
 
 #include "librats/util/logger.h"
@@ -25,10 +25,15 @@ Result<void> DataPublisher::start(TsInput& input, EndHandler ended) {
     if (Result<void> added = session_.add_stream(description); !added) return added;
 
     finder_ = {};
+    held_ = {};
     next_number_ = 0;
     Result<void> started = input.start(
         [this](std::span<const uint8_t> bytes, Timestamp received) { take(bytes, received); },
-        std::move(ended));
+        [this, ended = std::move(ended)](Result<void> outcome) {
+            send_held();  // the input's last
+            if (ended) ended(std::move(outcome));
+        },
+        config_.hold);
     if (!started) {
         session_.remove_stream(config_.stream);
         return started;
@@ -42,6 +47,7 @@ void DataPublisher::stop() {
     if (!input_) return;
     input_->stop();  // nothing is read after this
     input_ = nullptr;
+    send_held();
     session_.remove_stream(config_.stream);
 }
 
@@ -50,12 +56,27 @@ DataPublisherStats DataPublisher::stats() const {
     return stats_;
 }
 
-// The input's thread: the whole packets read so far go out now.
+// The input's thread. Whole frames go at once; the packets that do not fill
+// one wait for the rest, and go as they are once the input goes quiet.
 void DataPublisher::take(std::span<const uint8_t> bytes, Timestamp received) {
+    if (bytes.empty()) {
+        send_held();
+        return;
+    }
+    const size_t frame_size = config_.packets_per_frame * kTsPacketSize;
     uint64_t packets = 0;
     const uint64_t skipped = finder_.take(bytes, [&](std::span<const uint8_t> run) {
         packets += run.size() / kTsPacketSize;
-        send(run, received);
+        while (!run.empty()) {
+            if (held_.empty()) {
+                held_ = allocate_frame_payload(frame_size);
+                held_since_ = received;
+            }
+            const size_t size = std::min(run.size(), frame_size - held_.size());
+            held_.append(run.first(size));
+            run = run.subspan(size);
+            if (held_.size() == frame_size) send_held();
+        }
     });
     std::lock_guard lock(stats_mutex_);
     stats_.bytes_read += bytes.size();
@@ -63,36 +84,21 @@ void DataPublisher::take(std::span<const uint8_t> bytes, Timestamp received) {
     stats_.skipped += skipped;
 }
 
-// `packets`, whole ones, in as few frames as fit them, as even as they come.
-void DataPublisher::send(std::span<const uint8_t> packets, Timestamp received) {
-    const size_t count = packets.size() / kTsPacketSize;
-    if (count == 0) return;
-    const size_t frames = (count + config_.packets_per_frame - 1) / config_.packets_per_frame;
-    uint64_t sent = 0;
-    uint64_t errors = 0;
-    for (size_t i = 0; i < frames; ++i) {
-        const size_t size = (count / frames + (i < count % frames ? 1 : 0)) * kTsPacketSize;
-        MutableBuffer payload = allocate_frame_payload(size);
-        std::memcpy(payload.append(size), packets.data(), size);
-        packets = packets.subspan(size);
-
-        FrameInfo info;
-        info.number = next_number_++;
-        info.capture_time = received;
-        info.keyframe = true;  // every frame stands alone
-        if (Result<void> result = session_.send_frame(config_.stream, info, std::move(payload));
-            !result) {
-            if (errors++ == 0) {
-                LOG_WARN("client", "stream " << config_.stream << ": frame " << info.number
-                                             << " not sent: " << to_string(result.error()));
-            }
-            continue;
-        }
-        ++sent;
-    }
+// The frame held, if any: its capture time when its first packet was read.
+void DataPublisher::send_held() {
+    if (held_.empty()) return;
+    FrameInfo info;
+    info.number = next_number_++;
+    info.capture_time = held_since_;
+    info.keyframe = true;  // every frame stands alone
+    const Result<void> sent = session_.send_frame(config_.stream, info, std::exchange(held_, {}));
     std::lock_guard lock(stats_mutex_);
-    stats_.frames += sent;
-    stats_.errors += errors;
+    if (sent) {
+        ++stats_.frames;
+    } else if (stats_.errors++ == 0) {
+        LOG_WARN("client", "stream " << config_.stream << ": frame " << info.number
+                                     << " not sent: " << to_string(sent.error()));
+    }
 }
 
 }  // namespace ratcast

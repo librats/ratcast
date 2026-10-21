@@ -6,11 +6,18 @@
  *
  * The publisher finds the 188-byte packets in what the input reads — a packet
  * cut across two reads waits for its rest, and bytes that are no packet are
- * skipped until the next sync byte — and sends them a few to a frame: as many
- * as fit one librats datagram, so that a lost datagram costs those packets
- * and no more. Each read is sent at once, in frames as even as they come out:
- * nothing waits for more input. A frame's capture time is when its bytes were
- * read, which is what the receiver plays them out by.
+ * skipped until the next sync byte — and sends them six to a frame: as many as
+ * fit one librats datagram, so that a lost datagram costs those packets and no
+ * more.
+ *
+ * Frames go full. A feed comes in reads that seldom end on a frame's end —
+ * over UDP, datagrams of seven packets — and sending each read whole would
+ * take two half-empty datagrams for every one that came: twice the packets,
+ * the acknowledgements and the system calls at both ends. So the packets that
+ * do not fill a frame wait for the next read, and go as they are once the
+ * input has been quiet for `hold`, when it ends, or at stop(). A frame's
+ * capture time is when its first packet was read, which is what the receiver
+ * plays it out by: what waited is not late.
  *
  * It runs on the input's thread: reading and sending take microseconds.
  */
@@ -36,6 +43,10 @@ struct DataPublisherConfig {
     Duration lifetime = std::chrono::milliseconds(200);
     /// Packets to a frame: six, 1128 bytes, fill a librats datagram.
     size_t packets_per_frame = 6;
+    /// How long the packets that do not fill a frame may wait for more once
+    /// the input is quiet: a bound on the delay a frame's last packets add to
+    /// its first.
+    Duration hold = std::chrono::milliseconds(5);
 };
 
 struct DataPublisherStats {
@@ -64,14 +75,14 @@ public:
     /// own failure.
     Result<void> start(TsInput& input, EndHandler ended = {});
 
-    /// Stop the input and withdraw the stream.
+    /// Stop the input, send what it left held, and withdraw the stream.
     void stop();
 
     DataPublisherStats stats() const;
 
 private:
     void take(std::span<const uint8_t> bytes, Timestamp received);
-    void send(std::span<const uint8_t> packets, Timestamp received);
+    void send_held();
 
     MediaSession& session_;
     const DataPublisherConfig config_;
@@ -79,8 +90,10 @@ private:
     std::mutex lifecycle_;  ///< serialises start() and stop()
     TsInput* input_ = nullptr;
 
-    // The input thread's own.
+    // The input thread's own (stop()'s, once that has stopped).
     TsPacketFinder finder_;
+    MutableBuffer held_;      ///< a frame not yet full
+    Timestamp held_since_{};  ///< when its first packet was read
     FrameNumber next_number_ = 0;
 
     mutable std::mutex stats_mutex_;

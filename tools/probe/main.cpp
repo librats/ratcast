@@ -150,7 +150,7 @@ int meter(const Options& o) {
     if (Result<void> started =
             (*input)->start([&](std::span<const uint8_t> bytes,
                                 Timestamp received) { meter.take(bytes, received); },
-                            [&](Result<void>) { ended = true; });
+                            [&](Result<void>) { ended = true; }, Duration{});
         !started) {
         std::cerr << "ratcast-tsprobe: " << to_string(started.error()) << "\n";
         return 1;

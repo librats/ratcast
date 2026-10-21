@@ -10,13 +10,19 @@
  * it is due — in order, evenly, a fixed latency after it was read on the
  * sender's side — and skips what did not come in time. What comes out is the
  * feed that went in, as librist or SRT would hand it on.
+ *
+ * The writer sleeps until the next frame is due and is woken early only by a
+ * frame due sooner than that; frames due together (a burst read at once, or
+ * a repair that held back those behind it) go out in one write.
  */
 
 #include <condition_variable>
 #include <cstdint>
 #include <mutex>
 #include <optional>
+#include <span>
 #include <thread>
+#include <vector>
 
 #include "ratcast/core/result.h"
 #include "ratcast/core/time.h"
@@ -75,6 +81,8 @@ public:
 
 private:
     void run();
+    /// The player's thread, no lock held.
+    void write(std::span<const EncodedFrame> frames, std::vector<uint8_t>& joined);
 
     MediaSession& session_;
     const PeerId peer_;
@@ -90,6 +98,8 @@ private:
     DeliveryBuffer buffer_;
     bool running_ = false;
     bool finishing_ = false;  ///< nothing more comes: stop once all is written
+    /// When the writer wakes by itself, while it sleeps; max: only when woken.
+    std::optional<Timestamp> sleeping_until_;
     uint64_t bytes_ = 0;
     uint64_t write_errors_ = 0;
 };

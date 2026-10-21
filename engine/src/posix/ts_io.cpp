@@ -17,6 +17,7 @@
 #include <cerrno>
 #include <chrono>
 #include <mutex>
+#include <optional>
 #include <string>
 #include <thread>
 #include <utility>
@@ -161,10 +162,11 @@ class ThreadedInput : public TsInput {
 public:
     explicit ThreadedInput(Clock& clock) noexcept : clock_(clock) {}
 
-    Result<void> start(Sink sink, EndHandler ended) override {
+    Result<void> start(Sink sink, EndHandler ended, Duration quiet) override {
         std::lock_guard lock(mutex_);
-        if (thread_.joinable()) return fail(Errc::InvalidArgument);
+        if (thread_.joinable() || quiet < Duration{}) return fail(Errc::InvalidArgument);
         running_ = true;
+        quiet_ = quiet;
         thread_ = std::thread([this, sink = std::move(sink), ended = std::move(ended)] {
             const Result<void> outcome = read(sink);
             if (running_.load(std::memory_order_relaxed) && ended) ended(outcome);
@@ -185,21 +187,37 @@ protected:
 
     bool running() const noexcept { return running_.load(std::memory_order_relaxed); }
     Clock& clock() const noexcept { return clock_; }
+    /// How long after the last bytes the sink is told the input went quiet;
+    /// zero: never.
+    Duration quiet() const noexcept { return quiet_; }
 
-    /// Wait until `fd` has something to read, in short steps; false once
-    /// stopped or failed.
-    bool wait_readable(int fd) const {
+    enum class Wait { Readable, Quiet, Stopped };
+
+    /// Wait until `fd` has something to read, in short steps: Readable; Quiet
+    /// once `quiet` has passed without (zero: never); Stopped once stopped or
+    /// failed.
+    Wait wait_readable(int fd, Duration quiet) const {
+        using std::chrono::steady_clock;
+        const steady_clock::time_point quiet_at = steady_clock::now() + quiet;
         while (running()) {
+            int timeout_ms = kPollMs;
+            if (quiet > Duration{}) {
+                const auto left =
+                    std::chrono::ceil<std::chrono::milliseconds>(quiet_at - steady_clock::now());
+                if (left.count() <= 0) return Wait::Quiet;
+                timeout_ms = std::min(timeout_ms, static_cast<int>(left.count()));
+            }
             pollfd p{fd, POLLIN, 0};
-            const int ready = ::poll(&p, 1, kPollMs);
-            if (ready > 0) return true;
-            if (ready < 0 && errno != EINTR) return false;
+            const int ready = ::poll(&p, 1, timeout_ms);
+            if (ready > 0) return Wait::Readable;
+            if (ready < 0 && errno != EINTR) return Wait::Stopped;
         }
-        return false;
+        return Wait::Stopped;
     }
 
 private:
     Clock& clock_;
+    Duration quiet_{};
     std::mutex mutex_;  ///< serialises start() and stop()
     std::thread thread_;
     std::atomic<bool> running_{false};
@@ -215,7 +233,15 @@ public:
 private:
     Result<void> read(const Sink& sink) override {
         std::vector<uint8_t> buffer(datagrams_ ? 65536 : 64 * kTsPacketSize);
-        while (wait_readable(fd_.get())) {
+        bool told = true;  // whether the sink knows of the quiet since the last bytes
+        for (;;) {
+            const Wait wait = wait_readable(fd_.get(), told ? Duration{} : quiet());
+            if (wait == Wait::Stopped) break;
+            if (wait == Wait::Quiet) {
+                sink({}, clock().now());
+                told = true;
+                continue;
+            }
             const ssize_t got = ::read(fd_.get(), buffer.data(), buffer.size());
             if (got < 0) {
                 if (errno == EINTR || errno == EAGAIN) continue;
@@ -226,6 +252,7 @@ private:
                 return {};                 // the end of the pipe
             }
             sink({buffer.data(), static_cast<size_t>(got)}, clock().now());
+            told = quiet() == Duration{};
         }
         return {};
     }
@@ -247,6 +274,7 @@ private:
         PcrPacer pacer;
         std::array<uint8_t, kBlock> block{};
         const steady_clock::time_point start = steady_clock::now();
+        std::optional<steady_clock::time_point> quiet_at;  // until the sink is told
         while (running()) {
             size_t filled = 0;
             while (filled < kBlock) {
@@ -269,10 +297,19 @@ private:
             const steady_clock::time_point when =
                 start + std::chrono::duration_cast<steady_clock::duration>(due);
             while (running() && steady_clock::now() < when) {
-                std::this_thread::sleep_until(std::min(when, steady_clock::now() + 5ms));
+                if (quiet_at && steady_clock::now() >= *quiet_at) {
+                    sink({}, clock().now());
+                    quiet_at.reset();
+                }
+                std::this_thread::sleep_until(
+                    std::min({when, quiet_at.value_or(when), steady_clock::now() + 5ms}));
             }
             if (!running()) return {};
             sink({block.data(), packets * kTsPacketSize}, clock().now());
+            if (quiet() > Duration{}) {
+                quiet_at = steady_clock::now() +
+                           std::chrono::duration_cast<steady_clock::duration>(quiet());
+            }
         }
         return {};
     }

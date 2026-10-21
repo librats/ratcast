@@ -76,11 +76,17 @@ struct Received {
     std::condition_variable changed;
     std::vector<uint8_t> bytes;
     std::vector<Timestamp> at;
+    std::vector<Timestamp> quiet;  ///< when the input said it went quiet
     bool ended = false;
 
     TsInput::Sink sink() {
         return [this](std::span<const uint8_t> got, Timestamp received) {
             std::lock_guard lock(mutex);
+            if (got.empty()) {
+                quiet.push_back(received);
+                changed.notify_all();
+                return;
+            }
             bytes.insert(bytes.end(), got.begin(), got.end());
             at.push_back(received);
             changed.notify_all();
@@ -189,7 +195,7 @@ TEST(TsIoTest, CarriesBytesOverUdp) {
     Result<std::unique_ptr<TsInput>> input = open_ts_input(url);
     ASSERT_TRUE(input) << to_string(input.error());
     Received received;
-    ASSERT_TRUE((*input)->start(received.sink(), received.end()));
+    ASSERT_TRUE((*input)->start(received.sink(), received.end(), Duration{}));
 
     Result<std::unique_ptr<TsOutput>> output = open_ts_output(url);
     ASSERT_TRUE(output);
@@ -209,6 +215,30 @@ TEST(TsIoTest, CarriesBytesOverUdp) {
     EXPECT_FALSE(open_ts_input("udp://nowhere"));
 }
 
+TEST(TsIoTest, SaysWhenADatagramFeedGoesQuiet) {
+    const uint16_t port = free_port();
+    const std::string url = "udp://127.0.0.1:" + std::to_string(port);
+    Result<std::unique_ptr<TsInput>> input = open_ts_input(url);
+    ASSERT_TRUE(input);
+    Received received;
+    ASSERT_TRUE((*input)->start(received.sink(), received.end(), 20ms));
+    Result<std::unique_ptr<TsOutput>> output = open_ts_output(url);
+    ASSERT_TRUE(output);
+
+    // Two datagrams 5 ms apart, then nothing: told once, 20 ms after the second.
+    const Packet p = packet(256, 1);
+    ASSERT_TRUE((*output)->write(p));
+    std::this_thread::sleep_for(5ms);
+    ASSERT_TRUE((*output)->write(p));
+    std::this_thread::sleep_for(150ms);
+    (*input)->stop();
+    std::lock_guard lock(received.mutex);
+    ASSERT_EQ(received.at.size(), 2u);
+    ASSERT_EQ(received.quiet.size(), 1u);
+    EXPECT_GE(received.quiet[0] - received.at[1], 19ms);
+    EXPECT_LE(received.quiet[0] - received.at[1], 100ms);  // a slow machine's sleeps
+}
+
 TEST(TsIoTest, PlaysAFileInRealTimeByItsPcr) {
     // 70 packets, a PCR every seven, 20 ms apart: ten datagrams over 180 ms.
     const std::filesystem::path path = temp_path("ratcast-pcr");
@@ -226,7 +256,8 @@ TEST(TsIoTest, PlaysAFileInRealTimeByItsPcr) {
     Result<std::unique_ptr<TsInput>> input = open_ts_input(path.string());
     ASSERT_TRUE(input);
     Received received;
-    ASSERT_TRUE((*input)->start(received.sink(), received.end()));
+    // Quiet after 5 ms: between every two blocks, 20 ms apart.
+    ASSERT_TRUE((*input)->start(received.sink(), received.end(), 5ms));
     {
         std::unique_lock lock(received.mutex);
         ASSERT_TRUE(received.changed.wait_for(lock, 5s, [&] { return received.ended; }));
@@ -239,6 +270,11 @@ TEST(TsIoTest, PlaysAFileInRealTimeByItsPcr) {
     const Duration took = received.at.back() - received.at.front();
     EXPECT_GE(took, 175ms);
     EXPECT_LE(took, 400ms);  // a slow machine's sleeps
+    ASSERT_EQ(received.quiet.size(), 9u);
+    for (size_t i = 0; i < 9; ++i) {
+        EXPECT_GE(received.quiet[i] - received.at[i], 5ms) << i;
+        EXPECT_LT(received.quiet[i], received.at[i + 1]) << i;
+    }
 }
 
 TEST(TsIoTest, WritesAFile) {

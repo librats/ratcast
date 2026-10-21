@@ -1,6 +1,7 @@
 #include "ratcast/client/data_player.h"
 
 #include <utility>
+#include <vector>
 
 #include "librats/util/logger.h"
 
@@ -55,12 +56,17 @@ void DataPlayer::stop() {
 
 void DataPlayer::push(EncodedFrame frame) {
     const Timestamp now = SteadyClock::instance().now();
+    bool sooner = false;
     {
         std::lock_guard lock(mutex_);
         if (!running_) return;
         buffer_.push(std::move(frame), now);
+        // Most frames fall due after the one the writer waits for, which wakes
+        // it anyway; only one due sooner — the first, or a repair — needs it now.
+        const std::optional<Timestamp> due = buffer_.next_due();
+        sooner = sleeping_until_ && due && *due < *sleeping_until_;
     }
-    wake_.notify_one();
+    if (sooner) wake_.notify_one();
 }
 
 void DataPlayer::finish() {
@@ -79,27 +85,50 @@ DataPlayerStats DataPlayer::stats() const {
 // Write each frame as it falls due; sleep until the next one is, or a frame
 // comes that may be due sooner.
 void DataPlayer::run() {
+    std::vector<EncodedFrame> due;
+    std::vector<uint8_t> joined;
     std::unique_lock lock(mutex_);
     while (running_) {
-        if (std::optional<EncodedFrame> frame = buffer_.pop(SteadyClock::instance().now())) {
+        while (std::optional<EncodedFrame> frame = buffer_.pop(SteadyClock::instance().now())) {
+            due.push_back(std::move(*frame));
+        }
+        if (!due.empty()) {
             lock.unlock();
-            const Result<void> written = output_.write(frame->payload.bytes());
+            write(due, joined);
+            due.clear();
             lock.lock();
-            if (written) {
-                bytes_ += frame->payload.size();
-            } else if (write_errors_++ == 0) {
-                LOG_WARN("client", "stream " << description_.id << ": cannot write out: "
-                                             << to_string(written.error()));
-            }
             continue;
         }
-        if (const std::optional<Timestamp> due = buffer_.next_due()) {
-            wake_.wait_until(lock, *due);
-        } else if (finishing_) {
-            return;  // all written
+        const std::optional<Timestamp> next = buffer_.next_due();
+        if (!next && finishing_) return;  // all written
+        sleeping_until_ = next.value_or(Timestamp::max());
+        if (next) {
+            wake_.wait_until(lock, *next);
         } else {
             wake_.wait(lock);
         }
+        sleeping_until_.reset();
+    }
+}
+
+// The frames due together go out in one write: datagrams of seven packets, not
+// one or more for each frame.
+void DataPlayer::write(std::span<const EncodedFrame> frames, std::vector<uint8_t>& joined) {
+    std::span<const uint8_t> bytes = frames.front().payload.bytes();
+    if (frames.size() > 1) {
+        joined.clear();
+        for (const EncodedFrame& frame : frames) {
+            joined.insert(joined.end(), frame.payload.bytes().begin(), frame.payload.bytes().end());
+        }
+        bytes = joined;
+    }
+    const Result<void> written = output_.write(bytes);
+    std::lock_guard lock(mutex_);
+    if (written) {
+        bytes_ += bytes.size();
+    } else if (write_errors_++ == 0) {
+        LOG_WARN("client", "stream " << description_.id
+                                     << ": cannot write out: " << to_string(written.error()));
     }
 }
 
