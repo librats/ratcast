@@ -45,10 +45,13 @@ qt_add_executable(ratcast_app
     src/main.cpp
 )
 
+# The executable is ratcast, but its import library (MSVC) must not take the
+# name of libratcast's ratcast.lib, which it links.
 set_target_properties(ratcast_app PROPERTIES
-    OUTPUT_NAME      ratcast
-    WIN32_EXECUTABLE ON
-    MACOSX_BUNDLE    ON
+    OUTPUT_NAME         ratcast
+    ARCHIVE_OUTPUT_NAME ratcast_app
+    WIN32_EXECUTABLE    ON
+    MACOSX_BUNDLE       ON
     MACOSX_BUNDLE_GUI_IDENTIFIER com.librats.ratcast
     MACOSX_BUNDLE_BUNDLE_VERSION ${PROJECT_VERSION}
     MACOSX_BUNDLE_SHORT_VERSION_STRING ${PROJECT_VERSION}

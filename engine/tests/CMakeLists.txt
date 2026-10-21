@@ -6,7 +6,6 @@ ratcast_add_test(engine_tests
         test_file_source.cpp
         test_frame_pacer.cpp
         test_pattern.cpp
-        test_ts_io.cpp
         test_audio_source.cpp
         test_video_codec.cpp
         test_video_convert.cpp
@@ -20,6 +19,11 @@ target_include_directories(engine_tests PRIVATE "${PROJECT_SOURCE_DIR}/engine/sr
 # For RATCAST_OPUS_HAS_LBRR: whether the decoder can tell recovery from concealment.
 if(RATCAST_OPUS_FOUND)
     target_link_libraries(engine_tests PRIVATE ratcast::opus)
+endif()
+
+# TS feeds are read and written through POSIX descriptors; elsewhere they are Unavailable.
+if(UNIX)
+    target_sources(engine_tests PRIVATE test_ts_io.cpp)
 endif()
 
 if(RATCAST_PIPEWIRE_FOUND)
