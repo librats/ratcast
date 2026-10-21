@@ -7,8 +7,6 @@
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
-#include <filesystem>
-#include <fstream>
 #include <iostream>
 #include <map>
 #include <memory>
@@ -20,10 +18,10 @@
 #include "common/arguments.h"
 #include "common/tool.h"
 #include "ratcast/client/call.h"
+#include "ratcast/client/screen_share.h"
 #include "ratcast/engine/audio_device.h"
 #include "ratcast/engine/file_source.h"
 #include "ratcast/engine/pattern_source.h"
-#include "ratcast/engine/screen_capture.h"
 #include "ratcast/engine/tone_source.h"
 #include "ratcast/engine/ts_io.h"
 
@@ -169,36 +167,22 @@ std::optional<Options> parse(int argc, char** argv) {
     return o;
 }
 
-/// The restore token kept for `source` in the data directory, if any.
-std::filesystem::path token_path(const Options& o) {
-    return std::filesystem::path(o.data_dir) / (o.source + ".token");
-}
-
-std::unique_ptr<ScreenCapture> open_screen(const Options& o) {
-    ScreenCaptureOptions options;
-    options.monitors = o.source == "screen";
-    options.windows = o.source == "window";
-    options.max_frame_rate = o.encoder.frame_rate_num;
-    if (!o.data_dir.empty()) std::getline(std::ifstream(token_path(o)), options.restore_token);
-
+std::unique_ptr<VideoSource> open_screen(const Options& o) {
+    const ScreenShareConfig share{
+        .window = o.source == "window", .sound = false, .data_dir = o.data_dir, .video = o.encoder};
     // The desktop's picker may wait on the user; Ctrl-C calls it off.
     std::stop_source cancel;
     std::jthread watch([&cancel](std::stop_token done) {
         while (!done.stop_requested() && !interrupted()) std::this_thread::sleep_for(50ms);
         if (interrupted()) cancel.request_stop();
     });
-    if (options.restore_token.empty()) std::cout << "choose what to share in the dialog...\n";
-    Result<std::unique_ptr<ScreenCapture>> capture =
-        open_screen_capture(options, cancel.get_token());
-    if (!capture) {
-        std::cerr << "ratcast-send: no screen capture: " << to_string(capture.error()) << "\n";
+    std::cout << "choose what to share, if the desktop asks...\n";
+    Result<ScreenShareSources> sources = open_screen_share(share, cancel.get_token());
+    if (!sources) {
+        std::cerr << "ratcast-send: no screen capture: " << to_string(sources.error()) << "\n";
         return nullptr;
     }
-    if (!o.data_dir.empty() && !(*capture)->restore_token().empty()) {
-        std::filesystem::create_directories(o.data_dir);
-        std::ofstream(token_path(o)) << (*capture)->restore_token() << "\n";
-    }
-    return std::move(*capture);
+    return std::move(sources->pictures);
 }
 
 std::unique_ptr<VideoSource> open_source(Options& o) {

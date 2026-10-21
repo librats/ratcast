@@ -3,6 +3,7 @@
 // out, and the invites a call hands out.
 
 #include "ratcast/client/call.h"
+#include "ratcast/client/screen_share.h"
 
 #include <gtest/gtest.h>
 
@@ -221,6 +222,49 @@ TEST_F(CallTest, BothSidesSendAndPlayUntilOneHangsUp) {
     })) << ::testing::PrintToString(host.events());
     EXPECT_FALSE(host->video_stats());
     EXPECT_FALSE(host->sound_stats());
+}
+
+TEST_F(CallTest, AScreenShareGoesAsPicturesAndMusic) {
+    VideoEncoderConfig probe;
+    probe.width = 320;
+    probe.height = 240;
+    if (!open_video_encoder(probe)) GTEST_SKIP() << "no AV1 encoder here";
+
+    Side host;
+    host.start(config());
+    ScreenShareConfig share{.window = true};
+    share.video.bitrate = 1'000'000;
+    ASSERT_TRUE(publish_screen_share(
+        *host,
+        {.pictures =
+             std::make_unique<PatternSource>(PatternConfig{PixelFormat::NV12, 320, 240, 30, 1}),
+         .sound = std::make_unique<ToneSource>(ToneConfig{.format = {48'000, 2}})},
+        share));
+    Side guest;
+    guest.start(config(RatsUrl{host.address()}));
+    ASSERT_TRUE(wait_for([&] { return guest.pictures() >= 10 && guest.heard() >= 10; }));
+    EXPECT_TRUE(guest.told("playing window"));
+    EXPECT_TRUE(guest.told("playing sound"));
+    const std::optional<OutgoingStreamStats> pictures = host->session().outgoing_stats(1);
+    ASSERT_TRUE(pictures);
+    EXPECT_GT(pictures->bitrate, 0u) << "rate-controlled";
+    EXPECT_LE(pictures->bitrate, 1'000'000u);
+    ASSERT_TRUE(guest->sound_stats());
+    EXPECT_EQ(guest->sound_stats()->jitter.lost, 0u);
+}
+
+TEST_F(CallTest, AScreenShareThatCannotPublishLeavesNothing) {
+    Side host;
+    host.start(config());
+    host.publish_tone();  // stream 2, which the share's sound wants
+    const Result<void> shared =
+        publish_screen_share(*host,
+                             {.pictures = std::make_unique<PatternSource>(PatternConfig{}),
+                              .sound = std::make_unique<ToneSource>(ToneConfig{})},
+                             {});
+    ASSERT_FALSE(shared);
+    EXPECT_EQ(shared.error(), Errc::InvalidArgument);
+    EXPECT_FALSE(host->session().outgoing_stats(1)) << "the pictures withdrawn";
 }
 
 TEST_F(CallTest, AStreamOfferedAgainPlaysAgain) {

@@ -40,7 +40,7 @@ void VideoView::clear() {
     }
     if (!picture_size_.isEmpty()) {
         picture_size_ = {};
-        emit pictureSizeChanged();
+        Q_EMIT pictureSizeChanged();
     }
     update();
 }
@@ -56,7 +56,7 @@ void VideoView::picture_arrived() {
     }
     if (size != picture_size_) {
         picture_size_ = size;
-        emit pictureSizeChanged();
+        Q_EMIT pictureSizeChanged();
     }
     update();
 }

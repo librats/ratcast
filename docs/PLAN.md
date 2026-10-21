@@ -637,9 +637,19 @@ on the same call code.
   spaces, an odd size, a picture of another shape and a resized view refitted, clearing; the
   matrix against the conversion on the CPU. CI draws them on Mesa behind Xvfb; ASan clean (Mesa's
   and fontconfig's lifelong allocations suppressed). Qt 6.6 is the floor now, for QRhi.
-- **6.3 The first app:** share a screen or a window (the portal) with its sound, or join from a
-  link; the call's window with the picture, stop and leave. Two people can watch together from
-  here.
+- **6.3 The first app** ✅: share a screen or a window with the computer's sound, or join from a
+  `rats://` link (typed, or on the command line: `ratcast rats://…`); the sharer sees who is
+  watching and the links to send, with a copy button; the viewer sees the picture, hears the
+  sound, and is told when the sharer goes. `client/screen_share.h` opens a share — the desktop's
+  dialog, its choice kept in the data directory — and publishes it (pictures rate-controlled up
+  to 8 Mbit/s, the sound as music), which `ratcast-send` now shares too. `app/call`'s
+  `CallController` keeps the state for QML (Idle → Choosing → Sharing; Idle → Joining ⇄
+  Watching), runs the dialog off the GUI thread and drops what an earlier call or share says
+  late; the sharer's identity is kept (its peer-id link holds across runs) and a viewer has one
+  of its own. Tested between two controllers on loopback with the pattern and a tone standing in
+  for the desktop: share, join, watch, leave either side; a share that runs out, is declined,
+  fails, or is called off while the dialog is open; a link that is none. Tried live: the app
+  watching `ratcast-send`'s pattern, rate control climbing as with `ratcast-recv`.
 - **6.4 Voice both ways:** the microphone with echo cancellation and noise suppression (WebRTC
   AudioProcessing, BSD), muting, who is speaking.
 - **6.5 Camera, and two streams on one path:** a camera beside the screen; each stream takes the

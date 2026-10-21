@@ -50,7 +50,7 @@ public:
 
     QSize pictureSize() const { return picture_size_; }
 
-signals:
+Q_SIGNALS:
     void pictureSizeChanged();
 
 protected:

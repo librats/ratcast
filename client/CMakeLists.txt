@@ -13,6 +13,7 @@ add_library(ratcast_client STATIC
     src/playout_clock.cpp
     src/playout_schedule.cpp
     src/rats_url.cpp
+    src/screen_share.cpp
     src/ts_probe.cpp
     src/video_player.cpp
     src/video_publisher.cpp

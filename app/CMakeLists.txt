@@ -34,7 +34,12 @@ if(QT_KNOWN_POLICY_QTP0004)
     qt_policy(SET QTP0004 NEW)  # qmldir for QML files in subdirectories (qml/)
 endif()
 
+# Qt's signals / slots / emit macros would rewrite librats' headers (its
+# EventBus has an emit()): Q_SIGNALS and Q_EMIT in ours.
+add_compile_definitions(QT_NO_KEYWORDS)
+
 add_subdirectory(video)
+add_subdirectory(call)
 
 qt_add_executable(ratcast_app
     src/main.cpp
@@ -66,6 +71,7 @@ endif()
 target_link_libraries(ratcast_app PRIVATE
     Qt6::Quick
     ratcast_videoplugin
+    ratcast_callplugin
     ratcast::ratcast
 )
 ratcast_target_defaults(ratcast_app)
