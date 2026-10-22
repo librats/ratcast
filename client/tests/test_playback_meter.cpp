@@ -161,8 +161,10 @@ TEST(FramePace, MeasuresTheIntervalsAndHowMuchTheyChange) {
     pace.restart();
     at += std::chrono::seconds(5);
     pace.picture(at);
-    for (int i = 0; i < 3; ++i) {
-        at += us(16'000);
+    // A list, as above: MSVC (19.44, 19.51) at /O2 passes a counted loop's
+    // `at += us(16'000)` on stale after the unrolled loop above.
+    for (int64_t step : {16'000, 16'000, 16'000}) {
+        at += us(step);
         pace.picture(at);
     }
     const FramePace added = pace.since(earlier);

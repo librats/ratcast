@@ -15,6 +15,7 @@
 #include <memory>
 #include <mutex>
 #include <numbers>
+#include <string>
 #include <thread>
 #include <vector>
 
@@ -258,7 +259,20 @@ TEST_F(AudioPipelineTest, FramesLostOnTheWayAreMadeUpWithoutABreak) {
     const float expected = kLevel / std::numbers::sqrt2_v<float>;
     const std::vector<float> rms = levels();
     const auto quiet = std::ranges::count_if(rms, [&](float r) { return r < expected / 2; });
-    EXPECT_LE(quiet, 1) << "of " << rms.size() << " windows of 20 ms";
+    // Where, and what the player made of it: a loss concealed rather than
+    // recovered, or sound made up while the next frame was not there.
+    std::string where;
+    for (size_t i = 0; i < rms.size(); ++i) {
+        if (rms[i] < expected / 2) where += " " + std::to_string(i);
+    }
+    const auto ms = [](Duration d) { return std::to_string(d.count() / 1000) + " ms"; };
+    EXPECT_LE(quiet, 1) << "of " << rms.size() << " windows of 20 ms, quiet at" << where
+                        << "; lost " << played.jitter.lost << ", late " << played.jitter.late
+                        << ", made up " << ms(played.jitter.concealed) << " + "
+                        << ms(played.jitter.expanded) << " expanded; recovered "
+                        << ms(played.decoded.recovered) << ", concealed "
+                        << ms(played.decoded.concealed) << "; delay " << ms(played.delay) << " for "
+                        << ms(played.target);
 }
 
 TEST_F(AudioPipelineTest, StoppingWithdrawsTheStreamAndThePlayerFallsSilent) {
