@@ -11,9 +11,11 @@
  * by its program and window class ("window:C:\...\app.exe|ClassName") — so
  * the next capture finds the same screen, or that program's window, unasked.
  *
- * Pictures arrive as BGRA textures in GPU memory, at most two at a time; each
- * that the frame pacer lets through is copied into memory the CPU reads and
- * converted from there into the format asked for. The size follows the screen
+ * Pictures arrive as BGRA textures in GPU memory, at most two at a time. Each
+ * that the frame pacer lets through is, if GPU pictures were asked for, turned
+ * into NV12 by the GPU and handed on where it is (d3d11::Nv12Converter);
+ * otherwise, or where the GPU cannot, it is copied into memory the CPU reads
+ * and converted from there into the format asked for. The size follows the screen
  * or window as it changes. The capture ends, with success, when the window
  * closes or the screen goes.
  */

@@ -30,6 +30,8 @@
 #include "capture/frame_pacer.h"
 #include "ratcast/engine/video_convert.h"
 #include "windows/com.h"
+#include "windows/d3d11.h"
+#include "windows/nv12_converter.h"
 #include "windows/qpc.h"
 
 #include "librats/util/logger.h"
@@ -156,27 +158,17 @@ Chosen chosen(const capture::GraphicsCaptureItem& item) {
 
 /// A device to receive frames on, and the WinRT face of it the pool takes.
 struct Device {
-    ComPtr<ID3D11Device> d3d;
-    ComPtr<ID3D11DeviceContext> context;
+    std::shared_ptr<d3d11::Device> d3d;
     winrt::Windows::Graphics::DirectX::Direct3D11::IDirect3DDevice winrt{nullptr};
 };
 
 Device make_device() {
     Device device;
-    const UINT flags = D3D11_CREATE_DEVICE_BGRA_SUPPORT;
-    HRESULT result = D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, flags, nullptr,
-                                       0, D3D11_SDK_VERSION, &device.d3d, nullptr, &device.context);
-    if (FAILED(result)) {  // no GPU of its own (a virtual machine): the software one
-        result = D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_WARP, nullptr, flags, nullptr, 0,
-                                   D3D11_SDK_VERSION, &device.d3d, nullptr, &device.context);
-    }
-    winrt::check_hresult(result);
-    // The capture's threads and the pool's use it both.
-    ComPtr<ID3D11Multithread> multithread;
-    if (SUCCEEDED(device.d3d.As(&multithread))) multithread->SetMultithreadProtected(TRUE);
-
+    Result<std::shared_ptr<d3d11::Device>> d3d = d3d11::Device::create();
+    if (!d3d) winrt::throw_hresult(E_FAIL);
+    device.d3d = std::move(*d3d);
     ComPtr<IDXGIDevice> dxgi;
-    winrt::check_hresult(device.d3d.As(&dxgi));
+    winrt::check_hresult(device.d3d->get()->QueryInterface(IID_PPV_ARGS(&dxgi)));
     winrt::com_ptr<::IInspectable> inspectable;
     winrt::check_hresult(CreateDirect3D11DeviceFromDXGIDevice(dxgi.Get(), inspectable.put()));
     device.winrt = inspectable.as<winrt::Windows::Graphics::DirectX::Direct3D11::IDirect3DDevice>();
@@ -216,6 +208,17 @@ public:
         }
         try {
             device_ = make_device();
+            if (options_.gpu && options_.format == PixelFormat::NV12) {
+                Result<std::unique_ptr<d3d11::Nv12Converter>> converter =
+                    d3d11::Nv12Converter::create(device_.d3d, options_.color_space);
+                if (converter) {
+                    converter_ = std::move(*converter);
+                } else {
+                    LOG_INFO("engine",
+                             "screen capture: pictures through memory, the GPU cannot "
+                             "convert them");
+                }
+            }
             size_ = item_.Size();
             pool_ = capture::Direct3D11CaptureFramePool::CreateFreeThreaded(device_.winrt, kPixels,
                                                                             kFrames, size_);
@@ -254,6 +257,7 @@ public:
         } catch (const winrt::hresult_error&) {}
         session_ = nullptr;
         pool_ = nullptr;
+        converter_.reset();
     }
 
 private:
@@ -312,7 +316,8 @@ private:
     }
 
     /// The picture in `texture`, as much of it as `content` covers, in the
-    /// format asked for.
+    /// format asked for: in GPU memory if it may be, else in memory. None
+    /// when every GPU picture is still held.
     std::optional<VideoFrame> read(ID3D11Texture2D& texture,
                                    winrt::Windows::Graphics::SizeInt32 content,
                                    Timestamp captured) {
@@ -326,6 +331,17 @@ private:
         }
         if (width == 0 || height == 0) return std::nullopt;
 
+        if (converter_) {
+            Result<VideoFrame> picture = converter_->convert(texture, width, height, captured);
+            if (picture && picture->empty()) return std::nullopt;  // dropped
+            if (picture) return std::move(*picture);
+            // A size its video processor will not take, say: through memory
+            // from now on, which says so if the GPU itself has gone.
+            LOG_WARN("engine", "screen capture: the GPU stopped converting pictures, at "
+                                   << width << "x" << height);
+            converter_.reset();
+        }
+
         if (!staging_ || staging_width_ != width || staging_height_ != height) {
             D3D11_TEXTURE2D_DESC staging{};
             staging.Width = width;
@@ -337,18 +353,19 @@ private:
             staging.Usage = D3D11_USAGE_STAGING;
             staging.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
             staging_.Reset();
-            winrt::check_hresult(device_.d3d->CreateTexture2D(&staging, nullptr, &staging_));
+            winrt::check_hresult(device_.d3d->get()->CreateTexture2D(&staging, nullptr, &staging_));
             staging_width_ = width;
             staging_height_ = height;
         }
         const D3D11_BOX box{0, 0, 0, width, height, 1};
-        device_.context->CopySubresourceRegion(staging_.Get(), 0, 0, 0, 0, &texture, 0, &box);
+        ID3D11DeviceContext& context = *device_.d3d->context();
+        context.CopySubresourceRegion(staging_.Get(), 0, 0, 0, 0, &texture, 0, &box);
         D3D11_MAPPED_SUBRESOURCE mapped{};
-        winrt::check_hresult(device_.context->Map(staging_.Get(), 0, D3D11_MAP_READ, 0, &mapped));
+        winrt::check_hresult(context.Map(staging_.Get(), 0, D3D11_MAP_READ, 0, &mapped));
         const VideoFrame::Plane plane{static_cast<const uint8_t*>(mapped.pData), mapped.RowPitch};
         const VideoFrame view(PixelFormat::BGRA, width, height, {&plane, 1}, nullptr, captured);
         Result<VideoFrame> picture = convert_frame(view, options_.format, options_.color_space);
-        device_.context->Unmap(staging_.Get(), 0);
+        context.Unmap(staging_.Get(), 0);
         if (!picture) return std::nullopt;
         return std::move(*picture);
     }
@@ -381,7 +398,8 @@ private:
     capture::GraphicsCaptureSession session_{nullptr};
     capture::Direct3D11CaptureFramePool::FrameArrived_revoker arrived_;
     capture::GraphicsCaptureItem::Closed_revoker closed_;
-    ComPtr<ID3D11Texture2D> staging_;  ///< what the CPU reads a frame from
+    std::unique_ptr<d3d11::Nv12Converter> converter_;  ///< for pictures kept in GPU memory
+    ComPtr<ID3D11Texture2D> staging_;                  ///< what the CPU reads a frame from
     uint32_t staging_width_ = 0;
     uint32_t staging_height_ = 0;
 

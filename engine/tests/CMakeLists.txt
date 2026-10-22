@@ -47,8 +47,12 @@ if(RATCAST_PIPEWIRE_FOUND)
 elseif(WIN32)
     target_sources(engine_tests PRIVATE
         windows/test_camera_capture.cpp
+        windows/test_d3d11.cpp
         windows/test_graphics_capture.cpp
         windows/test_wasapi_audio.cpp
     )
-    target_link_libraries(engine_tests PRIVATE mfplat mfuuid)
+    if(RATCAST_FFMPEG_FOUND)
+        target_sources(engine_tests PRIVATE windows/test_gpu_encoding.cpp)
+    endif()
+    target_link_libraries(engine_tests PRIVATE d3d11 mfplat mfuuid)
 endif()

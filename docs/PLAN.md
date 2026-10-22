@@ -155,7 +155,7 @@ final place and shape: stage 0 is a walking skeleton, not a throwaway prototype.
 | **1. A stream that holds** ✅ | one video stream to a few viewers plays on every emulated path: rate control, fast joining, smooth playback on lossy paths | L2 (c) ✅, L3 ✅; L2 (a, b) put off |
 | **2. Sound** ✅ | audio, A/V sync; latency profiles put off to stages 5 and 6 | L4 ✅ |
 | **3. Standalone library** ✅ | MPEG-TS in and out, `rats://` URLs, a benchmark against librist and SRT, C API | — |
-| **4. Platforms** — in part | GPU paths and hardware codecs; Windows ✅ (GPU path open) and macOS capture; netsim ✅ | — |
+| **4. Platforms** — in part | GPU paths and hardware codecs; Windows ✅ (its GPU path too) and macOS capture; netsim ✅ | — |
 | **5. Watch together** — after 6 | one-to-many: forwarding tree, simulcast / SVC, SFU, SFrame E2EE, synchronized playout | L5 |
 | **6. App** ✅ | Qt app MVP, one to one: invites, voice with AEC / NS, screen / window / app-audio share, camera; on Linux first, the other OSes as stage 4 reaches them | — |
 | **7. Conferences** | active speaker, last-N, grid, moderation, text chat | — |
@@ -188,7 +188,7 @@ allocates nothing per frame beyond the payload.
 joining mid-stream, the sender leaving.
 
 **0.3 engine: media model and codecs.** ✅
-- `VideoFrame`: CPU planes (NV12, I420, BGRA) or a GPU handle (DMA-BUF now; D3D11, IOSurface,
+- `VideoFrame`: CPU planes (NV12, I420, BGRA) or a GPU handle (D3D11 since 4.3; DMA-BUF, IOSurface,
   VA surface later) behind one refcounted type.
 - Interfaces: `VideoSource`, `VideoEncoder` (runtime bitrate, forced keyframe), `VideoDecoder`.
 - FFmpeg backend: hardware encoders first (NVENC, VAAPI, QSV, AMF, VideoToolbox), then SVT-AV1 /
@@ -619,9 +619,28 @@ encoding, and a 1440p60 game is captured and encoded without a CPU copy.
     and AMD's encoders come through QSV and AMF in an FFmpeg built with them. On a loaded
     machine, under ctest's full parallelism, netsim's and the audio pipeline's real-time tests
     miss their marks now and then, as before; one at a time they pass.
-  - **(b) The GPU path:** Windows.Graphics.Capture's D3D11 textures into a hardware encoder with
-    no copy through the CPU (frames that carry a texture, FFmpeg's D3D11 hardware frames), for
-    1440p60 and up: the stage's *done when*.
+  - **(b) The GPU path** ✅: Windows.Graphics.Capture's D3D11 textures into a hardware encoder
+    with no copy through the CPU. Direct3D 11 throughout — what the capture gives, what FFmpeg's
+    NVENC, QSV and AMF take, and what Qt's QRhi draws with on Windows; Vulkan or OpenGL would only
+    add a hand-over between APIs. A `VideoFrame` may now carry a picture in GPU memory
+    (`GpuPicture`, of a `GpuDevice`), which code of the same API reads where it is and anything
+    else downloads (`download_frame()`; `convert_frame()` does it itself). Capture asked for GPU
+    pictures (`ScreenCaptureOptions::gpu`, which screen sharing sets) converts each into NV12 on
+    the GPU's video processor (`ID3D11VideoProcessor`, in the colour space asked for, within 3
+    levels of `convert_frame()`), into a pool of six textures: with all of them held, a picture
+    is dropped, as capture APIs do. Told the device (`VideoEncoderConfig::device`, which
+    `VideoPublisher` takes from the pictures), `open_video_encoder()` opens a candidate that
+    takes D3D11 frames on a frames context of that device (`engine/src/ffmpeg/hw_frames.h`), and
+    each picture is copied into one of its frames on the GPU; FFmpeg takes the device's own lock.
+    Any other encoder downloads the pictures, so software ones work as before; a GPU encoder
+    uploads pictures in memory. Where the GPU cannot convert (WARP), or stops, pictures come
+    through memory as before. The pool's frames are bound as a decoder's: an array of NV12
+    textures takes nothing else. Measured on the Windows machine's 1080p60 desktop
+    (`docs/bench.md`): the sender's CPU from 29% of a core to 4%, at the same frame rate. Its
+    screens are 1080p; 1440p and 4K pictures from the GPU are encoded in tests, not captured.
+    Left out: hardware decoding into textures for the app to draw, and a
+    choice of adapter — the device is the default adapter's, and on a machine whose screens are
+    on another GPU an encoder that will not open on it opens from memory.
 - **4.4 macOS:** ScreenCaptureKit + VideoToolbox.
 - **4.5 netsim** ✅ (from stage 3): `ratcast-netsim`, a UDP proxy whose two directions are
   emulated links following netem's rules — loss at random or in Gilbert-Elliott bursts, a queue

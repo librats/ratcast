@@ -10,6 +10,7 @@
 
 #include <windows.h>
 
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -21,6 +22,7 @@
 #include <vector>
 
 #include "ratcast/engine/screen_capture.h"
+#include "ratcast/engine/video_convert.h"
 
 using namespace ratcast;
 using namespace std::chrono_literals;
@@ -212,6 +214,49 @@ TEST_F(GraphicsCaptureTest, AWindowComesInItsColourAndSize) {
     EXPECT_NEAR(int(picture->width()), size.cx, 16);
     EXPECT_NEAR(int(picture->height()), size.cy, 16);
     EXPECT_LE(picture->capture_time(), SteadyClock::instance().now());
+}
+
+TEST_F(GraphicsCaptureTest, GpuPicturesComeInTheWindowsColour) {
+    TestWindow window(RGB(200, 40, 90));
+    // The colour as the CPU would convert it: Y, then Cb and Cr.
+    const uint8_t bgra[16] = {90, 40, 200, 255, 90, 40, 200, 255,
+                              90, 40, 200, 255, 90, 40, 200, 255};
+    const VideoFrame::Plane pixels{bgra, 8};
+    const VideoFrame one(PixelFormat::BGRA, 2, 2, {&pixels, 1}, nullptr, Timestamp{});
+    const Result<VideoFrame> expected = convert_frame(one, PixelFormat::NV12);
+    ASSERT_TRUE(expected);
+    const std::array<int, 3> yuv = {expected->plane(0).data[0], expected->plane(1).data[0],
+                                    expected->plane(1).data[1]};
+
+    auto source = capture(window.get(), {.gpu = true});
+    ASSERT_TRUE(source);
+    // Each picture read as it comes and let go: the GPU's go back to its pool.
+    std::mutex mutex;
+    std::condition_variable changed;
+    std::optional<bool> matched;  ///< and whether that picture was in GPU memory
+    ASSERT_TRUE(source->start(
+        [&](VideoFrame picture) {
+            const Result<VideoFrame> read = download_frame(picture);
+            if (!read) return;
+            const VideoFrame::Plane& luma = read->plane(0);
+            const VideoFrame::Plane& chroma = read->plane(1);
+            const size_t x = read->width() / 4 * 2;
+            const size_t y = read->height() / 4 * 2;
+            const int at[3] = {luma.data[luma.stride * y + x],
+                               chroma.data[chroma.stride * y / 2 + x],
+                               chroma.data[chroma.stride * y / 2 + x + 1]};
+            for (int i = 0; i < 3; ++i) {
+                if (std::abs(at[i] - yuv[i]) > 3) return;
+            }
+            std::lock_guard lock(mutex);
+            matched = picture.gpu() != nullptr;
+            changed.notify_all();
+        },
+        {}));
+    std::unique_lock lock(mutex);
+    ASSERT_TRUE(changed.wait_for(lock, kPatience, [&] { return matched.has_value(); }))
+        << "never in the window's colour";
+    if (!*matched) GTEST_SKIP() << "the GPU cannot convert here: the pictures came in memory";
 }
 
 TEST_F(GraphicsCaptureTest, FourTwoZeroComesInEvenSizes) {

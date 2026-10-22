@@ -248,6 +248,12 @@ Result<VideoFrame> convert_frame(const VideoFrame& picture, PixelFormat format,
                                  ColorSpace color_space, BufferPool& pool) {
     if (picture.empty()) return fail(Errc::InvalidArgument);
     if (picture.format() != format && !is_420(format)) return fail(Errc::Unsupported);
+    if (picture.gpu()) {  // read out of GPU memory first
+        Result<VideoFrame> downloaded = download_frame(picture, pool);
+        if (!downloaded) return downloaded;
+        if (downloaded->format() == format) return downloaded;
+        return convert_frame(*downloaded, format, color_space, pool);
+    }
 
     MutableVideoFrame out =
         MutableVideoFrame::allocate(format, picture.width(), picture.height(), pool);

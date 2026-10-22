@@ -23,7 +23,8 @@ namespace ratcast {
 /// `picture` in `format`: always a new frame, from `pool`, with the same size
 /// and capture time. YUV made from BGRA is in `color_space`; YUV into the other
 /// 4:2:0 layout, or a picture already in `format`, keeps its own colour space.
-/// Fails with Unsupported into BGRA or YUY2 from another format.
+/// A picture in GPU memory is downloaded first (then, in `format` already, it
+/// is that copy). Fails with Unsupported into BGRA or YUY2 from another format.
 Result<VideoFrame> convert_frame(const VideoFrame& picture, PixelFormat format,
                                  ColorSpace color_space, BufferPool& pool);
 Result<VideoFrame> convert_frame(const VideoFrame& picture, PixelFormat format,

@@ -1,7 +1,9 @@
 // Video encoding through FFmpeg's libavcodec: one implementation for every
-// encoder, hardware or software, that takes pictures from CPU memory. What
-// differs between them is how each is told to keep latency down, and whether
-// it can change its bitrate in flight — the candidate table below.
+// encoder, hardware or software. What differs between them is how each is
+// told to keep latency down, and whether it can change its bitrate in flight —
+// the candidate table below. Pictures come from memory, or — to an encoder
+// opened on a frames context of their GPU's (hw_frames.h) — from GPU memory
+// without passing through the CPU.
 
 #include <algorithm>
 #include <chrono>
@@ -15,7 +17,12 @@
 #include <string>
 #include <utility>
 
+extern "C" {
+#include <libavutil/hwcontext.h>
+}
+
 #include "ffmpeg/av.h"
+#include "ffmpeg/hw_frames.h"
 #include "ratcast/engine/video_codec.h"
 #include "ratcast/engine/video_convert.h"
 #include "video/codec_backend.h"
@@ -175,12 +182,16 @@ std::optional<PixelFormat> choose_input_format(const AVCodec& codec) {
 
 class FfmpegVideoEncoder final : public VideoEncoder {
 public:
+    /// With `hw_frames`, an encoder of pictures in that frames context's GPU.
     FfmpegVideoEncoder(const Candidate& candidate, const AVCodec& codec,
-                       const VideoEncoderConfig& config, PixelFormat input_format)
+                       const VideoEncoderConfig& config, PixelFormat input_format,
+                       av::BufferRefPtr hw_frames = nullptr)
         : candidate_(candidate),
           codec_(codec),
           config_(config),
-          info_{candidate.name, candidate.codec, candidate.hardware, input_format},
+          info_{candidate.name, candidate.codec, candidate.hardware, input_format,
+                hw_frames != nullptr},
+          hw_frames_(std::move(hw_frames)),
           frame_(av_frame_alloc()),
           packet_(av_packet_alloc()) {}
 
@@ -189,7 +200,8 @@ public:
     /// Open the codec for the current config.
     Result<void> open() {
         if (!frame_ || !packet_) return fail(Errc::Internal);
-        Result<av::CodecContextPtr> context = open_context(candidate_, codec_, config_, info_);
+        Result<av::CodecContextPtr> context =
+            open_context(candidate_, codec_, config_, info_, hw_frames_.get());
         if (!context) return fail(context.error());
         close_context(std::exchange(context_, std::move(*context)));
         return {};
@@ -202,7 +214,8 @@ public:
             picture.height() != config_.height || picture.color_space() != config_.color_space) {
             return fail(Errc::InvalidArgument);
         }
-        if (picture.format() != info_.input_format) {  // the other 4:2:0 layout
+        if (!hw_frames_ && (picture.gpu() || picture.format() != info_.input_format)) {
+            // In GPU memory, or in the other 4:2:0 layout.
             Result<VideoFrame> converted = convert_frame(picture, info_.input_format);
             if (!converted) return fail(converted.error());
             return encode(*converted, keyframe, sink);
@@ -281,7 +294,8 @@ private:
     static Result<av::CodecContextPtr> open_context(const Candidate& candidate,
                                                     const AVCodec& codec,
                                                     const VideoEncoderConfig& config,
-                                                    const VideoEncoderInfo& info) {
+                                                    const VideoEncoderInfo& info,
+                                                    AVBufferRef* hw_frames) {
         std::lock_guard lock(lifecycle_mutex());
         av::CodecContextPtr context(avcodec_alloc_context3(&codec));
         if (!context) return fail(Errc::Internal);
@@ -289,6 +303,11 @@ private:
         context->width = static_cast<int>(config.width);
         context->height = static_cast<int>(config.height);
         context->pix_fmt = av::pixel_format(info.input_format);
+        if (hw_frames) {
+            context->pix_fmt = reinterpret_cast<const AVHWFramesContext*>(hw_frames->data)->format;
+            context->hw_frames_ctx = av_buffer_ref(hw_frames);
+            if (!context->hw_frames_ctx) return fail(Errc::Internal);
+        }
         context->time_base = av::kMicroseconds;
         context->framerate = AVRational{static_cast<int>(config.frame_rate_num),
                                         static_cast<int>(config.frame_rate_den)};
@@ -326,14 +345,41 @@ private:
             open_again_ = true;
             return;
         }
-        next_ = std::async(std::launch::async, &FfmpegVideoEncoder::open_context,
-                           std::cref(candidate_), std::cref(codec_), config_, info_);
+        next_ =
+            std::async(std::launch::async, &FfmpegVideoEncoder::open_context, std::cref(candidate_),
+                       std::cref(codec_), config_, info_, hw_frames_.get());
     }
 
-    // Point frame_ at the picture's planes. The frame's buffer holds a copy of
-    // the VideoFrame — not of its pixels — so an encoder that keeps the
-    // picture keeps its memory alive, and FFmpeg never copies it to be sure.
+    // Point frame_ at the picture: at a frame of the GPU's that it was copied
+    // into there, or else at its planes.
     Result<void> wrap(const VideoFrame& picture, bool keyframe) {
+        if (hw_frames_) {
+            if (Result<void> filled = av::fill_hw_frame(*hw_frames_, picture, *frame_); !filled) {
+                av_frame_unref(frame_.get());
+                return filled;
+            }
+        } else if (Result<void> wrapped = wrap_planes(picture); !wrapped) {
+            return wrapped;
+        }
+        frame_->color_primaries = context_->color_primaries;
+        frame_->color_trc = context_->color_trc;
+        frame_->colorspace = context_->colorspace;
+        frame_->color_range = context_->color_range;
+
+        // Encoders insist on increasing timestamps; two pictures stamped alike
+        // are a microsecond apart.
+        int64_t pts = picture.capture_time().time_since_epoch().count();
+        if (last_pts_ && pts <= *last_pts_) pts = *last_pts_ + 1;
+        last_pts_ = pts;
+        frame_->pts = pts;
+        frame_->pict_type = keyframe ? AV_PICTURE_TYPE_I : AV_PICTURE_TYPE_NONE;
+        return {};
+    }
+
+    // The frame's buffer holds a copy of the VideoFrame — not of its pixels —
+    // so an encoder that keeps the picture keeps its memory alive, and FFmpeg
+    // never copies it to be sure.
+    Result<void> wrap_planes(const VideoFrame& picture) {
         auto* keep = new VideoFrame(picture);
         frame_->buf[0] = av_buffer_create(
             const_cast<uint8_t*>(picture.plane(0).data), 1,
@@ -346,22 +392,10 @@ private:
         frame_->format = context_->pix_fmt;
         frame_->width = context_->width;
         frame_->height = context_->height;
-        frame_->color_primaries = context_->color_primaries;
-        frame_->color_trc = context_->color_trc;
-        frame_->colorspace = context_->colorspace;
-        frame_->color_range = context_->color_range;
         for (size_t i = 0; i < picture.plane_count(); ++i) {
             frame_->data[i] = const_cast<uint8_t*>(picture.plane(i).data);
             frame_->linesize[i] = static_cast<int>(picture.plane(i).stride);
         }
-
-        // Encoders insist on increasing timestamps; two pictures stamped alike
-        // are a microsecond apart.
-        int64_t pts = picture.capture_time().time_since_epoch().count();
-        if (last_pts_ && pts <= *last_pts_) pts = *last_pts_ + 1;
-        last_pts_ = pts;
-        frame_->pts = pts;
-        frame_->pict_type = keyframe ? AV_PICTURE_TYPE_I : AV_PICTURE_TYPE_NONE;
         return {};
     }
 
@@ -395,6 +429,9 @@ private:
     const AVCodec& codec_;
     VideoEncoderConfig config_;
     VideoEncoderInfo info_;
+    /// The GPU's frames pictures are copied into, for an encoder of them;
+    /// before next_, which may still be opening on it.
+    av::BufferRefPtr hw_frames_;
 
     av::CodecContextPtr context_;
     av::FramePtr frame_;
@@ -459,6 +496,17 @@ std::vector<std::string> video_encoder_candidates(Codec codec) {
 }
 
 Result<std::unique_ptr<VideoEncoder>> open_video_encoder(const VideoEncoderConfig& config) {
+    const auto opened = [&](std::unique_ptr<FfmpegVideoEncoder> encoder) {
+        if (!encoder->open()) return std::unique_ptr<VideoEncoder>();
+        LOG_INFO("engine",
+                 "video encoder: " << encoder->info().name << " " << config.width << "x"
+                                   << config.height << " at " << config.bitrate << " bit/s"
+                                   << (encoder->info().gpu_input ? ", GPU pictures" : ""));
+        return std::unique_ptr<VideoEncoder>(std::move(encoder));
+    };
+    // Made for the first candidate that takes the device's frames, and kept
+    // for the next if that one will not open on them.
+    std::optional<Result<av::BufferRefPtr>> hw_frames;
     for (const Candidate& candidate : kCandidates) {
         if (candidate.codec != config.codec) continue;
         if (!config.encoder.empty() && config.encoder != candidate.name) continue;
@@ -469,12 +517,23 @@ Result<std::unique_ptr<VideoEncoder>> open_video_encoder(const VideoEncoderConfi
         const std::optional<PixelFormat> format = choose_input_format(*codec);
         if (!format || !hands_back_at_once(candidate, *codec, *format)) continue;
 
-        auto encoder = std::make_unique<FfmpegVideoEncoder>(candidate, *codec, config, *format);
-        if (encoder->open()) {
-            LOG_INFO("engine", "video encoder: " << candidate.name << " " << config.width << "x"
-                                                 << config.height << " at " << config.bitrate
-                                                 << " bit/s");
-            return std::unique_ptr<VideoEncoder>(std::move(encoder));
+        // On the device's frames if it takes them; else, or if it will not
+        // open on them (a device of another GPU's), from memory.
+        if (config.device && av::takes_hw_frames(*codec, *config.device)) {
+            if (!hw_frames)
+                hw_frames = av::make_hw_frames(config.device, config.width, config.height);
+            if (*hw_frames) {
+                av::BufferRefPtr frames(av_buffer_ref((*hw_frames)->get()));
+                if (std::unique_ptr<VideoEncoder> encoder =
+                        opened(std::make_unique<FfmpegVideoEncoder>(
+                            candidate, *codec, config, PixelFormat::NV12, std::move(frames)))) {
+                    return encoder;
+                }
+            }
+        }
+        if (std::unique_ptr<VideoEncoder> encoder =
+                opened(std::make_unique<FfmpegVideoEncoder>(candidate, *codec, config, *format))) {
+            return encoder;
         }
     }
     return fail(Errc::Unavailable);

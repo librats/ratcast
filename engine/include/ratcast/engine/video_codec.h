@@ -13,6 +13,11 @@
  * software. Encoders under the GPL (x264, x265) are never picked, so ratcast
  * behaves the same on an LGPL build of FFmpeg as on a distribution's.
  *
+ * Pictures in GPU memory (VideoFrame::gpu()) go into an encoder that reads
+ * their device's textures where they are, with no copy through the CPU; told
+ * the device they will come from, open_video_encoder() opens one so where it
+ * can. Any other encoder downloads them first.
+ *
  * Encoders and decoders are not thread-safe: each belongs to one thread.
  */
 
@@ -48,6 +53,8 @@ struct VideoEncoderConfig {
     std::string encoder;
     bool allow_hardware = true;
     bool allow_software = true;
+    /// The GPU whose memory the pictures will be in, if they will be.
+    std::shared_ptr<GpuDevice> device;
 };
 
 struct VideoEncoderInfo {
@@ -57,6 +64,9 @@ struct VideoEncoderInfo {
     /// What the encoder works in. encode() takes the other 4:2:0 layout too,
     /// at the cost of converting it first.
     PixelFormat input_format = PixelFormat::NV12;
+    /// Reads pictures in the GPU memory of the config's device where they
+    /// are; pictures in memory are uploaded to it.
+    bool gpu_input = false;
 };
 
 /// A frame out of an encoder, ready for MediaSession::send_frame(): numbered
@@ -76,8 +86,8 @@ public:
     virtual const VideoEncoderInfo& info() const noexcept = 0;
 
     /// Encode `picture` — of the configured size and colour space, in NV12 or
-    /// I420 — as a keyframe if `keyframe`. Every frame the encoder completes is
-    /// handed to `sink` before this returns.
+    /// I420, in memory or a GPU's — as a keyframe if `keyframe`. Every frame the encoder completes
+    /// is handed to `sink` before this returns.
     virtual Result<void> encode(const VideoFrame& picture, bool keyframe, Sink sink) = 0;
 
     /// Aim at `bits_per_second` from the next picture on. An encoder that

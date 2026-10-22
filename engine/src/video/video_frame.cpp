@@ -2,6 +2,7 @@
 
 #include <cassert>
 #include <cstdint>
+#include <utility>
 
 namespace ratcast {
 namespace {
@@ -48,6 +49,16 @@ VideoFrame::VideoFrame(PixelFormat format, uint32_t width, uint32_t height,
     for (size_t i = 0; i < planes.size(); ++i) planes_[i] = planes[i];
 }
 
+VideoFrame::VideoFrame(PixelFormat format, uint32_t width, uint32_t height,
+                       std::shared_ptr<const GpuPicture> picture, Timestamp capture_time,
+                       ColorSpace color_space) noexcept
+    : format_(format),
+      width_(width),
+      height_(height),
+      capture_time_(capture_time),
+      color_space_(color_space),
+      gpu_(std::move(picture)) {}
+
 MutableVideoFrame MutableVideoFrame::allocate(PixelFormat format, uint32_t width, uint32_t height) {
     return allocate(format, width, height, BufferPool::shared());
 }
@@ -90,6 +101,18 @@ VideoFrame MutableVideoFrame::freeze(Timestamp capture_time, ColorSpace color_sp
     frame.storage_ = std::move(storage_).freeze();
     *this = MutableVideoFrame{};
     return frame;
+}
+
+Result<VideoFrame> download_frame(const VideoFrame& picture, BufferPool& pool) {
+    if (!picture.gpu()) return picture;
+    MutableVideoFrame copy =
+        MutableVideoFrame::allocate(picture.format(), picture.width(), picture.height(), pool);
+    if (Result<void> read = picture.gpu()->read(copy); !read) return fail(read.error());
+    return std::move(copy).freeze(picture.capture_time(), picture.color_space());
+}
+
+Result<VideoFrame> download_frame(const VideoFrame& picture) {
+    return download_frame(picture, BufferPool::shared());
 }
 
 }  // namespace ratcast

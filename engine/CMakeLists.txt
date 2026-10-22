@@ -36,6 +36,12 @@ if(RATCAST_FFMPEG_FOUND)
         src/ffmpeg/video_decoder.cpp
         src/ffmpeg/video_encoder.cpp
     )
+    # Pictures in GPU memory into encoders: Direct3D 11's on Windows.
+    if(WIN32)
+        target_sources(ratcast_engine PRIVATE src/ffmpeg/hw_frames_d3d11.cpp)
+    else()
+        target_sources(ratcast_engine PRIVATE src/ffmpeg/hw_frames_none.cpp)
+    endif()
     target_link_libraries(ratcast_engine PRIVATE ratcast::ffmpeg)
 else()
     target_sources(ratcast_engine PRIVATE src/ffmpeg_unavailable.cpp)
@@ -74,7 +80,9 @@ elseif(WIN32)
     target_sources(ratcast_engine PRIVATE
         src/windows/audio_device.cpp
         src/windows/camera_capture.cpp
+        src/windows/d3d11.cpp
         src/windows/graphics_capture.cpp
+        src/windows/nv12_converter.cpp
         src/windows/screen_capture.cpp
         src/windows/wasapi_audio.cpp
     )

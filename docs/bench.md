@@ -1140,6 +1140,26 @@ ratcast 356 / 229.4 / 229.4 (361 / 229.4 / 233.5), SRT 298 / 233.5 / 241.7 (299 
   truer from netsim.
 
 
+## The GPU path on Windows (4.3 b)
+
+Windows 11, Intel Core Ultra 7 265KF, NVIDIA GeForce RTX 5080, FFmpeg 9.0.1 from vcpkg; MSVC
+release build (RelWithDebInfo). `ratcast-send --source screen` on the primary 1920x1080 screen,
+av1_nvenc at 20 Mbit/s fixed, with a small window changing colour every refresh so that the
+screen sends 60 pictures a second, to `ratcast-recv --headless` on the same host for 15 s;
+`--no-gpu` for the path through memory. Medians of three runs.
+
+| | sender CPU, % of a core | encode, ms a picture | pictures received a second | stalls |
+|---|---:|---:|---:|---:|
+| GPU path | 4 | 3.7 | 58–60 | 0 |
+| through memory (`--no-gpu`) | 29 | 2.7 | 58–60 | 0 |
+
+The 25 points are the copy out of the GPU, the conversion on the CPU and NVENC's upload back.
+`encode` rises by a millisecond because it now waits for the GPU's conversion, which the path
+through memory has done before it starts; with pictures already in GPU memory NVENC takes 0.6–1.8
+ms longer at 1440p and 4K than from memory (3.4 → 5.1 ms, 4.1 → 6.0 ms, one run each), less
+than the CPU's conversion alone takes at those sizes (`bench_convert` on the dev VM: ~1.8 ms at
+1440p, 5.2 ms at 4K).
+
 ## Stage 6, measured whole
 
 After 6.1–6.6: ratcast 893ca52, librats 0cd5d06. `bench/netem.py --audio --repeat 3`, the same

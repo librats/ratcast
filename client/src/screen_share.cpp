@@ -29,6 +29,7 @@ Result<ScreenShareSources> open_screen_share(const ScreenShareConfig& config,
     options.monitors = !config.window;
     options.windows = config.window;
     options.max_frame_rate = config.video.frame_rate_num;
+    options.gpu = config.gpu;
     if (!config.data_dir.empty())
         std::getline(std::ifstream(token_path(config)), options.restore_token);
 

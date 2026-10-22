@@ -12,8 +12,12 @@
  *     buffer — so pictures made elsewhere are passed on without a copy.
  *
  * Planes allocated here start and have strides on 64-byte boundaries, which is
- * what SIMD code in encoders and converters wants. Pictures in GPU memory will
- * be a third kind of frame; the accessors here describe CPU-visible planes.
+ * what SIMD code in encoders and converters wants.
+ *
+ * A third kind of frame is a picture in GPU memory (gpu()): a texture of one
+ * device's, which only code of the same graphics API reads where it is — an
+ * encoder that takes that device's textures. It has no planes the CPU reads;
+ * anything else asks download_frame() for a copy in memory.
  *
  * A YUV picture also says how its numbers map to colour (ColorSpace), which an
  * encoder signals in the stream so that the far side shows the same colours.
@@ -26,6 +30,7 @@
 #include <span>
 
 #include "ratcast/core/buffer.h"
+#include "ratcast/core/result.h"
 #include "ratcast/core/time.h"
 
 namespace ratcast {
@@ -77,6 +82,34 @@ size_t plane_row_bytes(PixelFormat format, size_t plane, uint32_t width) noexcep
 /// Rows of plane `plane` of a `height`-pixel picture.
 size_t plane_rows(PixelFormat format, size_t plane, uint32_t height) noexcept;
 
+class MutableVideoFrame;
+
+/// The graphics API a GPU's pictures are seen through.
+enum class GpuApi : uint8_t {
+    D3D11,  ///< Windows: what Windows.Graphics.Capture gives and encoders take
+};
+
+/// A GPU as a graphics API sees it: what pictures in its memory belong to.
+/// What it is made of is that API's code's business (engine/src/windows).
+class GpuDevice {
+public:
+    virtual ~GpuDevice() = default;
+    virtual GpuApi api() const noexcept = 0;
+};
+
+/// A picture in a GPU's memory, in the format and size of the frame that
+/// carries it. Kept for as long as any copy of that frame is.
+class GpuPicture {
+public:
+    virtual ~GpuPicture() = default;
+
+    virtual const std::shared_ptr<GpuDevice>& device() const noexcept = 0;
+
+    /// Copy the picture into `into`, of its format and size, waiting for the
+    /// GPU to finish what it draws into it first.
+    virtual Result<void> read(MutableVideoFrame& into) const = 0;
+};
+
 class VideoFrame {
 public:
     static constexpr size_t kMaxPlanes = 3;
@@ -96,12 +129,21 @@ public:
                std::shared_ptr<const void> owner, Timestamp capture_time,
                ColorSpace color_space = {}) noexcept;
 
+    /// A frame over a picture in GPU memory, which holds `format` (NV12).
+    VideoFrame(PixelFormat format, uint32_t width, uint32_t height,
+               std::shared_ptr<const GpuPicture> picture, Timestamp capture_time,
+               ColorSpace color_space = {}) noexcept;
+
     bool empty() const noexcept { return width_ == 0; }
     PixelFormat format() const noexcept { return format_; }
     uint32_t width() const noexcept { return width_; }
     uint32_t height() const noexcept { return height_; }
     size_t plane_count() const noexcept { return ratcast::plane_count(format_); }
+    /// Null for a picture in GPU memory.
     const Plane& plane(size_t i) const noexcept { return planes_[i]; }
+
+    /// The picture in GPU memory, if that is where it is.
+    const std::shared_ptr<const GpuPicture>& gpu() const noexcept { return gpu_; }
 
     /// When the picture was captured, on the local monotonic clock.
     Timestamp capture_time() const noexcept { return capture_time_; }
@@ -121,6 +163,7 @@ private:
     ColorSpace color_space_;
     Buffer storage_;                     ///< owner of planes allocated here
     std::shared_ptr<const void> owner_;  ///< owner of planes from elsewhere
+    std::shared_ptr<const GpuPicture> gpu_;
 };
 
 /// A frame being drawn: writable planes in pooled memory, frozen into a
@@ -158,5 +201,10 @@ private:
     std::array<Plane, VideoFrame::kMaxPlanes> planes_{};
     MutableBuffer storage_;
 };
+
+/// `picture` in memory the CPU reads: itself, or a copy of a picture in GPU
+/// memory, from `pool`.
+Result<VideoFrame> download_frame(const VideoFrame& picture, BufferPool& pool);
+Result<VideoFrame> download_frame(const VideoFrame& picture);
 
 }  // namespace ratcast

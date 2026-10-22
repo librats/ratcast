@@ -13,6 +13,11 @@ namespace {
 /// picture (a compositor sends only what changes).
 constexpr auto kStillAfter = std::chrono::milliseconds(100);
 
+/// The GPU whose memory `picture` is in, if any.
+std::shared_ptr<GpuDevice> device_of(const VideoFrame& picture) {
+    return picture.gpu() ? picture.gpu()->device() : nullptr;
+}
+
 }  // namespace
 
 VideoPublisher::VideoPublisher(MediaSession& session, VideoPublisherConfig config, Clock& clock)
@@ -164,7 +169,8 @@ void VideoPublisher::run() {
 Result<void> VideoPublisher::publish(VideoFrame picture, bool keyframe) {
     if (!encoder_ || picture.width() != encoder_config_.width ||
         picture.height() != encoder_config_.height ||
-        picture.color_space() != encoder_config_.color_space) {
+        picture.color_space() != encoder_config_.color_space ||
+        device_of(picture) != encoder_config_.device) {
         if (Result<void> opened = open_encoder(picture); !opened) return opened;
     }
     if (const uint32_t bitrate = bitrate_.load(std::memory_order_relaxed);
@@ -208,6 +214,7 @@ Result<void> VideoPublisher::open_encoder(const VideoFrame& picture) {
     config.width = picture.width();
     config.height = picture.height();
     config.color_space = picture.color_space();
+    config.device = device_of(picture);  // read where it is, if the encoder can
     config.bitrate = bitrate_.load(std::memory_order_relaxed);
     Result<std::unique_ptr<VideoEncoder>> encoder = open_video_encoder(config);
     if (!encoder) {
@@ -237,6 +244,7 @@ Result<void> VideoPublisher::open_encoder(const VideoFrame& picture) {
     stats_.height = config.height;
     stats_.bitrate = config.bitrate;
     stats_.encoder = encoder_->info().name;
+    stats_.gpu_input = encoder_->info().gpu_input;
     return {};
 }
 

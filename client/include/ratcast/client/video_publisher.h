@@ -72,8 +72,9 @@ struct VideoPublisherStats {
     Duration max_encode_time{};
     uint32_t width = 0;  ///< of the pictures now
     uint32_t height = 0;
-    uint32_t bitrate = 0;  ///< what the encoder aims at now
-    std::string encoder;   ///< the encoder in use, e.g. "libsvtav1"
+    uint32_t bitrate = 0;    ///< what the encoder aims at now
+    std::string encoder;     ///< the encoder in use, e.g. "libsvtav1"
+    bool gpu_input = false;  ///< it reads the pictures in GPU memory where they are
 };
 
 class VideoPublisher {

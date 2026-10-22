@@ -32,6 +32,9 @@ namespace ratcast {
 struct ScreenShareConfig {
     bool window = false;  ///< a single window, not a whole screen
     bool sound = true;    ///< and what the other applications play
+    /// The pictures kept in GPU memory, for a hardware encoder to read where
+    /// they are, where the system can (ScreenCaptureOptions::gpu).
+    bool gpu = true;
     /// Where the desktop's choice is kept, one file per kind; "": asked each
     /// time.
     std::string data_dir = {};

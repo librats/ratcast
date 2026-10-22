@@ -51,6 +51,8 @@ How:
   --codec av1|h265|h264   default: av1
   --encoder NAME       a particular FFmpeg encoder (default: the best there is)
   --software           no hardware encoders
+  --no-gpu             the screen's pictures through memory, converted on the CPU,
+                       even where the GPU could hand them to the encoder itself
   --bitrate KBPS       the most rate control goes up to (default 4000)
   --start-bitrate KBPS where rate control starts (default 2000)
   --fixed-bitrate      no rate control: always --bitrate
@@ -83,6 +85,7 @@ struct Options {
     uint32_t width = 1280;
     uint32_t height = 720;
     VideoEncoderConfig encoder;
+    bool gpu = true;  ///< a screen's pictures may stay in GPU memory
     bool rate_control = true;
     uint32_t start_bitrate = 2'000'000;
     Duration latency = 200ms;
@@ -126,6 +129,7 @@ std::optional<Options> parse(int argc, char** argv) {
     }
     o.encoder.encoder = args.text("encoder").value_or("");
     o.encoder.allow_hardware = !args.flag("software");
+    o.gpu = !args.flag("no-gpu");
     o.encoder.bitrate = args.number("bitrate", 50, 500'000).value_or(4000) * 1000;
     o.start_bitrate = args.number("start-bitrate", 50, 500'000).value_or(2000) * 1000;
     o.rate_control = !args.flag("fixed-bitrate");
@@ -172,8 +176,11 @@ std::optional<Options> parse(int argc, char** argv) {
 }
 
 std::unique_ptr<VideoSource> open_screen(const Options& o) {
-    const ScreenShareConfig share{
-        .window = o.source == "window", .sound = false, .data_dir = o.data_dir, .video = o.encoder};
+    const ScreenShareConfig share{.window = o.source == "window",
+                                  .sound = false,
+                                  .gpu = o.gpu,
+                                  .data_dir = o.data_dir,
+                                  .video = o.encoder};
     // The desktop's picker may wait on the user; Ctrl-C calls it off.
     std::stop_source cancel;
     std::jthread watch([&cancel](std::stop_token done) {
@@ -339,10 +346,11 @@ private:
         const double encode_ms =
             frames > 0 ? double((now.encode_time - last_.encode_time).count()) / 1000 / frames : 0;
         std::printf(
-            " %3llu fps %6.2f Mbit/s (aim %5.2f)  %ux%u %s  encode %5.2f ms  viewers %zu"
+            " %3llu fps %6.2f Mbit/s (aim %5.2f)  %ux%u %s%s  encode %5.2f ms  viewers %zu"
             "  skipped %llu  repeated %llu  keyframes %llu  drops %llu",
             static_cast<unsigned long long>(frames), mbps, now.bitrate / 1e6, now.width, now.height,
-            now.encoder.c_str(), encode_ms, stream ? stream->subscribers : 0,
+            now.encoder.c_str(), now.gpu_input ? " (GPU)" : "", encode_ms,
+            stream ? stream->subscribers : 0,
             static_cast<unsigned long long>(now.skipped - last_.skipped),
             static_cast<unsigned long long>(now.repeated - last_.repeated),
             static_cast<unsigned long long>(now.keyframes - last_.keyframes),
