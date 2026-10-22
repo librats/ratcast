@@ -36,6 +36,10 @@
  * for the late ones. A data stream (an MPEG-TS feed) is carried the same way,
  * for a DeliveryBuffer to put in order.
  *
+ * Beside streams, a session says who it is (Presence: a name, muted,
+ * deafened) to every peer as it connects and whenever that changes, and keeps
+ * what each peer said of itself.
+ *
  * A stream added with BitrateLimits is rate-controlled: the session follows
  * the paths to its subscribers (on_peer_path) and tells the encoder the
  * bitrate to aim at through `bitrate_changed` (see RateController). With
@@ -55,6 +59,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <shared_mutex>
 #include <span>
@@ -66,6 +71,7 @@
 #include "ratcast/core/time.h"
 #include "ratcast/export.h"
 #include "ratcast/session/media_network.h"
+#include "ratcast/session/presence.h"
 #include "ratcast/session/rate_controller.h"
 #include "ratcast/stream/frame.h"
 #include "ratcast/stream/frame_tracker.h"
@@ -96,6 +102,8 @@ struct SessionHandlers {
     /// The encoder of a rate-controlled local stream should aim at a new
     /// bitrate, in bits per second.
     std::function<void(StreamId stream, uint32_t bits_per_second)> bitrate_changed = {};
+    /// A peer said who it is, or that something of it changed.
+    std::function<void(const PeerId& peer, const Presence& presence)> presence_changed = {};
 };
 
 struct OutgoingStreamStats {
@@ -174,6 +182,16 @@ public:
 
     std::optional<IncomingStreamStats> incoming_stats(const PeerId& peer, StreamId stream) const;
 
+    // ── Who is who ──────────────────────────────────────────────────────────
+
+    /// Say who this node is: to every peer now, and to each as it connects.
+    /// Fails with InvalidArgument for a presence that is not valid.
+    Result<void> set_presence(const Presence& presence);
+
+    /// What `peer` last said of itself; none before it said anything, or once
+    /// it is gone.
+    std::optional<Presence> presence(const PeerId& peer) const;
+
     /// What peers offer now: each stream announced and not withdrawn, by peer
     /// and id.
     std::vector<OfferedStream> offered() const;
@@ -222,8 +240,9 @@ private:
     std::vector<PeerId> connected_peers() const;
 
     void on_frame(const PeerId& peer, std::span<const uint8_t> message);
-    /// Announce every stream offered to `peer`.
+    /// Announce every stream offered to `peer`, and say who this node is.
     void announce_all(const PeerId& peer);
+    void on_presence(const PeerId& peer, Presence presence);
     void on_announce(const PeerId& peer, StreamDescription description);
     void on_withdraw(const PeerId& peer, StreamId stream);
     void on_subscribe(const PeerId& peer, StreamId stream);
@@ -245,6 +264,11 @@ private:
     std::unordered_map<StreamId, std::shared_ptr<OutgoingStream>> outgoing_;
     std::unordered_map<StreamKey, std::shared_ptr<IncomingStream>, StreamKeyHash> incoming_;
     std::unordered_map<PeerId, std::shared_ptr<PeerState>, PeerId::Hash> peers_;
+    std::unordered_map<PeerId, Presence, PeerId::Hash> presences_;  ///< what peers said
+    /// Held while this node's presence is read and sent, so that a peer
+    /// connecting as it changes never hears the old one last.
+    std::mutex presence_mutex_;
+    std::optional<Presence> presence_;  ///< this node's, once said
     /// The next stream's slot in the tags of its frames; never 0, so no tag is.
     uint16_t next_slot_ = 1;
 

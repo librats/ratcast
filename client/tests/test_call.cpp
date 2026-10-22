@@ -194,6 +194,10 @@ private:
                 },
             .ended = [this](const PeerId&,
                             const StreamDescription& stream) { tell("ended " + stream.label); },
+            .presence =
+                [this](const PeerId&, const Presence& presence) {
+                    tell("presence " + presence.name + (presence.muted ? " muted" : ""));
+                },
             .source_ended =
                 [this](StreamId stream, Result<void> outcome) {
                     tell("source " + std::to_string(stream) + (outcome ? " ended" : " failed"));
@@ -549,6 +553,23 @@ TEST_F(CallTest, WithNothingChosenTheNextOfferedPlaysWhenTheScreenEnds) {
 }
 
 // ── A room ──────────────────────────────────────────────────────────────────
+
+TEST_F(CallTest, EachSaysWhoItIs) {
+    Side host;
+    host.start(room(), false, false);
+    ASSERT_TRUE(host->set_presence({"Ann"}));  // before anyone is there
+    Side guest;
+    guest.start(room(RatsUrl{host.address()}), false, false);
+    ASSERT_TRUE(wait_for([&] { return guest.told("presence Ann"); }));
+    EXPECT_EQ(guest->presence(host->id()), Presence{"Ann"});
+    EXPECT_FALSE(host->presence(guest->id())) << "the guest said nothing yet";
+
+    ASSERT_TRUE(guest->set_presence({"Bob", true, false}));  // once there
+    ASSERT_TRUE(wait_for([&] { return host.told("presence Bob muted"); }));
+    EXPECT_EQ(host->presence(guest->id()), (Presence{"Bob", true, false}));
+    EXPECT_EQ(host->set_presence({std::string(Presence::kMaxNameSize + 1, 'x')}).error(),
+              Errc::InvalidArgument);
+}
 
 TEST_F(CallTest, InARoomEveryoneMeetsEveryoneWhoeverTheyJoinThrough) {
     Side host;

@@ -11,6 +11,7 @@ ratcast_add_test(libratcast_tests
         test_jitter_buffer.cpp
         test_media_service.cpp
         test_media_session.cpp
+        test_presence.cpp
         test_rate_controller.cpp
         test_result.cpp
         test_stream_description.cpp

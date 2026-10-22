@@ -30,6 +30,7 @@ enum class MessageKind : uint8_t {
     Subscribe = 4,        ///< send me this stream's frames
     Unsubscribe = 5,      ///< stop sending them
     KeyframeRequest = 6,  ///< I cannot decode until the next keyframe
+    Presence = 7,         ///< who I am, and whether I am muted or deafened
 };
 
 constexpr uint8_t message_prefix(MessageKind kind) noexcept {
@@ -49,7 +50,8 @@ inline Result<MessageKind> read_prefix(Reader& in) noexcept {
         case MessageKind::Withdraw:
         case MessageKind::Subscribe:
         case MessageKind::Unsubscribe:
-        case MessageKind::KeyframeRequest: return kind;
+        case MessageKind::KeyframeRequest:
+        case MessageKind::Presence: return kind;
     }
     return fail(Errc::UnknownKind);
 }

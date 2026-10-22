@@ -51,6 +51,17 @@ void write(Out& out, const Announce& announce) {
     out.bytes(d.codec_config.bytes());
 }
 
+enum PresenceFlags : uint8_t { kMuted = 1, kDeafened = 2 };
+
+template <typename Out>
+void write(Out& out, const PresenceUpdate& update) {
+    const Presence& p = update.presence;
+    out.u8(message_prefix(MessageKind::Presence));
+    out.varint(p.name.size());
+    out.bytes(as_bytes(p.name));
+    out.u8(static_cast<uint8_t>((p.muted ? kMuted : 0) | (p.deafened ? kDeafened : 0)));
+}
+
 template <typename Out, typename Message>
 void write(Out& out, const Message& message) {
     constexpr MessageKind kind = [] {
@@ -119,6 +130,20 @@ Result<ControlMessage> read_announce(Reader& in) {
     return ControlMessage{Announce{std::move(d)}};
 }
 
+Result<ControlMessage> read_presence(Reader& in) {
+    Presence p;
+    const uint64_t name_size = in.varint();
+    if (name_size > Presence::kMaxNameSize) in.fail(Errc::Malformed);
+    const std::span<const uint8_t> name = in.bytes(static_cast<size_t>(name_size));
+    const uint8_t flags = in.u8();
+    if (!in.ok()) return fail(in.error());
+    p.name.assign(name.begin(), name.end());
+    p.muted = flags & kMuted;
+    p.deafened = flags & kDeafened;
+    if (!is_valid(p)) return fail(Errc::Malformed);
+    return ControlMessage{PresenceUpdate{std::move(p)}};
+}
+
 template <typename Message>
 Result<ControlMessage> read_stream_message(Reader& in) {
     Message message;
@@ -134,6 +159,8 @@ Buffer encode_control(const ControlMessage& message) {
         [](const auto& m) {
             if constexpr (std::is_same_v<std::decay_t<decltype(m)>, Announce>) {
                 assert(is_valid(m.description));
+            } else if constexpr (std::is_same_v<std::decay_t<decltype(m)>, PresenceUpdate>) {
+                assert(is_valid(m.presence));
             }
             Sizer sizer;
             write(sizer, m);
@@ -157,6 +184,7 @@ Result<ControlMessage> decode_control(std::span<const uint8_t> message) {
         case MessageKind::Subscribe: return read_stream_message<Subscribe>(in);
         case MessageKind::Unsubscribe: return read_stream_message<Unsubscribe>(in);
         case MessageKind::KeyframeRequest: return read_stream_message<KeyframeRequest>(in);
+        case MessageKind::Presence: return read_presence(in);
         case MessageKind::Frame: break;
     }
     return fail(Errc::UnknownKind);  // not a control message

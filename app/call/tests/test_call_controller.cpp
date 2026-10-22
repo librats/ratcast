@@ -2,8 +2,8 @@
 // pattern and a tone standing in for the desktop's screen and sound), the
 // other joins by an invite and watches, each going through its states; both
 // talking, either side's camera seen by the other and by itself, each
-// reporting how the call goes; and the ways a share or a join ends without
-// the user.
+// listing the other by the name it gives, each reporting how the call goes;
+// and the ways a share or a join ends without the user.
 
 #include "call_controller.h"
 
@@ -175,6 +175,35 @@ TEST_F(CallControllerTest, EachSideReportsHowTheCallGoes) {
     viewer_.leave();
     EXPECT_TRUE(viewer_.stats().isEmpty());
     EXPECT_TRUE(viewer_.quality().isEmpty());
+}
+
+TEST_F(CallControllerTest, EachListsTheOtherByTheNameItGives) {
+    // The member a controller lists, once there is exactly one.
+    const auto member = [](const CallController& controller) {
+        const QVariantList members = controller.members();
+        return members.size() == 1 ? members.front().toMap() : QVariantMap{};
+    };
+    sharer_.setName("Ann");
+    viewer_.setName("Bob");
+    viewer_.join(share());
+    ASSERT_TRUE(wait_for([&] {
+        return member(sharer_).value("name") == "Bob" && member(viewer_).value("name") == "Ann";
+    }));
+    EXPECT_FALSE(member(sharer_).value("muted").toBool());
+    EXPECT_EQ(member(sharer_).value("peer").toString().size(), 8) << "a short id beside it";
+
+    // Muted, and renamed: told at once.
+    viewer_.setMuted(true);
+    EXPECT_TRUE(wait_for([&] { return member(sharer_).value("muted").toBool(); }));
+    viewer_.setName(QString("Robert\n\tthe   ") + QString(200, QChar(0x044F)));  // 'я'
+    ASSERT_TRUE(wait_for([&] { return member(sharer_).value("name") != "Bob"; }));
+    const QString told = member(sharer_).value("name").toString();
+    EXPECT_TRUE(told.startsWith("Robert the яя")) << told.toStdString();
+    EXPECT_LE(told.toUtf8().size(), qsizetype(Presence::kMaxNameSize));
+
+    viewer_.leave();
+    EXPECT_TRUE(viewer_.members().isEmpty());
+    EXPECT_TRUE(wait_for([&] { return sharer_.members().isEmpty(); }));
 }
 
 TEST_F(CallControllerTest, BothTalkAndAMutedOneIsNotHeard) {

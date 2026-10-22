@@ -201,6 +201,14 @@ std::vector<std::string> Call::invites() const {
 
 std::vector<PeerId> Call::peers() const { return node_.connected_peers(); }
 
+Result<void> Call::set_presence(const Presence& presence) {
+    return session().set_presence(presence);
+}
+
+std::optional<Presence> Call::presence(const PeerId& peer) const {
+    return media_->session().presence(peer);
+}
+
 std::optional<librats::PathStats> Call::path(const PeerId& peer) const {
     return node_.path_stats(peer);
 }
@@ -227,6 +235,10 @@ SessionHandlers Call::session_handlers() {
                 if (const auto it = published_.find(stream); it != published_.end()) {
                     it->second->set_bitrate(bits_per_second);
                 }
+            },
+        .presence_changed =
+            [this](const PeerId& peer, const Presence& presence) {
+                notify(handlers_.presence, peer, presence);
             },
     };
 }

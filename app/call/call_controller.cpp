@@ -17,6 +17,26 @@ namespace {
 
 QString describe(Errc error) { return QString::fromLatin1(to_string(error)); }
 
+/// `name` as a presence may carry it: whitespace runs made one space, control
+/// characters dropped, and cut to whole characters within kMaxNameSize bytes.
+std::string presence_name(const QString& name) {
+    QString kept;
+    for (const QChar c : name.simplified()) {
+        if (c.category() != QChar::Other_Control) kept += c;
+    }
+    while (kept.toUtf8().size() > qsizetype(Presence::kMaxNameSize)) {
+        kept.chop(kept.back().isLowSurrogate() ? 2 : 1);  // a whole pair, never half
+    }
+    return kept.toStdString();
+}
+
+/// The login name of the user running this.
+QString user_name() {
+    QString name = qEnvironmentVariable("USER");
+    if (name.isEmpty()) name = qEnvironmentVariable("USERNAME");  // Windows
+    return name;
+}
+
 /// A report's sections as QML reads them.
 QVariantList to_variant(const std::vector<ReportSection>& sections) {
     QVariantList list;
@@ -64,6 +84,7 @@ std::function<VideoPlayer::Sink(const PeerId&)> CallController::cameras(
 
 CallController::Environment CallController::Environment::system() {
     Environment environment;
+    environment.name = user_name();
     environment.call.discoverable = true;
     environment.data_dir =
         QStandardPaths::writableLocation(QStandardPaths::AppDataLocation).toStdString();
@@ -93,6 +114,7 @@ CallController::Environment CallController::Environment::system() {
 CallController::CallController(QObject* parent)
     : QObject(parent),
       environment_(Environment::system()),
+      name_(environment_.name),
       pictures_(std::make_shared<Pictures>()),
       camera_pictures_(std::make_shared<Pictures>()),
       preview_pictures_(std::make_shared<Pictures>()) {
@@ -116,6 +138,7 @@ CallController::~CallController() {
 
 void CallController::setEnvironment(Environment environment) {
     environment_ = std::move(environment);
+    setName(environment_.name);
 }
 
 bool CallController::attach(QPointer<VideoView>& slot, Pictures& pictures, VideoView* view) {
@@ -194,6 +217,7 @@ void CallController::share_opened(uint64_t generation, const ScreenShareConfig& 
     Q_EMIT invitesChanged();
     count_viewers();
     set_state(State::Sharing);
+    tell_presence();
     start_monitoring();
     talk();
 }
@@ -231,6 +255,7 @@ void CallController::join(const QString& link) {
     }
     call_ = std::move(*started);
     set_state(State::Joining);
+    tell_presence();
     start_monitoring();
     talk();
 }
@@ -312,6 +337,40 @@ void CallController::setMuted(bool muted) {
     if (voice_) voice_->set_muted(muted);
     Q_EMIT mutedChanged();
     update_levels();
+    tell_presence();
+}
+
+void CallController::setName(const QString& name) {
+    if (name == name_) return;
+    name_ = name;
+    Q_EMIT nameChanged();
+    tell_presence();
+}
+
+void CallController::tell_presence() {
+    if (!call_) return;
+    // Valid by construction: presence_name() keeps only what may be told.
+    (void)call_->set_presence({.name = presence_name(name_), .muted = muted_});
+}
+
+void CallController::update_members() {
+    QVariantList members;
+    if (call_) {
+        std::vector<PeerId> peers = call_->peers();
+        std::sort(peers.begin(), peers.end());
+        for (const PeerId& peer : peers) {
+            const Presence presence = call_->presence(peer).value_or(Presence{});
+            members.push_back(QVariantMap{
+                {QStringLiteral("peer"), QString::fromStdString(peer.short_hex())},
+                {QStringLiteral("name"), QString::fromStdString(presence.name)},
+                {QStringLiteral("muted"), presence.muted},
+                {QStringLiteral("deafened"), presence.deafened},
+            });
+        }
+    }
+    if (members == members_) return;
+    members_ = std::move(members);
+    Q_EMIT membersChanged();
 }
 
 void CallController::update_levels() {
@@ -403,18 +462,25 @@ void CallController::end(QString notice) {
         viewers_ = 0;
         Q_EMIT viewersChanged();
     }
+    update_members();
     set_notice(std::move(notice));
     set_state(State::Idle);
 }
 
 CallHandlers CallController::handlers(uint64_t generation) {
     return CallHandlers{
-        .joined = [this,
-                   generation](const PeerId&) { post(generation, [this] { count_viewers(); }); },
+        .joined =
+            [this, generation](const PeerId&) {
+                post(generation, [this] {
+                    count_viewers();
+                    update_members();
+                });
+            },
         .left =
             [this, generation](const PeerId&) {
                 post(generation, [this] {
                     count_viewers();
+                    update_members();
                     set_camera_shown(false);
                     if (state_ != State::Watching && state_ != State::Joining) return;
                     if (video_) video_->clear();
@@ -457,6 +523,9 @@ CallHandlers CallController::handlers(uint64_t generation) {
                     if (state_ == State::Watching) set_state(State::Joining);
                 });
             },
+        .presence = [this, generation](
+                        const PeerId&,
+                        const Presence&) { post(generation, [this] { update_members(); }); },
         .source_ended =
             [this, generation](StreamId stream, Result<void> outcome) {
                 post(generation, [this, stream, outcome] {

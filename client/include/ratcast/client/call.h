@@ -139,6 +139,8 @@ struct CallHandlers {
     /// A stream that played ended: `peer` withdrew it, or left, or another
     /// is watched.
     std::function<void(const PeerId& peer, const StreamDescription& stream)> ended = {};
+    /// A peer said who it is, or that something of it changed (Presence).
+    std::function<void(const PeerId& peer, const Presence& presence)> presence = {};
     /// A published stream stopped by itself: its source ran out (success),
     /// or the source or its encoder failed. It stays published until
     /// unpublish().
@@ -184,6 +186,12 @@ public:
     /// listens on) with the port. None for a call that does not listen.
     std::vector<std::string> invites() const;
     std::vector<PeerId> peers() const;
+    /// Say who this side is — a name, muted, deafened — to every peer now and
+    /// to each as it connects. Fails with InvalidArgument for a presence that
+    /// is not valid.
+    Result<void> set_presence(const Presence& presence);
+    /// What `peer` last said of itself; none before it said anything.
+    std::optional<Presence> presence(const PeerId& peer) const;
     /// The path to `peer`, sampled every 100 ms: round trip, bandwidth, loss.
     std::optional<librats::PathStats> path(const PeerId& peer) const;
 

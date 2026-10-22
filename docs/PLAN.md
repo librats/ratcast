@@ -905,10 +905,27 @@ room goes on, the others watching whose share they choose.
   is librats' and tested there (loopback has no NAT); a link lost without leaving is not dialed
   again — the member rejoins; an invite by peer id from a member who joined by peer id (the
   room's key) — with 10.4's invites.
-- **10.3 Who is there** ← now: each member's name and state — muted, deafened — told to the others
+- **10.3 Who is there** ✅: each member's name and state — muted, deafened — told to the others
   over the session's control messages (a wire change in `libratcast`); the name set in the app
   and kept.
-- **10.4 The app as a room**: make a room or join one by link, everyone talking from the start;
+  Done so: `Presence` (`ratcast/session/presence.h`: a name of at most 128 bytes of UTF-8
+  without control characters, muted, deafened) and a control message of its own (kind 7, no
+  new wire version: an older build counts it rejected); `MediaSession::set_presence()` tells
+  every peer, each that connects and each rerouted (L18), one lock keeping a change and a
+  connect in order; `presence(peer)` and `presence_changed` keep what each said, forgotten with
+  the peer. `Call::set_presence()` / `presence()` / `CallHandlers::presence`. The app's
+  controller says who it is as a call starts, and again on mute and on a new name (`name`:
+  the login name until changed; whitespace runs and controls not told, cut at whole
+  characters), and lists the others (`members`: short id, name, muted, deafened); the window
+  a name field, kept by QtCore's `Settings`. Not here: the C API (no user of it needs names);
+  deafened is told as false until 10.4 has it; names shown as plain text (a peer's name is
+  its own word — QML's auto rich text must not read it) with 10.4's list.
+  Tested: the name's form (UTF-8, overlong, surrogates, C0/C1 controls, length), the codec
+  (round trips, every cut, a name that is none), the session (told now and on connect, a
+  change to all, again when rerouted, forgotten, refused), a call on real nodes, two
+  controllers listing each other, muting and renaming (a long name with controls arriving
+  clean); debug and ASan 485, TSan 466.
+- **10.4 The app as a room** ← now: make a room or join one by link, everyone talking from the start;
   the members listed — name, speaking, muted, deafened, camera, sharing; mute, deafen (nobody
   heard, the microphone off too, as in Discord), camera, share a screen or a window and stop it
   without leaving; a member's share watched on a click, the cameras beside it.

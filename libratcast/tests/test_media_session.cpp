@@ -159,6 +159,8 @@ struct Party {
                 },
             .keyframe_needed = [this](StreamId) { ++keyframes_needed; },
             .bitrate_changed = [this](StreamId, uint32_t b) { bitrates.push_back(b); },
+            .presence_changed = [this](const PeerId&,
+                                       const Presence& p) { presences.push_back(p); },
         };
     }
 
@@ -170,6 +172,7 @@ struct Party {
     std::vector<Buffer> payloads;
     int keyframes_needed = 0;
     std::vector<uint32_t> bitrates;
+    std::vector<Presence> presences;  ///< what peers said of themselves, in order
     std::function<void(const EncodedFrame&)> on_frame;
     MediaSession session;  // last: its handlers point at the members above
 };
@@ -796,6 +799,51 @@ TEST_F(MediaSessionTest, AStreamNobodyWatchesStartsAfresh) {
     EXPECT_EQ(sender.bitrates, (Bitrates{1'700'000, kBitrate.start, 1'700'000, kBitrate.start}));
     EXPECT_EQ(sender.session.outgoing_stats(2)->bitrate_cuts, 2u);  // the restarts are not
     EXPECT_EQ(sender.session.outgoing_stats(2)->bitrate_raises, 0u);
+}
+
+// ── Who is who ──────────────────────────────────────────────────────────────
+
+TEST_F(MediaSessionTest, APresenceIsToldToEveryPeerNowAndAsTheyConnect) {
+    const Presence ann{"Ann", true, false};
+    ASSERT_TRUE(sender.session.set_presence(ann));
+    hub.deliver_all();
+    EXPECT_EQ(receiver.presences, std::vector{ann});
+    EXPECT_EQ(receiver.session.presence(sender.id), ann);
+    EXPECT_FALSE(sender.session.presence(receiver.id)) << "the receiver said nothing";
+
+    Party late(hub, clock, 3);
+    connect(sender, late);
+    hub.deliver_all();
+    EXPECT_EQ(late.session.presence(sender.id), ann);
+
+    // A change, to everyone.
+    const Presence unmuted{"Ann", false, false};
+    ASSERT_TRUE(sender.session.set_presence(unmuted));
+    hub.deliver_all();
+    EXPECT_EQ(receiver.session.presence(sender.id), unmuted);
+    EXPECT_EQ(late.session.presence(sender.id), unmuted);
+    EXPECT_EQ(receiver.presences.size(), 2u);
+}
+
+TEST_F(MediaSessionTest, APresenceIsToldAgainWhenALinkLostARace) {
+    ASSERT_TRUE(sender.session.set_presence({"Ann"}));
+    hub.queue.clear();  // went with the link that lost
+    sender.session.on_peer_rerouted(receiver.id);
+    hub.deliver_all();
+    EXPECT_EQ(receiver.session.presence(sender.id), Presence{"Ann"});
+}
+
+TEST_F(MediaSessionTest, APresenceIsForgottenWithItsPeer) {
+    ASSERT_TRUE(sender.session.set_presence({"Ann"}));
+    hub.deliver_all();
+    receiver.session.on_peer_disconnected(sender.id);
+    EXPECT_FALSE(receiver.session.presence(sender.id));
+}
+
+TEST_F(MediaSessionTest, RefusesAPresenceThatIsNotValid) {
+    EXPECT_EQ(sender.session.set_presence({"a\nb"}).error(), Errc::InvalidArgument);
+    hub.deliver_all();
+    EXPECT_TRUE(receiver.presences.empty());
 }
 
 // ── Peers coming and going ──────────────────────────────────────────────────

@@ -2,7 +2,8 @@
 
 /**
  * @file control_codec.h
- * @brief The control plane: offering streams, subscribing, asking for keyframes.
+ * @brief The control plane: offering streams, subscribing, asking for keyframes,
+ * saying who one is.
  *
  * Control messages travel reliably and in order on the media lane, frames
  * beside them as live messages. Every one names a stream by the id its sender
@@ -17,6 +18,8 @@
  *   Subscribe         prefix, varint stream
  *   Unsubscribe       prefix, varint stream
  *   KeyframeRequest   prefix, varint stream
+ *   PresenceUpdate    prefix, varint name length + name,
+ *                     u8 flags (bit 0 muted, bit 1 deafened)
  *
  * A later version may append fields to any of them: a receiver reads the
  * fields it knows and ignores whatever follows.
@@ -27,6 +30,7 @@
 
 #include "ratcast/core/buffer.h"
 #include "ratcast/core/result.h"
+#include "ratcast/session/presence.h"
 #include "ratcast/stream/stream_description.h"
 
 namespace ratcast::wire {
@@ -51,15 +55,20 @@ struct KeyframeRequest {
     StreamId stream = 0;
 };
 
-using ControlMessage = std::variant<Announce, Withdraw, Subscribe, Unsubscribe, KeyframeRequest>;
+struct PresenceUpdate {
+    Presence presence;
+};
 
-/// The message for `message`. Precondition: an Announce carries a description
-/// for which is_valid() holds.
+using ControlMessage =
+    std::variant<Announce, Withdraw, Subscribe, Unsubscribe, KeyframeRequest, PresenceUpdate>;
+
+/// The message for `message`. Precondition: an Announce carries a description,
+/// a PresenceUpdate a presence, for which is_valid() holds.
 Buffer encode_control(const ControlMessage& message);
 
 /// The control message in `message`. Fails with Unsupported for a stream of a
 /// media kind this build does not know, and Malformed for an announced
-/// description that is not valid.
+/// description or a presence that is not valid.
 Result<ControlMessage> decode_control(std::span<const uint8_t> message);
 
 }  // namespace ratcast::wire

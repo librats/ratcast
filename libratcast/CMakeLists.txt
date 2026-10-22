@@ -11,6 +11,7 @@ add_library(ratcast
     src/core/version.cpp
     src/session/media_service.cpp
     src/session/media_session.cpp
+    src/session/presence.cpp
     src/session/rate_controller.cpp
     src/stream/delivery_buffer.cpp
     src/stream/delivery_thread.cpp

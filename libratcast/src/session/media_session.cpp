@@ -520,6 +520,35 @@ void MediaSession::announce_all(const PeerId& peer) {
         lock.unlock();
         network_.send_reliable(peer, wire::encode_control(announce));
     }
+    std::lock_guard lock(presence_mutex_);
+    if (presence_) {
+        network_.send_reliable(peer, wire::encode_control(wire::PresenceUpdate{*presence_}));
+    }
+}
+
+Result<void> MediaSession::set_presence(const Presence& presence) {
+    if (!is_valid(presence)) return fail(Errc::InvalidArgument);
+    const Buffer message = wire::encode_control(wire::PresenceUpdate{presence});
+    std::lock_guard lock(presence_mutex_);
+    presence_ = presence;
+    for (const PeerId& peer : connected_peers()) network_.send_reliable(peer, message);
+    return {};
+}
+
+std::optional<Presence> MediaSession::presence(const PeerId& peer) const {
+    std::shared_lock lock(mutex_);
+    const auto it = presences_.find(peer);
+    if (it == presences_.end()) return std::nullopt;
+    return it->second;
+}
+
+void MediaSession::on_presence(const PeerId& peer, Presence presence) {
+    {
+        std::unique_lock lock(mutex_);
+        if (!peers_.contains(peer)) return;  // gone while it was on its way
+        presences_[peer] = presence;
+    }
+    notify(handlers_.presence_changed, peer, presence);
 }
 
 void MediaSession::on_peer_disconnected(const PeerId& peer) {
@@ -528,6 +557,7 @@ void MediaSession::on_peer_disconnected(const PeerId& peer) {
     {
         std::unique_lock lock(mutex_);
         peers_.erase(peer);
+        presences_.erase(peer);
         for (auto it = incoming_.begin(); it != incoming_.end();) {
             if (it->first.peer == peer) {
                 withdrawn.push_back(it->first.stream);
@@ -655,6 +685,8 @@ void MediaSession::on_message(const PeerId& peer, std::span<const uint8_t> messa
                 on_subscribe(peer, m.stream);
             } else if constexpr (std::is_same_v<Message, wire::Unsubscribe>) {
                 on_unsubscribe(peer, m.stream);
+            } else if constexpr (std::is_same_v<Message, wire::PresenceUpdate>) {
+                on_presence(peer, std::move(m.presence));
             } else {
                 static_assert(std::is_same_v<Message, wire::KeyframeRequest>);
                 on_keyframe_request(peer, m.stream);

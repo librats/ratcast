@@ -21,6 +21,9 @@
  * that is none, the other side gone. The user calling off the desktop's dialog
  * is no news.
  *
+ * Each side says who it is — the user's name, muted or not — and the others
+ * are listed (`members`) as they say it.
+ *
  * In a call, a CallMonitor reports on it every second: what each stream sent
  * and played does and how well, laid out for a panel, and the call's quality
  * with the reason; and, if asked, on standard output every so many seconds.
@@ -66,6 +69,13 @@ class CallController : public QObject {
     /// Peers connected while sharing.
     Q_PROPERTY(int viewers READ viewers NOTIFY viewersChanged)
     Q_PROPERTY(QString notice READ notice NOTIFY noticeChanged)
+    /// What the others call this side: the user's login name until they say
+    /// otherwise. Whitespace runs and control characters are not told, nor
+    /// what is past Presence::kMaxNameSize bytes.
+    Q_PROPERTY(QString name READ name WRITE setName NOTIFY nameChanged)
+    /// The others in the call, by peer: maps of `peer` (a short id), `name`
+    /// (what they call themselves; "" until they say), `muted`, `deafened`.
+    Q_PROPERTY(QVariantList members READ members NOTIFY membersChanged)
     /// The microphone silenced; kept from one call to the next.
     Q_PROPERTY(bool muted READ muted WRITE setMuted NOTIFY mutedChanged)
     /// This side's voice on the microphone, and the other side's on the speaker.
@@ -117,6 +127,8 @@ public:
         std::function<std::unique_ptr<VideoSource>()> open_camera = {};
         /// How the voice is cleaned: its devices' formats and what is done.
         VoiceConfig voice = {};
+        /// What the others call this side until the user says otherwise.
+        QString name = {};
 
         /// This computer's: its desktop, its speaker, the user's data
         /// directory, discoverable through the DHT.
@@ -151,6 +163,9 @@ public:
     bool camera() const { return camera_; }
     void setCamera(bool on);
     bool cameraShown() const { return camera_shown_; }
+    QString name() const { return name_; }
+    void setName(const QString& name);
+    QVariantList members() const { return members_; }
     bool muted() const { return muted_; }
     void setMuted(bool muted);
     bool speaking() const { return speaking_; }
@@ -166,6 +181,8 @@ Q_SIGNALS:
     void invitesChanged();
     void viewersChanged();
     void noticeChanged();
+    void nameChanged();
+    void membersChanged();
     void videoChanged();
     void cameraViewChanged();
     void previewChanged();
@@ -205,6 +222,10 @@ private:
         std::shared_ptr<Pictures> pictures);
     /// Draw what `pictures` gets into `view` from now on, as `slot` keeps it.
     static bool attach(QPointer<VideoView>& slot, Pictures& pictures, VideoView* view);
+    /// Say who this side is to the others, as it is now.
+    void tell_presence();
+    /// The others, as the call knows them now.
+    void update_members();
     /// Who is speaking, as the voice channel says: a few times a second.
     void update_levels();
     /// Report on the call just started, every second and, if asked, on
@@ -222,6 +243,8 @@ private:
     int viewers_ = 0;
     QString notice_;
     bool other_side_left_ = false;  ///< what the notice says, until it says another
+    QString name_;
+    QVariantList members_;
     bool muted_ = false;
     bool speaking_ = false;
     bool hearing_ = false;

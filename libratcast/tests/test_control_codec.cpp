@@ -128,6 +128,36 @@ TEST(ControlCodec, RefusesOversizedFields) {
     EXPECT_EQ(decode_error(bytes), Errc::Malformed);
 }
 
+TEST(ControlCodec, RoundTripsPresence) {
+    for (const Presence& p : {Presence{"Анна", false, false}, Presence{"", true, false},
+                              Presence{"李明 🎮", false, true}, Presence{"bob", true, true}}) {
+        EXPECT_EQ(round_trip(PresenceUpdate{p}).presence, p) << p.name;
+    }
+}
+
+TEST(ControlCodec, EveryCutOfAPresenceIsTruncated) {
+    const auto bytes = bytes_of(encode_control(PresenceUpdate{{"Анна", true, false}}));
+    for (size_t cut = 0; cut < bytes.size(); ++cut) {
+        EXPECT_EQ(decode_error({bytes.begin(), bytes.begin() + static_cast<ptrdiff_t>(cut)}),
+                  Errc::Truncated)
+            << "cut at " << cut;
+    }
+}
+
+TEST(ControlCodec, RefusesANameThatIsNoName) {
+    const auto with_name = [](std::vector<uint8_t> name) {
+        std::vector<uint8_t> bytes = {message_prefix(MessageKind::Presence),
+                                      static_cast<uint8_t>(name.size())};
+        bytes.insert(bytes.end(), name.begin(), name.end());
+        bytes.push_back(0);  // flags
+        return bytes;
+    };
+    EXPECT_EQ(decode_error(with_name({'a', 0xFF, 'b'})), Errc::Malformed);  // not UTF-8
+    EXPECT_EQ(decode_error(with_name({'a', '\n', 'b'})), Errc::Malformed);  // a control
+    EXPECT_EQ(decode_error(with_name(std::vector<uint8_t>(Presence::kMaxNameSize + 1, 'x'))),
+              Errc::Malformed);
+}
+
 TEST(ControlCodec, AFrameIsNotAControlMessage) {
     EXPECT_EQ(decode_error({message_prefix(MessageKind::Frame), 0, 0, 0, 0}), Errc::UnknownKind);
 }

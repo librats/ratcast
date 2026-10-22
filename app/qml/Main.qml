@@ -1,3 +1,4 @@
+import QtCore
 import QtQuick
 import QtQuick.Controls.Material
 import QtQuick.Layouts
@@ -41,6 +42,11 @@ ApplicationWindow {
 
     Component.onCompleted: if (root.link.length > 0) call.join(root.link)
 
+    // What is kept from one run to the next.
+    Settings {
+        property alias name: call.name
+    }
+
     VideoView {
         id: picture
         anchors.fill: parent
@@ -66,6 +72,15 @@ ApplicationWindow {
             Layout.alignment: Qt.AlignHCenter
             text: "v" + root.ratcastVersion + "  ·  librats " + root.libratsVersion
             opacity: 0.6
+        }
+
+        TextField {
+            Layout.alignment: Qt.AlignHCenter
+            Layout.preferredWidth: 280
+            placeholderText: qsTr("Your name, as the others see it")
+            text: call.name
+            maximumLength: 32
+            onTextEdited: call.name = text
         }
 
         RowLayout {
