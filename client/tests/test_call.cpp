@@ -1,5 +1,6 @@
 // Calls on loopback, between real librats nodes: each side sending and
-// playing, a camera beside the screen, hanging up, streams withdrawn and
+// playing, a camera beside the screen, three in a call — everyone's voice and
+// camera, the screen of whom one watches — hanging up, streams withdrawn and
 // offered again, sources that run out, the monitor's reports, and the
 // invites a call hands out.
 
@@ -7,6 +8,7 @@
 #include "ratcast/client/call_monitor.h"
 #include "ratcast/client/camera.h"
 #include "ratcast/client/screen_share.h"
+#include "ratcast/client/voice.h"
 
 #include <gtest/gtest.h>
 
@@ -89,9 +91,15 @@ public:
             };
         }
         if (camera) {
-            config.playback.camera = [this](VideoFrame) {
-                std::lock_guard lock(mutex_);
-                ++camera_pictures_;
+            config.playback.cameras = [this](const PeerId& peer) -> VideoPlayer::Sink {
+                {
+                    std::lock_guard lock(mutex_);
+                    cameras_asked_.push_back(peer);
+                }
+                return [this](VideoFrame) {
+                    std::lock_guard lock(mutex_);
+                    ++camera_pictures_;
+                };
             };
         }
         config.playback.sound = &speaker_;
@@ -104,14 +112,21 @@ public:
         call_ = std::move(*started);
     }
 
-    void publish_pattern() {
+    void publish_pattern(uint32_t width = 320, uint32_t height = 240) {
         VideoPublisherConfig video;
         video.label = "pattern";
         video.encoder.bitrate = 1'000'000;
         video.start_bitrate = 1'000'000;
         ASSERT_TRUE(call_->publish(
-            std::make_unique<PatternSource>(PatternConfig{PixelFormat::NV12, 320, 240, 30, 1}),
+            std::make_unique<PatternSource>(PatternConfig{PixelFormat::NV12, width, height, 30, 1}),
             video));
+    }
+
+    /// A voice and a camera, as one in a call has.
+    void publish_voice_and_camera() {
+        ASSERT_TRUE(publish_voice(*call_, std::make_unique<ToneSource>(ToneConfig{.level = 0.5f})));
+        ASSERT_TRUE(publish_camera(*call_, std::make_unique<PatternSource>(
+                                               PatternConfig{PixelFormat::NV12, 160, 120, 30, 1})));
     }
 
     void publish_tone() {
@@ -136,6 +151,11 @@ public:
     size_t camera_pictures() {
         std::lock_guard lock(mutex_);
         return camera_pictures_;
+    }
+    /// The peers whose cameras it was asked where to show, in order.
+    std::vector<PeerId> cameras_asked() {
+        std::lock_guard lock(mutex_);
+        return cameras_asked_;
     }
     /// What it was told, in order: "joined", "playing tone", "ended tone",
     /// "source 2 ended", ...
@@ -177,6 +197,7 @@ private:
     std::mutex mutex_;
     size_t pictures_ = 0;
     size_t camera_pictures_ = 0;
+    std::vector<PeerId> cameras_asked_;
     size_t heard_ = 0;
     std::vector<std::string> events_;
     VirtualOutput speaker_{VirtualOutputConfig{}};
@@ -343,9 +364,9 @@ TEST_F(CallTest, ACameraPlaysApartFromTheScreen) {
     EXPECT_TRUE(guest.told("playing pattern"));
     EXPECT_TRUE(guest.told("playing camera"));
     ASSERT_TRUE(guest->video_stats());
-    ASSERT_TRUE(guest->camera_stats());
+    ASSERT_EQ(guest->camera_stats().size(), 1u);
     EXPECT_EQ(guest->video_stats()->player.width, 320u);
-    EXPECT_EQ(guest->camera_stats()->player.width, 160u);
+    EXPECT_EQ(guest->camera_stats().at(host->id()).player.width, 160u);
     EXPECT_GT(previewed.load(), 0u) << "the sender sees its camera";
     const std::optional<OutgoingStreamStats> camera = host->session().outgoing_stats(3);
     ASSERT_TRUE(camera);
@@ -354,7 +375,7 @@ TEST_F(CallTest, ACameraPlaysApartFromTheScreen) {
     // The camera off, the screen goes on.
     host->unpublish(3);
     ASSERT_TRUE(wait_for([&] { return guest.told("ended camera"); }));
-    EXPECT_FALSE(guest->camera_stats());
+    EXPECT_TRUE(guest->camera_stats().empty());
     const size_t before = guest.pictures();
     EXPECT_TRUE(wait_for([&] { return guest.pictures() >= before + 10; }));
 }
@@ -378,6 +399,141 @@ TEST_F(CallTest, ACameraNobodyShowsIsNotReceived) {
     std::this_thread::sleep_for(200ms);  // as long as an answer would take on loopback
     EXPECT_FALSE(guest.told("playing camera")) << "not as the pictures either";
     EXPECT_EQ(host->session().outgoing_stats(3)->subscribers, 0u);
+}
+
+// ── Three in a call ─────────────────────────────────────────────────────────
+
+TEST_F(CallTest, EveryonesVoiceAndCameraPlay) {
+    VideoEncoderConfig probe;
+    probe.width = 160;
+    probe.height = 120;
+    if (!open_video_encoder(probe)) GTEST_SKIP() << "no AV1 encoder here";
+
+    Side host;
+    host.start(config());
+    Side ann;
+    ann.start(config(RatsUrl{host.address()}));
+    ann.publish_voice_and_camera();
+    Side bob;
+    bob.start(config(RatsUrl{host.address()}));
+    bob.publish_voice_and_camera();
+
+    // The host hears both and sees both, each apart.
+    ASSERT_TRUE(wait_for([&] {
+        return host->voice_stats().size() == 2 && host->camera_stats().size() == 2 &&
+               host.camera_pictures() >= 20;
+    })) << ::testing::PrintToString(host.events());
+    EXPECT_EQ(host.told_times("playing voice"), 2u);
+    EXPECT_EQ(host.told_times("playing camera"), 2u);
+    std::vector<PeerId> asked = host.cameras_asked();
+    std::sort(asked.begin(), asked.end());
+    std::vector<PeerId> both{ann->id(), bob->id()};
+    std::sort(both.begin(), both.end());
+    EXPECT_EQ(asked, both) << "each camera to a place of its own";
+    const size_t heard = host.heard();
+    EXPECT_TRUE(wait_for([&] { return host.heard() >= heard + 50; })) << "both mixed, playing";
+    const CallReport report = CallMonitor(*host).report();
+    EXPECT_EQ(report.voices.size(), 2u);
+    EXPECT_EQ(report.cameras.size(), 2u);
+
+    // One leaves: the other is still heard and seen.
+    bob.hang_up();
+    ASSERT_TRUE(wait_for(
+        [&] { return host->voice_stats().size() == 1 && host->camera_stats().size() == 1; }));
+    EXPECT_TRUE(host->voice_stats().contains(ann->id()));
+    EXPECT_TRUE(host->camera_stats().contains(ann->id()));
+    EXPECT_EQ(host.told_times("ended voice"), 1u);
+}
+
+TEST_F(CallTest, PlaysTheScreenOfWhomItWatchesAndReceivesNoOther) {
+    VideoEncoderConfig probe;
+    probe.width = 160;
+    probe.height = 120;
+    if (!open_video_encoder(probe)) GTEST_SKIP() << "no AV1 encoder here";
+
+    Side host;
+    host.start(config());
+    Side ann;
+    ann.start(config(RatsUrl{host.address()}));
+    ann.publish_pattern(320, 240);
+    ann.publish_tone();
+    Side bob;
+    bob.start(config(RatsUrl{host.address()}));
+    bob.publish_pattern(160, 120);
+    bob.publish_tone();
+    const StreamId pattern = VideoPublisherConfig{}.stream;
+    const auto received = [&](Side& from, StreamId stream) {
+        const std::optional<IncomingStreamStats> stats =
+            host->session().incoming_stats(from->id(), stream);
+        return stats && stats->subscribed;
+    };
+    const auto watching = [&](Side& whom, uint32_t width) {
+        const std::optional<ReceivedVideoStats> video = host->video_stats();
+        return video && video->peer == whom->id() && video->player.width == width &&
+               host->sound_stats() && received(whom, pattern);
+    };
+
+    // Nothing chosen: the first offered plays, the other is not received.
+    ASSERT_TRUE(wait_for([&] {
+        return host->video_stats() && host->sound_stats() && host->session().offered().size() == 4;
+    }));
+    const bool ann_first = host->video_stats()->peer == ann->id();
+    Side& first = ann_first ? ann : bob;
+    Side& other = ann_first ? bob : ann;
+    const uint32_t other_width = ann_first ? 160 : 320;
+    EXPECT_FALSE(received(other, pattern));
+
+    // The other chosen: its pictures and sound play in place of the first's.
+    host->watch(other->id());
+    ASSERT_TRUE(wait_for([&] { return watching(other, other_width); }));
+    EXPECT_TRUE(wait_for([&] { return !received(first, pattern); })) << "the first let go";
+    EXPECT_EQ(host.told_times("ended pattern"), 1u);
+    EXPECT_EQ(host.told_times("ended tone"), 1u);
+    const size_t pictures = host.pictures();
+    EXPECT_TRUE(wait_for([&] { return host.pictures() >= pictures + 10; }));
+
+    // Nobody: nothing plays, nothing comes.
+    host->watch(std::nullopt);
+    EXPECT_FALSE(host->video_stats());
+    EXPECT_FALSE(host->sound_stats());
+    EXPECT_TRUE(wait_for([&] { return !received(ann, pattern) && !received(bob, pattern); }));
+
+    // Chosen, its share ending leaves nothing playing: another's is not taken.
+    host->watch(first->id());
+    ASSERT_TRUE(wait_for([&] { return watching(first, ann_first ? 320 : 160); }));
+    first->unpublish(pattern);
+    ASSERT_TRUE(wait_for([&] { return !host->video_stats(); }));
+    std::this_thread::sleep_for(200ms);  // as long as playing the other's would take
+    EXPECT_FALSE(host->video_stats());
+    EXPECT_TRUE(host->sound_stats()) << "the first's sound goes on";
+}
+
+TEST_F(CallTest, WithNothingChosenTheNextOfferedPlaysWhenTheScreenEnds) {
+    VideoEncoderConfig probe;
+    probe.width = 160;
+    probe.height = 120;
+    if (!open_video_encoder(probe)) GTEST_SKIP() << "no AV1 encoder here";
+
+    Side host;
+    host.start(config());
+    Side ann;
+    ann.start(config(RatsUrl{host.address()}));
+    ann.publish_pattern(160, 120);
+    Side bob;
+    bob.start(config(RatsUrl{host.address()}));
+    bob.publish_pattern(160, 120);
+    ASSERT_TRUE(
+        wait_for([&] { return host->video_stats() && host->session().offered().size() == 2; }));
+    const PeerId first = host->video_stats()->peer;
+    Side& sharer = first == ann->id() ? ann : bob;
+    Side& next = first == ann->id() ? bob : ann;
+
+    sharer->unpublish(VideoPublisherConfig{}.stream);
+    ASSERT_TRUE(wait_for([&] {
+        const std::optional<ReceivedVideoStats> video = host->video_stats();
+        return video && video->peer == next->id() && video->player.pictures > 0;
+    })) << ::testing::PrintToString(host.events());
+    EXPECT_EQ(host.told_times("playing pattern"), 2u);
 }
 
 TEST_F(CallTest, AScreenShareThatCannotPublishLeavesNothing) {

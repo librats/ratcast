@@ -20,6 +20,13 @@ const PeerId* dialed_peer(const CallConfig& config) {
     return config.dial ? std::get_if<PeerId>(&*config.dial) : nullptr;
 }
 
+/// Whether the first of what `peer` offers plays, with nothing chosen: it is
+/// the peer dialed, or none was dialed by peer id.
+bool first_of(const CallConfig& config, const PeerId& peer) {
+    const PeerId* dialed = dialed_peer(config);
+    return !dialed || peer == *dialed;
+}
+
 /// A call dialing by peer id listens, for the other side to dial back.
 bool listens(const CallConfig& config) { return config.listen || dialed_peer(config); }
 
@@ -137,16 +144,14 @@ Call::~Call() {
         // Players stop outside the lock: their threads may be in a handler
         // that asks for stats.
         Playing<VideoPlayer> video;
-        Playing<VideoPlayer> camera;
         Playing<AudioPlayer> sound;
-        Playing<AudioPlayer> voice;
+        std::map<PeerId, Member> members;
         Playing<DataPlayer> feed;
         std::unique_ptr<DataPlayer> ended_feed;
         std::lock_guard lock(playing_);
         video = std::move(video_);
-        camera = std::move(camera_);
         sound = std::move(sound_);
-        voice = std::move(voice_);
+        members = std::move(members_);
         feed = std::move(feed_);
         ended_feed = std::move(ended_feed_);
     }
@@ -295,10 +300,11 @@ void Call::play(Playing<Player>& slot, const PeerId& peer, const StreamDescripti
     if constexpr (std::is_same_v<Player, VideoPlayer>) {
         // A camera keeps its own time; the other pictures go with the sound.
         const bool camera = description.label == kCameraLabel;
+        VideoPlayer::Sink sink = camera ? playback.cameras(peer) : playback.pictures;
+        if (!sink) return;
         VideoPlayerConfig video = playback.video;
         video.sync = camera ? nullptr : &sync_;
-        player = std::make_unique<VideoPlayer>(media, peer, description,
-                                               camera ? playback.camera : playback.pictures, video);
+        player = std::make_unique<VideoPlayer>(media, peer, description, std::move(sink), video);
     } else if constexpr (std::is_same_v<Player, AudioPlayer>) {
         // A voice keeps its own time; the other sound goes with the pictures.
         const bool voice = description.label == kVoiceLabel;
@@ -322,30 +328,99 @@ void Call::announced(const PeerId& peer, const StreamDescription& description) {
     {
         std::lock_guard lock(playing_);
         if (closing_) return;
-        for (Playing<VideoPlayer>* slot : {&video_, &camera_}) {
-            if (!plays(*slot, peer, description.id)) continue;
+        // A change to pictures that play: the player follows it.
+        const auto member = members_.find(peer);
+        for (Playing<VideoPlayer>* slot :
+             {&video_, member != members_.end() ? &member->second.camera : nullptr}) {
+            if (!slot || !plays(*slot, peer, description.id)) continue;
             slot->player->update(description);
             slot->description = description;
             return;
         }
-        if (const PeerId* dialed = dialed_peer(config_); dialed && peer != *dialed) return;
-        const CallPlayback& playback = config_.playback;
-        switch (description.kind()) {
-            case MediaKind::Video: {
-                const bool camera = description.label == kCameraLabel;
-                Playing<VideoPlayer>& slot = camera ? camera_ : video_;
-                if (!slot && (camera ? playback.camera : playback.pictures))
-                    play(slot, peer, description, events);
-                break;
+        offer(peer, description, events);
+    }
+    for (const auto& event : events) event();
+}
+
+void Call::offer(const PeerId& peer, const StreamDescription& description,
+                 std::vector<std::function<void()>>& events) {
+    const CallPlayback& playback = config_.playback;
+    switch (description.kind()) {
+        case MediaKind::Video:
+            if (description.label == kCameraLabel) {
+                if (!playback.cameras) return;
+                Member& member = members_[peer];
+                if (!member.camera) play(member.camera, peer, description, events);
+                if (member.empty()) members_.erase(peer);
+            } else if (playback.pictures && !video_ && watches(peer)) {
+                play(video_, peer, description, events);
             }
-            case MediaKind::Audio: {
-                Playing<AudioPlayer>& slot = description.label == kVoiceLabel ? voice_ : sound_;
-                if (!slot && playback.sound) play(slot, peer, description, events);
-                break;
+            return;
+        case MediaKind::Audio:
+            if (!playback.sound) return;
+            if (description.label == kVoiceLabel) {
+                Member& member = members_[peer];
+                if (!member.voice) play(member.voice, peer, description, events);
+                if (member.empty()) members_.erase(peer);
+            } else if (!sound_ && watches(peer)) {
+                play(sound_, peer, description, events);
             }
-            case MediaKind::Data:
-                if (!feed_ && playback.feed) play(feed_, peer, description, events);
-                break;
+            return;
+        case MediaKind::Data:
+            if (playback.feed && !feed_ && first_of(config_, peer)) {
+                play(feed_, peer, description, events);
+            }
+            return;
+    }
+}
+
+bool Call::watches(const PeerId& peer) const {
+    if (chosen_) return watched_ == peer;
+    // The first offered: the pictures and the sound of one peer.
+    if (video_) return video_.player->peer() == peer;
+    if (sound_) return sound_.player->peer() == peer;
+    return first_of(config_, peer);
+}
+
+void Call::watch(std::optional<PeerId> peer) {
+    // Stopped outside the lock, as in the destructor.
+    Playing<VideoPlayer> video;
+    Playing<AudioPlayer> sound;
+    std::vector<std::pair<PeerId, StreamDescription>> ended;
+    {
+        std::lock_guard lock(playing_);
+        if (closing_) return;
+        chosen_ = true;
+        watched_ = std::move(peer);
+        if (video_ && !watches(video_.player->peer())) {
+            ended.emplace_back(video_.player->peer(), video_.description);
+            video = std::move(video_);
+        }
+        if (sound_ && !watches(sound_.player->peer())) {
+            ended.emplace_back(sound_.player->peer(), sound_.description);
+            sound = std::move(sound_);
+        }
+    }
+    video.reset();
+    sound.reset();
+    for (const auto& [from, description] : ended) notify(handlers_.ended, from, description);
+    if (!ended.empty()) sync_.forget();
+    play_watched();
+}
+
+void Call::play_watched() {
+    std::vector<std::function<void()>> events;
+    {
+        std::lock_guard lock(playing_);
+        if (closing_) return;
+        for (const OfferedStream& offered : session().offered()) {
+            const StreamDescription& description = offered.description;
+            // Voices, cameras and a feed play whoever is watched.
+            if (description.kind() == MediaKind::Data || description.label == kVoiceLabel ||
+                description.label == kCameraLabel) {
+                continue;
+            }
+            offer(offered.peer, description, events);
         }
     }
     for (const auto& event : events) event();
@@ -357,27 +432,42 @@ void Call::withdrawn(const PeerId& peer, StreamId stream) {
     Playing<AudioPlayer> sound;
     std::unique_ptr<DataPlayer> replaced;  ///< the feed that ended before, done or not
     std::optional<StreamDescription> ended;
+    bool watched = false;  ///< what ended was the watched pictures or sound
     {
         std::lock_guard lock(playing_);
-        if (plays(video_, peer, stream) || plays(camera_, peer, stream)) {
-            Playing<VideoPlayer>& slot = plays(video_, peer, stream) ? video_ : camera_;
-            ended = slot.description;
-            video = std::move(slot);
-        } else if (plays(sound_, peer, stream) || plays(voice_, peer, stream)) {
-            Playing<AudioPlayer>& slot = plays(sound_, peer, stream) ? sound_ : voice_;
-            ended = slot.description;
-            sound = std::move(slot);
+        if (plays(video_, peer, stream)) {
+            ended = video_.description;
+            video = std::move(video_);
+            watched = true;
+        } else if (plays(sound_, peer, stream)) {
+            ended = sound_.description;
+            sound = std::move(sound_);
+            watched = true;
         } else if (plays(feed_, peer, stream)) {
             ended = feed_.description;
             // What it holds is still to be written out, each at its time.
             feed_.player->finish();
             replaced = std::exchange(ended_feed_, std::move(feed_.player));
+        } else if (const auto it = members_.find(peer); it != members_.end()) {
+            Member& member = it->second;
+            if (plays(member.camera, peer, stream)) {
+                ended = member.camera.description;
+                video = std::move(member.camera);
+            } else if (plays(member.voice, peer, stream)) {
+                ended = member.voice.description;
+                sound = std::move(member.voice);
+            }
+            if (member.empty()) members_.erase(it);
         }
     }
     video.reset();
     sound.reset();
     replaced.reset();
     if (ended) notify(handlers_.ended, peer, *ended);
+    if (watched) {
+        sync_.forget();  // for whoever's next
+        play_watched();
+    }
 }
 
 void Call::received(const PeerId& peer, EncodedFrame frame) {
@@ -385,14 +475,17 @@ void Call::received(const PeerId& peer, EncodedFrame frame) {
     const StreamId stream = frame.info.stream;
     if (plays(video_, peer, stream)) {
         video_.player->push(std::move(frame));
-    } else if (plays(camera_, peer, stream)) {
-        camera_.player->push(std::move(frame));
     } else if (plays(sound_, peer, stream)) {
         sound_.player->push(std::move(frame));
-    } else if (plays(voice_, peer, stream)) {
-        voice_.player->push(std::move(frame));
     } else if (plays(feed_, peer, stream)) {
         feed_.player->push(std::move(frame));
+    } else if (const auto it = members_.find(peer); it != members_.end()) {
+        Member& member = it->second;
+        if (plays(member.voice, peer, stream)) {
+            member.voice.player->push(std::move(frame));
+        } else if (plays(member.camera, peer, stream)) {
+            member.camera.player->push(std::move(frame));
+        }
     }
 }
 
@@ -401,9 +494,15 @@ std::optional<ReceivedVideoStats> Call::video_stats() const {
     return stats_of(video_);
 }
 
-std::optional<ReceivedVideoStats> Call::camera_stats() const {
+std::map<PeerId, ReceivedVideoStats> Call::camera_stats() const {
+    std::map<PeerId, ReceivedVideoStats> cameras;
     std::lock_guard lock(playing_);
-    return stats_of(camera_);
+    for (const auto& [peer, member] : members_) {
+        if (std::optional<ReceivedVideoStats> camera = stats_of(member.camera)) {
+            cameras.emplace(peer, std::move(*camera));
+        }
+    }
+    return cameras;
 }
 
 std::optional<ReceivedVideoStats> Call::stats_of(const Playing<VideoPlayer>& slot) const {
@@ -411,7 +510,7 @@ std::optional<ReceivedVideoStats> Call::stats_of(const Playing<VideoPlayer>& slo
     const std::optional<IncomingStreamStats> stream =
         media_->session().incoming_stats(slot.player->peer(), slot.player->stream());
     if (!stream) return std::nullopt;
-    return ReceivedVideoStats{slot.player->stats(), *stream};
+    return ReceivedVideoStats{slot.player->peer(), slot.player->stats(), *stream};
 }
 
 std::optional<AudioPlayerStats> Call::sound_stats() const {
@@ -420,10 +519,13 @@ std::optional<AudioPlayerStats> Call::sound_stats() const {
     return sound_.player->stats();
 }
 
-std::optional<AudioPlayerStats> Call::voice_stats() const {
+std::map<PeerId, AudioPlayerStats> Call::voice_stats() const {
+    std::map<PeerId, AudioPlayerStats> voices;
     std::lock_guard lock(playing_);
-    if (!voice_) return std::nullopt;
-    return voice_.player->stats();
+    for (const auto& [peer, member] : members_) {
+        if (member.voice) voices.emplace(peer, member.voice.player->stats());
+    }
+    return voices;
 }
 
 std::optional<DataPlayerStats> Call::feed_stats() const {

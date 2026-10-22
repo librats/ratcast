@@ -49,6 +49,12 @@ void PlayoutClock::picture_shown(Timestamp capture) {
     apart_sum_us_ += apart.count();
 }
 
+void PlayoutClock::forget() {
+    std::lock_guard lock(mutex_);
+    sound_.reset();
+    pictures_.reset();
+}
+
 PlayoutClockStats PlayoutClock::stats() const {
     const Timestamp now = clock_.now();
     std::lock_guard lock(mutex_);

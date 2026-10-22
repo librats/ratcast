@@ -146,7 +146,7 @@ when it is first in the librats order or when nothing else in the stage can move
 The current stage and the next are broken into steps; later ones stay coarse until reached.
 Stages keep their numbers when their order changes (steps and `docs/bench.md` refer to them):
 the app (6) comes before watching together (5), as one viewer is enough for its first version,
-and the call monitor (9) right after the app, before 5.
+the call monitor (9) right after the app, and the room (10) after it, before 5.
 Every step ends with tests (and benchmarks when it moves a number) and leaves the code in its
 final place and shape: stage 0 is a walking skeleton, not a throwaway prototype.
 
@@ -162,6 +162,7 @@ final place and shape: stage 0 is a walking skeleton, not a throwaway prototype.
 | **7. Conferences** | active speaker, last-N, grid, moderation, text chat | — |
 | **8. Beyond** | Android, cinema mode, HDR, polish | — |
 | **9. Call monitor** ✅ | what a call does, as it does it: quality, bitrate, size, frame time, whether each end keeps up — a line a second in the console, a panel in the app | — |
+| **10. Room** ← now | a voice lobby for a few, as Discord's: everyone with everyone, all talking from the start, who is there and who speaks, mute and deafen, anyone's screen or camera on and off while the room goes on | — |
 
 ### Stage 0 — Skeleton ✅
 
@@ -860,6 +861,47 @@ before, the numbers where they were, the CPU the same. What the monitor showed a
 later: in the app, with a real speaker, the pictures play 35–50 ms from the sound (0.5 ms in
 `ratcast-recv` to a virtual output) — the output's own delay not yet in the lip sync; and the
 app's console carries librats' INFO lines, which the tools keep to warnings.
+
+### Stage 10 — Room
+
+The app as a place to be together, not only a screen to watch: a few people in one call, as
+in Discord's voice channels, each hearing everyone and seeing who is there, any of them sharing
+a screen or a camera when they like. Stage 6 made a call one to one around a share: it starts
+with a screen, the others dial only the sharer, and `Call` plays the first voice and camera
+offered. Everyone with everyone (a mesh) over librats' peer exchange: a screen goes to each who
+watches it, which holds for 3–5 people; more is stage 5's. *Done when* three or four apps in one
+room talk from the moment they join, each seeing the others listed with who speaks and who is
+muted or deafened, and any of them shares a screen, a window or a camera and stops it while the
+room goes on, the others watching whose share they choose.
+
+- **10.1 `Call` plays everyone** ✅: a voice and a camera for each peer, in their own time,
+  the voices mixed; the pictures and the sound with them of the one watched — chosen
+  (`watch()`), or, until then, the first offered, as before — and only those received, so a
+  share nobody watches costs nothing. The monitor reports each peer's voice and camera. Tested
+  on three nodes: one hears and sees two, switches between their screens and to none.
+  Done so: `Call` keeps a member a peer (its voice, its camera) beside the one pictures and
+  sound watched; `CallPlayback::cameras` asks where each peer's camera goes; `watch(peer)` /
+  `watch(nullopt)`, and with nothing chosen the pictures and the sound are the first offerer's,
+  the next offered taking over when they end (a chosen peer's share ending leaves nothing).
+  `MediaSession::offered()` lists what peers offer, played or not; `PlayoutClock::forget()`
+  starts the clock afresh for another sender. `camera_stats()` / `voice_stats()` by peer,
+  `ReceivedVideoStats::peer`; the monitor's lines and sections a camera and a voice a peer
+  ("voice 1a2b3c4d", "Voice of 1a2b3c4d"), another's pictures counted from zero, the console's
+  names a column of 15. The app shows any peer's camera in its one view until 10.4.
+  Tested: three nodes on loopback (everyone's voice and camera, one leaving; the screen watched,
+  switched, none, a chosen share ending; with nothing chosen, the next share taking over), the
+  monitor on made-up peers, `offered()`, `forget()`; debug and ASan 470, TSan 452.
+- **10.2 Everyone with everyone** ← now: every member listens; a member joins by any member's link and
+  finds the rest through librats' peer exchange (`PeerExchange`), hole punching where a dial
+  fails; leaving and coming back. librats: **better with** L8, L11 for hard NATs.
+- **10.3 Who is there**: each member's name and state — muted, deafened — told to the others
+  over the session's control messages (a wire change in `libratcast`); the name set in the app
+  and kept.
+- **10.4 The app as a room**: make a room or join one by link, everyone talking from the start;
+  the members listed — name, speaking, muted, deafened, camera, sharing; mute, deafen (nobody
+  heard, the microphone off too, as in Discord), camera, share a screen or a window and stop it
+  without leaving; a member's share watched on a click, the cameras beside it.
+- **10.5 Checked**: three or four members on loopback and over netem's paths, a small run.
 
 ### Stage 7 — Conferences
 

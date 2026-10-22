@@ -8,7 +8,8 @@
  * Every count a call keeps grows from its start. A CallSnapshot takes them
  * all at once; compare() turns two snapshots into a CallReport of the
  * interval between them — per second, the frame rates, bitrates, sizes,
- * codecs and times of what is sent and played, the pictures' frame time and
+ * codecs and times of what is sent and played (each peer's camera and voice
+ * apart), the pictures' frame time and
  * its jitter, what was lost, late or made up, each path's round trip and
  * loss. A publisher or player that started over in between reads from zero.
  *
@@ -37,6 +38,7 @@
  */
 
 #include <cstdint>
+#include <map>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -73,9 +75,9 @@ struct CallSnapshot {
     Duration cpu{};  ///< the process's CPU time
     std::vector<SentStreamStats> sent = {};
     std::optional<ReceivedVideoStats> video = {};
-    std::optional<ReceivedVideoStats> camera = {};
     std::optional<AudioPlayerStats> sound = {};
-    std::optional<AudioPlayerStats> voice = {};
+    std::map<PeerId, ReceivedVideoStats> cameras = {};
+    std::map<PeerId, AudioPlayerStats> voices = {};
     std::optional<DataPlayerStats> feed = {};
     PlayoutClockStats sync = {};
     std::vector<std::pair<PeerId, librats::PathStats>> paths = {};
@@ -109,6 +111,7 @@ struct SentStreamReport {
 };
 
 struct ReceivedVideoReport {
+    PeerId peer;  ///< whose
     std::string decoder;
     uint32_t width = 0;
     uint32_t height = 0;
@@ -124,6 +127,7 @@ struct ReceivedVideoReport {
 };
 
 struct ReceivedSoundReport {
+    PeerId peer;  ///< whose: a voice's; none for the sound with the pictures
     std::string decoder;
     double fps = 0;     ///< frames played
     Duration delay{};   ///< the jitter buffer's
@@ -161,9 +165,9 @@ struct CallReport {
     double cpu = 0;  ///< the process's, a share of one core in percent
     std::vector<SentStreamReport> sent;
     std::optional<ReceivedVideoReport> video;
-    std::optional<ReceivedVideoReport> camera;
     std::optional<ReceivedSoundReport> sound;
-    std::optional<ReceivedSoundReport> voice;
+    std::vector<ReceivedVideoReport> cameras;  ///< by peer
+    std::vector<ReceivedSoundReport> voices;
     std::optional<ReceivedFeedReport> feed;
     LatencyHistogram apart;  ///< sound and pictures, either way
     Verdict in_step;         ///< of how far apart

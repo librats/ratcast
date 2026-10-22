@@ -119,6 +119,13 @@ struct IncomingStreamStats {
     FrameTracker::Stats frames;
 };
 
+/// A stream a peer offers.
+struct OfferedStream {
+    PeerId peer;
+    StreamDescription description;
+    friend bool operator==(const OfferedStream&, const OfferedStream&) = default;
+};
+
 class RATCAST_EXPORT MediaSession {
 public:
     /// `network` and `clock` must outlive the session.
@@ -166,6 +173,10 @@ public:
     void request_keyframe(const PeerId& peer, StreamId stream);
 
     std::optional<IncomingStreamStats> incoming_stats(const PeerId& peer, StreamId stream) const;
+
+    /// What peers offer now: each stream announced and not withdrawn, by peer
+    /// and id.
+    std::vector<OfferedStream> offered() const;
 
     // ── Driven by the network and a timer ───────────────────────────────────
 

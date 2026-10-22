@@ -314,6 +314,28 @@ TEST_F(MediaSessionTest, AnnouncesChangesAndWithdrawals) {
     EXPECT_FALSE(receiver.session.subscribe(sender.id, 1));
 }
 
+TEST_F(MediaSessionTest, WhatPeersOfferIsWhatTheyAnnouncedAndHaveNotWithdrawn) {
+    ASSERT_TRUE(sender.session.add_stream(screen(2)));
+    StreamDescription changed = screen();
+    changed.format = VideoFormat{1280, 720, 30, 1};
+    ASSERT_TRUE(sender.session.update_stream(changed));
+    Party other(hub, clock, 3);
+    connect(other, receiver);
+    ASSERT_TRUE(other.session.add_stream(mic()));
+    hub.deliver_all();
+    // By peer, then by id.
+    std::vector<OfferedStream> offered{
+        {sender.id, changed}, {sender.id, screen(2)}, {other.id, mic()}};
+    if (other.id < sender.id) std::ranges::rotate(offered, offered.begin() + 2);
+    EXPECT_EQ(receiver.session.offered(), offered);
+    EXPECT_TRUE(sender.session.offered().empty()) << "its own are not offered to it";
+
+    sender.session.remove_stream(1);
+    hub.deliver_all();
+    receiver.session.on_peer_disconnected(other.id);
+    EXPECT_EQ(receiver.session.offered(), (std::vector<OfferedStream>{{sender.id, screen(2)}}));
+}
+
 TEST_F(MediaSessionTest, RefusesStreamsItCannotOffer) {
     StreamDescription invalid = screen(2);
     invalid.lifetime = 0ms;

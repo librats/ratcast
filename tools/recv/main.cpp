@@ -233,7 +233,7 @@ private:
             shown_ ? std::optional(shown_->take_interval()) : std::nullopt;
         const PlaybackStats heard = heard_.take_interval();
         if (decoded.latency.count() == 0 && heard.latency.count() == 0) return;
-        std::fprintf(g_out, "        %-12s", "latency");
+        std::fprintf(g_out, "        %-14s", "latency");
         print_latency("pictures", decoded.latency);
         if (shown) print_latency("shown", shown->latency);
         print_latency("sound", heard.latency);

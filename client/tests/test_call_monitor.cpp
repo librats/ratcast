@@ -1,6 +1,7 @@
 // The call monitor's reports from made-up counts: rates over the interval,
-// what counts started over, the quality of each part and of the call, the
-// lines a console shows. Over a real call: test_call.cpp.
+// what counts started over, each peer's voice and camera, the quality of each
+// part and of the call, the lines a console shows. Over a real call:
+// test_call.cpp.
 
 #include "ratcast/client/call_monitor.h"
 #include "ratcast/client/cpu_meter.h"
@@ -13,6 +14,9 @@ using namespace ratcast;
 using namespace std::chrono_literals;
 
 namespace {
+
+const PeerId kAnn = PeerId::from_hex(std::string(64, 'a')).value();
+const PeerId kBob = PeerId::from_hex(std::string(64, 'b')).value();
 
 /// Two snapshots a second apart.
 struct Snapshots {
@@ -148,20 +152,64 @@ TEST(CallMonitor, APlayerThatStartedOverCountsFromZero) {
     EXPECT_EQ(report.video->lost, 0u);
 }
 
+TEST(CallMonitor, AnotherPeersPicturesCountFromZero) {
+    Snapshots s;
+    s.earlier.video = pictures(30, Timestamp{}, 33ms);
+    s.earlier.video->peer = kAnn;
+    s.earlier.video->stream.frames.lost = 4;
+    s.now.video = pictures(50, Timestamp{} + 10s, 33ms);  // more, but Bob's
+    s.now.video->peer = kBob;
+
+    const CallReport report = compare(s.earlier, s.now);
+    EXPECT_EQ(report.video->peer, kBob);
+    EXPECT_DOUBLE_EQ(report.video->fps, 50);
+    EXPECT_EQ(report.video->lost, 0u);
+}
+
 TEST(CallMonitor, SoundMadeUpIsFairThenPoor) {
     Snapshots s;
-    s.earlier.voice = sound(500, 100ms);
-    s.now.voice = sound(550, 110ms);  // 1% of the second
-    EXPECT_EQ(compare(s.earlier, s.now).voice->verdict.quality, Quality::Fair);
-    s.now.voice = sound(550, 140ms);  // 4%
+    s.earlier.sound = sound(500, 100ms);
+    s.now.sound = sound(550, 110ms);  // 1% of the second
+    EXPECT_EQ(compare(s.earlier, s.now).sound->verdict.quality, Quality::Fair);
+    s.now.sound = sound(550, 140ms);  // 4%
     const CallReport report = compare(s.earlier, s.now);
-    EXPECT_EQ(report.voice->concealed, 40ms);
-    EXPECT_EQ(report.voice->verdict.quality, Quality::Poor);
-    EXPECT_EQ(report.verdict.reason.rfind("voice: ", 0), 0u);
+    EXPECT_EQ(report.sound->concealed, 40ms);
+    EXPECT_EQ(report.sound->verdict.quality, Quality::Poor);
+    EXPECT_EQ(report.verdict.reason.rfind("sound: ", 0), 0u);
+}
+
+TEST(CallMonitor, EachPeersVoiceAndCameraAreTheirOwn) {
+    Snapshots s;
+    s.earlier.voices = {{kAnn, sound(500, {})}, {kBob, sound(500, {})}};
+    s.now.voices = {{kAnn, sound(550, {})}, {kBob, sound(550, 40ms)}};  // Bob's made up
+    s.now.cameras = {{kBob, pictures(30, Timestamp{} + 10s, 33ms)}};
+    s.now.cameras[kBob].peer = kBob;
+
+    const CallReport report = compare(s.earlier, s.now);
+    ASSERT_EQ(report.voices.size(), 2u);
+    EXPECT_EQ(report.voices[0].peer, kAnn);
+    EXPECT_EQ(report.voices[0].verdict.quality, Quality::Good);
+    EXPECT_EQ(report.voices[1].peer, kBob);
+    EXPECT_EQ(report.voices[1].verdict.quality, Quality::Poor);
+    ASSERT_EQ(report.cameras.size(), 1u);
+    EXPECT_EQ(report.cameras[0].peer, kBob);
+    EXPECT_DOUBLE_EQ(report.cameras[0].fps, 30);
+    EXPECT_EQ(report.verdict.reason,
+              "voice " + kBob.short_hex() + ": sound made up for frames that never came");
+
+    const std::vector<std::string> lines = report_lines(report);
+    ASSERT_EQ(lines.size(), 4u);
+    EXPECT_EQ(lines[0].rfind("camera " + kBob.short_hex(), 0), 0u) << lines[0];
+    EXPECT_EQ(lines[1].rfind("voice " + kAnn.short_hex(), 0), 0u) << lines[1];
+    EXPECT_EQ(lines[2].rfind("voice " + kBob.short_hex(), 0), 0u) << lines[2];
+    const std::vector<ReportSection> sections = report_sections(report);
+    ASSERT_EQ(sections.size(), 4u);
+    EXPECT_EQ(sections[1].title, "Camera of " + kBob.short_hex());
+    EXPECT_EQ(sections[3].title, "Voice of " + kBob.short_hex());
 }
 
 TEST(CallMonitor, APathIsJudgedByWhatItLosesAndLetsExpire) {
-    const PeerId peer = PeerId::from_hex(std::string(64, 'a')).value();
+    const PeerId peer = kAnn;
     Snapshots s;
     s.earlier.paths = {{peer, path(1'000'000, 0)}};
     s.now.paths = {{peer, path(1'970'000, 30'000)}};  // 3% of what was resolved
@@ -183,13 +231,13 @@ TEST(CallMonitor, TheCallIsTheWorstOfItsParts) {
     s.earlier.sent = {screen(0, 0, 0)};
     s.now.sent = {screen(30, 30, 100'000)};
     std::get<VideoPublisherStats>(s.now.sent.front().publisher).skipped = 1;  // fair
-    s.earlier.voice = sound(0, {});
-    s.now.voice = sound(50, 100ms);  // poor
+    s.earlier.sound = sound(0, {});
+    s.now.sound = sound(50, 100ms);  // poor
 
     const CallReport report = compare(s.earlier, s.now);
     EXPECT_EQ(report.sent.front().verdict.quality, Quality::Fair);
     EXPECT_EQ(report.verdict.quality, Quality::Poor);
-    EXPECT_EQ(report.verdict.reason, "voice: sound made up for frames that never came");
+    EXPECT_EQ(report.verdict.reason, "sound: sound made up for frames that never came");
 }
 
 TEST(CallMonitor, ALineAPartAndTheCallLast) {
@@ -224,8 +272,8 @@ TEST(CallMonitor, ASectionAPartAndTheCallFirst) {
     Snapshots s;
     s.earlier.sent = {screen(0, 0, 0)};
     s.now.sent = {screen(60, 60, 500'000, 60 * 5ms)};
-    s.earlier.voice = sound(0, {});
-    s.now.voice = sound(50, 100ms);
+    s.earlier.voices = {{kAnn, sound(0, {})}};
+    s.now.voices = {{kAnn, sound(50, 100ms)}};
 
     const std::vector<ReportSection> sections = report_sections(compare(s.earlier, s.now));
     ASSERT_EQ(sections.size(), 3u);
@@ -242,7 +290,7 @@ TEST(CallMonitor, ASectionAPartAndTheCallFirst) {
     EXPECT_EQ(row(sections[1], "Size"), "1920x1080");
     EXPECT_EQ(row(sections[1], "Bitrate"), "4.00 Mbit/s (aim 5.00 Mbit/s)");
     EXPECT_EQ(row(sections[1], "Encode"), "5.0 ms");
-    EXPECT_EQ(sections[2].title, "Voice");
+    EXPECT_EQ(sections[2].title, "Voice of " + kAnn.short_hex());
     EXPECT_EQ(row(sections[2], "Made up"), "100.0 ms");
 }
 

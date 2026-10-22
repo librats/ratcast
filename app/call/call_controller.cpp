@@ -54,6 +54,14 @@ struct CallController::Pictures {
     }
 };
 
+/// Every peer's camera into `pictures`: one at a time, as the window shows them.
+std::function<VideoPlayer::Sink(const PeerId&)> CallController::cameras(
+    std::shared_ptr<Pictures> pictures) {
+    return [pictures = std::move(pictures)](const PeerId&) -> VideoPlayer::Sink {
+        return [pictures](VideoFrame picture) { (*pictures)(std::move(picture)); };
+    };
+}
+
 CallController::Environment CallController::Environment::system() {
     Environment environment;
     environment.call.discoverable = true;
@@ -166,9 +174,7 @@ void CallController::share_opened(uint64_t generation, const ScreenShareConfig& 
     CallConfig config_of_call = environment_.call;
     config_of_call.data_dir = environment_.data_dir;
     config_of_call.playback.sound = speaker_.get();  // the viewers' voices
-    config_of_call.playback.camera = [pictures = camera_pictures_](VideoFrame picture) {
-        (*pictures)(std::move(picture));
-    };
+    config_of_call.playback.cameras = cameras(camera_pictures_);
     Result<std::unique_ptr<Call>> started =
         Call::start(std::move(config_of_call), handlers(generation));
     if (!started) {
@@ -215,9 +221,7 @@ void CallController::join(const QString& link) {
     config.playback.pictures = [pictures = pictures_](VideoFrame picture) {
         (*pictures)(std::move(picture));
     };
-    config.playback.camera = [pictures = camera_pictures_](VideoFrame picture) {
-        (*pictures)(std::move(picture));
-    };
+    config.playback.cameras = cameras(camera_pictures_);
     config.playback.sound = speaker_.get();
     Result<std::unique_ptr<Call>> started = Call::start(std::move(config), handlers(generation));
     if (!started) {

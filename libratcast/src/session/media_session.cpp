@@ -459,6 +459,25 @@ std::optional<IncomingStreamStats> MediaSession::incoming_stats(const PeerId& pe
     return IncomingStreamStats{stream->subscribed, stream->bytes, stream->tracker.stats()};
 }
 
+std::vector<OfferedStream> MediaSession::offered() const {
+    std::vector<std::pair<PeerId, std::shared_ptr<IncomingStream>>> streams;
+    {
+        std::shared_lock lock(mutex_);
+        streams.reserve(incoming_.size());
+        for (const auto& [key, stream] : incoming_) streams.emplace_back(key.peer, stream);
+    }
+    std::vector<OfferedStream> offered;
+    offered.reserve(streams.size());
+    for (const auto& [peer, stream] : streams) {
+        std::lock_guard lock(stream->mutex);
+        offered.push_back({peer, stream->description});
+    }
+    std::ranges::sort(offered, [](const OfferedStream& a, const OfferedStream& b) {
+        return a.peer < b.peer || (a.peer == b.peer && a.description.id < b.description.id);
+    });
+    return offered;
+}
+
 // ── Network events ──────────────────────────────────────────────────────────
 
 void MediaSession::on_peer_connected(const PeerId& peer) {

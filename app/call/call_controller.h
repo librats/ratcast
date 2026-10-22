@@ -200,6 +200,8 @@ private:
     void start_camera();
     void camera_off(QString notice = {});
     void set_camera_shown(bool shown);
+    static std::function<VideoPlayer::Sink(const PeerId&)> cameras(
+        std::shared_ptr<Pictures> pictures);
     /// Draw what `pictures` gets into `view` from now on, as `slot` keeps it.
     static bool attach(QPointer<VideoView>& slot, Pictures& pictures, VideoView* view);
     /// Who is speaking, as the voice channel says: a few times a second.

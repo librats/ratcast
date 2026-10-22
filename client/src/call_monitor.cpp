@@ -31,6 +31,22 @@ Stats baseline(const Stats& earlier, uint64_t earlier_count, uint64_t now_count)
     return now_count >= earlier_count ? earlier : Stats{};
 }
 
+template <typename Stats>
+const Stats* optional_ptr(const std::optional<Stats>& stats) {
+    return stats ? &*stats : nullptr;
+}
+
+template <typename Stats>
+const Stats* find(const std::map<PeerId, Stats>& by_peer, const PeerId& peer) {
+    const auto it = by_peer.find(peer);
+    return it != by_peer.end() ? &it->second : nullptr;
+}
+
+/// "voice 1a2b3c4d": a part of one peer's.
+std::string of(std::string_view part, const PeerId& peer) {
+    return std::string(part) + " " + peer.short_hex();
+}
+
 class Interval {
 public:
     explicit Interval(Duration length) : seconds_(std::chrono::duration<double>(length).count()) {}
@@ -162,16 +178,18 @@ SentStreamReport sent_stream(const SentStreamStats& now, const SentStreamStats* 
     return sent;
 }
 
-ReceivedVideoReport received_video(const ReceivedVideoStats& now,
-                                   const std::optional<ReceivedVideoStats>& earlier,
+ReceivedVideoReport received_video(const ReceivedVideoStats& now, const ReceivedVideoStats* earlier,
                                    const Interval& interval) {
+    // Another peer's pictures since are a player started over.
     const ReceivedVideoStats before =
-        earlier ? baseline(*earlier, earlier->player.frames, now.player.frames)
-                : ReceivedVideoStats{};
+        earlier && earlier->peer == now.peer
+            ? baseline(*earlier, earlier->player.frames, now.player.frames)
+            : ReceivedVideoStats{};
     const VideoPlayerStats& player = now.player;
     const FrameTracker::Stats& frames = now.stream.frames;
     const FrameTracker::Stats& frames_before = before.stream.frames;
     ReceivedVideoReport video;
+    video.peer = now.peer;
     video.decoder = player.decoder;
     video.width = player.width;
     video.height = player.height;
@@ -197,8 +215,7 @@ ReceivedVideoReport received_video(const ReceivedVideoStats& now,
     return video;
 }
 
-ReceivedSoundReport received_sound(const AudioPlayerStats& now,
-                                   const std::optional<AudioPlayerStats>& earlier,
+ReceivedSoundReport received_sound(const AudioPlayerStats& now, const AudioPlayerStats* earlier,
                                    const Interval& interval) {
     const AudioPlayerStats before =
         earlier ? baseline(*earlier, earlier->frames, now.frames) : AudioPlayerStats{};
@@ -310,7 +327,7 @@ std::string sent_line(const SentStreamReport& s) {
     switch (s.kind) {
         case MediaKind::Video:
             return format(
-                "sent %-8s %s %s%s  %3.0f fps (source %3.0f)  %s (aim %s)  encode %5.2f ms"
+                "sent %-10s %s %s%s  %3.0f fps (source %3.0f)  %s (aim %s)  encode %5.2f ms"
                 "  viewers %zu  skipped %llu  keyframes %llu  dropped %llu  %s",
                 s.label.c_str(), size(s.width, s.height).c_str(), s.encoder.c_str(),
                 s.gpu_input ? " (GPU)" : "", s.fps, s.source_fps, rate(s.bitrate).c_str(),
@@ -318,14 +335,15 @@ std::string sent_line(const SentStreamReport& s) {
                 count(s.keyframes), count(s.dropped), quality(s.verdict).c_str());
         case MediaKind::Audio:
             return format(
-                "sent %-8s %s  %3.0f fps  %s  encode %5.2f ms  viewers %zu  dropped %llu"
+                "sent %-10s %s  %3.0f fps  %s  encode %5.2f ms  viewers %zu  dropped %llu"
                 "  %s",
                 s.label.c_str(), s.encoder.c_str(), s.fps, rate(s.bitrate).c_str(),
                 ms(s.encode_time), s.viewers, count(s.skipped), quality(s.verdict).c_str());
         case MediaKind::Data:
-            return format("sent %-8s feed  %4.0f frames/s  %s  viewers %zu  skipped %llu bytes  %s",
-                          s.label.c_str(), s.fps, rate(s.bitrate).c_str(), s.viewers,
-                          count(s.skipped), quality(s.verdict).c_str());
+            return format(
+                "sent %-10s feed  %4.0f frames/s  %s  viewers %zu  skipped %llu bytes  %s",
+                s.label.c_str(), s.fps, rate(s.bitrate).c_str(), s.viewers, count(s.skipped),
+                quality(s.verdict).c_str());
     }
     return {};
 }
@@ -333,7 +351,7 @@ std::string sent_line(const SentStreamReport& s) {
 std::string video_line(const char* name, const ReceivedVideoReport& v) {
     const LatencyHistogram& frame = v.pace.intervals();
     return format(
-        "%-13s %s %s  %3.0f fps  %s  decode %5.2f ms  frame %5.1f ms (p95 %5.1f, max %5.1f,"
+        "%-15s %s %s  %3.0f fps  %s  decode %5.2f ms  frame %5.1f ms (p95 %5.1f, max %5.1f,"
         " jitter %4.1f)  buffer %3.0f ms  lost %llu  late %llu  dropped %llu  %s",
         name, size(v.width, v.height).c_str(), v.decoder.c_str(), v.fps, rate(v.bitrate).c_str(),
         ms(v.decode_time), ms(frame.percentile(0.5)), ms(frame.percentile(0.95)), ms(frame.max()),
@@ -344,7 +362,7 @@ std::string video_line(const char* name, const ReceivedVideoReport& v) {
 
 std::string sound_line(const char* name, const ReceivedSoundReport& s) {
     return format(
-        "%-13s %s  %3.0f fps  delay %3.0f ms (target %3.0f)  lost %llu  late %llu  fec %4.0f ms"
+        "%-15s %s  %3.0f fps  delay %3.0f ms (target %3.0f)  lost %llu  late %llu  fec %4.0f ms"
         "  concealed %4.0f ms  %s",
         name, s.decoder.c_str(), s.fps, ms(s.delay), ms(s.target),
         static_cast<unsigned long long>(s.lost), static_cast<unsigned long long>(s.late),
@@ -462,9 +480,9 @@ CallSnapshot snapshot(const Call& call, Timestamp now) {
     snapshot.cpu = process_cpu_time();
     snapshot.sent = call.sent_stats();
     snapshot.video = call.video_stats();
-    snapshot.camera = call.camera_stats();
     snapshot.sound = call.sound_stats();
-    snapshot.voice = call.voice_stats();
+    snapshot.cameras = call.camera_stats();
+    snapshot.voices = call.voice_stats();
     snapshot.feed = call.feed_stats();
     snapshot.sync = call.sync_stats();
     for (const PeerId& peer : call.peers()) {
@@ -488,20 +506,21 @@ CallReport compare(const CallSnapshot& earlier, const CallSnapshot& now) {
         report.verdict.at_least(report.sent.back().verdict, "sent " + stream.label);
     }
     if (now.video) {
-        report.video = received_video(*now.video, earlier.video, interval);
+        report.video = received_video(*now.video, optional_ptr(earlier.video), interval);
         report.verdict.at_least(report.video->verdict, "pictures");
     }
-    if (now.camera) {
-        report.camera = received_video(*now.camera, earlier.camera, interval);
-        report.verdict.at_least(report.camera->verdict, "camera");
-    }
     if (now.sound) {
-        report.sound = received_sound(*now.sound, earlier.sound, interval);
+        report.sound = received_sound(*now.sound, optional_ptr(earlier.sound), interval);
         report.verdict.at_least(report.sound->verdict, "sound");
     }
-    if (now.voice) {
-        report.voice = received_sound(*now.voice, earlier.voice, interval);
-        report.verdict.at_least(report.voice->verdict, "voice");
+    for (const auto& [peer, camera] : now.cameras) {
+        report.cameras.push_back(received_video(camera, find(earlier.cameras, peer), interval));
+        report.verdict.at_least(report.cameras.back().verdict, of("camera", peer));
+    }
+    for (const auto& [peer, voice] : now.voices) {
+        report.voices.push_back(received_sound(voice, find(earlier.voices, peer), interval));
+        report.voices.back().peer = peer;
+        report.verdict.at_least(report.voices.back().verdict, of("voice", peer));
     }
     if (now.feed) {
         report.feed = received_feed(*now.feed, earlier.feed, interval);
@@ -526,24 +545,28 @@ std::vector<std::string> report_lines(const CallReport& report) {
     std::vector<std::string> lines;
     for (const SentStreamReport& sent : report.sent) lines.push_back(sent_line(sent));
     if (report.video) lines.push_back(video_line("pictures", *report.video));
-    if (report.camera) lines.push_back(video_line("camera", *report.camera));
+    for (const ReceivedVideoReport& camera : report.cameras) {
+        lines.push_back(video_line(of("camera", camera.peer).c_str(), camera));
+    }
     if (report.sound) lines.push_back(sound_line("sound", *report.sound));
-    if (report.voice) lines.push_back(sound_line("voice", *report.voice));
+    for (const ReceivedSoundReport& voice : report.voices) {
+        lines.push_back(sound_line(of("voice", voice.peer).c_str(), voice));
+    }
     if (const auto& feed = report.feed) {
-        lines.push_back(format("%-13s %s  lost %llu  late %llu  buffer %3.0f ms  %s", "feed",
+        lines.push_back(format("%-15s %s  lost %llu  late %llu  buffer %3.0f ms  %s", "feed",
                                rate(feed->bitrate).c_str(),
                                static_cast<unsigned long long>(feed->lost),
                                static_cast<unsigned long long>(feed->late), ms(feed->buffer),
                                quality(feed->verdict).c_str()));
     }
     if (report.apart.count() > 0) {
-        lines.push_back(format("%-13s %4.1f ms apart (p95 %4.1f, max %4.1f)", "in step",
+        lines.push_back(format("%-15s %4.1f ms apart (p95 %4.1f, max %4.1f)", "in step",
                                ms(report.apart.percentile(0.5)), ms(report.apart.percentile(0.95)),
                                ms(report.apart.max())));
     }
     for (const PathReport& p : report.paths) {
         lines.push_back(format(
-            "path %-8s rtt %5.1f ms  bandwidth %s%s  queue %4.0f ms  loss %4.1f%%  expired %llu"
+            "path %-10s rtt %5.1f ms  bandwidth %s%s  queue %4.0f ms  loss %4.1f%%  expired %llu"
             "  repair %s  %s",
             // Not kept busy, the estimate is what was used: a floor.
             p.peer.short_hex().c_str(), ms(p.rtt),
@@ -552,7 +575,7 @@ std::vector<std::string> report_lines(const CallReport& report) {
             quality(p.verdict).c_str()));
     }
     lines.push_back(
-        format("%-13s cpu %3.0f%%  %s", "call", report.cpu, quality(report.verdict).c_str()));
+        format("%-15s cpu %3.0f%%  %s", "call", report.cpu, quality(report.verdict).c_str()));
     return lines;
 }
 
@@ -570,9 +593,13 @@ std::vector<ReportSection> report_sections(const CallReport& report) {
     sections.push_back({"Call", report.verdict, {{"CPU", format("%.0f%%", report.cpu)}}});
     for (const SentStreamReport& sent : report.sent) sections.push_back(sent_section(sent));
     if (report.video) sections.push_back(video_section("Pictures", *report.video));
-    if (report.camera) sections.push_back(video_section("Camera", *report.camera));
+    for (const ReceivedVideoReport& camera : report.cameras) {
+        sections.push_back(video_section(of("Camera of", camera.peer), camera));
+    }
     if (report.sound) sections.push_back(sound_section("Sound", *report.sound));
-    if (report.voice) sections.push_back(sound_section("Voice", *report.voice));
+    for (const ReceivedSoundReport& voice : report.voices) {
+        sections.push_back(sound_section(of("Voice of", voice.peer), voice));
+    }
     if (const auto& feed = report.feed) {
         sections.push_back(
             {"Feed",

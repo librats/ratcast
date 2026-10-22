@@ -261,7 +261,7 @@ TEST(VoiceChannel, TwoSidesTalkAndAMutedOneIsNotHeard) {
     ASSERT_TRUE(publish_voice(*guest.call, std::move(guest.microphone)));
 
     ASSERT_TRUE(wait_for([&] { return host.voice.hearing() && guest.voice.hearing(); }));
-    EXPECT_TRUE(host.call->voice_stats());
+    EXPECT_EQ(host.call->voice_stats().size(), 1u);
     EXPECT_FALSE(host.call->sound_stats()) << "a voice, not the sound with the pictures";
 
     guest.voice.set_muted(true);

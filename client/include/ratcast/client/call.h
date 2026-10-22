@@ -13,13 +13,17 @@
  * encoder hears the keyframes receivers ask for and the bitrate rate control
  * aims at. Whoever connects may subscribe to it.
  *
- * What is played is the first video, camera, sound, voice and feed offered —
- * from the peer dialed, if it was dialed by peer id, from anyone otherwise —
- * each where the playback config says. A voice is a sound stream labelled
- * kVoiceLabel, a camera a video stream labelled kCameraLabel: both keep their
- * own time, while the other sound and pictures play in step (PlayoutClock);
- * the two sounds are mixed into the one output (AudioMixer). When one ends,
- * the next of its kind announced plays.
+ * What is played, each where the playback config says, is everyone's voice
+ * and camera, and of the one watched the pictures and the sound with them.
+ * A voice is a sound stream labelled kVoiceLabel, a camera a video stream
+ * labelled kCameraLabel: each peer's play in their own time, the voices all
+ * mixed into the one output (AudioMixer). The pictures and the sound are
+ * those of the peer chosen with watch() — or, until then, of the first to
+ * offer either, the peer dialed if it was dialed by peer id — and play in step
+ * (PlayoutClock), the sound mixed with the voices. When they end, the next
+ * the watched offers play. A feed is the first offered, by the peer dialed if
+ * it was dialed by peer id; when it ends, the next announced. Only what plays
+ * is received: a screen nobody here watches costs nothing.
  *
  * The other side gets here by an invite (invites()): a rats:// link with this
  * node's peer id, looked for through the DHT if the call is discoverable, or
@@ -76,9 +80,11 @@ struct CallPlayback {
     /// Pictures, on the video player's thread.
     VideoPlayer::Sink pictures = {};
     VideoPlayerConfig video = {};  ///< its `sync` is the call's own
-    /// A camera's pictures, on its player's thread, with `video`'s config.
-    VideoPlayer::Sink camera = {};
-    /// The device the sound and the voice play into; must outlive the call.
+    /// Where `peer`'s camera's pictures go, asked as it starts (null: not
+    /// played), then called on its player's thread; `video`'s config. Asked
+    /// under the call's lock: it must not call back into the call.
+    std::function<VideoPlayer::Sink(const PeerId& peer)> cameras = {};
+    /// The device the sound and the voices play into; must outlive the call.
     AudioOutput* sound = nullptr;
     AudioPlayer::Observer heard = {};
     /// Pictures and sound of one sender in step; apart, each keeps its own
@@ -120,7 +126,8 @@ struct CallHandlers {
     /// A stream of `peer`'s started playing, or failed to (the outcome).
     std::function<void(const PeerId& peer, const StreamDescription& stream, Result<void> outcome)>
         playing = {};
-    /// A stream that played ended: `peer` withdrew it, or left.
+    /// A stream that played ended: `peer` withdrew it, or left, or another
+    /// is watched.
     std::function<void(const PeerId& peer, const StreamDescription& stream)> ended = {};
     /// A published stream stopped by itself: its source ran out (success),
     /// or the source or its encoder failed. It stays published until
@@ -141,6 +148,7 @@ struct SentStreamStats {
 
 /// The video that plays: its player's view and its stream's.
 struct ReceivedVideoStats {
+    PeerId peer;  ///< whose
     VideoPlayerStats player;
     IncomingStreamStats stream;
 };
@@ -187,10 +195,17 @@ public:
 
     // ── What plays ──────────────────────────────────────────────────────────
 
+    /// Play `peer`'s pictures and the sound with them from now on, in place
+    /// of whoever's played; nobody's with nullopt. Until this is called, the
+    /// first offered play.
+    void watch(std::optional<PeerId> peer);
+
+    /// The pictures and the sound with them, of the one watched.
     std::optional<ReceivedVideoStats> video_stats() const;
-    std::optional<ReceivedVideoStats> camera_stats() const;
     std::optional<AudioPlayerStats> sound_stats() const;
-    std::optional<AudioPlayerStats> voice_stats() const;
+    /// Each peer's camera and voice playing, by peer.
+    std::map<PeerId, ReceivedVideoStats> camera_stats() const;
+    std::map<PeerId, AudioPlayerStats> voice_stats() const;
     /// The feed playing, or the last one, writing out what it held or done.
     std::optional<DataPlayerStats> feed_stats() const;
     /// Sound and pictures: how far apart they played, and what each needs.
@@ -216,6 +231,13 @@ private:
         }
     };
 
+    /// What of one peer plays in its own time, whoever is watched.
+    struct Member {
+        Playing<AudioPlayer> voice;
+        Playing<VideoPlayer> camera;
+        bool empty() const noexcept { return !voice && !camera; }
+    };
+
     Call(CallConfig config, CallHandlers handlers);
 
     SessionHandlers session_handlers();
@@ -224,8 +246,16 @@ private:
     void announced(const PeerId& peer, const StreamDescription& description);
     void withdrawn(const PeerId& peer, StreamId stream);
     void received(const PeerId& peer, EncodedFrame frame);
-    /// Start a player for `description` in `slot`, if it starts; what came
-    /// of it is an event for after the lock.
+    /// Play what the one watched offers where nothing plays: after what
+    /// played ended, or another is watched.
+    void play_watched();
+    // Under playing_; what came of it are events for after the lock.
+    /// Play what `peer` offers if it is to play and nothing plays in its place.
+    void offer(const PeerId& peer, const StreamDescription& description,
+               std::vector<std::function<void()>>& events);
+    /// Whether `peer`'s pictures and sound are to play.
+    bool watches(const PeerId& peer) const;
+    /// Start a player for `description` in `slot`, if it starts.
     template <typename Player>
     void play(Playing<Player>& slot, const PeerId& peer, const StreamDescription& description,
               std::vector<std::function<void()>>& events);
@@ -248,10 +278,11 @@ private:
     PlayoutClock sync_;
     std::optional<AudioMixer> mixer_;  ///< over playback.sound, if any
     mutable std::mutex playing_;
-    Playing<VideoPlayer> video_;
-    Playing<VideoPlayer> camera_;
+    bool chosen_ = false;  ///< watch() was called: watched_ is whom
+    std::optional<PeerId> watched_;
+    Playing<VideoPlayer> video_;  ///< the watched's, as is sound_
     Playing<AudioPlayer> sound_;
-    Playing<AudioPlayer> voice_;
+    std::map<PeerId, Member> members_;
     Playing<DataPlayer> feed_;
     std::unique_ptr<DataPlayer> ended_feed_;  ///< writing out what it held
 };

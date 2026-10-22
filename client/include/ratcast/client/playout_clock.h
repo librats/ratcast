@@ -79,6 +79,11 @@ public:
     /// A picture captured at `capture` is shown now.
     void picture_shown(Timestamp capture);
 
+    /// Another sender from now on: what the last one's sound and pictures
+    /// needed no longer counts, as if each had been quiet for a second. What
+    /// was measured stays.
+    void forget();
+
     PlayoutClockStats stats() const;
 
 private:

@@ -1,6 +1,6 @@
 // PlayoutClock on a clock the test moves: pictures held to the sound, the
-// floor the sound is asked to keep, sides that went quiet, and how far apart
-// the two were as they played.
+// floor the sound is asked to keep, sides that went quiet or were forgotten,
+// and how far apart the two were as they played.
 
 #include "ratcast/client/playout_clock.h"
 
@@ -56,6 +56,20 @@ TEST_F(PlayoutClockTest, ASideQuietForASecondNoLongerCounts) {
     const PlayoutClockStats stats = sync_.stats();
     EXPECT_FALSE(stats.sound);
     EXPECT_FALSE(stats.pictures);
+}
+
+TEST_F(PlayoutClockTest, AnotherSenderStartsAfresh) {
+    const Timestamp captured = clock_.now() - 80ms;
+    sync_.sound_played(captured - 1s, captured - 1s + 60ms, 25ms);
+    sync_.pictures_need(100ms);
+    sync_.picture_shown(captured);
+    sync_.forget();
+    EXPECT_EQ(sync_.sound_floor(), 0ms);
+    EXPECT_EQ(sync_.due(kCapture, kCapture + 10ms, 200ms), kCapture + 10ms);
+    const PlayoutClockStats stats = sync_.stats();
+    EXPECT_FALSE(stats.sound);
+    EXPECT_FALSE(stats.pictures);
+    EXPECT_EQ(stats.apart.count(), 1u) << "what was measured stays";
 }
 
 TEST_F(PlayoutClockTest, MeasuresHowFarApartPicturesAndSoundPlay) {
