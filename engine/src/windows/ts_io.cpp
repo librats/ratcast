@@ -410,12 +410,16 @@ private:
             }
             const steady_clock::time_point when =
                 start + std::chrono::duration_cast<steady_clock::duration>(due);
-            while (running() && steady_clock::now() < when) {
-                if (quiet_at && steady_clock::now() >= *quiet_at) {
+            for (;;) {
+                // Told even when a sleep overran the block's time, which a
+                // busy machine's may: the feed did go quiet that long.
+                const steady_clock::time_point now = steady_clock::now();
+                if (quiet_at && now >= *quiet_at) {
                     sink({}, clock().now());
                     quiet_at.reset();
                 }
-                sleeper.until(std::min({when, quiet_at.value_or(when), steady_clock::now() + 5ms}));
+                if (!running() || now >= when) break;
+                sleeper.until(std::min({when, quiet_at.value_or(when), now + 5ms}));
             }
             if (!running()) return {};
             sink({block.data(), packets * kTsPacketSize}, clock().now());

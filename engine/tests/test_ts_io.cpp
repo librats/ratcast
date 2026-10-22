@@ -62,6 +62,17 @@ Packet packet(uint16_t pid, uint8_t fill, std::optional<uint64_t> pcr = std::nul
 
 constexpr uint64_t kTicksPerMs = 27'000;
 
+/// How much later than asked a timed wait may end, past a slow machine's odd
+/// stall: Windows' scheduler ticks every 15.6 ms (docs/PLAN.md, L17); the
+/// hosted macOS runners' waits end tens of milliseconds late.
+#if defined(_WIN32)
+constexpr Duration kWakeSlack = 16ms;
+#elif defined(__APPLE__)
+constexpr Duration kWakeSlack = 100ms;
+#else
+constexpr Duration kWakeSlack = 0ms;
+#endif
+
 #ifdef _WIN32
 using socklen_t = int;
 int process_id() { return _getpid(); }
@@ -243,18 +254,24 @@ TEST(TsIoTest, SaysWhenADatagramFeedGoesQuiet) {
     Result<std::unique_ptr<TsOutput>> output = open_ts_output(url);
     ASSERT_TRUE(output);
 
-    // Two datagrams 5 ms apart, then nothing: told once, 20 ms after the second.
+    // Two datagrams 5 ms apart, then nothing: told once, 20 ms after the second
+    // — and between them too if a slow machine's sleep made that 20 ms.
     const Packet p = packet(256, 1);
     ASSERT_TRUE((*output)->write(p));
     std::this_thread::sleep_for(5ms);
     ASSERT_TRUE((*output)->write(p));
-    std::this_thread::sleep_for(150ms);
+    std::this_thread::sleep_for(150ms + kWakeSlack);
     (*input)->stop();
     std::lock_guard lock(received.mutex);
     ASSERT_EQ(received.at.size(), 2u);
-    ASSERT_EQ(received.quiet.size(), 1u);
-    EXPECT_GE(received.quiet[0] - received.at[1], 19ms);
-    EXPECT_LE(received.quiet[0] - received.at[1], 100ms);  // a slow machine's sleeps
+    ASSERT_GE(received.quiet.size(), 1u);
+    ASSERT_LE(received.quiet.size(), 2u);
+    if (received.quiet.size() == 2) {
+        EXPECT_GE(received.quiet[0] - received.at[0], 19ms);
+        EXPECT_LE(received.quiet[0], received.at[1]);
+    }
+    EXPECT_GE(received.quiet.back() - received.at[1], 19ms);
+    EXPECT_LE(received.quiet.back() - received.at[1], 100ms + kWakeSlack);
 }
 
 TEST(TsIoTest, PlaysAFileInRealTimeByItsPcr) {
@@ -287,11 +304,11 @@ TEST(TsIoTest, PlaysAFileInRealTimeByItsPcr) {
     ASSERT_EQ(received.at.size(), 10u);
     const Duration took = received.at.back() - received.at.front();
     EXPECT_GE(took, 175ms);
-    EXPECT_LE(took, 400ms);  // a slow machine's sleeps
+    EXPECT_LE(took, 400ms + kWakeSlack);  // a slow machine's sleeps
     ASSERT_EQ(received.quiet.size(), 9u);
     for (size_t i = 0; i < 9; ++i) {
         EXPECT_GE(received.quiet[i] - received.at[i], 5ms) << i;
-        EXPECT_LT(received.quiet[i], received.at[i + 1]) << i;
+        EXPECT_LE(received.quiet[i], received.at[i + 1]) << i;
     }
 }
 

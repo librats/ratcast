@@ -31,7 +31,11 @@ public:
     bool admit(Timestamp now) noexcept {
         if (next_ && now + slack_ < *next_) return false;
         // On the grid while the source keeps up; from now on when it fell behind.
-        next_ = next_ ? std::max(*next_ + interval_, now + interval_ - slack_) : now + interval_;
+        // Either way the grid is laid a slack early, as if this picture were
+        // that late: the next may then come early by the slack and late by as
+        // much again — jitter of twice the slack — and still go.
+        const Timestamp from_now = now + interval_ - slack_;
+        next_ = next_ ? std::max(*next_ + interval_, from_now) : from_now;
         return true;
     }
 
