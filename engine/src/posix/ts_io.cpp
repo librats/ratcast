@@ -319,10 +319,11 @@ private:
                 std::this_thread::sleep_until(std::min({when, quiet_at.value_or(when), now + 5ms}));
             }
             if (!running()) return {};
+            // Quiet from when the block went, however long the sink kept it.
+            const steady_clock::time_point sent = steady_clock::now();
             sink({block.data(), packets * kTsPacketSize}, clock().now());
             if (quiet() > Duration{}) {
-                quiet_at = steady_clock::now() +
-                           std::chrono::duration_cast<steady_clock::duration>(quiet());
+                quiet_at = sent + std::chrono::duration_cast<steady_clock::duration>(quiet());
             }
         }
         return {};

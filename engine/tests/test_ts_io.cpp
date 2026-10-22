@@ -305,11 +305,19 @@ TEST(TsIoTest, PlaysAFileInRealTimeByItsPcr) {
     const Duration took = received.at.back() - received.at.front();
     EXPECT_GE(took, 175ms);
     EXPECT_LE(took, 400ms + kWakeSlack);  // a slow machine's sleeps
-    ASSERT_EQ(received.quiet.size(), 9u);
-    for (size_t i = 0; i < 9; ++i) {
-        EXPECT_GE(received.quiet[i] - received.at[i], 5ms) << i;
-        EXPECT_LE(received.quiet[i], received.at[i + 1]) << i;
+    // A notice in every gap of 5 ms between two blocks, and only there. A sleep
+    // that made a block more than 15 ms late leaves none before the next: due
+    // by then, it follows at once, and the feed never went quiet.
+    size_t told = 0;
+    for (size_t i = 0; i + 1 < received.at.size(); ++i) {
+        if (told < received.quiet.size() && received.quiet[told] <= received.at[i + 1]) {
+            EXPECT_GE(received.quiet[told] - received.at[i], 5ms) << i;
+            ++told;
+        } else {  // the next block came before the quiet was due (and the sink's own time)
+            EXPECT_LT(received.at[i + 1] - received.at[i], 6ms + kWakeSlack) << i;
+        }
     }
+    EXPECT_EQ(told, received.quiet.size()) << "two in a gap, or one after the last block";
 }
 
 TEST(TsIoTest, WritesAFile) {
