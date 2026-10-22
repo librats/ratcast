@@ -243,9 +243,16 @@ TEST_F(DataPipelineTest, FramesAreWrittenAFixedLatencyAfterTheyWereRead) {
         EXPECT_GE(frame_held, 49ms) << "frame " << n;
         held.push_back(frame_held);
     }
-    // Not much longer, but for a slow machine's odd stall.
+    // Not much longer, but for a slow machine's odd stall — and on Windows the
+    // delivery thread's wait, which ends on the scheduler's 15.6 ms tick
+    // (docs/PLAN.md, L17).
+#ifdef _WIN32
+    constexpr Duration kWakeSlack = 16ms;
+#else
+    constexpr Duration kWakeSlack = 0ms;
+#endif
     std::ranges::nth_element(held, held.begin() + 10);
-    EXPECT_LE(held[10], 60ms);
+    EXPECT_LE(held[10], 60ms + kWakeSlack);
 }
 
 TEST_F(DataPipelineTest, WhatTheNetworkLostIsSkipped) {

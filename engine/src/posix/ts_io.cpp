@@ -92,13 +92,24 @@ bool is_multicast(const sockaddr* address) noexcept {
     return false;
 }
 
+/// A UDP socket of `family`, closed on exec (macOS has no SOCK_CLOEXEC).
+Fd udp_socket(int family) noexcept {
+#ifdef SOCK_CLOEXEC
+    return Fd(::socket(family, SOCK_DGRAM | SOCK_CLOEXEC, 0));
+#else
+    Fd fd(::socket(family, SOCK_DGRAM, 0));
+    if (fd) ::fcntl(fd.get(), F_SETFD, FD_CLOEXEC);
+    return fd;
+#endif
+}
+
 /// A socket receiving `url`'s datagrams: bound to its port, and to its host
 /// unless that is a multicast group, which it joins instead.
 Result<Fd> bind_udp(const TsUrl& url) {
     Result<AddrinfoPtr> found = resolve(url, true);
     if (!found) return fail(found.error());
     const addrinfo* at = found->get();
-    Fd fd(::socket(at->ai_family, SOCK_DGRAM | SOCK_CLOEXEC, 0));
+    Fd fd = udp_socket(at->ai_family);
     if (!fd) return fail(Errc::Unavailable);
     const int one = 1;
     setsockopt(fd.get(), SOL_SOCKET, SO_REUSEADDR, &one, sizeof one);
@@ -388,7 +399,7 @@ Result<std::unique_ptr<TsOutput>> open_ts_output(std::string_view url) {
             Result<AddrinfoPtr> found = resolve(*parsed, false);
             if (!found) return fail(found.error());
             const addrinfo* at = found->get();
-            Fd fd(::socket(at->ai_family, SOCK_DGRAM | SOCK_CLOEXEC, 0));
+            Fd fd = udp_socket(at->ai_family);
             if (!fd || ::connect(fd.get(), at->ai_addr, at->ai_addrlen) != 0) {
                 return fail(Errc::Unavailable);
             }
