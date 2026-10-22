@@ -166,6 +166,7 @@ protected:
         player_ptr_ = nullptr;
         if (player_) player_->stop();
         if (publisher_) publisher_->stop();
+        loopback_.stop();  // its handlers use what the test is about to destroy
     }
 
     /// Publish, and once announced play with `latency`.

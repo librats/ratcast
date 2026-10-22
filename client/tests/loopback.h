@@ -30,13 +30,19 @@ public:
     /// Stops delivering, then destroys the sessions: whatever uses them must
     /// be gone first.
     ~Loopback() {
+        stop();
+        parties_.clear();
+    }
+
+    /// Stops delivering: no session handler runs once this returns, so what
+    /// they use may go; what is sent after is never delivered.
+    void stop() {
         {
             std::lock_guard lock(mutex_);
             running_ = false;
         }
         wake_.notify_one();
-        thread_.join();
-        parties_.clear();
+        if (thread_.joinable()) thread_.join();
     }
 
     /// A session for `id`, owned by the loopback.

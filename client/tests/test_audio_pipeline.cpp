@@ -97,6 +97,7 @@ protected:
         if (publisher_) publisher_->stop();
         pictures_ = nullptr;
         if (video_publisher_) video_publisher_->stop();
+        loopback_.stop();  // its handlers use what the test is about to destroy
     }
 
     void publish() {

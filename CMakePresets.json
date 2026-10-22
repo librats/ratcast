@@ -78,34 +78,30 @@
   ],
   "testPresets": [
     {
-      "name": "debug",
-      "configurePreset": "debug",
+      "name": "base",
+      "hidden": true,
+      "description": "As many tests at once as there are processors: CTEST_PARALLEL_LEVEL left empty (CMake 3.29+; one at a time before). \"jobs\": 0 would start them all at once.",
       "output": {
         "outputOnFailure": true
       },
-      "execution": {
-        "jobs": 0
+      "environment": {
+        "CTEST_PARALLEL_LEVEL": ""
       }
+    },
+    {
+      "name": "debug",
+      "inherits": "base",
+      "configurePreset": "debug"
     },
     {
       "name": "core",
-      "configurePreset": "core",
-      "output": {
-        "outputOnFailure": true
-      },
-      "execution": {
-        "jobs": 0
-      }
+      "inherits": "base",
+      "configurePreset": "core"
     },
     {
       "name": "asan",
+      "inherits": "base",
       "configurePreset": "asan",
-      "output": {
-        "outputOnFailure": true
-      },
-      "execution": {
-        "jobs": 0
-      },
       "environment": {
         "PIPEWIRE_DLCLOSE": "false",
         "UBSAN_OPTIONS": "halt_on_error=1:print_stacktrace=1",
@@ -114,13 +110,8 @@
     },
     {
       "name": "tsan",
+      "inherits": "base",
       "configurePreset": "tsan",
-      "output": {
-        "outputOnFailure": true
-      },
-      "execution": {
-        "jobs": 0
-      },
       "environment": {
         "TSAN_OPTIONS": "halt_on_error=1:suppressions=${sourceDir}/cmake/tsan.supp"
       }

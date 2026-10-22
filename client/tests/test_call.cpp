@@ -366,9 +366,18 @@ TEST_F(CallTest, WhatIsNotPlayedIsNotReceived) {
     Side guest;
     guest.start(config(RatsUrl{host.address()}), /*pictures=*/false);
     ASSERT_TRUE(wait_for([&] { return guest.told("playing tone"); }));
-    // Two peers, one subscriber: the call that plays nothing never asked.
+    // Two peers, one subscriber: the call that plays nothing was told of the
+    // tone but never asked. The guest's request reaches the host in its own
+    // time, after the guest has started playing.
+    const StreamId tone = AudioPublisherConfig{}.stream;
     EXPECT_TRUE(wait_for([&] { return host->peers().size() == 2; }));
-    EXPECT_EQ(host->session().outgoing_stats(AudioPublisherConfig{}.stream)->subscribers, 1u);
+    std::optional<IncomingStreamStats> told;
+    EXPECT_TRUE(wait_for([&] {
+        told = (*silent)->session().incoming_stats(host->id(), tone);
+        return told.has_value();
+    }));
+    EXPECT_FALSE(told && told->subscribed);
+    EXPECT_TRUE(wait_for([&] { return host->session().outgoing_stats(tone)->subscribers == 1; }));
 }
 
 TEST_F(CallTest, ASourceThatRunsOutSaysSo) {
