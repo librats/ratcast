@@ -3,6 +3,7 @@ ratcast_add_test(client_tests
         test_over_librats.cpp
         test_audio_pipeline.cpp
         test_call.cpp
+        test_call_monitor.cpp
         test_data_pipeline.cpp
         test_playback_meter.cpp
         test_playout_clock.cpp

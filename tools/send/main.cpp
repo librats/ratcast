@@ -18,6 +18,8 @@
 #include "common/arguments.h"
 #include "common/tool.h"
 #include "ratcast/client/call.h"
+#include "ratcast/client/call_monitor.h"
+#include "ratcast/client/cpu_meter.h"
 #include "ratcast/client/screen_share.h"
 #include "ratcast/engine/audio_device.h"
 #include "ratcast/engine/camera_capture.h"
@@ -258,44 +260,18 @@ struct Published {
     const DataPublisher* feed = nullptr;
 };
 
-/// One line a second: what went out, and how each viewer's path is doing;
-/// a summary at the end.
+/// A report a second, from the call's monitor: what went out, and how each
+/// viewer's path is doing; a summary at the end.
 class Reporter {
 public:
-    Reporter(Call& call, Published published) : call_(call), published_(published) {}
+    Reporter(Call& call, Published published)
+        : call_(call), published_(published), monitor_(call) {}
 
     void report() {
-        std::printf("[%4us]", seconds_++);
-        if (published_.video) report_video();
-        if (published_.feed) report_feed();
-        std::printf("  cpu %3.0f%%\n", cpu_.take_interval());
-        if (published_.sound) {
-            const AudioPublisherStats sound = published_.sound->stats();
-            std::printf("        sound %3llu fps %5.1f kbit/s  %s\n",
-                        static_cast<unsigned long long>(sound.frames - last_sound_.frames),
-                        double(sound.bytes - last_sound_.bytes) * 8 / 1e3, sound.encoder.c_str());
-            last_sound_ = sound;
-        }
+        print_report(stdout, monitor_.report(), seconds_++);
         for (const PeerId& peer : call_.peers()) {
             const std::optional<librats::PathStats> path = call_.path(peer);
-            if (!path || !path->valid) continue;
-            librats::PathStats& last = paths_[peer];
-            const uint64_t lost = path->bytes_lost - last.bytes_lost;
-            const uint64_t resolved = lost + path->bytes_delivered - last.bytes_delivered;
-            const double queue_ms = path->bandwidth_bps > 0 ? double(path->queued_bytes) * 8e3 /
-                                                                  double(path->bandwidth_bps)
-                                                            : 0;
-            // "busy": the estimate was taken with the path kept busy, so it is
-            // what the path carries rather than a floor.
-            std::printf(
-                "        %s  rtt %5.1f ms  path %7.1f Mbit/s%s  queue %4.0f ms  loss %4.1f%%"
-                "  expired %llu  repair %5.2f Mbit/s\n",
-                peer.short_hex().c_str(), path->srtt_us / 1000.0, double(path->bandwidth_bps) / 1e6,
-                path->app_limited ? "     " : " busy", queue_ms,
-                resolved > 0 ? 100.0 * double(lost) / double(resolved) : 0.0,
-                static_cast<unsigned long long>(path->live_expired),
-                double(path->live_repair_bytes - last.live_repair_bytes) * 8 / 1e6);
-            last = *path;
+            if (path && path->valid) paths_[peer] = *path;
         }
         std::fflush(stdout);
     }
@@ -337,43 +313,6 @@ public:
     }
 
 private:
-    void report_video() {
-        const VideoPublisherStats now = published_.video->stats();
-        const std::optional<OutgoingStreamStats> stream =
-            call_.session().outgoing_stats(kVideoStream);
-        const uint64_t frames = now.frames - last_.frames;
-        const double mbps = double(now.bytes - last_.bytes) * 8 / 1e6;
-        const double encode_ms =
-            frames > 0 ? double((now.encode_time - last_.encode_time).count()) / 1000 / frames : 0;
-        std::printf(
-            " %3llu fps %6.2f Mbit/s (aim %5.2f)  %ux%u %s%s  encode %5.2f ms  viewers %zu"
-            "  skipped %llu  repeated %llu  keyframes %llu  drops %llu",
-            static_cast<unsigned long long>(frames), mbps, now.bitrate / 1e6, now.width, now.height,
-            now.encoder.c_str(), now.gpu_input ? " (GPU)" : "", encode_ms,
-            stream ? stream->subscribers : 0,
-            static_cast<unsigned long long>(now.skipped - last_.skipped),
-            static_cast<unsigned long long>(now.repeated - last_.repeated),
-            static_cast<unsigned long long>(now.keyframes - last_.keyframes),
-            static_cast<unsigned long long>(stream ? stream->backpressure_drops - last_drops_ : 0));
-        last_ = now;
-        last_drops_ = stream ? stream->backpressure_drops : 0;
-    }
-
-    void report_feed() {
-        const DataPublisherStats now = published_.feed->stats();
-        const std::optional<OutgoingStreamStats> stream =
-            call_.session().outgoing_stats(kFeedStream);
-        std::printf(
-            " feed %6.2f Mbit/s  %4llu frames  viewers %zu  skipped %llu bytes  drops %llu",
-            double((now.packets - last_feed_.packets) * kTsPacketSize) * 8 / 1e6,
-            static_cast<unsigned long long>(now.frames - last_feed_.frames),
-            stream ? stream->subscribers : 0,
-            static_cast<unsigned long long>(now.skipped - last_feed_.skipped),
-            static_cast<unsigned long long>(stream ? stream->backpressure_drops - last_drops_ : 0));
-        last_feed_ = now;
-        last_drops_ = stream ? stream->backpressure_drops : 0;
-    }
-
     void summarise_video(double seconds) {
         const VideoPublisherStats now = published_.video->stats();
         const std::optional<OutgoingStreamStats> stream =
@@ -394,12 +333,9 @@ private:
 
     Call& call_;
     const Published published_;
+    CallMonitor monitor_;
     CpuMeter cpu_;
     const std::chrono::steady_clock::time_point started_ = std::chrono::steady_clock::now();
-    VideoPublisherStats last_;
-    DataPublisherStats last_feed_;
-    AudioPublisherStats last_sound_;
-    uint64_t last_drops_ = 0;
     /// The last word on each viewer's path, kept after it leaves.
     std::map<PeerId, librats::PathStats> paths_;
     unsigned seconds_ = 1;

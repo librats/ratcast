@@ -1,8 +1,10 @@
 // Calls on loopback, between real librats nodes: each side sending and
 // playing, a camera beside the screen, hanging up, streams withdrawn and
-// offered again, sources that run out, and the invites a call hands out.
+// offered again, sources that run out, the monitor's reports, and the
+// invites a call hands out.
 
 #include "ratcast/client/call.h"
+#include "ratcast/client/call_monitor.h"
 #include "ratcast/client/camera.h"
 #include "ratcast/client/screen_share.h"
 
@@ -235,6 +237,61 @@ TEST_F(CallTest, BothSidesSendAndPlayUntilOneHangsUp) {
     })) << ::testing::PrintToString(host.events());
     EXPECT_FALSE(host->video_stats());
     EXPECT_FALSE(host->sound_stats());
+}
+
+TEST_F(CallTest, AMonitorReportsWhatGoesEachWay) {
+    VideoEncoderConfig probe;
+    probe.width = 320;
+    probe.height = 240;
+    if (!open_video_encoder(probe)) GTEST_SKIP() << "no AV1 encoder here";
+
+    Side host;
+    host.start(config());
+    host.publish_pattern();
+    host.publish_tone();
+    Side guest;
+    guest.start(config(RatsUrl{host.address()}));
+    ASSERT_TRUE(wait_for([&] {
+        const auto path = guest->path(host->id());
+        return guest.pictures() >= 10 && guest.heard() >= 20 && path && path->valid;
+    }));
+
+    CallMonitor sending(*host);
+    CallMonitor playing(*guest);
+    const size_t before = guest.pictures();
+    ASSERT_TRUE(wait_for([&] { return guest.pictures() >= before + 15; }));
+    const CallReport sent = sending.report();
+    const CallReport played = playing.report();
+
+    // The host sends the pattern and the tone, by stream id, to one viewer.
+    ASSERT_EQ(sent.sent.size(), 2u);
+    const SentStreamReport& pattern = sent.sent[0];
+    EXPECT_EQ(pattern.label, "pattern");
+    EXPECT_EQ(pattern.kind, MediaKind::Video);
+    EXPECT_EQ(pattern.width, 320u);
+    EXPECT_EQ(pattern.viewers, 1u);
+    EXPECT_GT(pattern.fps, 0);
+    EXPECT_GT(pattern.bitrate, 0);
+    EXPECT_FALSE(pattern.encoder.empty());
+    EXPECT_EQ(sent.sent[1].label, "tone");
+    EXPECT_GT(sent.sent[1].fps, 0);
+    EXPECT_FALSE(sent.video);
+
+    // The guest plays them, over its one path.
+    EXPECT_TRUE(played.sent.empty());
+    ASSERT_TRUE(played.video);
+    EXPECT_EQ(played.video->width, 320u);
+    EXPECT_GT(played.video->fps, 0);
+    EXPECT_GT(played.video->bitrate, 0);
+    EXPECT_GT(played.video->pace.intervals().count(), 0u);
+    ASSERT_TRUE(played.sound);
+    EXPECT_GT(played.sound->fps, 0);
+    ASSERT_EQ(played.paths.size(), 1u);
+    EXPECT_EQ(played.paths.front().peer, host->id());
+    EXPECT_GT(played.paths.front().rtt, Duration{});
+    const std::vector<std::string> lines = report_lines(played);
+    EXPECT_EQ(lines.front().rfind("pictures", 0), 0u) << lines.front();
+    EXPECT_EQ(lines.back().rfind("call", 0), 0u) << lines.back();
 }
 
 TEST_F(CallTest, AScreenShareGoesAsPicturesAndMusic) {

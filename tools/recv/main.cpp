@@ -17,6 +17,8 @@
 #include "common/arguments.h"
 #include "common/tool.h"
 #include "ratcast/client/call.h"
+#include "ratcast/client/call_monitor.h"
+#include "ratcast/client/cpu_meter.h"
 #include "ratcast/client/playback_meter.h"
 #include "ratcast/engine/audio_device.h"
 #include "ratcast/engine/pattern_source.h"
@@ -180,21 +182,28 @@ std::optional<Duration> latency_of(Timestamp capture_time, Timestamp play_time) 
     return latency;
 }
 
-/// One line a second, and a summary at the end.
+/// A report a second, from the call's monitor, with the latency the stamps
+/// tell; a summary at the end.
 class Reporter {
 public:
     Reporter(Call& call, PlaybackMeter& decoded, PlaybackMeter* shown, PlaybackMeter& heard)
-        : call_(call), decoded_(decoded), shown_(shown), heard_(heard) {}
+        : call_(call), monitor_(call), decoded_(decoded), shown_(shown), heard_(heard) {}
 
     void report() {
-        std::fprintf(g_out, "[%4us]", seconds_++);
-        const bool pictures = report_video();
-        const std::optional<DataPlayerStats> feed = call_.feed_stats();
-        if (feed) report_feed(*feed);
-        if (!pictures && !feed && !call_.sound_stats())
-            std::fprintf(g_out, " waiting for a stream");
-        std::fprintf(g_out, "  cpu %3.0f%%\n", cpu_.take_interval());
-        report_sound();
+        const CallReport report = monitor_.report();
+        if (report.video || report.sound || report.feed) {
+            print_report(g_out, report, seconds_++);
+        } else {
+            std::fprintf(g_out, "[%4us] waiting for a stream\n", seconds_++);
+        }
+        report_latency();
+        // The last word on each, for a summary after it ended.
+        if (const auto video = call_.video_stats()) {
+            last_player_ = video->player;
+            last_stream_ = video->stream;
+        }
+        if (const auto sound = call_.sound_stats()) last_sound_ = *sound;
+        if (const auto feed = call_.feed_stats()) last_feed_ = *feed;
         std::fflush(g_out);
     }
 
@@ -216,74 +225,19 @@ public:
     }
 
 private:
-    /// Whether there are pictures to speak of.
-    bool report_video() {
+    /// Capture to picture — as played, and as presented — and to the
+    /// speaker, where the stamps make sense here.
+    void report_latency() {
         const PlaybackStats decoded = decoded_.take_interval();
         const std::optional<PlaybackStats> shown =
             shown_ ? std::optional(shown_->take_interval()) : std::nullopt;
-        const auto stats = call_.video_stats();
-        if (!stats) return false;
-        const auto& [player, stream] = *stats;  // ReceivedVideoStats
-        const uint64_t pictures = player.pictures - last_player_.pictures;
-        const double mbps = double(stream.bytes - last_stream_.bytes) * 8 / 1e6;
-        const double decode_ms =
-            pictures > 0 ? ms(player.decode_time - last_player_.decode_time) / double(pictures) : 0;
-        std::fprintf(g_out,
-                     " %3llu fps %6.2f Mbit/s  %ux%u %s  decode %5.2f ms  lost %llu  late %llu"
-                     "  dropped %llu  stalls %llu  buffer %3.0f ms",
-                     static_cast<unsigned long long>(pictures), mbps, player.width, player.height,
-                     player.decoder.c_str(), decode_ms,
-                     static_cast<unsigned long long>(stream.frames.lost - last_stream_.frames.lost),
-                     static_cast<unsigned long long>(stream.frames.late - last_stream_.frames.late),
-                     static_cast<unsigned long long>(dropped(player, stream) -
-                                                     dropped(last_player_, last_stream_)),
-                     static_cast<unsigned long long>(decoded.stalls), ms(player.delay));
-        print_latency("latency", decoded.latency);
-        if (shown) print_latency("shown", shown->latency);
-        last_player_ = player;
-        last_stream_ = stream;
-        return true;
-    }
-
-    /// What was written out, and what of it the network could not bring in time.
-    void report_feed(const DataPlayerStats& feed) {
-        const DeliveryBuffer::Stats& now = feed.delivery;
-        const DeliveryBuffer::Stats& last = last_feed_.delivery;
-        std::fprintf(g_out, " feed %6.2f Mbit/s  lost %llu  late %llu  buffer %3.0f ms",
-                     double(feed.bytes - last_feed_.bytes) * 8 / 1e6,
-                     static_cast<unsigned long long>(now.lost - last.lost),
-                     static_cast<unsigned long long>(now.late - last.late), ms(feed.latency));
-        last_feed_ = feed;
-    }
-
-    /// The jitter buffer's delay and what it had to make up: lost frames
-    /// brought back by FEC, the rest concealed.
-    void report_sound() {
         const PlaybackStats heard = heard_.take_interval();
-        const std::optional<AudioPlayerStats> sound = call_.sound_stats();
-        if (!sound) return;
-        const JitterBuffer::Stats& jitter = sound->jitter;
-        const JitterBuffer::Stats& last = last_sound_.jitter;
-        std::fprintf(g_out,
-                     "        sound %3llu fps  delay %3.0f ms (target %3.0f)  lost %llu  late %llu"
-                     "  fec %4.0f ms  concealed %4.0f ms  breaks %llu",
-                     static_cast<unsigned long long>(jitter.played - last.played), ms(sound->delay),
-                     ms(sound->target), static_cast<unsigned long long>(jitter.lost - last.lost),
-                     static_cast<unsigned long long>(jitter.late - last.late),
-                     ms(sound->decoded.recovered - last_sound_.decoded.recovered),
-                     ms(sound->decoded.concealed - last_sound_.decoded.concealed),
-                     static_cast<unsigned long long>(heard.stalls));
-        print_latency("latency", heard.latency);
-        const PlayoutClockStats sync = call_.sync_stats();
-        if (sync.apart.count() > last_apart_) {
-            // Since the start: the clock keeps no intervals.
-            std::fprintf(g_out, "  apart %4.1f ms (p95 %4.1f, mean %+5.1f)  floor %3.0f ms",
-                         ms(sync.apart.percentile(0.5)), ms(sync.apart.percentile(0.95)),
-                         ms(sync.mean_apart), ms(sync.floor));
-            last_apart_ = sync.apart.count();
-        }
+        if (decoded.latency.count() == 0 && heard.latency.count() == 0) return;
+        std::fprintf(g_out, "       %-12s", "latency");
+        print_latency("pictures", decoded.latency);
+        if (shown) print_latency("shown", shown->latency);
+        print_latency("sound", heard.latency);
         std::fprintf(g_out, "\n");
-        last_sound_ = *sound;
     }
 
     void summarise_feed() {
@@ -378,6 +332,7 @@ private:
     }
 
     Call& call_;
+    CallMonitor monitor_;
     PlaybackMeter& decoded_;
     PlaybackMeter* const shown_;
     PlaybackMeter& heard_;
@@ -387,7 +342,6 @@ private:
     IncomingStreamStats last_stream_;
     AudioPlayerStats last_sound_;
     DataPlayerStats last_feed_;
-    uint64_t last_apart_ = 0;
     unsigned seconds_ = 1;
 };
 

@@ -7,7 +7,9 @@ add_library(ratcast_client STATIC
     src/audio_player.cpp
     src/audio_publisher.cpp
     src/call.cpp
+    src/call_monitor.cpp
     src/camera.cpp
+    src/cpu_meter.cpp
     src/data_player.cpp
     src/data_publisher.cpp
     src/playback_meter.cpp

@@ -17,6 +17,7 @@
 #include "common/arguments.h"
 #include "common/tool.h"
 #include "netsim/proxy.h"
+#include "ratcast/client/cpu_meter.h"
 
 using namespace ratcast;
 using namespace ratcast::netsim;

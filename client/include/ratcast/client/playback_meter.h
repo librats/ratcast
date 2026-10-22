@@ -3,7 +3,7 @@
 /**
  * @file playback_meter.h
  * @brief How playback looks to a viewer: latency, stalls, the wait for the
- * first picture.
+ * first picture, the pace pictures come at.
  *
  * Transport and decoder counters say what was lost; a viewer sees something
  * else — how late the pictures are and whether the picture stands still. The
@@ -45,6 +45,10 @@ public:
     /// The value a share `p` (0..1) of the samples lie at or below; zero when
     /// there are none.
     Duration percentile(double p) const noexcept;
+    /// What was added since `earlier`, a copy of this histogram taken before
+    /// (all of it, if this one started over since): its maximum exact when it
+    /// is this one's, within 3% otherwise.
+    LatencyHistogram since(const LatencyHistogram& earlier) const noexcept;
 
 private:
     static constexpr int kSubBits = 5;  ///< 32 buckets per power of two
@@ -58,6 +62,31 @@ private:
     uint64_t count_ = 0;
     uint64_t sum_us_ = 0;
     Duration max_{};
+};
+
+/// The pace pictures come at: the interval from one to the next — frame
+/// time — and how much each differs from the one before, its jitter. A source
+/// that sends at a steady rate shows in it how evenly it is played; a desktop
+/// sends only what changes.
+class FramePace {
+public:
+    /// A picture now.
+    void picture(Timestamp now) noexcept;
+    /// The next picture follows none: playing starts over.
+    void restart() noexcept;
+
+    const LatencyHistogram& intervals() const noexcept { return intervals_; }
+    /// The mean change from one interval to the next; zero before there are two.
+    Duration jitter() const noexcept;
+    /// What was added since `earlier`, a copy taken before.
+    FramePace since(const FramePace& earlier) const noexcept;
+
+private:
+    LatencyHistogram intervals_;
+    Duration changes_{};  ///< |interval - the one before|, added up
+    uint64_t changed_ = 0;
+    std::optional<Timestamp> last_;
+    std::optional<Duration> last_interval_;
 };
 
 struct PlaybackStats {

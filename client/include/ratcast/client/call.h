@@ -39,6 +39,7 @@
 #include <mutex>
 #include <optional>
 #include <string>
+#include <variant>
 #include <vector>
 
 #include "ratcast/client/audio_player.h"
@@ -127,6 +128,17 @@ struct CallHandlers {
     std::function<void(StreamId stream, Result<void> outcome)> source_ended = {};
 };
 
+/// What a publisher counts, whichever kind it is.
+using PublisherStats = std::variant<VideoPublisherStats, AudioPublisherStats, DataPublisherStats>;
+
+/// A stream this side sends: its publisher's view and its stream's.
+struct SentStreamStats {
+    StreamId stream = 0;
+    std::string label;
+    PublisherStats publisher;
+    OutgoingStreamStats session;
+};
+
 /// The video that plays: its player's view and its stream's.
 struct ReceivedVideoStats {
     VideoPlayerStats player;
@@ -170,6 +182,8 @@ public:
     Result<DataPublisher*> publish(std::unique_ptr<TsInput> input, DataPublisherConfig config);
     /// Stop the source and withdraw the stream.
     void unpublish(StreamId stream);
+    /// Every stream published, by id.
+    std::vector<SentStreamStats> sent_stats() const;
 
     // ── What plays ──────────────────────────────────────────────────────────
 
@@ -228,7 +242,7 @@ private:
     librats::Node node_;
     MediaService* media_ = nullptr;  ///< the node's
 
-    std::mutex publishing_;
+    mutable std::mutex publishing_;
     std::map<StreamId, std::unique_ptr<Published>> published_;
 
     PlayoutClock sync_;

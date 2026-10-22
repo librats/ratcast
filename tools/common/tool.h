@@ -2,18 +2,22 @@
 
 /**
  * @file tool.h
- * @brief What the tools share: the names they parse, Ctrl-C, logs, clocks and
- * CPU meters.
+ * @brief What the tools share: the names they parse, Ctrl-C, logs and clocks.
  */
 
 #include <chrono>
 #include <cstdint>
+#include <cstdio>
 #include <optional>
 #include <string_view>
 #include <utility>
 
 #include "ratcast/core/time.h"
 #include "ratcast/stream/stream_description.h"
+
+namespace ratcast {
+struct CallReport;
+}  // namespace ratcast
 
 namespace ratcast::tools {
 
@@ -41,26 +45,7 @@ public:
     static WallClock& instance() noexcept;
 };
 
-/// CPU time the process has used so far, every thread, user and system.
-Duration process_cpu_time();
-
-/// The process's CPU use as a share of one core (100 = one core busy): over
-/// each interval, and since it was made.
-class CpuMeter {
-public:
-    CpuMeter();
-    /// Since the previous call (or since made).
-    double take_interval();
-    double total() const;
-
-private:
-    using Wall = std::chrono::steady_clock;
-    static double percent(Duration cpu, Wall::duration wall);
-
-    Wall::time_point start_;
-    Wall::time_point last_;
-    Duration start_cpu_;
-    Duration last_cpu_;
-};
+/// A report of the call's monitor, its lines under "[  12s]" for `second`.
+void print_report(FILE* out, const CallReport& report, unsigned second);
 
 }  // namespace ratcast::tools

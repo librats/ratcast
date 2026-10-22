@@ -145,7 +145,8 @@ when it is first in the librats order or when nothing else in the stage can move
 
 The current stage and the next are broken into steps; later ones stay coarse until reached.
 Stages keep their numbers when their order changes (steps and `docs/bench.md` refer to them):
-the app (6) comes before watching together (5), as one viewer is enough for its first version.
+the app (6) comes before watching together (5), as one viewer is enough for its first version,
+and the call monitor (9) right after the app, before 5.
 Every step ends with tests (and benchmarks when it moves a number) and leaves the code in its
 final place and shape: stage 0 is a walking skeleton, not a throwaway prototype.
 
@@ -160,6 +161,7 @@ final place and shape: stage 0 is a walking skeleton, not a throwaway prototype.
 | **6. App** ✅ | Qt app MVP, one to one: invites, voice with AEC / NS, screen / window / app-audio share, camera; on Linux first, the other OSes as stage 4 reaches them | — |
 | **7. Conferences** | active speaker, last-N, grid, moderation, text chat | — |
 | **8. Beyond** | Android, cinema mode, HDR, polish | — |
+| **9. Call monitor** ← now | what a call does, as it does it: quality, bitrate, size, frame time, whether each end keeps up — a line a second in the console, a panel in the app | — |
 
 ### Stage 0 — Skeleton ✅
 
@@ -807,6 +809,41 @@ the voice with its echo cancelled by WebRTC's processing, the applications' soun
 the call between two people on two hosts (the desktop's dialog, two microphones) is left to its
 first real use. Left for later: cameras' MJPEG modes, one application's sound picked, the camera
 portal for sandboxes, the latency profiles (6.7).
+
+### Stage 9 — Call monitor ← now
+
+Between the app's first version and watching together: what a call does, while it does it, for
+whoever is in it and whoever debugs it. The library counts nearly everything already (each
+publisher's, player's and stream's stats, the path's samples); the tools print it a line a second
+and the app shows none of it. *Done when* the app, in a screen share and in a voice call, shows
+on a button a panel of what each stream does and how well, prints the same a line a second when
+asked, and the tools print it from the same code.
+
+- **9.1 `CallMonitor` in `client`** ✅: a snapshot of every count a call keeps — what it sends
+  (each published stream: its publisher's and the session's view), what it plays, the paths to
+  its peers, the process's CPU time — and a report of what changed between two snapshots, per
+  second: for each stream sent, its size, encoder, the source's and the encoder's frame rate,
+  bitrate against what rate control aims at, encode time, pictures skipped, keyframes, frames
+  dropped for a full queue; for the pictures played, size, decoder, frame rate, bitrate, decode
+  time, *frame time* (the interval between pictures handed on: median, p95, longest) and its
+  jitter (how much one interval differs from the one before), lost, late, dropped, the buffer;
+  for the sound, the jitter buffer's delay and target, lost, late, recovered by FEC, concealed;
+  A/V apart; per peer, round trip, bandwidth, queue, loss, expired live messages, repair. Each
+  part gets a quality — good, fair, poor — with the reason for the worst of it (an encoder
+  slower than the frames, pictures lost, sound made up, a path that loses), and the call the
+  worst of its parts. The report as text, one line a part; `ratcast-send` and `ratcast-recv`
+  print it (their summaries unchanged). The report from two snapshots is a plain function,
+  tested on made-up counts; the monitor over a real call between two nodes on loopback.
+  Done so: `Call::sent_stats()` (each published stream, its publisher's counts by kind and the
+  session's), `FramePace` in `VideoPlayerStats` (the pictures as the player hands them on),
+  `LatencyHistogram::since()` (counts that only grow, read per interval), `CpuMeter` moved from
+  the tools into `client`. The tools' lines a second are the report's now, `ratcast-recv`'s
+  latency from the pattern's stamps beneath it.
+- **9.2 The monitor in the app**: `ratcast --stats [S]` prints the report every S seconds (2);
+  `CallController` carries the latest report for QML and a quality; the window a button (and a
+  key) for a panel over the pictures with it, and the quality as a dot beside the button —
+  in a voice call too, the sound and the path alone. Perhaps: pictures counted as `VideoView`
+  draws them, not only as the player hands them on.
 
 ### Stage 7 — Conferences
 

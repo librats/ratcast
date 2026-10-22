@@ -32,6 +32,10 @@ Result<void> VideoPlayer::start() {
     schedule_.reset();
     held_.clear();
     decode_estimate_ = Duration::zero();
+    {
+        std::lock_guard lock(stats_mutex_);
+        stats_.pace.restart();
+    }
     thread_ = std::thread(&VideoPlayer::run, this);
     if (Result<void> subscribed = session_.subscribe(peer_, stream_); !subscribed) {
         {
@@ -184,6 +188,7 @@ void VideoPlayer::show_due() {
         {
             std::lock_guard lock(stats_mutex_);
             ++stats_.pictures;
+            stats_.pace.picture(now);
             stats_.delay = schedule_.delay();
             stats_.width = picture.width();
             stats_.height = picture.height();

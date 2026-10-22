@@ -59,6 +59,62 @@ Duration LatencyHistogram::percentile(double p) const noexcept {
     return max_;
 }
 
+LatencyHistogram LatencyHistogram::since(const LatencyHistogram& earlier) const noexcept {
+    if (earlier.count_ > count_) return *this;  // started over
+    LatencyHistogram added;
+    for (size_t b = 0; b < buckets_.size(); ++b)
+        added.buckets_[b] = buckets_[b] - earlier.buckets_[b];
+    added.count_ = count_ - earlier.count_;
+    added.sum_us_ = sum_us_ - earlier.sum_us_;
+    if (max_ > earlier.max_) {
+        added.max_ = max_;
+        return added;
+    }
+    // The top of the highest bucket added to, never past this one's maximum.
+    for (size_t b = buckets_.size(); b-- > 0;) {
+        if (added.buckets_[b] == 0) continue;
+        added.max_ = b == buckets_.size() - 1
+                         ? max_
+                         : std::min(Duration{static_cast<Duration::rep>(upper_bound(b))}, max_);
+        break;
+    }
+    return added;
+}
+
+// ── FramePace ───────────────────────────────────────────────────────────────
+
+void FramePace::picture(Timestamp now) noexcept {
+    if (last_) {
+        const Duration interval = now - *last_;
+        intervals_.add(interval);
+        if (last_interval_) {
+            changes_ += interval > *last_interval_ ? interval - *last_interval_
+                                                   : *last_interval_ - interval;
+            ++changed_;
+        }
+        last_interval_ = interval;
+    }
+    last_ = now;
+}
+
+void FramePace::restart() noexcept {
+    last_.reset();
+    last_interval_.reset();
+}
+
+Duration FramePace::jitter() const noexcept {
+    return changed_ == 0 ? Duration{} : changes_ / static_cast<Duration::rep>(changed_);
+}
+
+FramePace FramePace::since(const FramePace& earlier) const noexcept {
+    FramePace added;
+    added.intervals_ = intervals_.since(earlier.intervals_);
+    const bool started_over = earlier.changed_ > changed_;
+    added.changes_ = started_over ? changes_ : changes_ - earlier.changes_;
+    added.changed_ = started_over ? changed_ : changed_ - earlier.changed_;
+    return added;
+}
+
 // ── PlaybackMeter ───────────────────────────────────────────────────────────
 
 PlaybackMeter::PlaybackMeter(Clock& clock, Duration stall_after)

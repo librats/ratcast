@@ -28,6 +28,7 @@
 #include <string>
 #include <thread>
 
+#include "ratcast/client/playback_meter.h"
 #include "ratcast/client/playout_clock.h"
 #include "ratcast/client/playout_schedule.h"
 #include "ratcast/core/result.h"
@@ -62,6 +63,7 @@ struct VideoPlayerStats {
     Duration decode_time{};
     Duration max_decode_time{};
     Duration delay{};    ///< pictures are held back for, past the fastest frames
+    FramePace pace;      ///< of the pictures handed on
     uint32_t width = 0;  ///< of the last picture
     uint32_t height = 0;
     std::string decoder;  ///< the decoder in use, e.g. "libdav1d"

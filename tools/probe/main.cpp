@@ -15,6 +15,7 @@
 
 #include "common/arguments.h"
 #include "common/tool.h"
+#include "ratcast/client/cpu_meter.h"
 #include "ratcast/client/ts_probe.h"
 #include "ratcast/engine/ts_io.h"
 

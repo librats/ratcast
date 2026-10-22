@@ -1,0 +1,225 @@
+// The call monitor's reports from made-up counts: rates over the interval,
+// what counts started over, the quality of each part and of the call, the
+// lines a console shows. Over a real call: test_call.cpp.
+
+#include "ratcast/client/call_monitor.h"
+#include "ratcast/client/cpu_meter.h"
+
+#include <gtest/gtest.h>
+
+#include <chrono>
+
+using namespace ratcast;
+using namespace std::chrono_literals;
+
+namespace {
+
+/// Two snapshots a second apart.
+struct Snapshots {
+    CallSnapshot earlier{.at = Timestamp{} + 10s};
+    CallSnapshot now{.at = Timestamp{} + 11s};
+};
+
+SentStreamStats screen(uint64_t pictures, uint64_t frames, uint64_t bytes,
+                       Duration encode_time = {}) {
+    VideoPublisherStats video;
+    video.pictures = pictures;
+    video.frames = frames;
+    video.bytes = bytes;
+    video.encode_time = encode_time;
+    video.width = 1920;
+    video.height = 1080;
+    video.encoder = "libsvtav1";
+    OutgoingStreamStats session;
+    session.subscribers = 1;
+    session.bitrate = 5'000'000;
+    return {1, "screen", video, session};
+}
+
+ReceivedVideoStats pictures(uint64_t frames, Timestamp first, Duration step) {
+    ReceivedVideoStats stats;
+    stats.player.frames = frames;
+    stats.player.pictures = frames;
+    stats.player.decoder = "libdav1d";
+    for (uint64_t i = 0; i < frames; ++i) stats.player.pace.picture(first + step * int64_t(i));
+    stats.stream.frames.received = frames;
+    return stats;
+}
+
+AudioPlayerStats sound(uint64_t frames, Duration concealed) {
+    AudioPlayerStats stats;
+    stats.frames = frames;
+    stats.jitter.played = frames;
+    stats.jitter.concealed = concealed;
+    return stats;
+}
+
+librats::PathStats path(uint64_t delivered, uint64_t lost) {
+    librats::PathStats stats;
+    stats.valid = true;
+    stats.srtt_us = 20'000;
+    stats.bandwidth_bps = 10'000'000;
+    stats.bytes_delivered = delivered;
+    stats.bytes_lost = lost;
+    return stats;
+}
+
+}  // namespace
+
+TEST(CallMonitor, RatesAreOverTheInterval) {
+    Snapshots s;
+    s.earlier.sent = {screen(600, 600, 5'000'000, 3s)};
+    s.now.sent = {screen(660, 660, 5'500'000, 3s + 60 * 5ms)};
+    s.earlier.cpu = 2s;
+    s.now.cpu = 2s + 500ms;
+
+    const CallReport report = compare(s.earlier, s.now);
+    EXPECT_EQ(report.interval, 1s);
+    EXPECT_DOUBLE_EQ(report.cpu, 50);
+    ASSERT_EQ(report.sent.size(), 1u);
+    const SentStreamReport& sent = report.sent.front();
+    EXPECT_EQ(sent.label, "screen");
+    EXPECT_DOUBLE_EQ(sent.fps, 60);
+    EXPECT_DOUBLE_EQ(sent.source_fps, 60);
+    EXPECT_DOUBLE_EQ(sent.bitrate, 4'000'000);
+    EXPECT_EQ(sent.target, 5'000'000u);
+    EXPECT_EQ(sent.encode_time, 5ms);
+    EXPECT_EQ(sent.viewers, 1u);
+    EXPECT_EQ(sent.verdict.quality, Quality::Good);
+    EXPECT_EQ(report.verdict.quality, Quality::Good);
+}
+
+TEST(CallMonitor, AnEncoderSlowerThanThePicturesIsPoor) {
+    Snapshots s;
+    s.earlier.sent = {screen(0, 0, 0)};
+    s.now.sent = {screen(60, 60, 500'000, 60 * 12ms)};  // 12 ms of 16.7: near its limit
+    EXPECT_EQ(compare(s.earlier, s.now).sent.front().verdict.quality, Quality::Fair);
+
+    s.now.sent = {screen(60, 40, 500'000, 40 * 25ms)};
+    std::get<VideoPublisherStats>(s.now.sent.front().publisher).skipped = 20;
+    const CallReport report = compare(s.earlier, s.now);
+    EXPECT_EQ(report.sent.front().verdict.quality, Quality::Poor);
+    EXPECT_EQ(report.verdict.quality, Quality::Poor);
+    EXPECT_EQ(report.verdict.reason.rfind("sent screen: ", 0), 0u) << report.verdict.reason;
+}
+
+TEST(CallMonitor, FramesDroppedForAFullQueueArePoor) {
+    Snapshots s;
+    s.earlier.sent = {screen(0, 0, 0)};
+    s.now.sent = {screen(30, 30, 100'000)};
+    s.now.sent.front().session.backpressure_drops = 3;
+    const SentStreamReport sent = compare(s.earlier, s.now).sent.front();
+    EXPECT_EQ(sent.dropped, 3u);
+    EXPECT_EQ(sent.verdict.quality, Quality::Poor);
+    EXPECT_EQ(sent.verdict.reason, "frames dropped: the path is full");
+}
+
+TEST(CallMonitor, PicturesPlayedShowTheirFrameTime) {
+    Snapshots s;
+    const Timestamp start = Timestamp{} + 9s;
+    s.earlier.video = pictures(30, start, 33ms);
+    s.now.video = pictures(60, start, 33ms);
+    s.now.video->stream.bytes = 250'000;
+
+    const CallReport report = compare(s.earlier, s.now);
+    ASSERT_TRUE(report.video);
+    EXPECT_DOUBLE_EQ(report.video->fps, 30);
+    EXPECT_DOUBLE_EQ(report.video->bitrate, 2'000'000);
+    EXPECT_EQ(report.video->pace.intervals().count(), 30u);
+    EXPECT_GE(report.video->pace.intervals().percentile(0.5), 33ms);
+    EXPECT_LE(report.video->pace.intervals().percentile(0.5), 34ms);
+    EXPECT_EQ(report.video->pace.jitter(), Duration{});
+    EXPECT_EQ(report.video->verdict.quality, Quality::Good);
+
+    s.now.video->stream.frames.late = 2;
+    EXPECT_EQ(compare(s.earlier, s.now).video->verdict.quality, Quality::Fair);
+    s.now.video->stream.frames.lost = 1;
+    EXPECT_EQ(compare(s.earlier, s.now).verdict.reason, "pictures: frames lost");
+}
+
+TEST(CallMonitor, APlayerThatStartedOverCountsFromZero) {
+    Snapshots s;
+    s.earlier.video = pictures(3000, Timestamp{}, 33ms);
+    s.earlier.video->stream.frames.lost = 40;
+    s.now.video = pictures(20, Timestamp{} + 10s, 33ms);  // a new player: fewer frames
+
+    const CallReport report = compare(s.earlier, s.now);
+    EXPECT_DOUBLE_EQ(report.video->fps, 20);
+    EXPECT_EQ(report.video->lost, 0u);
+}
+
+TEST(CallMonitor, SoundMadeUpIsFairThenPoor) {
+    Snapshots s;
+    s.earlier.voice = sound(500, 100ms);
+    s.now.voice = sound(550, 110ms);  // 1% of the second
+    EXPECT_EQ(compare(s.earlier, s.now).voice->verdict.quality, Quality::Fair);
+    s.now.voice = sound(550, 140ms);  // 4%
+    const CallReport report = compare(s.earlier, s.now);
+    EXPECT_EQ(report.voice->concealed, 40ms);
+    EXPECT_EQ(report.voice->verdict.quality, Quality::Poor);
+    EXPECT_EQ(report.verdict.reason.rfind("voice: ", 0), 0u);
+}
+
+TEST(CallMonitor, APathIsJudgedByWhatItLosesAndLetsExpire) {
+    const PeerId peer = PeerId::from_hex(std::string(64, 'a')).value();
+    Snapshots s;
+    s.earlier.paths = {{peer, path(1'000'000, 0)}};
+    s.now.paths = {{peer, path(1'970'000, 30'000)}};  // 3% of what was resolved
+
+    CallReport report = compare(s.earlier, s.now);
+    ASSERT_EQ(report.paths.size(), 1u);
+    EXPECT_DOUBLE_EQ(report.paths.front().loss, 0.03);
+    EXPECT_EQ(report.paths.front().rtt, 20ms);
+    EXPECT_EQ(report.paths.front().verdict.quality, Quality::Fair);
+
+    s.now.paths.front().second.live_expired = 2;
+    report = compare(s.earlier, s.now);
+    EXPECT_EQ(report.paths.front().verdict.quality, Quality::Poor);
+    EXPECT_EQ(report.verdict.reason.rfind("path to ", 0), 0u);
+}
+
+TEST(CallMonitor, TheCallIsTheWorstOfItsParts) {
+    Snapshots s;
+    s.earlier.sent = {screen(0, 0, 0)};
+    s.now.sent = {screen(30, 30, 100'000)};
+    std::get<VideoPublisherStats>(s.now.sent.front().publisher).skipped = 1;  // fair
+    s.earlier.voice = sound(0, {});
+    s.now.voice = sound(50, 100ms);  // poor
+
+    const CallReport report = compare(s.earlier, s.now);
+    EXPECT_EQ(report.sent.front().verdict.quality, Quality::Fair);
+    EXPECT_EQ(report.verdict.quality, Quality::Poor);
+    EXPECT_EQ(report.verdict.reason, "voice: sound made up for frames that never came");
+}
+
+TEST(CallMonitor, ALineAPartAndTheCallLast) {
+    Snapshots s;
+    s.earlier.sent = {screen(0, 0, 0)};
+    s.now.sent = {screen(60, 60, 500'000, 60 * 5ms)};
+    s.now.video = pictures(30, Timestamp{} + 10s, 33ms);
+    s.now.sound = sound(50, {});
+
+    const std::vector<std::string> lines = report_lines(compare(s.earlier, s.now));
+    ASSERT_EQ(lines.size(), 4u);
+    EXPECT_NE(lines[0].find("sent screen"), std::string::npos) << lines[0];
+    EXPECT_NE(lines[0].find("1920x1080 libsvtav1"), std::string::npos) << lines[0];
+    EXPECT_NE(lines[0].find("4.00 Mbit/s (aim 5.00 Mbit/s)"), std::string::npos) << lines[0];
+    EXPECT_NE(lines[1].find("pictures"), std::string::npos) << lines[1];
+    EXPECT_NE(lines[1].find("frame  33."), std::string::npos) << lines[1];
+    EXPECT_NE(lines[2].find("sound"), std::string::npos) << lines[2];
+    EXPECT_EQ(lines[3].rfind("call", 0), 0u) << lines[3];
+    EXPECT_NE(lines[3].find("good"), std::string::npos) << lines[3];
+}
+
+TEST(CpuMeter, CountsTheProcessCpuTime) {
+    CpuMeter meter;
+    const Duration start = process_cpu_time();
+    const auto give_up = std::chrono::steady_clock::now() + 5s;
+    volatile uint64_t sink = 0;
+    while (process_cpu_time() - start < 20ms && std::chrono::steady_clock::now() < give_up) {
+        for (int i = 0; i < 100'000; ++i) sink = sink + i;
+    }
+    EXPECT_GE(process_cpu_time() - start, 20ms);
+    EXPECT_GT(meter.take_interval(), 0.0);
+    EXPECT_GT(meter.total(), 0.0);
+}

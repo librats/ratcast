@@ -4,17 +4,10 @@
 #include <charconv>
 #include <csignal>
 
+#include "ratcast/client/call_monitor.h"
 #include "ratcast/engine/video_codec.h"
 
 #include "librats/util/logger.h"
-
-// After librats: on Windows its headers bring in winsock2.h, which must come
-// before windows.h.
-#ifdef _WIN32
-#include <windows.h>
-#else
-#include <sys/resource.h>
-#endif
 
 namespace ratcast::tools {
 namespace {
@@ -77,41 +70,16 @@ WallClock& WallClock::instance() noexcept {
     return clock;
 }
 
-Duration process_cpu_time() {
-#ifdef _WIN32
-    FILETIME created, exited, kernel, user;
-    if (!GetProcessTimes(GetCurrentProcess(), &created, &exited, &kernel, &user)) return {};
-    const auto ticks = [](FILETIME t) {  // 100 ns each
-        return (uint64_t(t.dwHighDateTime) << 32) | t.dwLowDateTime;
-    };
-    return Duration{static_cast<Duration::rep>((ticks(kernel) + ticks(user)) / 10)};
-#else
-    rusage usage{};
-    if (getrusage(RUSAGE_SELF, &usage) != 0) return {};
-    const auto micros = [](timeval t) { return Duration{t.tv_sec * 1'000'000 + t.tv_usec}; };
-    return micros(usage.ru_utime) + micros(usage.ru_stime);
-#endif
-}
-
-CpuMeter::CpuMeter()
-    : start_(Wall::now()), last_(start_), start_cpu_(process_cpu_time()), last_cpu_(start_cpu_) {}
-
-double CpuMeter::take_interval() {
-    const Wall::time_point now = Wall::now();
-    const Duration cpu = process_cpu_time();
-    const double result = percent(cpu - last_cpu_, now - last_);
-    last_ = now;
-    last_cpu_ = cpu;
-    return result;
-}
-
-double CpuMeter::total() const {
-    return percent(process_cpu_time() - start_cpu_, Wall::now() - start_);
-}
-
-double CpuMeter::percent(Duration cpu, Wall::duration wall) {
-    const auto wall_us = std::chrono::duration_cast<Duration>(wall).count();
-    return wall_us > 0 ? 100.0 * double(cpu.count()) / double(wall_us) : 0;
+void print_report(FILE* out, const CallReport& report, unsigned second) {
+    bool first = true;
+    for (const std::string& line : report_lines(report)) {
+        if (first) {
+            std::fprintf(out, "[%4us] %s\n", second, line.c_str());
+        } else {
+            std::fprintf(out, "       %s\n", line.c_str());
+        }
+        first = false;
+    }
 }
 
 }  // namespace ratcast::tools

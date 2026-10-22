@@ -122,3 +122,52 @@ TEST(PlaybackMeter, IntervalsStartAfresh) {
     EXPECT_EQ(meter.total().pictures, 0u);
     EXPECT_FALSE(meter.total().first_picture);
 }
+
+TEST(LatencyHistogram, SinceAnEarlierCopyHoldsWhatWasAddedAfter) {
+    LatencyHistogram h;
+    for (int64_t v : {500, 40'000, 1'000}) h.add(us(v));
+    const LatencyHistogram earlier = h;
+    for (int64_t v : {2'000, 3'000}) h.add(us(v));
+
+    const LatencyHistogram added = h.since(earlier);
+    EXPECT_EQ(added.count(), 2u);
+    EXPECT_EQ(added.mean(), us(2'500));
+    EXPECT_GE(added.percentile(0.5), us(2'000));
+    EXPECT_LE(added.percentile(0.5), us(2'000 + 2'000 / 32));
+    // The largest is not the whole one's: the top of its bucket.
+    EXPECT_GE(added.max(), us(3'000));
+    EXPECT_LE(added.max(), us(3'000 + 3'000 / 32));
+
+    h.add(us(90'000));
+    EXPECT_EQ(h.since(earlier).max(), us(90'000)) << "a new largest is exact";
+    EXPECT_EQ(earlier.since(h).count(), earlier.count()) << "one that started over: all of it";
+}
+
+TEST(FramePace, MeasuresTheIntervalsAndHowMuchTheyChange) {
+    FramePace pace;
+    Timestamp at{};
+    pace.picture(at);
+    EXPECT_EQ(pace.intervals().count(), 0u);
+    for (int64_t step : {10'000, 30'000, 10'000, 30'000}) {
+        at += us(step);
+        pace.picture(at);
+    }
+    EXPECT_EQ(pace.intervals().count(), 4u);
+    EXPECT_EQ(pace.intervals().max(), us(30'000));
+    EXPECT_EQ(pace.jitter(), us(20'000));
+
+    // Starting over leaves out the gap before the next picture.
+    const FramePace earlier = pace;
+    pace.restart();
+    at += std::chrono::seconds(5);
+    pace.picture(at);
+    for (int i = 0; i < 3; ++i) {
+        at += us(16'000);
+        pace.picture(at);
+    }
+    const FramePace added = pace.since(earlier);
+    EXPECT_EQ(added.intervals().count(), 3u);
+    EXPECT_GE(added.intervals().max(), us(16'000));
+    EXPECT_LE(added.intervals().max(), us(16'000 + 16'000 / 32));
+    EXPECT_EQ(added.jitter(), Duration{});
+}

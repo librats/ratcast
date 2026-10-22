@@ -50,10 +50,14 @@ bool is_ipv6(std::string_view address) { return address.find(':') != std::string
 // ── Published streams ───────────────────────────────────────────────────────
 
 struct Call::Published {
+    explicit Published(std::string label) : label(std::move(label)) {}
     virtual ~Published() = default;
     virtual void stop() = 0;
+    virtual PublisherStats stats() const = 0;
     virtual void request_keyframe() {}
     virtual void set_bitrate(uint32_t) {}
+
+    const std::string label;
 };
 
 /// A source and its publisher: stopped (or destroyed) before the source.
@@ -63,9 +67,12 @@ struct Call::PublishedAs final : Published {
 
     template <typename Config>
     PublishedAs(std::unique_ptr<Source> source, MediaSession& session, Config config)
-        : source(std::move(source)), publisher(session, std::move(config)) {}
+        : Published(config.label),
+          source(std::move(source)),
+          publisher(session, std::move(config)) {}
 
     void stop() override { publisher.stop(); }
+    PublisherStats stats() const override { return publisher.stats(); }
     void request_keyframe() override {
         if constexpr (kVideo) publisher.request_keyframe();
     }
@@ -258,6 +265,17 @@ void Call::unpublish(StreamId stream) {
         published_.erase(it);
     }
     published->stop();
+}
+
+std::vector<SentStreamStats> Call::sent_stats() const {
+    std::vector<SentStreamStats> sent;
+    std::lock_guard lock(publishing_);
+    sent.reserve(published_.size());
+    for (const auto& [stream, published] : published_) {
+        sent.push_back({stream, published->label, published->stats(),
+                        media_->session().outgoing_stats(stream).value_or(OutgoingStreamStats{})});
+    }
+    return sent;
 }
 
 // ── What plays ──────────────────────────────────────────────────────────────
