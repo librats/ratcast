@@ -5,8 +5,10 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstring>
 #include <future>
 #include <limits>
+#include <map>
 #include <mutex>
 #include <optional>
 #include <span>
@@ -48,6 +50,9 @@ struct Candidate {
     /// 55 ms at 1080p) to be done alongside the encoder at work.
     bool dynamic_bitrate;
     void (*tune)(const VideoEncoderConfig&, AVCodecContext&, av::Dictionary&);
+    /// Some of its versions hold pictures back however tuned: checked once a
+    /// process, by encoding one (hands_back_at_once()), and passed over if so.
+    bool may_hold_back = false;
 };
 
 void tune_nvenc(const VideoEncoderConfig&, AVCodecContext&, av::Dictionary& options) {
@@ -120,7 +125,10 @@ constexpr Candidate kCandidates[] = {
     {"av1_nvenc", Codec::AV1, true, true, tune_nvenc},
     {"av1_qsv", Codec::AV1, true, true, tune_qsv},
     {"av1_amf", Codec::AV1, true, false, tune_amf},
-    {"libsvtav1", Codec::AV1, false, false, tune_svtav1},
+    // Before 2.3 (Ubuntu 24.04 has 1.7) it never waits for a picture in low
+    // delay, and FFmpeg asks for one only as it hands in the next: each comes
+    // back a picture or two later.
+    {"libsvtav1", Codec::AV1, false, false, tune_svtav1, true},
     {"libaom-av1", Codec::AV1, false, false, tune_aom},
     {"hevc_nvenc", Codec::H265, true, true, tune_nvenc},
     {"hevc_qsv", Codec::H265, true, true, tune_qsv},
@@ -403,6 +411,39 @@ private:
     FrameNumber next_number_ = 0;
 };
 
+/// Whether `candidate` hands a picture back as it takes it, as every encoder
+/// here must: true unless the table says it may not and one encoded says so.
+/// Asked once a process for each.
+bool hands_back_at_once(const Candidate& candidate, const AVCodec& codec, PixelFormat format) {
+    if (!candidate.may_hold_back) return true;
+    static std::mutex mutex;
+    static std::map<const Candidate*, bool> checked;
+    std::lock_guard lock(mutex);
+    if (const auto it = checked.find(&candidate); it != checked.end()) return it->second;
+
+    VideoEncoderConfig config;
+    config.codec = candidate.codec;
+    config.width = 64;
+    config.height = 64;
+    config.bitrate = 100'000;
+    FfmpegVideoEncoder encoder(candidate, codec, config, format);
+    MutableVideoFrame picture = MutableVideoFrame::allocate(format, config.width, config.height);
+    for (size_t i = 0; i < plane_count(format); ++i) {
+        for (size_t y = 0; y < plane_rows(format, i, config.height); ++y) {
+            std::memset(picture.plane(i).data + y * picture.plane(i).stride, 128,
+                        plane_row_bytes(format, i, config.width));
+        }
+    }
+    size_t out = 0;
+    const bool at_once = encoder.open() &&
+                         encoder.encode(std::move(picture).freeze(Timestamp{}), true,
+                                        [&](EncodedVideo) { ++out; }) &&
+                         out == 1;
+    if (!at_once) LOG_INFO("engine", candidate.name << " holds pictures back here: passed over");
+    checked.emplace(&candidate, at_once);
+    return at_once;
+}
+
 }  // namespace
 
 namespace backend {
@@ -426,7 +467,7 @@ Result<std::unique_ptr<VideoEncoder>> open_video_encoder(const VideoEncoderConfi
         const AVCodec* codec = avcodec_find_encoder_by_name(candidate.name);
         if (!codec) continue;
         const std::optional<PixelFormat> format = choose_input_format(*codec);
-        if (!format) continue;
+        if (!format || !hands_back_at_once(candidate, *codec, *format)) continue;
 
         auto encoder = std::make_unique<FfmpegVideoEncoder>(candidate, *codec, config, *format);
         if (encoder->open()) {

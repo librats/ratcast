@@ -104,10 +104,12 @@ TEST(ClientOverLibrats, StreamsAPatternBetweenTwoNodes) {
     video.stop();
     publisher = nullptr;
     playing = nullptr;
+    VideoPlayer* started = nullptr;
     {
         std::lock_guard lock(mutex);
-        if (player) player->stop();
+        started = player.get();
     }
+    if (started) started->stop();  // not under the lock: its sink takes it
     receiver_node.stop();
     sender_node.stop();
 
