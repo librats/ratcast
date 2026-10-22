@@ -1,5 +1,5 @@
-// Screen capture where the engine has none yet (Windows and macOS until their
-// backends land; Linux built without PipeWire).
+// Screen capture where the engine has none yet (macOS until its backend
+// lands; Linux built without PipeWire).
 
 #include "ratcast/engine/screen_capture.h"
 

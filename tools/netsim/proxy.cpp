@@ -3,6 +3,10 @@
 #include <algorithm>
 #include <utility>
 
+#ifdef _WIN32
+#include <timeapi.h>  // after librats' headers, which bring in windows.h
+#endif
+
 namespace ratcast::netsim {
 namespace {
 
@@ -68,6 +72,11 @@ Proxy::Stats Proxy::stats() const {
 }
 
 void Proxy::run() {
+#ifdef _WIN32
+    // Waits end on the system timer's tick, 15.6 ms by default: a path's delays
+    // would come that coarse. 1 ms while the proxy runs.
+    timeBeginPeriod(1);
+#endif
     std::vector<uint8_t> buffer(64 * 1024);
     std::vector<librats::PollResult> ready(64);
     while (!stopping_.load()) {
@@ -90,6 +99,9 @@ void Proxy::run() {
             }
         }
     }
+#ifdef _WIN32
+    timeEndPeriod(1);
+#endif
 }
 
 // Everything the socket holds: from a dialer on the listening socket, from the

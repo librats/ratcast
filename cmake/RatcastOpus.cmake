@@ -17,6 +17,7 @@ if(NOT RATCAST_WITH_OPUS STREQUAL "OFF")
     if(RATCAST_LIBOPUS_FOUND)
         set(RATCAST_OPUS_FOUND TRUE)
         add_library(ratcast::opus ALIAS PkgConfig::RATCAST_LIBOPUS)
+        ratcast_pkg_config_per_config(PkgConfig::RATCAST_LIBOPUS)
         # 1.5 tells whether a packet carries in-band FEC (opus_packet_has_lbrr),
         # which is what the decoder's stats tell recovery from concealment by.
         if(RATCAST_LIBOPUS_VERSION VERSION_GREATER_EQUAL 1.5)

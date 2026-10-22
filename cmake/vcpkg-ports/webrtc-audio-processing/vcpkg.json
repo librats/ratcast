@@ -1,0 +1,14 @@
+{
+  "name": "webrtc-audio-processing",
+  "version": "1.3",
+  "description": "WebRTC's AudioProcessing (AEC3, noise suppression, AGC2, voice detection) as freedesktop.org packages it",
+  "homepage": "https://gitlab.freedesktop.org/pulseaudio/webrtc-audio-processing",
+  "license": "BSD-3-Clause",
+  "dependencies": [
+    "abseil",
+    {
+      "name": "vcpkg-tool-meson",
+      "host": true
+    }
+  ]
+}

@@ -12,18 +12,26 @@ ratcast_add_test(engine_tests
         test_video_frame.cpp
     LIBS
         ratcast::engine
+    # A GPU's encoder sessions, the sound devices, the desktop, the cameras.
+    EXCLUSIVE "Encoders/*:Wasapi*:GraphicsCapture*:CameraTest.*"
 )
-# Private headers, for the parts tested on their own.
-target_include_directories(engine_tests PRIVATE "${PROJECT_SOURCE_DIR}/engine/src")
+# Private headers, for the parts tested on their own, and the tests' own.
+target_include_directories(engine_tests PRIVATE
+    "${PROJECT_SOURCE_DIR}/engine/src"
+    "${CMAKE_CURRENT_SOURCE_DIR}"
+)
 
 # For RATCAST_OPUS_HAS_LBRR: whether the decoder can tell recovery from concealment.
 if(RATCAST_OPUS_FOUND)
     target_link_libraries(engine_tests PRIVATE ratcast::opus)
 endif()
 
-# TS feeds are read and written through POSIX descriptors; elsewhere they are Unavailable.
-if(UNIX)
+# TS feeds are read and written on POSIX and Windows; elsewhere they are Unavailable.
+if(UNIX OR WIN32)
     target_sources(engine_tests PRIVATE test_ts_io.cpp)
+endif()
+if(WIN32)
+    target_link_libraries(engine_tests PRIVATE ws2_32)
 endif()
 
 if(RATCAST_PIPEWIRE_FOUND)
@@ -36,4 +44,11 @@ if(RATCAST_PIPEWIRE_FOUND)
         linux/test_video_node.cpp
     )
     target_link_libraries(engine_tests PRIVATE ratcast::pipewire ratcast::gio)
+elseif(WIN32)
+    target_sources(engine_tests PRIVATE
+        windows/test_camera_capture.cpp
+        windows/test_graphics_capture.cpp
+        windows/test_wasapi_audio.cpp
+    )
+    target_link_libraries(engine_tests PRIVATE mfplat mfuuid)
 endif()

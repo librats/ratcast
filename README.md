@@ -19,10 +19,41 @@ cmake --build --preset debug
 ctest --preset debug
 ```
 
-Requirements: CMake 3.21+, Ninja, a C++20 compiler, and for the app Qt 6.6+ with Qt Quick, Qt
+Requirements: CMake 3.22+, Ninja, a C++20 compiler, and for the app Qt 6.6+ with Qt Quick, Qt
 Shader Tools and QtGui's private headers, for QRhi (Debian/Ubuntu: `qt6-declarative-dev
 qt6-shadertools-dev qt6-base-private-dev`; the Qt installer: add the Qt Shader Tools module).
 Without them the app is skipped and the libraries still build.
+
+### Windows
+
+Visual Studio 2022 (MSVC) and the Windows SDK; the media libraries come from
+[vcpkg](https://vcpkg.io), WebRTC's AudioProcessing (echo cancellation) through the overlay port
+in this repository:
+
+```powershell
+vcpkg install ffmpeg[avcodec,avformat,swscale,nvcodec,dav1d,svt-av1] opus pkgconf `
+    webrtc-audio-processing --overlay-ports=cmake/vcpkg-ports --triplet x64-windows
+```
+
+Then configure with vcpkg's toolchain and Qt's prefix, e.g. in a `CMakeUserPresets.json`:
+
+```json
+{
+  "version": 6,
+  "configurePresets": [{
+    "name": "msvc", "generator": "Visual Studio 17 2022", "architecture": "x64",
+    "binaryDir": "${sourceDir}/build/${presetName}",
+    "toolchainFile": "C:/vcpkg/scripts/buildsystems/vcpkg.cmake",
+    "cacheVariables": { "CMAKE_PREFIX_PATH": "C:/Qt/6.10.3/msvc2022_64" }
+  }],
+  "buildPresets": [{ "name": "msvc-debug", "configurePreset": "msvc", "configuration": "Debug" }],
+  "testPresets": [{ "name": "msvc-debug", "configurePreset": "msvc", "configuration": "Debug" }]
+}
+```
+
+Screens and windows are captured through Windows.Graphics.Capture (Windows 10 1903+), sound
+through WASAPI (the applications' sound without the call's own needs Windows 10 2004+), cameras
+through Media Foundation.
 
 Already cloned without `--recursive`: `git submodule update --init --recursive`.
 

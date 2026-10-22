@@ -155,7 +155,7 @@ final place and shape: stage 0 is a walking skeleton, not a throwaway prototype.
 | **1. A stream that holds** ✅ | one video stream to a few viewers plays on every emulated path: rate control, fast joining, smooth playback on lossy paths | L2 (c) ✅, L3 ✅; L2 (a, b) put off |
 | **2. Sound** ✅ | audio, A/V sync; latency profiles put off to stages 5 and 6 | L4 ✅ |
 | **3. Standalone library** ✅ | MPEG-TS in and out, `rats://` URLs, a benchmark against librist and SRT, C API | — |
-| **4. Platforms** — put off | GPU paths and hardware codecs; Windows and macOS capture; netsim ✅ | — |
+| **4. Platforms** — in part | GPU paths and hardware codecs; Windows ✅ (GPU path open) and macOS capture; netsim ✅ | — |
 | **5. Watch together** — after 6 | one-to-many: forwarding tree, simulcast / SVC, SFU, SFrame E2EE, synchronized playout | L5 |
 | **6. App** ← now | Qt app MVP, one to one: invites, voice with AEC / NS, screen / window / app-audio share, camera; on Linux first, the other OSes as stage 4 reaches them | — |
 | **7. Conferences** | active speaker, last-N, grid, moderation, text chat | — |
@@ -571,7 +571,57 @@ encoding, and a 1440p60 game is captured and encoded without a CPU copy.
 - **4.2 Hardware encoders on real machines:** NVENC, QSV, AMF, VideoToolbox — in-band parameter
   sets, bitrate changed in flight (no keyframe per change, 1.1), intra-refresh in place of
   keyframes and LTR / reference invalidation where the encoder has them (from 1.3).
-- **4.3 Windows:** Windows.Graphics.Capture + D3D11 → hardware encoder.
+- **4.3 Windows:** in two steps.
+  - **(a) The engine on Windows** ✅: every backend Linux has, on the system's own APIs
+    (`engine/src/windows/`), so that the tools and the app run there as on Linux, on the software
+    codecs and NVENC. Sound through WASAPI: shared-mode streams of float samples in the format
+    asked for, activated by the default device's interface path so that they follow the default
+    as the user changes it, each on a thread of its own woken by the device, in the multimedia
+    scheduler's Pro Audio class; capture times from the device's performance-counter stamps,
+    play times from the audio clock's position and never before what is queued has gone through
+    the audio engine (which says nothing of its own latency once it converts: a device period at
+    least). The microphone; the system's sound, a loopback of the default output; the
+    applications', a process loopback that leaves out this process's tree (Windows 10 2004 on);
+    and a node is a process id, its tree's sound. A loopback hears nothing while nothing plays:
+    silence in its place once the device has been quiet for three periods, so the blocks run on
+    as Linux's do. Screens and windows through Windows.Graphics.Capture: the system's picker,
+    which offers both whatever the options say, a restore token naming a screen by its display
+    device and a window by its program and class; BGRA frames copied out of the GPU into memory
+    the CPU reads and converted by `convert_frame()`; the pointer drawn in, no yellow border
+    (Windows 11), no more pictures drawn than taken (24H2). The frame pool grows with a window,
+    never shrinks, and asks the window to draw itself again into the larger frames; a window of
+    this process's own says nothing when it closes (the item's Closed comes for another's), so a
+    captured window is looked at five times a second. Cameras through Media Foundation: an
+    asynchronous source reader, the mode taken by Linux's rule, YUY2, NV12, I420 and RGB32 (bottom
+    row first, turned the right way up) into 4:2:0, the device's stamp as the capture time; a node
+    is a hash of the device's path. MPEG-TS feeds over Winsock, standard input and output and
+    files, a file played by its PCR on a high-resolution waitable timer (Sleep steps in 15.6 ms).
+    Voice processing: WebRTC AudioProcessing 1.3 through a vcpkg overlay port
+    (`cmake/vcpkg-ports`), its tests passing unchanged. Windows' own Voice Capture DSP was tried
+    first and dropped: 16-bit mono at 22 kHz at most out, a crash in filter mode with noise
+    suppression or gain control asked for, no resources with voice detection. A Visual Studio
+    build links each vcpkg library's build by configuration (`RatcastPkgConfig.cmake`):
+    pkg-config found the debug ones for Release too, which mixes MSVC's two runtimes.
+    Tested on a Windows 11 machine with an NVIDIA GPU: WASAPI against its own playback (a
+    process's tone heard in blocks that follow on, a process exiting ending its capture, this
+    process left out of the applications' sound and heard when another is), screen capture
+    against a window the test draws (its colour, its size as it grows, ending as it closes, no
+    faster than asked, found again by its token) and the primary screen, each camera format out
+    of Media Foundation buffers and the camera there (a capture card at 1080p59.94), the TS
+    tests now on Windows too. Tests that use what the machine has one of — sound devices, the
+    desktop, cameras, a GPU's encoder sessions — run one at a time
+    (`ratcast_add_test(... EXCLUSIVE ...)`): side by side, NVENC refused sessions. The app starts;
+    `ratcast-send --source screen --audio apps` to `ratcast-recv` carries the screen at 1080p
+    through av1_nvenc with the applications' sound in step to ~1 ms. `bench/netem.py --netsim`
+    runs on Windows (Ctrl-Break stops the tools there), and netsim waits on a 1 ms timer there.
+    Left out: Media Foundation's encoders. h264_mf, Windows' software H.264, holds a picture back
+    even in low-latency mode, and a GPU's through Media Foundation answers asynchronously; Intel's
+    and AMD's encoders come through QSV and AMF in an FFmpeg built with them. On a loaded
+    machine, under ctest's full parallelism, netsim's and the audio pipeline's real-time tests
+    miss their marks now and then, as before; one at a time they pass.
+  - **(b) The GPU path:** Windows.Graphics.Capture's D3D11 textures into a hardware encoder with
+    no copy through the CPU (frames that carry a texture, FFmpeg's D3D11 hardware frames), for
+    1440p60 and up: the stage's *done when*.
 - **4.4 macOS:** ScreenCaptureKit + VideoToolbox.
 - **4.5 netsim** ✅ (from stage 3): `ratcast-netsim`, a UDP proxy whose two directions are
   emulated links following netem's rules — loss at random or in Gilbert-Elliott bursts, a queue
@@ -589,7 +639,8 @@ encoding, and a 1440p60 game is captured and encoded without a CPU copy.
 Put off after 4.5: 4.1–4.4 need machines the dev VM is not — an Intel or AMD GPU with VA-API,
 NVIDIA, Windows, a Mac — and are taken up a step at a time as one is at hand. The app (stage 6)
 goes ahead meanwhile on Linux with the software codecs, which carry a one-to-one call and a
-1080p screen; high resolutions and the other OSes come to it with these steps.
+1080p screen; high resolutions and the other OSes come to it with these steps. 4.3 (a) came with
+a Windows machine at hand: the app and the tools run there now.
 
 ### Stage 5 — Watch together
 
@@ -767,6 +818,7 @@ and the list is in priority order:
 | 11 | L12 | Live outcomes and ranks in the C ABI | optional | other bindings | when one needs them |
 | 12 | L13 | Fewer ACKs for live data | optional | feedback on a narrow uplink | tried: needs receive timestamps |
 | 13 | L14 | A faster ChaCha20-Poly1305 | optional | — | ~0.5% of a core at 8 Mbit/s |
+| 14 | L17 | A finer timer on Windows | optional | 4.3 | tried: no gain measured |
 
 Where it stands after L1, L2 (c) and L3: the steady state holds — one-way delay + ~18 ms on a
 clean path, 59–60 fps under 1–5% loss, bursts, jitter and reordering, and BBR's estimate follows
@@ -892,6 +944,14 @@ the feed), once followed by the estimate falling to 1.1 Mbit/s. Either a ProbeRT
 smaller than the live floor (`cc::live_floor_window()`, as Startup's since L2 (b)), or the skip
 taken while samples stay within the path's own swing of the minimum. `docs/bench.md`, "Why
 ratcast loses on `reorder`: ProbeRTT".
+
+**L17 — A finer timer on Windows.** *Optional; tried, put off.* A wait on Windows ends on the
+system timer's tick, 15.6 ms by default, so the reactor's timeouts — pacing, loss timers, a live
+message's deadline — may come that late. Tried as `timeBeginPeriod(1)` while a reactor runs:
+through netsim (4.3; medians of three, 1080p60 AV1 with a tone) `jitter`'s p50 went 104 → 100
+ms and `loss-2`'s 127 → 113 ms, but `cap-6`'s 86 → 127 ms, and the whole test suite run side by
+side missed more real-time marks with it than without. Back when a measurement shows a gain; a
+high-resolution waitable timer posting to the IOCP is the other way to it.
 
 **L14 — A faster ChaCha20-Poly1305.** *Optional.* The vendored portable code costs ~15
 instructions a byte, a third of librats' user time — still ~0.5% of a core at 8 Mbit/s, so

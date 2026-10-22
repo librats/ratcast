@@ -9,7 +9,7 @@
  * opens the computer's sound beside it: what the applications play, never this
  * one's own, so that a call's voices do not go back out with the film; publish_screen_share() puts
  * both on a call. The desktop's choice is kept in a data directory, so the next share of the same
- * kind asks no more where the desktop allows that (GNOME, KDE).
+ * kind asks no more where the desktop allows that (GNOME, KDE, Windows).
  *
  * The pictures go as a rate-controlled video stream (1), the sound as music:
  * stereo, full band, no DTX or FEC (2).

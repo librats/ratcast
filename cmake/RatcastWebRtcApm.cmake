@@ -1,7 +1,9 @@
 # WebRTC's AudioProcessing for the engine's voice processing — echo
 # cancellation (AEC3), noise suppression, gain control — found through
 # pkg-config as the freedesktop.org build ships it (BSD; Debian/Ubuntu:
-# libwebrtc-audio-processing-dev).
+# libwebrtc-audio-processing-dev; on Windows, vcpkg with the overlay port in
+# cmake/vcpkg-ports: `vcpkg install webrtc-audio-processing
+# --overlay-ports=cmake/vcpkg-ports`).
 #
 # RATCAST_WITH_WEBRTC_APM: AUTO (use it if found), ON (require it), OFF (never).
 # Defines the imported target ratcast::webrtc_apm when it is used.
@@ -20,6 +22,7 @@ if(NOT RATCAST_WITH_WEBRTC_APM STREQUAL "OFF")
     if(RATCAST_LIBWEBRTC_APM_FOUND)
         set(RATCAST_WEBRTC_APM_FOUND TRUE)
         add_library(ratcast::webrtc_apm ALIAS PkgConfig::RATCAST_LIBWEBRTC_APM)
+        ratcast_pkg_config_per_config(PkgConfig::RATCAST_LIBWEBRTC_APM)
         message(STATUS "WebRTC AudioProcessing: ${RATCAST_LIBWEBRTC_APM_VERSION}")
     elseif(RATCAST_WITH_WEBRTC_APM STREQUAL "ON")
         message(FATAL_ERROR "RATCAST_WITH_WEBRTC_APM=ON but webrtc-audio-processing-1 was not found")

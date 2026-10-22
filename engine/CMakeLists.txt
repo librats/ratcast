@@ -70,6 +70,16 @@ if(RATCAST_PIPEWIRE_FOUND)
         src/linux/screen_capture.cpp
     )
     target_link_libraries(ratcast_engine PRIVATE ratcast::pipewire ratcast::gio)
+elseif(WIN32)
+    target_sources(ratcast_engine PRIVATE
+        src/windows/audio_device.cpp
+        src/windows/camera_capture.cpp
+        src/windows/graphics_capture.cpp
+        src/windows/screen_capture.cpp
+        src/windows/wasapi_audio.cpp
+    )
+    target_link_libraries(ratcast_engine PRIVATE
+        avrt d3d11 dwmapi dxgi mf mfplat mfreadwrite mfuuid mmdevapi ole32 windowsapp)
 else()
     target_sources(ratcast_engine PRIVATE
         src/audio/audio_device_unavailable.cpp
@@ -80,6 +90,9 @@ endif()
 
 if(UNIX)
     target_sources(ratcast_engine PRIVATE src/posix/ts_io.cpp)
+elseif(WIN32)
+    target_sources(ratcast_engine PRIVATE src/windows/ts_io.cpp)
+    target_link_libraries(ratcast_engine PRIVATE ws2_32)
 else()
     target_sources(ratcast_engine PRIVATE src/ts/ts_io_unavailable.cpp)
 endif()

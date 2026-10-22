@@ -51,6 +51,9 @@ std::optional<std::pair<uint32_t, uint32_t>> parse_size(std::string_view text) {
 void catch_interrupts() {
     std::signal(SIGINT, on_interrupt);
     std::signal(SIGTERM, on_interrupt);
+#ifdef SIGBREAK
+    std::signal(SIGBREAK, on_interrupt);  // Windows: Ctrl-Break, what scripts can send
+#endif
 #ifdef SIGPIPE
     std::signal(SIGPIPE, SIG_IGN);  // a reader of a feed out that went: a failed write
 #endif

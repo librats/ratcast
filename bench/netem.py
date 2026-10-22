@@ -218,10 +218,10 @@ class Netsim:
         changes = "; ".join(f"{at} {options}" for at, options in scenario.changes)
         self.log = open(f"{stem}.netsim.log", "w+")
         self.process = subprocess.Popen(
-            [str(args.bin / "ratcast-netsim"), "--listen", f"{LOOPBACK}:{NETSIM_PORT}", "--to",
+            [str(tool(args.bin, "ratcast-netsim")), "--listen", f"{LOOPBACK}:{NETSIM_PORT}", "--to",
              f"{LOOPBACK}:{PORT}", "--forward", scenario.forward, "--backward", scenario.backward,
              *(["--changes", changes] if changes else [])],
-            stdout=self.log, stderr=subprocess.STDOUT, text=True)
+            stdout=self.log, stderr=subprocess.STDOUT, text=True, **INTERRUPTIBLE)
         deadline = time.monotonic() + 5
         while "netsim: dial" not in Path(self.log.name).read_text():
             if self.process.poll() is not None or time.monotonic() > deadline:
@@ -267,13 +267,13 @@ def run_once(scenario, args, log_dir, index):
     try:
         with open(f"{stem}.send.log", "w+") as send_log:
             sender = subprocess.Popen(
-                [str(args.bin / "ratcast-send"), "--source", "pattern", "--size", args.size,
+                [str(tool(args.bin, "ratcast-send")), "--source", "pattern", "--size", args.size,
                  "--bitrate", str(args.bitrate), "--fps", str(args.fps), "--latency",
                  str(args.latency), "--codec", args.codec, "--port", str(PORT),
                  *(["--audio", "tone"] if args.audio else []),
                  *(["--keyframe-every", str(args.keyframe_every)] if args.keyframe_every else []),
                  *args.send_args],
-                stdout=send_log, stderr=subprocess.STDOUT, text=True)
+                stdout=send_log, stderr=subprocess.STDOUT, text=True, **INTERRUPTIBLE)
             try:
                 deadline = time.monotonic() + 15
                 while "viewers connect" not in Path(send_log.name).read_text():
@@ -285,7 +285,7 @@ def run_once(scenario, args, log_dir, index):
                 time.sleep(args.join_after)
                 path.viewer_started()
                 viewer = subprocess.run(
-                    path.viewer([str(args.bin / "ratcast-recv"), "--connect", path.dial(),
+                    path.viewer([str(tool(args.bin, "ratcast-recv")), "--connect", path.dial(),
                                  "--headless", "--duration", str(args.duration), *args.recv_args]),
                     stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
                     timeout=args.duration + 30)
@@ -297,8 +297,18 @@ def run_once(scenario, args, log_dir, index):
     return parse_summary(Path(f"{stem}.send.log").read_text()), parse_summary(viewer.stdout)
 
 
+def tool(directory, name):
+    """A tool's path: its name, and on Windows the .exe it has."""
+    return directory / (f"{name}.exe" if os.name == "nt" else name)
+
+
+# Processes stop() can interrupt: on Windows only Ctrl-Break reaches one, and
+# only one in a process group of its own.
+INTERRUPTIBLE = {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP} if os.name == "nt" else {}
+
+
 def stop(process):
-    process.send_signal(signal.SIGINT)
+    process.send_signal(signal.CTRL_BREAK_EVENT if os.name == "nt" else signal.SIGINT)
     try:
         process.wait(timeout=15)
     except subprocess.TimeoutExpired:
@@ -323,9 +333,9 @@ def feed_commands(transport, args, path):
     latency = str(args.latency)
     dial = path.dial()
     if transport == "ratcast":
-        return ([str(args.bin / "ratcast-send"), "--input", FEED_IN, "--port", str(PORT),
+        return ([str(tool(args.bin, "ratcast-send")), "--input", FEED_IN, "--port", str(PORT),
                  "--latency", latency, *args.send_args],
-                [str(args.bin / "ratcast-recv"), f"rats://{dial}", "--output", FEED_OUT,
+                [str(tool(args.bin, "ratcast-recv")), f"rats://{dial}", "--output", FEED_OUT,
                  *args.recv_args])
     if transport == "srt":
         tool = str(args.peers / "srt-live-transmit")
@@ -349,19 +359,20 @@ def run_feed(scenario, transport, args, log_dir, index):
 
     def start(name, command):
         started[name] = time.monotonic()
-        return subprocess.Popen(command, stdout=logs[name], stderr=subprocess.STDOUT, text=True)
+        return subprocess.Popen(command, stdout=logs[name], stderr=subprocess.STDOUT, text=True,
+                                **INTERRUPTIBLE)
 
     processes = []
     try:
         sender = start("send", send_command)
         processes.append(sender)
-        processes.append(start("probe", [str(args.bin / "ratcast-tsprobe"), "send", FEED_IN,
+        processes.append(start("probe", [str(tool(args.bin, "ratcast-tsprobe")), "send", FEED_IN,
                                          "--bitrate", str(args.bitrate)]))
         # The viewer joins a feed that is already going.
         time.sleep(args.join_after)
         if sender.poll() is not None:
             raise RuntimeError(f"the sender did not start, see {stem}.send.log")
-        meter = start("meter", path.viewer([str(args.bin / "ratcast-tsprobe"), "meter", FEED_OUT,
+        meter = start("meter", path.viewer([str(tool(args.bin, "ratcast-tsprobe")), "meter", FEED_OUT,
                                             "--duration", str(args.duration)]))
         processes.append(meter)
         receiver = start("recv", path.viewer(recv_command))
@@ -531,15 +542,15 @@ def main():
     transports = args.transport.split(",")
     if not set(transports) <= set(TRANSPORTS):
         parser.error(f"--transport: of {', '.join(TRANSPORTS)}, please")
-    for tool in ("ratcast-send", "ratcast-recv", *(["ratcast-tsprobe"] if args.feed else []),
+    for name in ("ratcast-send", "ratcast-recv", *(["ratcast-tsprobe"] if args.feed else []),
                  *(["ratcast-netsim"] if args.netsim else [])):
-        if not (args.bin / tool).exists():
-            parser.error(f"no {tool} in {args.bin}: build the release preset, or pass --bin")
+        if not tool(args.bin, name).exists():
+            parser.error(f"no {name} in {args.bin}: build the release preset, or pass --bin")
     if args.feed:
         peers = {"srt": ["srt-live-transmit"], "rist": ["ristsender", "ristreceiver"]}
-        for tool in (t for transport in transports for t in peers.get(transport, [])):
-            if not (args.peers / tool).exists():
-                parser.error(f"no {tool} in {args.peers}: run bench/peers.sh, or pass --peers")
+        for name in (t for transport in transports for t in peers.get(transport, [])):
+            if not (args.peers / name).exists():
+                parser.error(f"no {name} in {args.peers}: run bench/peers.sh, or pass --peers")
 
     if not args.netsim:
         # Into namespaces of our own: the process starts over inside them.

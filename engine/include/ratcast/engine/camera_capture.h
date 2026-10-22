@@ -6,7 +6,9 @@
  *
  * The cameras are the system's video sources that say they are one — on
  * Linux PipeWire's nodes of a camera's role, which V4L2 and libcamera
- * devices both appear as. A camera sends pictures at its own pace in one of
+ * devices both appear as; on Windows Media Foundation's video capture
+ * devices, whose node is a hash of the device's path, the same from one
+ * listing to the next. A camera sends pictures at its own pace in one of
  * its modes: the first it lists that is no larger than asked and runs at 15
  * pictures a second or more, else the first no larger, else its first. What
  * it sends — packed 4:2:2 (YUY2), 4:2:0, or RGB — comes converted into the

@@ -19,10 +19,14 @@ endif()
 
 include(GoogleTest)
 
-# ratcast_add_test(<name> SOURCES <files...> LIBS <targets...> [OWN_MAIN])
+# ratcast_add_test(<name> SOURCES <files...> LIBS <targets...> [OWN_MAIN]
+#                  [EXCLUSIVE <gtest filter>])
 # OWN_MAIN: the sources have main() (a Qt test makes its application first).
+# EXCLUSIVE: the tests that use what the machine has one of — its sound
+# devices, its desktop, its GPU's encoder sessions — which run one at a time,
+# never beside each other, whichever executable they are in.
 function(ratcast_add_test name)
-    cmake_parse_arguments(ARG "OWN_MAIN" "" "SOURCES;LIBS" ${ARGN})
+    cmake_parse_arguments(ARG "OWN_MAIN" "EXCLUSIVE" "SOURCES;LIBS" ${ARGN})
     add_executable(${name} ${ARG_SOURCES})
     if(ARG_OWN_MAIN)
         target_link_libraries(${name} PRIVATE ${ARG_LIBS} GTest::gtest)
@@ -30,5 +34,11 @@ function(ratcast_add_test name)
         target_link_libraries(${name} PRIVATE ${ARG_LIBS} GTest::gtest_main)
     endif()
     ratcast_target_defaults(${name})
-    gtest_discover_tests(${name} DISCOVERY_MODE PRE_TEST)
+    if(ARG_EXCLUSIVE)
+        gtest_discover_tests(${name} DISCOVERY_MODE PRE_TEST TEST_FILTER "-${ARG_EXCLUSIVE}")
+        gtest_discover_tests(${name} DISCOVERY_MODE PRE_TEST TEST_FILTER "${ARG_EXCLUSIVE}"
+            PROPERTIES RESOURCE_LOCK ratcast_machine)
+    else()
+        gtest_discover_tests(${name} DISCOVERY_MODE PRE_TEST)
+    endif()
 endfunction()

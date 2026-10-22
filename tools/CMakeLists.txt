@@ -36,6 +36,9 @@ add_library(ratcast_netsim STATIC
 )
 target_include_directories(ratcast_netsim PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
 target_link_libraries(ratcast_netsim PUBLIC ratcast::ratcast librats::rats)
+if(WIN32)
+    target_link_libraries(ratcast_netsim PRIVATE winmm)  # timeBeginPeriod: 1 ms waits
+endif()
 ratcast_target_defaults(ratcast_netsim)
 
 add_executable(ratcast_netsim_tool netsim/main.cpp)

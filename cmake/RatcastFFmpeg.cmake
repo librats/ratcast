@@ -18,6 +18,7 @@ if(NOT RATCAST_WITH_FFMPEG STREQUAL "OFF")
     endif()
     if(RATCAST_FFMPEG_FOUND)
         add_library(ratcast::ffmpeg ALIAS PkgConfig::RATCAST_FFMPEG)
+        ratcast_pkg_config_per_config(PkgConfig::RATCAST_FFMPEG)
         message(STATUS "FFmpeg: libavcodec ${RATCAST_FFMPEG_libavcodec_VERSION}")
     elseif(RATCAST_WITH_FFMPEG STREQUAL "ON")
         message(FATAL_ERROR "RATCAST_WITH_FFMPEG=ON but FFmpeg 6+ (libavcodec, libavformat, "

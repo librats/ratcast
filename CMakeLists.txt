@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.21)
+cmake_minimum_required(VERSION 3.22)
 
 project(ratcast
     VERSION 0.1.0
@@ -26,6 +26,7 @@ option(RATCAST_BUILD_BENCH "Build benchmarks (bench/)" OFF)
 option(RATCAST_BUILD_TOOLS "Build ratcast-send and ratcast-recv (tools/)" ON)
 
 include(RatcastCompiler)
+include(RatcastPkgConfig)
 include(RatcastLibrats)
 
 if(RATCAST_BUILD_TESTS)

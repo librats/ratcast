@@ -13,7 +13,9 @@
  * Both ask the system for small device buffers (`latency`, 10 ms by default)
  * and convert to and from the format asked for: rate, channels and sample
  * format are the system's to match, never the caller's. On Linux they are
- * PipeWire streams, which need no permission beyond the session's.
+ * PipeWire streams, which need no permission beyond the session's; on Windows
+ * WASAPI streams, which follow the default device as the user changes it and
+ * need the user's leave for the microphone.
  */
 
 #include <cstdint>
@@ -45,7 +47,8 @@ enum class AudioCaptureSource : uint8_t {
 struct AudioCaptureOptions {
     AudioFormat format{48'000, 1};
     /// What to capture: 0 for `source`, or a device's or an application's
-    /// node (on Linux a PipeWire node id), whose sound the capture ends with.
+    /// node (on Linux a PipeWire node id; on Windows a process id: its sound
+    /// and its children's), whose sound the capture ends with.
     uint32_t node = 0;
     AudioCaptureSource source = AudioCaptureSource::Microphone;
     /// With Applications: the process whose sound is left out; 0 for this one.
@@ -64,7 +67,8 @@ Result<std::unique_ptr<AudioSource>> open_audio_capture(const AudioCaptureOption
 struct AudioOutputOptions {
     AudioFormat format{48'000, 2};
     /// Where to play: 0 for the default output, which it follows as that
-    /// changes, or a device's node.
+    /// changes, or a device's node (on Linux; Windows plays to the default
+    /// only, and fails to start with another).
     uint32_t node = 0;
     Duration latency = std::chrono::milliseconds(10);
 };

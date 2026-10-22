@@ -5,13 +5,15 @@
  * @brief Capturing a screen or a single window.
  *
  * What is captured is the user's choice, made in the system's own picker —
- * on Linux the desktop portal's dialog, the only way under Wayland — so
- * opening a capture can take as long as the user takes to choose. Run it off
- * the UI thread; `stop` calls it off.
+ * on Linux the desktop portal's dialog, the only way under Wayland; on
+ * Windows Windows.Graphics.Capture's, which offers screens and windows alike
+ * whatever the options say — so opening a capture can take as long as the
+ * user takes to choose. Run it off the UI thread; `stop` calls it off.
  *
  * A restore token from an earlier capture stands in for the picker: pass it
  * back to capture the same screen or window again without asking, where the
- * system supports that (GNOME and KDE do).
+ * system supports that (GNOME and KDE do; on Windows a token names a screen by
+ * its display, a window by its program and class).
  *
  * Pictures come converted into the format asked for, with the pointer drawn
  * in, no faster than `max_frame_rate`. A compositor sends a picture only when

@@ -5,9 +5,14 @@
 
 #include <gtest/gtest.h>
 
+#ifdef _WIN32
+#include <process.h>
+#include <winsock2.h>
+#else
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <unistd.h>
+#endif
 
 #include <array>
 #include <atomic>
@@ -57,16 +62,29 @@ Packet packet(uint16_t pid, uint8_t fill, std::optional<uint64_t> pcr = std::nul
 
 constexpr uint64_t kTicksPerMs = 27'000;
 
+#ifdef _WIN32
+using socklen_t = int;
+int process_id() { return _getpid(); }
+void close_socket(SOCKET socket) { ::closesocket(socket); }
+#else
+int process_id() { return ::getpid(); }
+void close_socket(int fd) { ::close(fd); }
+#endif
+
 /// A UDP port free on the loopback a moment ago.
 uint16_t free_port() {
-    const int fd = ::socket(AF_INET, SOCK_DGRAM, 0);
+#ifdef _WIN32
+    WSADATA winsock;
+    WSAStartup(MAKEWORD(2, 2), &winsock);  // counted: never undone here
+#endif
+    const auto fd = ::socket(AF_INET, SOCK_DGRAM, 0);
     sockaddr_in address{};
     address.sin_family = AF_INET;
     address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
     ::bind(fd, reinterpret_cast<sockaddr*>(&address), sizeof address);
     socklen_t size = sizeof address;
     ::getsockname(fd, reinterpret_cast<sockaddr*>(&address), &size);
-    ::close(fd);
+    close_socket(fd);
     return ntohs(address.sin_port);
 }
 
@@ -107,7 +125,7 @@ struct Received {
 
 std::filesystem::path temp_path(const char* name) {
     return std::filesystem::temp_directory_path() /
-           (std::string(name) + "-" + std::to_string(::getpid()) + ".ts");
+           (std::string(name) + "-" + std::to_string(process_id()) + ".ts");
 }
 
 }  // namespace

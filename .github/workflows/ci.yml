@@ -55,6 +55,36 @@ jobs:
           python3 bench/netem.py --netsim --feed --transport ratcast --bin build/bin
           --duration 5 local loss-2 cap-6
 
+  windows-media:
+    name: windows-latest · Release · vcpkg
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      # Voice processing (WebRTC APM, through the overlay port), Opus, and
+      # pkg-config's tool that finds them. FFmpeg is left out — it takes most
+      # of an hour to build — so the codec tests skip; the sound devices, the
+      # screen, the cameras and TS feeds are Windows' own and need nothing.
+      - name: Install media libraries
+        run: >
+          & "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" install opus pkgconf webrtc-audio-processing
+          --overlay-ports=cmake/vcpkg-ports --triplet x64-windows
+
+      - name: Configure
+        run: >
+          cmake -S . -B build
+          -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
+          -DRATCAST_BUILD_APP=OFF -DRATCAST_BUILD_TESTS=ON
+          -DRATCAST_WITH_OPUS=ON -DRATCAST_WITH_WEBRTC_APM=ON
+
+      - name: Build
+        run: cmake --build build --config Release --parallel
+
+      - name: Test
+        run: ctest --test-dir build --build-config Release --output-on-failure
+
   sanitizers:
     name: ${{ matrix.preset }}
     runs-on: ubuntu-24.04
