@@ -161,7 +161,7 @@ final place and shape: stage 0 is a walking skeleton, not a throwaway prototype.
 | **6. App** ✅ | Qt app MVP, one to one: invites, voice with AEC / NS, screen / window / app-audio share, camera; on Linux first, the other OSes as stage 4 reaches them | — |
 | **7. Conferences** | active speaker, last-N, grid, moderation, text chat | — |
 | **8. Beyond** | Android, cinema mode, HDR, polish | — |
-| **9. Call monitor** ← now | what a call does, as it does it: quality, bitrate, size, frame time, whether each end keeps up — a line a second in the console, a panel in the app | — |
+| **9. Call monitor** ✅ | what a call does, as it does it: quality, bitrate, size, frame time, whether each end keeps up — a line a second in the console, a panel in the app | — |
 
 ### Stage 0 — Skeleton ✅
 
@@ -810,7 +810,7 @@ the call between two people on two hosts (the desktop's dialog, two microphones)
 first real use. Left for later: cameras' MJPEG modes, one application's sound picked, the camera
 portal for sandboxes, the latency profiles (6.7).
 
-### Stage 9 — Call monitor ← now
+### Stage 9 — Call monitor ✅
 
 Between the app's first version and watching together: what a call does, while it does it, for
 whoever is in it and whoever debugs it. The library counts nearly everything already (each
@@ -839,11 +839,27 @@ asked, and the tools print it from the same code.
   `LatencyHistogram::since()` (counts that only grow, read per interval), `CpuMeter` moved from
   the tools into `client`. The tools' lines a second are the report's now, `ratcast-recv`'s
   latency from the pattern's stamps beneath it.
-- **9.2 The monitor in the app**: `ratcast --stats [S]` prints the report every S seconds (2);
+- **9.2 The monitor in the app** ✅: `ratcast --stats` prints the report every 2 seconds (`--stats-every S`);
   `CallController` carries the latest report for QML and a quality; the window a button (and a
   key) for a panel over the pictures with it, and the quality as a dot beside the button —
   in a voice call too, the sound and the path alone. Perhaps: pictures counted as `VideoView`
   draws them, not only as the player hands them on.
+  Done so: `report_sections()` in `client` lays a report out for a panel (a section a part, the
+  call first, rows of label and value) and `report_text()` for a console, the tools' too;
+  `CallController` reports every second (`stats`, `quality`, `qualityReason`) and prints every
+  `statsEvery` seconds; the panel scrolls over the pictures, top left. The app keeps C's
+  `LC_NUMERIC`, as Qt advises: the user's locale had written the report's numbers with commas.
+  Tested: both sides of a call between two controllers report (the call first, the sharer's
+  sent screen, the viewer's pictures), the printed lines, nothing left after leaving. Not done:
+  pictures counted as drawn — left for when a slow display is suspected.
+
+Closed with every test passing (463; ASan clean, TSan 445) — on the way a race in a test of the
+app's cameras (Watching is the screen's player started, not its first picture) — and a small
+netem run (`local`, `loss-2`, with sound, once each) as in stage 6: the tools' summaries read as
+before, the numbers where they were, the CPU the same. What the monitor showed at once, for
+later: in the app, with a real speaker, the pictures play 35–50 ms from the sound (0.5 ms in
+`ratcast-recv` to a virtual output) — the output's own delay not yet in the lip sync; and the
+app's console carries librats' INFO lines, which the tools keep to warnings.
 
 ### Stage 7 — Conferences
 

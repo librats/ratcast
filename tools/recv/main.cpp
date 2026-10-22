@@ -192,7 +192,7 @@ public:
     void report() {
         const CallReport report = monitor_.report();
         if (report.video || report.sound || report.feed) {
-            print_report(g_out, report, seconds_++);
+            std::fputs(report_text(report, seconds_++).c_str(), g_out);
         } else {
             std::fprintf(g_out, "[%4us] waiting for a stream\n", seconds_++);
         }
@@ -233,7 +233,7 @@ private:
             shown_ ? std::optional(shown_->take_interval()) : std::nullopt;
         const PlaybackStats heard = heard_.take_interval();
         if (decoded.latency.count() == 0 && heard.latency.count() == 0) return;
-        std::fprintf(g_out, "       %-12s", "latency");
+        std::fprintf(g_out, "        %-12s", "latency");
         print_latency("pictures", decoded.latency);
         if (shown) print_latency("shown", shown->latency);
         print_latency("sound", heard.latency);

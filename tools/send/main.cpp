@@ -268,7 +268,7 @@ public:
         : call_(call), published_(published), monitor_(call) {}
 
     void report() {
-        print_report(stdout, monitor_.report(), seconds_++);
+        std::fputs(report_text(monitor_.report(), seconds_++).c_str(), stdout);
         for (const PeerId& peer : call_.peers()) {
             const std::optional<librats::PathStats> path = call_.path(peer);
             if (path && path->valid) paths_[peer] = *path;

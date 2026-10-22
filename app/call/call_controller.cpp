@@ -4,7 +4,10 @@
 #include <QGuiApplication>
 #include <QMetaObject>
 #include <QStandardPaths>
+#include <QVariantMap>
 
+#include <algorithm>
+#include <cstdio>
 #include <filesystem>
 #include <mutex>
 #include <utility>
@@ -13,6 +16,25 @@ namespace ratcast::app {
 namespace {
 
 QString describe(Errc error) { return QString::fromLatin1(to_string(error)); }
+
+/// A report's sections as QML reads them.
+QVariantList to_variant(const std::vector<ReportSection>& sections) {
+    QVariantList list;
+    for (const ReportSection& section : sections) {
+        QVariantList rows;
+        for (const auto& [label, value] : section.rows) {
+            rows.push_back(QVariantMap{{QStringLiteral("label"), QString::fromStdString(label)},
+                                       {QStringLiteral("value"), QString::fromStdString(value)}});
+        }
+        list.push_back(QVariantMap{
+            {QStringLiteral("title"), QString::fromStdString(section.title)},
+            {QStringLiteral("quality"), QString::fromLatin1(to_string(section.verdict.quality))},
+            {QStringLiteral("reason"), QString::fromStdString(section.verdict.reason)},
+            {QStringLiteral("rows"), rows},
+        });
+    }
+    return list;
+}
 
 }  // namespace
 
@@ -68,12 +90,17 @@ CallController::CallController(QObject* parent)
       preview_pictures_(std::make_shared<Pictures>()) {
     levels_.setInterval(100);
     connect(&levels_, &QTimer::timeout, this, &CallController::update_levels);
+    reporting_.setInterval(1000);
+    connect(&reporting_, &QTimer::timeout, this, &CallController::update_stats);
+    connect(&printing_, &QTimer::timeout, this, &CallController::print_stats);
 }
 
 CallController::~CallController() {
     ++generation_;
     choosing_.request_stop();
     if (choosing_.joinable()) choosing_.join();
+    monitor_.reset();
+    printer_.reset();
     call_.reset();
     speaker_.reset();
     voice_.reset();
@@ -160,6 +187,7 @@ void CallController::share_opened(uint64_t generation, const ScreenShareConfig& 
     Q_EMIT invitesChanged();
     count_viewers();
     set_state(State::Sharing);
+    start_monitoring();
     talk();
 }
 
@@ -198,6 +226,7 @@ void CallController::join(const QString& link) {
     }
     call_ = std::move(*started);
     set_state(State::Joining);
+    start_monitoring();
     talk();
 }
 
@@ -293,6 +322,57 @@ void CallController::update_levels() {
     }
 }
 
+void CallController::setStatsEvery(int seconds) {
+    seconds = std::max(seconds, 0);
+    if (seconds == stats_every_) return;
+    stats_every_ = seconds;
+    Q_EMIT statsEveryChanged();
+    if (!call_) return;
+    printer_.reset();
+    printing_.stop();
+    if (seconds == 0) return;
+    printer_ = std::make_unique<CallMonitor>(*call_);
+    printing_.start(seconds * 1000);
+}
+
+void CallController::start_monitoring() {
+    monitor_ = std::make_unique<CallMonitor>(*call_);
+    reporting_.start();
+    printed_seconds_ = 0;
+    if (stats_every_ > 0) {
+        printer_ = std::make_unique<CallMonitor>(*call_);
+        printing_.start(stats_every_ * 1000);
+    }
+}
+
+void CallController::stop_monitoring() {
+    reporting_.stop();
+    printing_.stop();
+    monitor_.reset();
+    printer_.reset();
+    if (stats_.isEmpty() && quality_.isEmpty()) return;
+    stats_.clear();
+    quality_.clear();
+    quality_reason_.clear();
+    Q_EMIT statsChanged();
+}
+
+void CallController::update_stats() {
+    if (!monitor_) return;
+    const CallReport report = monitor_->report();
+    stats_ = to_variant(report_sections(report));
+    quality_ = QString::fromLatin1(to_string(report.verdict.quality));
+    quality_reason_ = QString::fromStdString(report.verdict.reason);
+    Q_EMIT statsChanged();
+}
+
+void CallController::print_stats() {
+    if (!printer_) return;
+    printed_seconds_ += unsigned(stats_every_);
+    std::fputs(report_text(printer_->report(), printed_seconds_).c_str(), stdout);
+    std::fflush(stdout);
+}
+
 void CallController::leave() { end(); }
 
 void CallController::copy(const QString& text) { QGuiApplication::clipboard()->setText(text); }
@@ -302,6 +382,7 @@ void CallController::end(QString notice) {
     choosing_.request_stop();
     if (choosing_.joinable()) choosing_.join();
     levels_.stop();
+    stop_monitoring();
     call_.reset();
     speaker_.reset();
     voice_.reset();

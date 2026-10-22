@@ -20,10 +20,14 @@
  * not make, a link that is none, the other side gone. The user calling off the
  * desktop's dialog is no news.
  *
+ * In a call, a CallMonitor reports on it every second: what each stream sent
+ * and played does and how well, laid out for a panel, and the call's quality
+ * with the reason; and, if asked, on standard output every so many seconds.
+ *
  * Everything that is not about the UI — the sources, what is published and
- * how, playing — is client's (Call, screen_share.h); this keeps the state, runs
- * the dialog off the GUI thread and brings the call's events onto it. GUI
- * thread only.
+ * how, playing, judging how it goes — is client's (Call, screen_share.h,
+ * call_monitor.h); this keeps the state, runs the dialog off the GUI thread
+ * and brings the call's events onto it. GUI thread only.
  */
 
 #include <QtQml/qqmlregistration.h>
@@ -32,6 +36,7 @@
 #include <QString>
 #include <QStringList>
 #include <QTimer>
+#include <QVariantList>
 
 #include <cstdint>
 #include <functional>
@@ -41,6 +46,7 @@
 #include <thread>
 
 #include "ratcast/client/call.h"
+#include "ratcast/client/call_monitor.h"
 #include "ratcast/client/camera.h"
 #include "ratcast/client/screen_share.h"
 #include "ratcast/client/voice.h"
@@ -75,6 +81,17 @@ class CallController : public QObject {
     Q_PROPERTY(ratcast::app::VideoView* cameraView READ cameraView WRITE setCameraView NOTIFY
                    cameraViewChanged)
     Q_PROPERTY(ratcast::app::VideoView* preview READ preview WRITE setPreview NOTIFY previewChanged)
+    /// The call over the last second, as its monitor saw it: a section a part,
+    /// the call first, each a map of `title`, `quality`, `reason` and `rows`
+    /// (maps of `label` and `value`). Empty outside a call.
+    Q_PROPERTY(QVariantList stats READ stats NOTIFY statsChanged)
+    /// The call's quality — "good", "fair" or "poor" — and why it is not
+    /// good; "" before the first report.
+    Q_PROPERTY(QString quality READ quality NOTIFY statsChanged)
+    Q_PROPERTY(QString qualityReason READ qualityReason NOTIFY statsChanged)
+    /// Print the monitor's report on standard output every so many seconds
+    /// while in a call; 0: never.
+    Q_PROPERTY(int statsEvery READ statsEvery WRITE setStatsEvery NOTIFY statsEveryChanged)
 
 public:
     enum class State { Idle, Choosing, Sharing, Joining, Watching };
@@ -137,6 +154,11 @@ public:
     void setMuted(bool muted);
     bool speaking() const { return speaking_; }
     bool hearing() const { return hearing_; }
+    QVariantList stats() const { return stats_; }
+    QString quality() const { return quality_; }
+    QString qualityReason() const { return quality_reason_; }
+    int statsEvery() const { return stats_every_; }
+    void setStatsEvery(int seconds);
 
 Q_SIGNALS:
     void stateChanged();
@@ -151,6 +173,8 @@ Q_SIGNALS:
     void mutedChanged();
     void speakingChanged();
     void hearingChanged();
+    void statsChanged();
+    void statsEveryChanged();
 
 private:
     struct Pictures;
@@ -180,6 +204,12 @@ private:
     static bool attach(QPointer<VideoView>& slot, Pictures& pictures, VideoView* view);
     /// Who is speaking, as the voice channel says: a few times a second.
     void update_levels();
+    /// Report on the call just started, every second and, if asked, on
+    /// standard output.
+    void start_monitoring();
+    void stop_monitoring();
+    void update_stats();
+    void print_stats();
     /// Back to Idle; `notice` says why, if it was not the user.
     void end(QString notice = {});
 
@@ -195,6 +225,13 @@ private:
     bool camera_ = false;
     bool camera_shown_ = false;
     QTimer levels_;
+    QTimer reporting_;
+    QTimer printing_;
+    QVariantList stats_;
+    QString quality_;
+    QString quality_reason_;
+    int stats_every_ = 0;
+    unsigned printed_seconds_ = 0;  ///< into the call, as printed
     QPointer<VideoView> video_;
     QPointer<VideoView> camera_view_;
     QPointer<VideoView> preview_;
@@ -210,6 +247,9 @@ private:
     std::unique_ptr<VoiceChannel> voice_;
     std::unique_ptr<AudioOutput> speaker_;  ///< the voice channel's
     std::unique_ptr<Call> call_;            ///< after the speaker: it plays into it
+    /// After the call, which they watch: the panel's and standard output's.
+    std::unique_ptr<CallMonitor> monitor_;
+    std::unique_ptr<CallMonitor> printer_;
 };
 
 }  // namespace ratcast::app

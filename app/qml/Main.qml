@@ -7,7 +7,8 @@ import Ratcast.Video
 // One window, three faces: the start (share, or join from a link), the
 // sharer's (who is watching, the links to send) and the viewer's (the
 // picture). CallController says which. In a call, the cameras over it: the
-// other side's, and this side's own.
+// other side's, and this side's own; and, on a button or Ctrl+I, how the
+// call goes, with its quality as a dot beside the button.
 ApplicationWindow {
     id: root
 
@@ -15,6 +16,8 @@ ApplicationWindow {
     required property string libratsVersion
     /// From the command line: watch it at once.
     required property string link
+    /// From the command line: print how a call goes every so many seconds.
+    required property int statsEvery
 
     readonly property bool watching: call.state === CallController.Joining
                                      || call.state === CallController.Watching
@@ -33,6 +36,7 @@ ApplicationWindow {
         video: picture
         cameraView: theirCamera
         preview: ownCamera
+        statsEvery: root.statsEvery
     }
 
     Component.onCompleted: if (root.link.length > 0) call.join(root.link)
@@ -250,15 +254,122 @@ ApplicationWindow {
         }
     }
 
+    /// A quality as a colour: "good", "fair", "poor", or none yet.
+    function qualityColor(quality) {
+        switch (quality) {
+        case "good": return Material.color(Material.Green)
+        case "fair": return Material.color(Material.Amber)
+        case "poor": return Material.color(Material.Red)
+        default: return "#4e5058"
+        }
+    }
+
+    component Dot: Rectangle {
+        implicitWidth: 10
+        implicitHeight: 10
+        radius: 5
+    }
+
+    // How the call goes: a section a part, each with its quality and what was
+    // measured.
+    Rectangle {
+        id: stats
+
+        property bool shown: false
+
+        anchors.left: parent.left
+        anchors.top: parent.top
+        anchors.margins: 16
+        width: Math.min(420, parent.width - 32)
+        height: Math.min(statsColumn.implicitHeight + 24, controls.y - 32)
+        visible: root.inCall && shown
+        color: "#e6111214"
+        radius: 6
+        border.color: "#4e5058"
+
+        ScrollView {
+            anchors.fill: parent
+            anchors.margins: 12
+            contentWidth: availableWidth
+            clip: true
+
+            ColumnLayout {
+                id: statsColumn
+                width: parent.width
+                spacing: 10
+
+                Label {
+                    text: qsTr("Measuring…")
+                    opacity: 0.7
+                    visible: call.stats.length === 0
+                }
+
+                Repeater {
+                    model: call.stats
+
+                    ColumnLayout {
+                        required property var modelData
+                        Layout.fillWidth: true
+                        spacing: 2
+
+                        RowLayout {
+                            spacing: 6
+                            Dot {
+                                color: root.qualityColor(modelData.quality)
+                            }
+                            Label {
+                                text: modelData.title
+                                font.bold: true
+                            }
+                        }
+                        Label {
+                            Layout.fillWidth: true
+                            text: modelData.reason
+                            wrapMode: Text.Wrap
+                            color: root.qualityColor(modelData.quality)
+                            visible: text.length > 0
+                        }
+                        Repeater {
+                            model: modelData.rows
+
+                            RowLayout {
+                                required property var modelData
+                                Layout.fillWidth: true
+                                spacing: 12
+
+                                Label {
+                                    Layout.preferredWidth: 140
+                                    text: modelData.label
+                                    opacity: 0.7
+                                    font.pixelSize: 12
+                                }
+                                Label {
+                                    Layout.fillWidth: true
+                                    text: modelData.value
+                                    font.family: "monospace"
+                                    font.pixelSize: 12
+                                    wrapMode: Text.Wrap
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    Shortcut {
+        sequence: "Ctrl+I"
+        enabled: root.inCall
+        onActivated: stats.shown = !stats.shown
+    }
+
     component Speaker: RowLayout {
         property alias text: name.text
         property bool active
         spacing: 6
 
-        Rectangle {
-            implicitWidth: 10
-            implicitHeight: 10
-            radius: 5
+        Dot {
             color: parent.active ? Material.color(Material.Green) : "#4e5058"
         }
         Label {
@@ -267,6 +378,7 @@ ApplicationWindow {
     }
 
     Pane {
+        id: controls
         anchors.right: parent.right
         anchors.bottom: parent.bottom
         anchors.margins: 16
@@ -295,6 +407,29 @@ ApplicationWindow {
                 checkable: true
                 checked: call.camera
                 onToggled: call.camera = checked
+            }
+            RowLayout {
+                spacing: 6
+
+                // The call's quality, panel shown or not; why, on hovering.
+                Dot {
+                    color: root.qualityColor(call.quality)
+
+                    HoverHandler {
+                        id: qualityHover
+                    }
+                    ToolTip.visible: qualityHover.hovered && call.quality.length > 0
+                    ToolTip.text: call.qualityReason.length > 0
+                                  ? call.quality + ": " + call.qualityReason : call.quality
+                }
+                Button {
+                    text: qsTr("Stats")
+                    checkable: true
+                    checked: stats.shown
+                    onToggled: stats.shown = checked
+                    ToolTip.visible: hovered
+                    ToolTip.text: qsTr("How the call goes (Ctrl+I)")
+                }
             }
             Button {
                 text: call.state === CallController.Sharing ? qsTr("Stop sharing")

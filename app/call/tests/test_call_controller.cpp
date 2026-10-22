@@ -1,8 +1,9 @@
 // CallController between two of its kind on loopback: one shares (the test
 // pattern and a tone standing in for the desktop's screen and sound), the
 // other joins by an invite and watches, each going through its states; both
-// talking, either side's camera seen by the other and by itself; and the
-// ways a share or a join ends without the user.
+// talking, either side's camera seen by the other and by itself, each
+// reporting how the call goes; and the ways a share or a join ends without
+// the user.
 
 #include "call_controller.h"
 
@@ -142,6 +143,40 @@ TEST_F(CallControllerTest, OneSharesTheOtherJoinsAndWatches) {
     EXPECT_EQ(sharer_.state(), State::Sharing) << "still sharing, for the next to join";
 }
 
+TEST_F(CallControllerTest, EachSideReportsHowTheCallGoes) {
+    const auto titles = [](const CallController& side) {
+        QStringList titles;
+        for (const QVariant& section : side.stats()) {
+            titles.push_back(section.toMap().value("title").toString());
+        }
+        return titles;
+    };
+    int reports = 0;
+    QObject::connect(&viewer_, &CallController::statsChanged, [&] { ++reports; });
+    viewer_.setStatsEvery(1);
+    testing::internal::CaptureStdout();
+    viewer_.join(share());
+    ASSERT_TRUE(wait_for([&] {
+        return titles(viewer_).contains("Pictures") && titles(sharer_).contains("Sent: screen") &&
+               reports >= 2;
+    })) << titles(viewer_).join(", ").toStdString()
+        << " / " << titles(sharer_).join(", ").toStdString();
+    const std::string printed = testing::internal::GetCapturedStdout();
+
+    // The call first, with its CPU; a quality, and a line a part printed.
+    EXPECT_EQ(titles(viewer_).value(0), "Call");
+    const QVariantMap call = viewer_.stats().value(0).toMap();
+    EXPECT_EQ(call.value("rows").toList().value(0).toMap().value("label").toString(), "CPU");
+    EXPECT_FALSE(viewer_.quality().isEmpty());
+    EXPECT_NE(printed.find("[   1s] "), std::string::npos) << printed;
+    EXPECT_NE(printed.find("pictures"), std::string::npos) << printed;
+    EXPECT_TRUE(sharer_.statsEvery() == 0 && viewer_.statsEvery() == 1);
+
+    viewer_.leave();
+    EXPECT_TRUE(viewer_.stats().isEmpty());
+    EXPECT_TRUE(viewer_.quality().isEmpty());
+}
+
 TEST_F(CallControllerTest, BothTalkAndAMutedOneIsNotHeard) {
     viewer_.join(share());
     ASSERT_TRUE(wait_for([&] { return viewer_.state() == State::Watching; }));
@@ -190,7 +225,9 @@ TEST_F(CallControllerTest, EachSeesTheOthersCameraAndItsOwn) {
                sharer_preview.pictureSize() == QSize(160, 120) &&
                viewer_preview.pictureSize() == QSize(160, 120);
     })) << "each camera seen at both ends";
-    EXPECT_EQ(view_.pictureSize(), QSize(320, 240)) << "the screen apart";
+    // Watching is the screen's player started: its first picture may come after the cameras'.
+    EXPECT_TRUE(wait_for([&] { return view_.pictureSize() == QSize(320, 240); }))
+        << "the screen apart";
 
     // A camera off is not the screen gone.
     viewer_.setCamera(false);

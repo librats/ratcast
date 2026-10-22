@@ -4,7 +4,6 @@
 #include <charconv>
 #include <csignal>
 
-#include "ratcast/client/call_monitor.h"
 #include "ratcast/engine/video_codec.h"
 
 #include "librats/util/logger.h"
@@ -68,18 +67,6 @@ Timestamp WallClock::now() const noexcept {
 WallClock& WallClock::instance() noexcept {
     static WallClock clock;
     return clock;
-}
-
-void print_report(FILE* out, const CallReport& report, unsigned second) {
-    bool first = true;
-    for (const std::string& line : report_lines(report)) {
-        if (first) {
-            std::fprintf(out, "[%4us] %s\n", second, line.c_str());
-        } else {
-            std::fprintf(out, "       %s\n", line.c_str());
-        }
-        first = false;
-    }
 }
 
 }  // namespace ratcast::tools

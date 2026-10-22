@@ -211,6 +211,41 @@ TEST(CallMonitor, ALineAPartAndTheCallLast) {
     EXPECT_NE(lines[3].find("good"), std::string::npos) << lines[3];
 }
 
+TEST(CallMonitor, TheTextIsTheLinesUnderTheSecond) {
+    Snapshots s;
+    s.now.sound = sound(50, {});
+    const CallReport report = compare(s.earlier, s.now);
+    const std::vector<std::string> lines = report_lines(report);
+    ASSERT_EQ(lines.size(), 2u);
+    EXPECT_EQ(report_text(report, 12), "[  12s] " + lines[0] + "\n        " + lines[1] + "\n");
+}
+
+TEST(CallMonitor, ASectionAPartAndTheCallFirst) {
+    Snapshots s;
+    s.earlier.sent = {screen(0, 0, 0)};
+    s.now.sent = {screen(60, 60, 500'000, 60 * 5ms)};
+    s.earlier.voice = sound(0, {});
+    s.now.voice = sound(50, 100ms);
+
+    const std::vector<ReportSection> sections = report_sections(compare(s.earlier, s.now));
+    ASSERT_EQ(sections.size(), 3u);
+    EXPECT_EQ(sections[0].title, "Call");
+    EXPECT_EQ(sections[0].verdict.quality, Quality::Poor);
+    EXPECT_EQ(sections[1].title, "Sent: screen");
+    EXPECT_EQ(sections[1].verdict.quality, Quality::Good);
+    const auto row = [&](const ReportSection& section, std::string_view label) {
+        for (const auto& [name, value] : section.rows) {
+            if (name == label) return value;
+        }
+        return std::string("(none)");
+    };
+    EXPECT_EQ(row(sections[1], "Size"), "1920x1080");
+    EXPECT_EQ(row(sections[1], "Bitrate"), "4.00 Mbit/s (aim 5.00 Mbit/s)");
+    EXPECT_EQ(row(sections[1], "Encode"), "5.0 ms");
+    EXPECT_EQ(sections[2].title, "Voice");
+    EXPECT_EQ(row(sections[2], "Made up"), "100.0 ms");
+}
+
 TEST(CpuMeter, CountsTheProcessCpuTime) {
     CpuMeter meter;
     const Duration start = process_cpu_time();

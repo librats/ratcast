@@ -351,6 +351,88 @@ std::string sound_line(const char* name, const ReceivedSoundReport& s) {
         ms(s.recovered), ms(s.concealed), quality(s.verdict).c_str());
 }
 
+// ── Sections ────────────────────────────────────────────────────────────────
+
+/// "16.9 ms (p95 18.9, max 22.0)".
+std::string spread(const LatencyHistogram& h) {
+    return format("%.1f ms (p95 %.1f, max %.1f)", ms(h.percentile(0.5)), ms(h.percentile(0.95)),
+                  ms(h.max()));
+}
+
+std::string milliseconds(Duration d) { return format("%.1f ms", ms(d)); }
+
+std::string counts(uint64_t a, uint64_t b, uint64_t c) {
+    return format("%llu, %llu, %llu", static_cast<unsigned long long>(a),
+                  static_cast<unsigned long long>(b), static_cast<unsigned long long>(c));
+}
+
+ReportSection sent_section(const SentStreamReport& s) {
+    ReportSection section{"Sent: " + s.label, s.verdict, {}};
+    auto& rows = section.rows;
+    switch (s.kind) {
+        case MediaKind::Video:
+            rows = {{"Size", size(s.width, s.height)},
+                    {"Encoder", s.encoder + (s.gpu_input ? " (GPU)" : "")},
+                    {"Frame rate", format("%.0f fps (source %.0f)", s.fps, s.source_fps)},
+                    {"Bitrate", rate(s.bitrate) + (s.target > 0 ? " (aim " + rate(s.target) + ")"
+                                                                : std::string())},
+                    {"Encode", milliseconds(s.encode_time)},
+                    {"Skipped, keyframes, dropped", counts(s.skipped, s.keyframes, s.dropped)}};
+            break;
+        case MediaKind::Audio:
+            rows = {{"Encoder", s.encoder},
+                    {"Frame rate", format("%.0f fps", s.fps)},
+                    {"Bitrate", rate(s.bitrate)},
+                    {"Encode", milliseconds(s.encode_time)},
+                    {"Dropped", std::to_string(s.skipped)}};
+            break;
+        case MediaKind::Data:
+            rows = {{"Frames", format("%.0f a second", s.fps)},
+                    {"Bitrate", rate(s.bitrate)},
+                    {"Skipped", std::to_string(s.skipped) + " bytes"}};
+            break;
+    }
+    rows.emplace_back("Viewers", std::to_string(s.viewers));
+    return section;
+}
+
+ReportSection video_section(std::string title, const ReceivedVideoReport& v) {
+    return {std::move(title),
+            v.verdict,
+            {{"Size", size(v.width, v.height)},
+             {"Decoder", v.decoder},
+             {"Frame rate", format("%.0f fps", v.fps)},
+             {"Bitrate", rate(v.bitrate)},
+             {"Decode", milliseconds(v.decode_time)},
+             {"Frame time", spread(v.pace.intervals())},
+             {"Frame jitter", milliseconds(v.pace.jitter())},
+             {"Buffer", milliseconds(v.buffer)},
+             {"Lost, late, dropped", counts(v.lost, v.late, v.dropped)}}};
+}
+
+ReportSection sound_section(std::string title, const ReceivedSoundReport& s) {
+    return {std::move(title),
+            s.verdict,
+            {{"Decoder", s.decoder},
+             {"Frame rate", format("%.0f fps", s.fps)},
+             {"Delay", format("%.0f ms (target %.0f)", ms(s.delay), ms(s.target))},
+             {"Lost, late", format("%llu, %llu", static_cast<unsigned long long>(s.lost),
+                                   static_cast<unsigned long long>(s.late))},
+             {"Recovered by FEC", milliseconds(s.recovered)},
+             {"Made up", milliseconds(s.concealed)}}};
+}
+
+ReportSection path_section(const PathReport& p) {
+    return {"Path to " + p.peer.short_hex(),
+            p.verdict,
+            {{"Round trip", milliseconds(p.rtt)},
+             {"Bandwidth", (p.busy ? "" : ">= ") + rate(double(p.bandwidth))},
+             {"Queue", milliseconds(p.queue)},
+             {"Loss", format("%.1f%%", p.loss * 100)},
+             {"Expired", std::to_string(p.expired)},
+             {"Repair", rate(p.repair)}}};
+}
+
 }  // namespace
 
 const char* to_string(Quality quality) noexcept {
@@ -427,7 +509,8 @@ CallReport compare(const CallSnapshot& earlier, const CallSnapshot& now) {
     }
     report.apart = now.sync.apart.since(earlier.sync.apart);
     if (report.apart.percentile(0.95) > kApartFair) {
-        report.verdict.at_least(Quality::Fair, "sound and pictures apart");
+        report.in_step.at_least(Quality::Fair, "sound and pictures apart");
+        report.verdict.at_least(report.in_step, "in step");
     }
     for (const auto& [peer, path] : now.paths) {
         const auto before =
@@ -471,6 +554,39 @@ std::vector<std::string> report_lines(const CallReport& report) {
     lines.push_back(
         format("%-13s cpu %3.0f%%  %s", "call", report.cpu, quality(report.verdict).c_str()));
     return lines;
+}
+
+std::string report_text(const CallReport& report, unsigned second) {
+    std::string text;
+    for (const std::string& line : report_lines(report)) {
+        text += text.empty() ? format("[%4us] ", second) : std::string(8, ' ');
+        text += line + "\n";
+    }
+    return text;
+}
+
+std::vector<ReportSection> report_sections(const CallReport& report) {
+    std::vector<ReportSection> sections;
+    sections.push_back({"Call", report.verdict, {{"CPU", format("%.0f%%", report.cpu)}}});
+    for (const SentStreamReport& sent : report.sent) sections.push_back(sent_section(sent));
+    if (report.video) sections.push_back(video_section("Pictures", *report.video));
+    if (report.camera) sections.push_back(video_section("Camera", *report.camera));
+    if (report.sound) sections.push_back(sound_section("Sound", *report.sound));
+    if (report.voice) sections.push_back(sound_section("Voice", *report.voice));
+    if (const auto& feed = report.feed) {
+        sections.push_back(
+            {"Feed",
+             feed->verdict,
+             {{"Bitrate", rate(feed->bitrate)},
+              {"Lost, late", format("%llu, %llu", static_cast<unsigned long long>(feed->lost),
+                                    static_cast<unsigned long long>(feed->late))},
+              {"Buffer", milliseconds(feed->buffer)}}});
+    }
+    if (report.apart.count() > 0) {
+        sections.push_back({"In step", report.in_step, {{"Apart", spread(report.apart)}}});
+    }
+    for (const PathReport& path : report.paths) sections.push_back(path_section(path));
+    return sections;
 }
 
 CallMonitor::CallMonitor(const Call& call, Clock& clock)

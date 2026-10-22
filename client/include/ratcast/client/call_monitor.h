@@ -32,7 +32,8 @@
  * The call's is the worst of them, with its part named.
  *
  * CallMonitor keeps the last snapshot and reports what changed since;
- * report_lines() writes a report for a console, a line a part.
+ * report_lines() writes a report for a console, a line a part, and
+ * report_sections() lays it out for a panel.
  */
 
 #include <cstdint>
@@ -165,6 +166,7 @@ struct CallReport {
     std::optional<ReceivedSoundReport> voice;
     std::optional<ReceivedFeedReport> feed;
     LatencyHistogram apart;  ///< sound and pictures, either way
+    Verdict in_step;         ///< of how far apart
     std::vector<PathReport> paths;
     Verdict verdict;  ///< the worst of the parts
 };
@@ -174,6 +176,21 @@ CallReport compare(const CallSnapshot& earlier, const CallSnapshot& now);
 
 /// A report for a console: a line a part, the call's quality last.
 std::vector<std::string> report_lines(const CallReport& report);
+/// Those lines as a console prints them, the first under "[  12s]" for
+/// `second`, the rest beneath it; each ends in a newline.
+std::string report_text(const CallReport& report, unsigned second);
+
+/// A part of a report for a panel: what it is, how it goes, and what was
+/// measured, as a label and a value each.
+struct ReportSection {
+    std::string title;
+    Verdict verdict;
+    std::vector<std::pair<std::string, std::string>> rows;
+};
+
+/// A report for a panel: the call first (its CPU, its quality), then a
+/// section a part.
+std::vector<ReportSection> report_sections(const CallReport& report);
 
 /// Reports on a call: each what changed since the one before.
 class CallMonitor {

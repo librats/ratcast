@@ -7,17 +7,12 @@
 
 #include <chrono>
 #include <cstdint>
-#include <cstdio>
 #include <optional>
 #include <string_view>
 #include <utility>
 
 #include "ratcast/core/time.h"
 #include "ratcast/stream/stream_description.h"
-
-namespace ratcast {
-struct CallReport;
-}  // namespace ratcast
 
 namespace ratcast::tools {
 
@@ -44,8 +39,5 @@ public:
     Timestamp now() const noexcept override;
     static WallClock& instance() noexcept;
 };
-
-/// A report of the call's monitor, its lines under "[  12s]" for `second`.
-void print_report(FILE* out, const CallReport& report, unsigned second);
 
 }  // namespace ratcast::tools
