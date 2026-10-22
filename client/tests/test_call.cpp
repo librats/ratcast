@@ -1,8 +1,8 @@
 // Calls on loopback, between real librats nodes: each side sending and
 // playing, a camera beside the screen, three in a call — everyone's voice and
-// camera, the screen of whom one watches — hanging up, streams withdrawn and
-// offered again, sources that run out, the monitor's reports, and the
-// invites a call hands out.
+// camera, the screen of whom one watches — a room where everyone meets
+// everyone, hanging up, streams withdrawn and offered again, sources that run
+// out, the monitor's reports, and the invites a call hands out.
 
 #include "ratcast/client/call.h"
 #include "ratcast/client/call_monitor.h"
@@ -50,6 +50,13 @@ CallConfig config(std::optional<RatsUrl> dial = std::nullopt) {
         .protocol = std::string("ratcast-test/") + test->test_suite_name() + "." + test->name(),
         .watch_network = false,
     };
+}
+
+/// A member of a room on loopback.
+CallConfig room(std::optional<RatsUrl> dial = std::nullopt) {
+    CallConfig config = ::config(std::move(dial));
+    config.mesh = true;
+    return config;
 }
 
 /// Sound that runs out: a few blocks of the tone, then the end.
@@ -122,9 +129,14 @@ public:
             video));
     }
 
+    void publish_voice() {
+        ASSERT_TRUE(ratcast::publish_voice(
+            *call_, std::make_unique<ToneSource>(ToneConfig{.level = 0.5f})));
+    }
+
     /// A voice and a camera, as one in a call has.
     void publish_voice_and_camera() {
-        ASSERT_TRUE(publish_voice(*call_, std::make_unique<ToneSource>(ToneConfig{.level = 0.5f})));
+        publish_voice();
         ASSERT_TRUE(publish_camera(*call_, std::make_unique<PatternSource>(
                                                PatternConfig{PixelFormat::NV12, 160, 120, 30, 1})));
     }
@@ -534,6 +546,48 @@ TEST_F(CallTest, WithNothingChosenTheNextOfferedPlaysWhenTheScreenEnds) {
         return video && video->peer == next->id() && video->player.pictures > 0;
     })) << ::testing::PrintToString(host.events());
     EXPECT_EQ(host.told_times("playing pattern"), 2u);
+}
+
+// ── A room ──────────────────────────────────────────────────────────────────
+
+TEST_F(CallTest, InARoomEveryoneMeetsEveryoneWhoeverTheyJoinThrough) {
+    Side host;
+    host.start(room(), /*pictures=*/false, /*camera=*/false);
+    // Two join through the host at once, a third through one of them.
+    Side ann;
+    Side bob;
+    ann.start(room(RatsUrl{host.address()}), false, false);
+    bob.start(room(RatsUrl{host.address()}), false, false);
+    Side carl;
+    carl.start(room(RatsUrl{ann.address()}), false, false);
+    const std::vector<Side*> members{&host, &ann, &bob, &carl};
+    for (Side* member : members) member->publish_voice();
+    const auto all_met = [&] {
+        return std::ranges::all_of(members, [&](Side* member) {
+            return (*member)->peers().size() == members.size() - 1 &&
+                   (*member)->voice_stats().size() == members.size() - 1;
+        });
+    };
+    const auto state = [&] {
+        std::string text;
+        for (Side* member : members) {
+            text += std::to_string((*member)->peers().size()) + " peers, " +
+                    std::to_string((*member)->voice_stats().size()) + " voices; " +
+                    ::testing::PrintToString(member->events()) + "\n";
+        }
+        return text;
+    };
+    ASSERT_TRUE(wait_for(all_met)) << state();
+
+    // One leaves, and comes back through another: everyone meets again.
+    bob.hang_up();
+    ASSERT_TRUE(wait_for([&] {
+        return host->peers().size() == 2 && ann->peers().size() == 2 && carl->peers().size() == 2 &&
+               host->voice_stats().size() == 2;
+    }));
+    bob.start(room(RatsUrl{carl.address()}), false, false);
+    bob.publish_voice();
+    EXPECT_TRUE(wait_for(all_met));
 }
 
 TEST_F(CallTest, AScreenShareThatCannotPublishLeavesNothing) {

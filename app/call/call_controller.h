@@ -11,14 +11,15 @@
  *     └──── join() ──▶ Joining ◀──▶ Watching      (the picture plays, or is
  *                                                  waited for)
  *
- * and leave() goes back to Idle from anywhere. Either way both sides talk:
- * the microphone, cleaned of the echo of all the computer plays and of noise,
- * goes as a voice (VoiceChannel), muted or not as the user says; and either
- * side may turn its camera on, which the other sees beside the screen and it
- * sees itself. What went
- * wrong, or ended without the user, is the notice: a share the desktop could
- * not make, a link that is none, the other side gone. The user calling off the
- * desktop's dialog is no news.
+ * and leave() goes back to Idle from anywhere. Either way the call is a room
+ * (CallConfig::mesh): whoever joins, by whichever member's link, meets
+ * everyone, and everyone talks: the microphone, cleaned of the echo of all the
+ * computer plays and of noise, goes as a voice (VoiceChannel), muted or not as
+ * the user says; and anyone may turn their camera on, which the others see
+ * beside the screen and they see themselves. What went wrong, or ended
+ * without the user, is the notice: a share the desktop could not make, a link
+ * that is none, the other side gone. The user calling off the desktop's dialog
+ * is no news.
  *
  * In a call, a CallMonitor reports on it every second: what each stream sent
  * and played does and how well, laid out for a panel, and the call's quality

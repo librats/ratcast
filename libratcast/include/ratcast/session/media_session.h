@@ -181,6 +181,10 @@ public:
     // ── Driven by the network and a timer ───────────────────────────────────
 
     void on_peer_connected(const PeerId& peer);
+    /// What was sent to `peer` lately may be lost (librats' on_peer_rerouted: its
+    /// link lost a cross-connect race): the streams offered are announced again
+    /// and the subscriptions asked again — what is sent once, on connect.
+    void on_peer_rerouted(const PeerId& peer);
     void on_peer_disconnected(const PeerId& peer);
     void on_peer_writable(const PeerId& peer);
     /// A sample of the path to `peer`, every 100 ms or so (librats'
@@ -218,6 +222,8 @@ private:
     std::vector<PeerId> connected_peers() const;
 
     void on_frame(const PeerId& peer, std::span<const uint8_t> message);
+    /// Announce every stream offered to `peer`.
+    void announce_all(const PeerId& peer);
     void on_announce(const PeerId& peer, StreamDescription description);
     void on_withdraw(const PeerId& peer, StreamId stream);
     void on_subscribe(const PeerId& peer, StreamId stream);

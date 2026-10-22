@@ -34,6 +34,8 @@ void MediaService::attach(librats::NodeContext& ctx) {
                });
     network.on_peer_connected(
         [this](const librats::Peer& peer) { session_.on_peer_connected(peer.id()); });
+    network.on_peer_rerouted(
+        [this](const librats::Peer& peer) { session_.on_peer_rerouted(peer.id()); });
     network.on_peer_disconnected([this](const librats::PeerId& peer, librats::CloseReason) {
         session_.on_peer_disconnected(peer);
     });

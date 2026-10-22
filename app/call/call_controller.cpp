@@ -173,6 +173,7 @@ void CallController::share_opened(uint64_t generation, const ScreenShareConfig& 
     open_voice();
     CallConfig config_of_call = environment_.call;
     config_of_call.data_dir = environment_.data_dir;
+    config_of_call.mesh = true;                      // whoever joins meets everyone
     config_of_call.playback.sound = speaker_.get();  // the viewers' voices
     config_of_call.playback.cameras = cameras(camera_pictures_);
     Result<std::unique_ptr<Call>> started =
@@ -215,8 +216,8 @@ void CallController::join(const QString& link) {
     if (!environment_.data_dir.empty()) {
         config.data_dir = (std::filesystem::path(environment_.data_dir) / "guest").string();
     }
-    config.listen = false;
     config.discoverable = false;
+    config.mesh = true;  // everyone in the call, and listening for who comes later
     config.dial = *url;
     config.playback.pictures = [pictures = pictures_](VideoFrame picture) {
         (*pictures)(std::move(picture));

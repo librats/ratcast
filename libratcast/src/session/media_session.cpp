@@ -481,11 +481,36 @@ std::vector<OfferedStream> MediaSession::offered() const {
 // ── Network events ──────────────────────────────────────────────────────────
 
 void MediaSession::on_peer_connected(const PeerId& peer) {
-    std::vector<std::shared_ptr<OutgoingStream>> streams;
     {
         std::unique_lock lock(mutex_);
         auto& state = peers_[peer];
         if (!state) state = std::make_shared<PeerState>(peer);
+    }
+    announce_all(peer);
+}
+
+void MediaSession::on_peer_rerouted(const PeerId& peer) {
+    announce_all(peer);
+    std::vector<std::pair<StreamId, std::shared_ptr<IncomingStream>>> streams;
+    {
+        std::shared_lock lock(mutex_);
+        for (const auto& [key, stream] : incoming_) {
+            if (key.peer == peer) streams.emplace_back(key.stream, stream);
+        }
+    }
+    // A subscription the peer has already is no news to it.
+    for (const auto& [id, stream] : streams) {
+        std::unique_lock lock(stream->mutex);
+        const bool subscribed = stream->subscribed;
+        lock.unlock();
+        if (subscribed) network_.send_reliable(peer, wire::encode_control(wire::Subscribe{id}));
+    }
+}
+
+void MediaSession::announce_all(const PeerId& peer) {
+    std::vector<std::shared_ptr<OutgoingStream>> streams;
+    {
+        std::shared_lock lock(mutex_);
         streams.reserve(outgoing_.size());
         for (const auto& [id, stream] : outgoing_) streams.push_back(stream);
     }

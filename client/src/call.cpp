@@ -7,6 +7,8 @@
 #include "ratcast/session/media_service.h"
 
 #include "librats/subsystems/dht_discovery.h"
+#include "librats/subsystems/hole_punch.h"
+#include "librats/subsystems/peer_exchange.h"
 #include "librats/util/network_utils.h"
 
 namespace ratcast {
@@ -27,8 +29,11 @@ bool first_of(const CallConfig& config, const PeerId& peer) {
     return !dialed || peer == *dialed;
 }
 
-/// A call dialing by peer id listens, for the other side to dial back.
-bool listens(const CallConfig& config) { return config.listen || dialed_peer(config); }
+/// A call dialing by peer id listens, for the other side to dial back, and
+/// a room's member, for those who join later.
+bool listens(const CallConfig& config) {
+    return config.listen || dialed_peer(config) || config.mesh;
+}
 
 librats::NodeConfig node_config(const CallConfig& config) {
     librats::NodeConfig node;
@@ -124,6 +129,12 @@ Call::Call(CallConfig config, CallHandlers handlers)
         discovery.data_dir = config_.data_dir;
         discovery.search_interval = std::chrono::seconds(10);
         node_.add_subsystem(std::make_unique<librats::DhtDiscovery>(std::move(discovery)));
+    }
+    if (config_.mesh) {
+        librats::PeerExchange::Config exchange;
+        exchange.introduce_requesters = true;
+        node_.add_subsystem(std::make_unique<librats::PeerExchange>(exchange));
+        node_.add_subsystem(std::make_unique<librats::HolePunch>());
     }
     node_.on_peer_connected(
         [this](const librats::Peer& peer) { notify(handlers_.joined, peer.id()); });

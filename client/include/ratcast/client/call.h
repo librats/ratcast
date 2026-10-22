@@ -29,6 +29,13 @@
  * node's peer id, looked for through the DHT if the call is discoverable, or
  * with one of the host's addresses and the port it listens on.
  *
+ * A call may be a room (CallConfig::mesh): everyone with everyone, whoever
+ * joins by whichever member's link. Each peer connected is asked whom it has,
+ * and they are dialed (librats' PeerExchange, a hole punched through a peer
+ * both have where a dial fails); each that asks is introduced to the rest, so
+ * that two joining at once meet too. A member listens, for those who come
+ * later.
+ *
  * Threads: every method may be called from any thread. Handlers run on the
  * network's, a publisher's or a player's threads, never under the call's
  * locks, and must not block or destroy the call; source_ended must not
@@ -116,6 +123,9 @@ struct CallConfig {
     std::string protocol = RATCAST_PROTOCOL;
     /// Follow the host's network changes (interfaces, addresses, sleep).
     bool watch_network = true;
+    /// A room: meet everyone the peers met (see above). Listens whatever
+    /// `listen` says.
+    bool mesh = false;
     CallPlayback playback = {};
 };
 

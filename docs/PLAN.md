@@ -891,10 +891,21 @@ room goes on, the others watching whose share they choose.
   Tested: three nodes on loopback (everyone's voice and camera, one leaving; the screen watched,
   switched, none, a chosen share ending; with nothing chosen, the next share taking over), the
   monitor on made-up peers, `offered()`, `forget()`; debug and ASan 470, TSan 452.
-- **10.2 Everyone with everyone** ← now: every member listens; a member joins by any member's link and
+- **10.2 Everyone with everyone** ✅: every member listens; a member joins by any member's link and
   finds the rest through librats' peer exchange (`PeerExchange`), hole punching where a dial
-  fails; leaving and coming back. librats: **better with** L8, L11 for hard NATs.
-- **10.3 Who is there**: each member's name and state — muted, deafened — told to the others
+  fails; leaving and coming back. librats: **needs** L18, L19 ✅.
+  Done so: `CallConfig::mesh` — a `PeerExchange` that introduces whoever asks (L19) and a
+  `HolePunch` on the node, and the call listens whatever `listen` says; the app's calls are
+  rooms, a viewer listening too. On the way, L18: a member was heard by two of three when two
+  dialed each other at once — what a session says once on connect went with the link that lost
+  the race; it is said again on `on_peer_rerouted`. Tested: four members on loopback, two
+  joining through one at once and a third through one of them, each hearing all three voices,
+  one leaving and coming back through another (10 runs of 10, and under TSan); the session
+  saying again what a lost link took; librats' node and peer-exchange tests. Not here: punching
+  is librats' and tested there (loopback has no NAT); a link lost without leaving is not dialed
+  again — the member rejoins; an invite by peer id from a member who joined by peer id (the
+  room's key) — with 10.4's invites.
+- **10.3 Who is there** ← now: each member's name and state — muted, deafened — told to the others
   over the session's control messages (a wire change in `libratcast`); the name set in the app
   and kept.
 - **10.4 The app as a room**: make a room or join one by link, everyone talking from the start;
@@ -928,6 +939,8 @@ and the list is in priority order:
 | | L3 | Per-message delivered / expired feedback | needed | 1.2 | ✅ |
 | | L4 | Priorities inside `Priority::Live` | needed | 2.1 | ✅ |
 | | L2 (b) | A live flow's start: shedding by Startup's rate | needed | 3.2 (feeds); 1.2 (long paths) | ✅ |
+| | L18 | What was said on a link that lost a cross-connect race | needed | 10.2 | ✅ |
+| | L19 | Peer exchange that closes a small mesh | needed | 10.2 | ✅ |
 | 1 | L2 (a) | A live flow's start: the initial window | needed | 1.2 (long paths) | put off; eased by (b) |
 | 2 | L5 | Absolute deadlines when forwarding | needed | stage 5 (tree) | |
 | 3 | L15 | Fewer system calls per reactor turn | improves | 3.2 (CPU) | |
@@ -1027,6 +1040,25 @@ acknowledged (or FEC-complete) on UDP, sealed onto the stream on TCP, or given u
 included — recorded by `LiveSender` / `SendQueue` and passed up from the transport's reactor
 entry points, never from inside `send()`. Tested from `LiveSender` and `SendQueue` up to two
 nodes over either transport.
+
+**L18 — What was said on a link that lost a cross-connect race.** ✅ *Needed by 10.2.* Two
+nodes dialing each other at once (peer exchange's introductions, two members finding each
+other through the DHT) each keep the link the smaller id dialed. One end has by then fired
+"connected" on the other link and said on it what it says once — a session's announcements and
+subscriptions, a peer-exchange request — and that link is closed with whatever had not yet
+arrived, with no event to say so: a member heard by two of three, a mesh that did not close.
+librats' own identify was already sent again on the survivor. Now `PeerNetwork::on_peer_rerouted`
+fires when a connected peer's traffic moves to another link, and those who said something on
+connect say it again (`MediaSession::on_peer_rerouted`: announcements and subscriptions, both
+harmless twice; `PeerExchange`: its request). A node test greets on connect across five racing
+rounds: without the event one end goes ungreeted in every run.
+
+**L19 — Peer exchange that closes a small mesh.** ✅ *Needed by 10.2.* `PeerExchange` was
+pull-only: a peer asks the one it connects to whom it has. A peer that node cannot name — not yet
+identified, or not listening — never hears of the asker, and two joining through one node at
+once can each ask before the other is named. `introduce_requesters` has the node name the asker
+to those its answer left out (those it named dial the asker themselves; telling them too would
+only race two links). An ordinary response, no wire change; off by default.
 
 **L13 — Fewer ACKs for live data.** *Optional; tried, put off.* An ACK every second packet
 (RFC 9000) is ~440 a second for an 8 Mbit/s feed in full frames — 0.22 Mbit/s back (2.7% of the

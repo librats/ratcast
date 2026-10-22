@@ -810,6 +810,29 @@ TEST_F(MediaSessionTest, ADisconnectEndsStreamsAndSubscriptions) {
     EXPECT_EQ(sender.session.outgoing_stats(1)->subscribers, 0u);
 }
 
+TEST_F(MediaSessionTest, WhatALinkThatLostARaceTookIsSaidAgain) {
+    // A stream offered and a subscription asked for on a link that then lost a
+    // cross-connect race: neither arrives.
+    ASSERT_TRUE(sender.session.add_stream(screen(2)));
+    ASSERT_TRUE(receiver.session.subscribe(sender.id, 1));
+    hub.queue.clear();
+    ASSERT_EQ(receiver.announced.size(), 1u);
+    ASSERT_EQ(sender.session.outgoing_stats(1)->subscribers, 0u);
+
+    sender.session.on_peer_rerouted(receiver.id);
+    receiver.session.on_peer_rerouted(sender.id);
+    hub.deliver_all();
+    ASSERT_EQ(receiver.announced.size(), 3u);  // the first again, and the second
+    EXPECT_NE(std::ranges::find(receiver.announced, screen(2)), receiver.announced.end());
+    EXPECT_EQ(sender.session.outgoing_stats(1)->subscribers, 1u);
+    EXPECT_EQ(sender.session.outgoing_stats(2)->subscribers, 0u) << "only what was asked for";
+
+    // What did arrive, arriving twice, changes nothing.
+    receiver.session.on_peer_rerouted(sender.id);
+    hub.deliver_all();
+    EXPECT_EQ(sender.session.outgoing_stats(1)->subscribers, 1u);
+}
+
 TEST_F(MediaSessionTest, CountsMessagesItCannotRead) {
     const uint8_t garbage[] = {0xFF, 0x00};
     receiver.session.on_message(sender.id, garbage);
