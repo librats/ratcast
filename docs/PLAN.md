@@ -157,7 +157,7 @@ final place and shape: stage 0 is a walking skeleton, not a throwaway prototype.
 | **3. Standalone library** ✅ | MPEG-TS in and out, `rats://` URLs, a benchmark against librist and SRT, C API | — |
 | **4. Platforms** — in part | GPU paths and hardware codecs; Windows ✅ (GPU path open) and macOS capture; netsim ✅ | — |
 | **5. Watch together** — after 6 | one-to-many: forwarding tree, simulcast / SVC, SFU, SFrame E2EE, synchronized playout | L5 |
-| **6. App** ← now | Qt app MVP, one to one: invites, voice with AEC / NS, screen / window / app-audio share, camera; on Linux first, the other OSes as stage 4 reaches them | — |
+| **6. App** ✅ | Qt app MVP, one to one: invites, voice with AEC / NS, screen / window / app-audio share, camera; on Linux first, the other OSes as stage 4 reaches them | — |
 | **7. Conferences** | active speaker, last-N, grid, moderation, text chat | — |
 | **8. Beyond** | Android, cinema mode, HDR, polish | — |
 
@@ -656,7 +656,7 @@ version is one to one, over the path straight between the two. Coarse until reac
 - The `cinema` latency profile (from 2.3): seconds of buffer for retransmission to repair
   anything, held as encoded frames (decoded 1080p is ~3 MB a picture), lip sync over it.
 
-### Stage 6 — App
+### Stage 6 — App ✅
 
 The Qt 6 / QML app, one to one: one shares a screen and talks, the other watches and talks back,
 over the path straight between them. Linux first, on the software codecs; Windows and macOS as
@@ -718,7 +718,7 @@ on the same call code.
   whole-system sound also carried the viewers' voices as the sharer's speaker played them — they
   heard themselves, late — and the sharer's microphone heard the screen's sound with nothing to
   cancel it against.
-- **6.5 Camera, and two streams on one path:** a camera beside the screen; each stream took the
+- **6.5 Camera, and two streams on one path** ✅: a camera beside the screen; each stream took the
   whole path (1.1), so the path's rate is shared between them now.
   - **(a) The path shared, the camera in engine** ✅: the rate-controlled streams a peer watches
     share its path — each told of its part of what the path carries and delivered (`share_of()`),
@@ -779,6 +779,15 @@ on the same call code.
   not waiting for its sound, `cinema`'s seconds of buffer in stage 5 — as `call` / `game` for the
   user to choose: lifetimes, jitter-buffer depth, keyframe policy, encoder settings, the sound's
   frame for FEC only on lossy paths.
+
+Closed with every test passing (448; ASan and TSan clean) and all 16 scenarios measured three
+times through the call code (`docs/bench.md`, "Stage 6, measured whole"): every path as in stage
+2 or better, joining a round trip and more sooner, `rtt-200` without a stall or a break in the
+sound. What the *done when* asks ran on one host: the app watching `ratcast-send` from a link,
+the voice with its echo cancelled by WebRTC's processing, the applications' sound from PipeWire;
+the call between two people on two hosts (the desktop's dialog, two microphones) is left to its
+first real use. Left for later: cameras' MJPEG modes, one application's sound picked, the camera
+portal for sandboxes, the latency profiles (6.7).
 
 ### Stage 7 — Conferences
 

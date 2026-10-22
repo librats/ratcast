@@ -1139,3 +1139,75 @@ ratcast 356 / 229.4 / 229.4 (361 / 229.4 / 233.5), SRT 298 / 233.5 / 241.7 (299 
   netem, and ratcast's cap rows are the gentler for it), but a cap's latency for ratcast reads
   truer from netsim.
 
+
+## Stage 6, measured whole
+
+After 6.1–6.6: ratcast 893ca52, librats 0cd5d06. `bench/netem.py --audio --repeat 3`, the same
+run as stage 2's: the pattern, rate-controlled (2 Mbit/s up to 8), the stamped tone beside it,
+played in step — now with `ratcast-send` and `ratcast-recv` each a `Call` (6.1), so the tools go
+through the app's own call code.
+
+| scenario | path | first picture, ms | fps | Mbit/s (cuts) | latency p50 / p95 / p99, ms | stalls (ms) | lost / dropped | expired / sent | keyframes | repair | CPU send / recv, % |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| local | veth, no shaping | 72 | 60 | 6.2 (0) | 59.4 / 63.5 / 64.5 | 0 (0) | 0 / 0 | 0 / 1634 | 6 | 0.0% | 147 / 25 |
+| rtt-20 | 20 ms RTT | 145 | 60 | 6.2 (0) | 69.6 / 75.8 / 77.8 | 0 (0) | 0 / 0 | 0 / 1626 | 6 | 0.0% | 146 / 25 |
+| rtt-50 | 50 ms RTT | 217 | 60 | 6.2 (0) | 81.9 / 84.0 / 88.1 | 0 (0) | 0 / 0 | 0 / 1617 | 6 | 0.0% | 146 / 25 |
+| rtt-100 | 100 ms RTT | 389 | 60 | 6.2 (0) | 108.5 / 110.6 / 118.8 | 0 (0) | 0 / 0 | 0 / 1616 | 6 | 0.0% | 150 / 25 |
+| rtt-200 | 200 ms RTT | 698 | 60 | 6.0 (0) | 159.7 / 163.8 / 180.2 | 0 (0) | 0 / 0 | 0 / 1588 | 6 | 0.0% | 149 / 25 |
+| jitter | 50 ms RTT, ±10 ms jitter, in order | 241 | 60 | 6.2 (0) | 96.3 / 98.3 / 114.7 | 0 (0) | 0 / 0 | 0 / 1627 | 6 | 0.0% | 150 / 24 |
+| reorder-2 | 50 ms RTT, 2% of packets 25 ms early | 221 | 60 | 6.2 (0) | 88.1 / 90.1 / 92.2 | 0 (0) | 0 / 0 | 0 / 1629 | 6 | 0.0% | 145 / 25 |
+| reorder | 50 ms RTT, ±10 ms jitter, every packet on its own | 249 | 59 | 5.8 (1) | 96.3 / 98.3 / 100.4 | 1 (250) | 4 / 0 | 2 / 1621 | 8 | 0.0% | 150 / 24 |
+| loss-1 | 50 ms RTT, 1% loss | 222 | 60 | 6.2 (0) | 108.5 / 112.6 / 114.7 | 0 (0) | 0 / 0 | 0 / 1630 | 6 | 2.0% | 150 / 25 |
+| loss-2 | 50 ms RTT, 2% loss | 237 | 59 | 6.2 (0) | 114.7 / 151.6 / 155.6 | 1 (106) | 0 / 0 | 0 / 1616 | 6 | 6.1% | 147 / 25 |
+| loss-5 | 50 ms RTT, 5% loss | 220 | 59 | 6.2 (0) | 147.5 / 167.9 / 167.9 | 0 (0) | 1 / 0 | 0 / 1627 | 6 | 11.2% | 152 / 26 |
+| loss-both | 50 ms RTT, 2% loss both ways | 274 | 60 | 6.2 (0) | 114.7 / 129.0 / 151.6 | 1 (106) | 0 / 0 | 0 / 1617 | 6 | 6.2% | 148 / 25 |
+| burst | 50 ms RTT, bursts of loss (~4%) | 226 | 60 | 6.2 (0) | 143.4 / 159.7 / 163.8 | 0 (0) | 0 / 0 | 0 / 1630 | 6 | 7.7% | 148 / 26 |
+| cap-20 | 50 ms RTT, 20 Mbit/s, 100 ms buffer | 225 | 60 | 6.2 (0) | 88.1 / 90.1 / 94.2 | 0 (0) | 0 / 0 | 0 / 1627 | 6 | 0.0% | 167 / 30 |
+| cap-6 | 50 ms RTT, 6 Mbit/s (below the stream) | 239 | 59 | 3.9 (1) | 96.3 / 116.7 / 163.8 | 1 (100) | 5 / 0 | 0 / 1626 | 7 | 0.0% | 161 / 25 |
+| cap-drop | 50 ms RTT, 20 Mbit/s, 4 Mbit/s from 5 s to 10 s | 232 | 54 | 3.1 (6) | 208.9 / 221.2 / 254.0 | 5 (1112) | 41 / 9 | 37 / 1621 | 18 | 0.7% | 162 / 22 |
+
+| scenario | first sound, ms | latency p50 / p95 / p99 / max, ms | jitter buffer delay / target, ms | lost / late | FEC / concealed, ms | breaks | kbit/s | pictures apart p50 / p95 / max (mean), ms |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| local | 35 | 59.4 / 60.4 / 60.4 / 72.9 | 28 / 24 | 0 / 0 | 0 / 0 | 0 | 33.3 | 0.5 / 3.8 / 20.8 (0.7) |
+| rtt-20 | 108 | 69.6 / 73.7 / 73.7 / 135.4 | 31 / 24 | 3 / 3 | 0 / 60 | 0 | 33.3 | 0.7 / 3.1 / 62.6 (1.2) |
+| rtt-50 | 198 | 81.9 / 81.9 / 84.0 / 95.3 | 26 / 24 | 0 / 0 | 0 / 0 | 0 | 33.3 | 0.7 / 2.8 / 35.0 (1.0) |
+| rtt-100 | 348 | 108.5 / 110.3 / 110.6 / 115.2 | 28 / 24 | 0 / 0 | 0 / 0 | 0 | 33.3 | 0.5 / 2.2 / 58.6 (0.7) |
+| rtt-200 | 638 | 159.7 / 159.7 / 159.7 / 166.4 | 28 / 24 | 0 / 0 | 0 / 0 | 0 | 33.3 | 0.6 / 3.3 / 72.3 (1.0) |
+| jitter | 223 | 94.2 / 96.2 / 96.2 / 105.8 | 57 / 62 | 1 / 1 | 0 / 20 | 0 | 33.3 | 0.6 / 3.0 / 50.3 (0.9) |
+| reorder-2 | 208 | 88.1 / 88.1 / 90.1 / 93.5 | 56 / 48 | 0 / 0 | 0 / 0 | 0 | 33.3 | 0.7 / 3.3 / 22.7 (0.8) |
+| reorder | 208 | 96.3 / 96.3 / 96.3 / 99.0 | 64 / 66 | 2 / 2 | 0 / 40 | 0 | 33.3 | 0.6 / 3.0 / 127.3 (0.9) |
+| loss-1 | 207 | 106.5 / 108.5 / 108.5 / 114.9 | 51 / 55 | 6 / 6 | 120 / 20 | 0 | 33.3 | 1.4 / 20.0 / 40.8 (3.4) |
+| loss-2 | 187 | 106.5 / 143.4 / 147.5 / 177.4 | 86 / 82 | 13 / 13 | 120 / 60 | 0 | 33.3 | 4.9 / 17.9 / 75.2 (7.8) |
+| loss-5 | 201 | 147.5 / 163.8 / 163.8 / 166.1 | 105 / 99 | 3 / 3 | 60 / 80 | 0 | 33.3 | 1.1 / 8.2 / 74.2 (3.0) |
+| loss-both | 198 | 106.5 / 127.0 / 129.0 / 129.7 | 70 / 58 | 15 / 15 | 260 / 80 | 0 | 33.3 | 0.7 / 15.4 / 93.7 (5.0) |
+| burst | 201 | 139.3 / 158.8 / 158.8 / 158.8 | 102 / 83 | 7 / 7 | 60 / 160 | 0 | 33.3 | 1.5 / 20.0 / 74.9 (4.3) |
+| cap-20 | 207 | 86.0 / 87.6 / 88.1 / 89.5 | 30 / 28 | 0 / 0 | 0 / 0 | 0 | 33.3 | 0.7 / 3.8 / 31.9 (1.1) |
+| cap-6 | 208 | 96.3 / 98.3 / 98.3 / 110.6 | 40 / 35 | 2 / 2 | 0 / 40 | 0 | 33.3 | 0.6 / 25.6 / 102.3 (4.3) |
+| cap-drop | 199 | 207.7 / 221.2 / 221.2 / 225.1 | 151 / 128 | 18 / 13 | 40 / 440 | 1 | 33.3 | 0.6 / 17.4 / 118.3 (3.1) |
+
+Against stage 2's rows, before → now, ms: the first picture, then the pictures' latency at the
+median.
+
+| | local | rtt-20 | rtt-50 | rtt-100 | rtt-200 | jitter | reorder-2 | reorder | loss-1 | loss-2 | loss-5 | loss-both | burst | cap-20 | cap-6 | cap-drop |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| first picture | 55 → 72 | 169 → 145 | 329 → 217 | 638 → 389 | 1201 → 698 | 330 → 241 | 326 → 221 | 306 → 249 | 332 → 222 | 329 → 237 | 338 → 220 | 361 → 274 | 329 → 226 | 334 → 225 | 335 → 239 | 331 → 232 |
+| latency p50 | 57 → 59 | 70 → 70 | 88 → 82 | 131 → 109 | 184 → 160 | 104 → 96 | 82 → 88 | 90 → 96 | 121 → 109 | 127 → 115 | 139 → 148 | 121 → 115 | 143 → 143 | 88 → 88 | 109 → 96 | 209 → 209 |
+
+- **Joining a round trip and more sooner** on every path with one (stage 3's fixes: 3.2 (b) 1,
+  librats L2 (b)), as their first look predicted. `local` is the one row slower: two runs of
+  three at 72–74 ms, one at 57 as before; not looked into.
+- **Long round trips hold now.** `rtt-200` had 3 stalls, 51 pictures lost and a break in the
+  sound; now none, and the sound's jitter buffer stays at its target (28 ms for 24; it was 51),
+  so the pictures, which wait for it, come 25 ms sooner. `rtt-100` the same way, 22 ms.
+- **The rest as in stage 2**, within a run's spread: lip sync within 1 ms at the median (5 ms on
+  `loss-2`) and 26 ms at p95 at worst (`cap-6`); the sound without a break but on `cap-drop`, a
+  path at 4 Mbit/s under a 6 Mbit/s stream for 5 s. `cap-drop` keeps its 209 ms median, the
+  sound's delay pushed up and staying (stage 2's last section).
+- **CPU** as before but on the three cap rows, run last: 161–167% for the sender (146–150 on the
+  others). Not looked into; the VM's other load at the time is as likely as anything.
+
+What stage 6 added rides on the same streams but is not measured here: a camera beside the
+pictures (6.5) shares the path with them by their most (`MediaSession` tests, in virtual time);
+the voice both ways and its echo cancellation (6.4, 6.6) are tested against WebRTC's processing
+and PipeWire on this host. `ratcast-send` carries one picture stream and one sound, so a
+shared path is measured here once a tool sends a camera beside a screen.
