@@ -86,9 +86,13 @@ TEST(Pattern, PicturesMove) {
 }
 
 TEST(PatternSource, DeliversStampedPicturesAtItsRate) {
-    PatternSource source({PixelFormat::NV12, 160, 120, 100, 1});
+    // 25 a second: a picture is skipped only for a wait over 40 ms late, where
+    // at 100 a second the 10 ms that CI's macOS runners oversleep did it.
+    constexpr auto kInterval = 40ms;
+    PatternSource source({PixelFormat::NV12, 160, 120, 25, 1});
     std::mutex mutex;
     std::vector<Timestamp> stamps;
+    const auto started = std::chrono::steady_clock::now();
     ASSERT_TRUE(source.start(
         [&](VideoFrame picture) {
             std::lock_guard lock(mutex);
@@ -97,13 +101,16 @@ TEST(PatternSource, DeliversStampedPicturesAtItsRate) {
         {}));
     EXPECT_FALSE(source.start([](VideoFrame) {}, {}));  // already running
 
-    std::this_thread::sleep_for(300ms);
+    std::this_thread::sleep_for(400ms);
     source.stop();
+    const auto ran = std::chrono::steady_clock::now() - started;
     const size_t delivered = stamps.size();
-    std::this_thread::sleep_for(30ms);
+    std::this_thread::sleep_for(50ms);
     EXPECT_EQ(stamps.size(), delivered);  // nothing after stop()
 
-    EXPECT_GE(delivered, 15u);  // ~30 expected; generous for a loaded machine
-    EXPECT_LE(delivered, 35u);
+    // Never faster than its rate: one at the start and one an interval begun
+    // since. Slower only where the machine is: ~10 expected.
+    EXPECT_LE(delivered, size_t(ran / kInterval) + 1);
+    EXPECT_GE(delivered, 5u);
     EXPECT_TRUE(std::ranges::is_sorted(stamps));
 }
