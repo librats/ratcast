@@ -338,9 +338,9 @@ def feed_commands(transport, args, path):
                 [str(tool(args.bin, "ratcast-recv")), f"rats://{dial}", "--output", FEED_OUT,
                  *args.recv_args])
     if transport == "srt":
-        tool = str(args.peers / "srt-live-transmit")
-        return ([tool, FEED_IN, f"srt://:{PORT}?mode=listener&latency={latency}", *args.send_args],
-                [tool, f"srt://{dial}?latency={latency}", FEED_OUT, *args.recv_args])
+        srt = str(args.peers / "srt-live-transmit")
+        return ([srt, FEED_IN, f"srt://:{PORT}?mode=listener&latency={latency}", *args.send_args],
+                [srt, f"srt://{dial}?latency={latency}", FEED_OUT, *args.recv_args])
     # librist's main profile, which SRT's live mode and ratcast compare with.
     return ([str(args.peers / "ristsender"), "--profile", "1", "--inputurl", FEED_IN,
              "--outputurl", f"rist://@{path.sender}:{PORT}?buffer={latency}", *args.send_args],
