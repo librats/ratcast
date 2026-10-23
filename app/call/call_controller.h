@@ -2,29 +2,32 @@
 
 /**
  * @file call_controller.h
- * @brief A call as QML sees it: share a screen or join one, and leave.
+ * @brief A room as QML sees it: make one or join one, talk, share, watch.
  *
- * The controller holds at most one Call and says where it stands:
+ *   Idle ── create() ───────────────▶ InRoom     (alone until others join)
+ *     └──── join() ──▶ Joining ─────▶ InRoom     (once a member answers)
  *
- *   Idle ── share() ──▶ Choosing ──▶ Sharing     (the desktop's dialog, then
- *     │                    │                       others may join)
- *     └──── join() ──▶ Joining ◀──▶ Watching      (the picture plays, or is
- *                                                  waited for)
+ * and leave() goes back to Idle from anywhere. A room is a call where
+ * everyone meets everyone, whoever they joined through (CallConfig::mesh).
+ * Everyone talks from the start: the microphone, cleaned of the echo of all
+ * the computer plays and of noise, goes as a voice (VoiceChannel). Muted, it
+ * sends silence; deafened, nobody is heard and the microphone is silent too,
+ * as in Discord. Anyone may share a screen or a window — the desktop's dialog,
+ * off the GUI thread — and stop, and turn their camera on and off, while the
+ * room goes on. Whose share plays is chosen with watch(); until anyone is
+ * chosen, the first one offered.
  *
- * and leave() goes back to Idle from anywhere. Either way the call is a room
- * (CallConfig::mesh): whoever joins, by whichever member's link, meets
- * everyone, and everyone talks: the microphone, cleaned of the echo of all the
- * computer plays and of noise, goes as a voice (VoiceChannel), muted or not as
- * the user says; and anyone may turn their camera on, which the others see
- * beside the screen and they see themselves. What went wrong, or ended
- * without the user, is the notice: a share the desktop could not make, a link
- * that is none, the other side gone. The user calling off the desktop's dialog
- * is no news.
+ * Each side says who it is — the user's name, muted, deafened — and the others
+ * are listed (`members`) by it, with who is speaking and whose camera and
+ * share are on. Each member's camera goes to the view QML gives for it
+ * (setCameraView()), the share watched to `video`, this side's own camera to
+ * `preview`.
  *
- * Each side says who it is — the user's name, muted or not — and the others
- * are listed (`members`) as they say it.
+ * What went wrong, or ended without the user, is the notice: a share the
+ * desktop could not make or that stopped, a link that is none, a camera
+ * gone. The user calling off the desktop's dialog is no news.
  *
- * In a call, a CallMonitor reports on it every second: what each stream sent
+ * In a room, a CallMonitor reports on it every second: what each stream sent
  * and played does and how well, laid out for a panel, and the call's quality
  * with the reason; and, if asked, on standard output every so many seconds.
  *
@@ -35,6 +38,8 @@
  */
 
 #include <QtQml/qqmlregistration.h>
+#include <QAbstractItemModel>
+#include <QMap>
 #include <QObject>
 #include <QPointer>
 #include <QString>
@@ -49,6 +54,7 @@
 #include <string>
 #include <thread>
 
+#include "members_model.h"
 #include "ratcast/client/call.h"
 #include "ratcast/client/call_monitor.h"
 #include "ratcast/client/camera.h"
@@ -63,60 +69,64 @@ class CallController : public QObject {
     Q_OBJECT
     QML_ELEMENT
     Q_PROPERTY(State state READ state NOTIFY stateChanged)
-    /// rats:// links to this call while sharing: the first for the internet
-    /// (the peer id), the rest for the networks this host is on.
+    /// rats:// links to the room, for the user to send: by peer id for the
+    /// internet if there is one, then the networks this host is on. Any
+    /// member's will do.
     Q_PROPERTY(QStringList invites READ invites NOTIFY invitesChanged)
-    /// Peers connected while sharing.
-    Q_PROPERTY(int viewers READ viewers NOTIFY viewersChanged)
     Q_PROPERTY(QString notice READ notice NOTIFY noticeChanged)
     /// What the others call this side: the user's login name until they say
     /// otherwise. Whitespace runs and control characters are not told, nor
     /// what is past Presence::kMaxNameSize bytes.
     Q_PROPERTY(QString name READ name WRITE setName NOTIFY nameChanged)
-    /// The others in the call, by peer: maps of `peer` (a short id), `name`
-    /// (what they call themselves; "" until they say), `muted`, `deafened`.
-    Q_PROPERTY(QVariantList members READ members NOTIFY membersChanged)
-    /// The microphone silenced; kept from one call to the next.
+    /// The others in the room (MembersModel): peerId, peer (a short one),
+    /// name, muted, deafened, speaking, camera, sharing.
+    Q_PROPERTY(QAbstractItemModel* members READ members CONSTANT)
+    /// How many of the others have their camera on.
+    Q_PROPERTY(int cameras READ cameras NOTIFY camerasChanged)
+    /// The microphone silenced, as the user says; kept from one room to the
+    /// next. Deafened silences it as well, whatever this says.
     Q_PROPERTY(bool muted READ muted WRITE setMuted NOTIFY mutedChanged)
-    /// This side's voice on the microphone, and the other side's on the speaker.
+    /// Nobody heard: the speaker plays silence.
+    Q_PROPERTY(bool deafened READ deafened WRITE setDeafened NOTIFY deafenedChanged)
+    /// This side's voice on the microphone.
     Q_PROPERTY(bool speaking READ speaking NOTIFY speakingChanged)
-    Q_PROPERTY(bool hearing READ hearing NOTIFY hearingChanged)
-    /// This side's camera on: sent while in a call, and with the next one;
-    /// kept from one call to the next. Off again if there is none.
+    /// This side's camera on: sent while in a room, and with the next one;
+    /// kept from one room to the next. Off again if there is none.
     Q_PROPERTY(bool camera READ camera WRITE setCamera NOTIFY cameraChanged)
-    /// The other side's camera playing.
-    Q_PROPERTY(bool cameraShown READ cameraShown NOTIFY cameraShownChanged)
-    /// Where the other side's pictures are drawn, its camera, and this
-    /// side's own camera as it goes.
+    /// This side sharing a screen or a window, or the desktop's dialog open
+    /// to choose one.
+    Q_PROPERTY(bool sharing READ sharing NOTIFY sharingChanged)
+    Q_PROPERTY(bool choosing READ choosing NOTIFY choosingChanged)
+    /// The id of the member whose share plays into `video`; "" for none.
+    Q_PROPERTY(QString watching READ watching NOTIFY watchingChanged)
+    /// Where the share watched is drawn, and this side's own camera.
     Q_PROPERTY(ratcast::app::VideoView* video READ video WRITE setVideo NOTIFY videoChanged)
-    Q_PROPERTY(ratcast::app::VideoView* cameraView READ cameraView WRITE setCameraView NOTIFY
-                   cameraViewChanged)
     Q_PROPERTY(ratcast::app::VideoView* preview READ preview WRITE setPreview NOTIFY previewChanged)
     /// The call over the last second, as its monitor saw it: a section a part,
     /// the call first, each a map of `title`, `quality`, `reason` and `rows`
-    /// (maps of `label` and `value`). Empty outside a call.
+    /// (maps of `label` and `value`). Empty outside a room.
     Q_PROPERTY(QVariantList stats READ stats NOTIFY statsChanged)
     /// The call's quality — "good", "fair" or "poor" — and why it is not
     /// good; "" before the first report.
     Q_PROPERTY(QString quality READ quality NOTIFY statsChanged)
     Q_PROPERTY(QString qualityReason READ qualityReason NOTIFY statsChanged)
     /// Print the monitor's report on standard output every so many seconds
-    /// while in a call; 0: never.
+    /// while in a room; 0: never.
     Q_PROPERTY(int statsEvery READ statsEvery WRITE setStatsEvery NOTIFY statsEveryChanged)
 
 public:
-    enum class State { Idle, Choosing, Sharing, Joining, Watching };
+    enum class State { Idle, Joining, InRoom };
     Q_ENUM(State)
 
     /// What the controller takes from the system; tests stand in for it.
     struct Environment {
-        /// What every call starts from: where it listens, its protocol.
+        /// What every room starts from: where it listens, its protocol.
         CallConfig call = {};
         /// Where the identity and the desktop's choices are kept.
         std::string data_dir = {};
         std::function<Result<ScreenShareSources>(const ScreenShareConfig&, std::stop_token)>
             open_share = {};
-        /// The speaker; null: the sound is not played.
+        /// The speaker; null: nothing is played.
         std::function<std::unique_ptr<AudioOutput>()> open_speaker = {};
         /// The microphone; null: this side is not heard.
         std::function<std::unique_ptr<AudioSource>()> open_microphone = {};
@@ -131,45 +141,55 @@ public:
         QString name = {};
 
         /// This computer's: its desktop, its speaker, the user's data
-        /// directory, discoverable through the DHT.
+        /// directory and name, discoverable through the DHT.
         static Environment system();
     };
 
     explicit CallController(QObject* parent = nullptr);
     ~CallController() override;
 
-    /// Before the first share() or join().
+    /// Before the first create() or join().
     void setEnvironment(Environment environment);
 
-    /// Ask the desktop for a screen (or a window) and share it, with the
-    /// computer's sound if asked.
-    Q_INVOKABLE void share(bool window, bool sound);
-    /// Call the sharer at `link` and watch.
+    /// Make a room, and be in it: others join by its invites.
+    Q_INVOKABLE void create();
+    /// Join the room at `link`.
     Q_INVOKABLE void join(const QString& link);
     Q_INVOKABLE void leave();
+    /// Ask the desktop for a screen (or a window) and share it, with the
+    /// computer's sound if asked. In a room, while not sharing.
+    Q_INVOKABLE void share(bool window, bool sound);
+    /// Stop sharing, or call off the desktop's dialog.
+    Q_INVOKABLE void stopSharing();
+    /// Watch the share of the member of `id`; "": none.
+    Q_INVOKABLE void watch(const QString& id);
+    /// Draw the camera of the member of `id` into `view`; null: nowhere.
+    Q_INVOKABLE void setCameraView(const QString& id, ratcast::app::VideoView* view);
     /// Put `text` on the clipboard: an invite, for the user to send.
     Q_INVOKABLE void copy(const QString& text);
 
     State state() const { return state_; }
     QStringList invites() const { return invites_; }
-    int viewers() const { return viewers_; }
     QString notice() const { return notice_; }
-    VideoView* video() const { return video_; }
-    void setVideo(VideoView* video);
-    VideoView* cameraView() const { return camera_view_; }
-    void setCameraView(VideoView* view);
-    VideoView* preview() const { return preview_; }
-    void setPreview(VideoView* view);
-    bool camera() const { return camera_; }
-    void setCamera(bool on);
-    bool cameraShown() const { return camera_shown_; }
     QString name() const { return name_; }
     void setName(const QString& name);
-    QVariantList members() const { return members_; }
+    MembersModel* members() { return &members_; }
+    const MembersModel& memberList() const { return members_; }
+    int cameras() const { return cameras_on_; }
     bool muted() const { return muted_; }
     void setMuted(bool muted);
+    bool deafened() const { return deafened_; }
+    void setDeafened(bool deafened);
     bool speaking() const { return speaking_; }
-    bool hearing() const { return hearing_; }
+    bool camera() const { return camera_; }
+    void setCamera(bool on);
+    bool sharing() const { return sharing_; }
+    bool choosing() const { return choosing_; }
+    QString watching() const { return watching_; }
+    VideoView* video() const { return video_; }
+    void setVideo(VideoView* video);
+    VideoView* preview() const { return preview_; }
+    void setPreview(VideoView* view);
     QVariantList stats() const { return stats_; }
     QString quality() const { return quality_; }
     QString qualityReason() const { return quality_reason_; }
@@ -179,28 +199,34 @@ public:
 Q_SIGNALS:
     void stateChanged();
     void invitesChanged();
-    void viewersChanged();
     void noticeChanged();
     void nameChanged();
-    void membersChanged();
-    void videoChanged();
-    void cameraViewChanged();
-    void previewChanged();
-    void cameraChanged();
-    void cameraShownChanged();
+    void camerasChanged();
     void mutedChanged();
+    void deafenedChanged();
     void speakingChanged();
-    void hearingChanged();
+    void cameraChanged();
+    void sharingChanged();
+    void choosingChanged();
+    void watchingChanged();
+    void videoChanged();
+    void previewChanged();
     void statsChanged();
     void statsEveryChanged();
 
 private:
     struct Pictures;
+    struct Cameras;
 
     void set_state(State state);
     void set_notice(QString notice);
-    void count_viewers();
-    /// The sources the desktop gave for share number `generation`, or why not.
+    void set_sharing(bool sharing);
+    void set_choosing(bool choosing);
+    void set_watching(QString id);
+    /// Start the call `config` says and be in `state`: talking, reporting.
+    void start(CallConfig config, State state);
+    /// The sources the desktop gave for the share asked in room `generation`,
+    /// or why not.
     void share_opened(uint64_t generation, const ScreenShareConfig& config,
                       Result<ScreenShareSources> sources);
     /// A call's handlers, which bring its events onto the GUI thread for
@@ -208,25 +234,22 @@ private:
     CallHandlers handlers(uint64_t generation);
     /// Run `event` on the GUI thread if the call of `generation` is still on.
     void post(uint64_t generation, std::function<void()> event);
-    /// The speaker, through a voice channel of its own, for a call about to
-    /// start.
-    void open_voice();
     /// This side's voice on the call just started, if there is a microphone,
     /// and its camera if on.
     void talk();
+    /// The microphone and the speaker as muted and deafened say, and the
+    /// others told.
+    void apply_voice();
     /// The camera, sent and seen; off with `notice` if it cannot be.
     void start_camera();
     void camera_off(QString notice = {});
-    void set_camera_shown(bool shown);
-    static std::function<VideoPlayer::Sink(const PeerId&)> cameras(
-        std::shared_ptr<Pictures> pictures);
     /// Draw what `pictures` gets into `view` from now on, as `slot` keeps it.
     static bool attach(QPointer<VideoView>& slot, Pictures& pictures, VideoView* view);
     /// Say who this side is to the others, as it is now.
     void tell_presence();
-    /// The others, as the call knows them now.
+    /// The others, and this side's own voice, as they are now: a few times a
+    /// second, and as the call says something changed.
     void update_members();
-    /// Who is speaking, as the voice channel says: a few times a second.
     void update_levels();
     /// Report on the call just started, every second and, if asked, on
     /// standard output.
@@ -240,16 +263,17 @@ private:
     Environment environment_;
     State state_ = State::Idle;
     QStringList invites_;
-    int viewers_ = 0;
     QString notice_;
-    bool other_side_left_ = false;  ///< what the notice says, until it says another
     QString name_;
-    QVariantList members_;
+    MembersModel members_;
+    int cameras_on_ = 0;
     bool muted_ = false;
+    bool deafened_ = false;
     bool speaking_ = false;
-    bool hearing_ = false;
     bool camera_ = false;
-    bool camera_shown_ = false;
+    bool sharing_ = false;
+    bool choosing_ = false;
+    QString watching_;
     QTimer levels_;
     QTimer reporting_;
     QTimer printing_;
@@ -259,17 +283,17 @@ private:
     int stats_every_ = 0;
     unsigned printed_seconds_ = 0;  ///< into the call, as printed
     QPointer<VideoView> video_;
-    QPointer<VideoView> camera_view_;
     QPointer<VideoView> preview_;
-    /// Where the call's pictures go, the other side's camera's and this
-    /// side's: each its view, as it changes.
+    /// Where the share watched goes, and this side's camera: each its view.
     std::shared_ptr<Pictures> pictures_;
-    std::shared_ptr<Pictures> camera_pictures_;
     std::shared_ptr<Pictures> preview_pictures_;
+    /// Where each member's camera goes, asked by the call's threads.
+    std::shared_ptr<Cameras> cameras_;
+    QMap<QString, QPointer<VideoView>> camera_views_;  ///< by member id
 
-    /// Counts calls and shares begun: events of an earlier one are dropped.
+    /// Counts rooms begun: events and dialogs of an earlier one are dropped.
     uint64_t generation_ = 0;
-    std::jthread choosing_;  ///< the desktop's dialog
+    std::jthread dialog_;  ///< the desktop's
     std::unique_ptr<VoiceChannel> voice_;
     std::unique_ptr<AudioOutput> speaker_;  ///< the voice channel's
     std::unique_ptr<Call> call_;            ///< after the speaker: it plays into it

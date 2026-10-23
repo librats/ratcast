@@ -17,7 +17,9 @@
  * goes as it is.
  *
  * Muted, the microphone sends silence, which the voice encoder's DTX makes
- * next to nothing; the stream stays, so unmuting is at once. speaking() is
+ * next to nothing; the stream stays, so unmuting is at once. Deafened, the
+ * speaker plays silence — the voices, a film, all of it — and the processor
+ * hears that silence, which is what comes back. speaking() is
  * this side's voice on the microphone, unmuted; hearing() is the other side
  * on the speaker. Each holds for a moment after the sound stops, so that a UI
  * showing them does not flicker. Thread-safe; the wrappers may outlive it.
@@ -57,6 +59,8 @@ public:
 
     void set_muted(bool muted) noexcept;
     bool muted() const noexcept;
+    void set_deafened(bool deafened) noexcept;
+    bool deafened() const noexcept;
     bool speaking() const noexcept;
     bool hearing() const noexcept;
     /// Whether echo and noise are taken out: there is a processor.

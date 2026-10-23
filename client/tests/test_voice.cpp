@@ -1,4 +1,5 @@
-// VoiceChannel: the microphone silenced when muted, who is speaking and who
+// VoiceChannel: the microphone silenced when muted, the speaker when
+// deafened, who is speaking and who
 // is heard held for a moment, the system's sound taken out of the microphone
 // as the echo in the speaker's place, and two sides of a call talking — each
 // hearing the other's voice, and no longer once it is muted.
@@ -73,9 +74,11 @@ public:
     }
     void stop() override { pull_ = {}; }
     void play(Timestamp when) {
-        std::vector<float> out(960);
-        pull_(out, when);
+        played.assign(960, 0.0f);
+        pull_(played, when);
     }
+
+    std::vector<float> played;  ///< the last block, as it reached the device
 
 private:
     const AudioFormat format_{48'000, 2};
@@ -121,6 +124,28 @@ TEST(VoiceChannel, MutedTheMicrophoneSendsSilence) {
     EXPECT_GT(peaks[before - 1], 0.1f) << "sound while not muted";
     ASSERT_GT(peaks.size(), before + 10);
     EXPECT_EQ(peaks.back(), 0.0f) << "nothing once muted";
+}
+
+TEST(VoiceChannel, DeafenedTheSpeakerPlaysSilence) {
+    ManualClock clock{Timestamp{10s}};
+    VoiceChannel voice({}, clock);
+    auto device = std::make_unique<HandSpeaker>();
+    HandSpeaker& speaker = *device;
+    std::unique_ptr<AudioOutput> output = voice.speaker(std::move(device));
+    ASSERT_TRUE(
+        output->start([](std::span<float> out, Timestamp) { std::ranges::fill(out, 0.3f); }, {}));
+    speaker.play(clock.now());
+    EXPECT_GT(energy(speaker.played), 0);
+
+    voice.set_deafened(true);
+    EXPECT_TRUE(voice.deafened());
+    clock.advance(400ms);
+    speaker.play(clock.now());
+    EXPECT_EQ(energy(speaker.played), 0);
+    EXPECT_FALSE(voice.hearing()) << "nobody heard";
+    voice.set_deafened(false);
+    speaker.play(clock.now());
+    EXPECT_GT(energy(speaker.played), 0);
 }
 
 TEST(VoiceChannel, SpeakingAndHearingHoldAMoment) {

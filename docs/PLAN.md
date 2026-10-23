@@ -925,11 +925,36 @@ room goes on, the others watching whose share they choose.
   change to all, again when rerouted, forgotten, refused), a call on real nodes, two
   controllers listing each other, muting and renaming (a long name with controls arriving
   clean); debug and ASan 485, TSan 466.
-- **10.4 The app as a room** ← now: make a room or join one by link, everyone talking from the start;
+- **10.4 The app as a room** ✅: make a room or join one by link, everyone talking from the start;
   the members listed — name, speaking, muted, deafened, camera, sharing; mute, deafen (nobody
   heard, the microphone off too, as in Discord), camera, share a screen or a window and stop it
   without leaving; a member's share watched on a click, the cameras beside it.
-- **10.5 Checked**: three or four members on loopback and over netem's paths, a small run.
+  Done so: `CallController` is a room now — Idle → InRoom (made) or Idle → Joining → InRoom
+  (joined, once a member answers) — with sharing (`share()`, `stopSharing()`, `choosing` while
+  the desktop's dialog is open), watching (`watch(id)`, `watching`), deafening, and the members
+  in `MembersModel`, whose rows change in place (who speaks changes a few times a second; a
+  list made anew would make QML make every delegate, and every camera's view, anew). Each
+  member's camera goes to the view QML gives for it (`setCameraView(id, view)`), the call's
+  players asking for it by peer as a camera starts. Below the app: `AudioPlayerStats::heard`
+  (when what a player played was last louder than -45 dBFS) and `Call::speaking()`;
+  `VoiceChannel::set_deafened()` (the speaker plays silence, which is what the echo canceller
+  hears); `unpublish_screen_share()` and the share's stream ids public; a room member who joined
+  by peer id hands out that id (the room's key in the DHT). The window: the members down the
+  side (a dot for who speaks, muted / deafened, Watch on a member's share), invites to copy;
+  the share in the middle with Stop watching, the cameras beside it or, with no share, a grid;
+  the controls along the bottom (Mute, Deafen, Camera, Share — a screen, a window, with its
+  sound — Stop sharing, the quality and Stats, Leave). Names others chose are shown as plain
+  text: QML would read `<b>` in one as markup. Found on the way: a model role named `id` (QML's
+  reserved word) would have broken the first member's delegate — caught on a screenshot stand.
+  Tested: the members model (rows gone, come and changed in place, nothing told when nothing
+  changed); a room made and joined, a third through the second meeting the first, names, who
+  speaks, muted and deafened as the others see them, sharing and stopping and sharing again,
+  watching none and again, every camera in a view of its own, the dialog called off by stopping
+  and by leaving, a share that runs out, no camera, no microphone, the monitor; deafening in
+  `VoiceChannel`; `Call::speaking()`; a share stopped with the call going on. Debug and ASan 490,
+  TSan 466 of 467 (`PipeWireApplicationsTest.OneThatStartsLaterIsHeard`, the real daemon's
+  capture under TSan and a full suite's load, twice; alone, 3 of 3).
+- **10.5 Checked** ← now: three or four members on loopback and over netem's paths, a small run.
 
 ### Stage 7 — Conferences
 

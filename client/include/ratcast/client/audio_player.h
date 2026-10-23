@@ -57,6 +57,9 @@ struct AudioPlayerStats {
     Duration delay{};     ///< the jitter buffer's, beyond the fastest frames
     Duration target{};    ///< what it aims at
     std::string decoder;  ///< e.g. "libopus 1.5.2"
+    /// When what it played was last louder than -45 dBFS, by the output's
+    /// clock: someone heard. Never, before.
+    std::optional<Timestamp> heard{};
 };
 
 class AudioPlayer {

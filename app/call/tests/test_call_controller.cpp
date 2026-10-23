@@ -1,9 +1,11 @@
-// CallController between two of its kind on loopback: one shares (the test
-// pattern and a tone standing in for the desktop's screen and sound), the
-// other joins by an invite and watches, each going through its states; both
-// talking, either side's camera seen by the other and by itself, each
-// listing the other by the name it gives, each reporting how the call goes;
-// and the ways a share or a join ends without the user.
+// CallController in rooms on loopback: one makes a room and others join it by
+// its invites or by each other's, each going through its states; everyone
+// talking and seen speaking, muted, deafened; anyone sharing (the test
+// pattern and a tone standing in for the desktop's screen and sound) and
+// stopping while the room goes on, the others watching it or not; cameras,
+// each member's in a view of its own; each listing the others by the names
+// they give; each reporting how the call goes; and the ways a share or a
+// join ends without the user.
 
 #include "call_controller.h"
 
@@ -104,43 +106,217 @@ protected:
         probe.height = 240;
         if (!open_video_encoder(probe)) GTEST_SKIP() << "no AV1 encoder here";
         if (!open_audio_encoder({})) GTEST_SKIP() << "no Opus here";
-        sharer_.setEnvironment(environment());
-        viewer_.setEnvironment(environment());
-        viewer_.setVideo(&view_);
+        for (CallController* side : {&ann_, &bob_, &carl_}) side->setEnvironment(environment());
+        ann_.setName("Ann");
+        bob_.setName("Bob");
+        carl_.setName("Carl");
+        bob_.setVideo(&bob_view_);
     }
 
-    /// The sharer sharing, and its invite on loopback.
-    QString share() {
-        sharer_.share(false, true);
-        EXPECT_TRUE(wait_for([&] { return sharer_.state() == State::Sharing; }))
-            << sharer_.notice().toStdString();
-        EXPECT_EQ(sharer_.invites().size(), 1) << "one address: the one it listens on";
-        return sharer_.invites().value(0);
+    /// Ann's room made, and its invite on loopback.
+    QString make_room() {
+        ann_.create();
+        EXPECT_EQ(ann_.state(), State::InRoom) << ann_.notice().toStdString();
+        EXPECT_EQ(ann_.invites().size(), 1) << "one address: the one it listens on";
+        return ann_.invites().value(0);
     }
 
-    VideoView view_;
-    CallController sharer_;
-    CallController viewer_;
+    /// Bob in Ann's room, each knowing the other by name.
+    void both_in() {
+        bob_.join(make_room());
+        ASSERT_TRUE(wait_for(
+            [&] { return !member(ann_, "Bob").isEmpty() && !member(bob_, "Ann").isEmpty(); }));
+    }
+
+    static int members(const CallController& side) { return side.memberList().rowCount(); }
+    /// The member of `side` called `name`; empty if none is.
+    static QVariantMap member(const CallController& side, const QString& name) {
+        for (int row = 0; row < members(side); ++row) {
+            const QVariantMap member = side.memberList().get(row);
+            if (member.value("name") == name) return member;
+        }
+        return {};
+    }
+    /// The id the others know `side` by, as `other` lists it.
+    static QString id_of(const CallController& other, const QString& name) {
+        return member(other, name).value("peerId").toString();
+    }
+
+    VideoView bob_view_;
+    CallController ann_;
+    CallController bob_;
+    CallController carl_;
 };
 
-TEST_F(CallControllerTest, OneSharesTheOtherJoinsAndWatches) {
-    const QString invite = share();
+TEST_F(CallControllerTest, OneMakesARoomAndAnotherJoins) {
+    const QString invite = make_room();
     EXPECT_TRUE(invite.startsWith("rats://127.0.0.1:"));
-    EXPECT_EQ(sharer_.viewers(), 0);
+    EXPECT_EQ(members(ann_), 0) << "alone";
 
-    viewer_.join(invite);
-    EXPECT_EQ(viewer_.state(), State::Joining);
-    ASSERT_TRUE(wait_for([&] { return viewer_.state() == State::Watching; }));
-    EXPECT_TRUE(wait_for([&] { return view_.pictureSize() == QSize(320, 240); }))
+    bob_.join(invite);
+    EXPECT_EQ(bob_.state(), State::Joining);
+    ASSERT_TRUE(wait_for([&] { return bob_.state() == State::InRoom; }));
+    EXPECT_TRUE(wait_for([&] { return members(ann_) == 1 && members(bob_) == 1; }));
+    EXPECT_FALSE(bob_.invites().isEmpty()) << "any member's link will do";
+    EXPECT_TRUE(bob_.notice().isEmpty());
+
+    bob_.leave();
+    EXPECT_EQ(bob_.state(), State::Idle);
+    EXPECT_EQ(members(bob_), 0);
+    EXPECT_TRUE(bob_.invites().isEmpty());
+    EXPECT_TRUE(wait_for([&] { return members(ann_) == 0; }));
+    EXPECT_EQ(ann_.state(), State::InRoom) << "still in it, for the next to join";
+}
+
+TEST_F(CallControllerTest, AThirdJoiningThroughTheSecondMeetsTheFirst) {
+    both_in();
+    carl_.join(bob_.invites().value(0));
+    EXPECT_TRUE(wait_for([&] {
+        return members(ann_) == 2 && members(bob_) == 2 && !member(carl_, "Ann").isEmpty() &&
+               !member(carl_, "Bob").isEmpty();
+    })) << members(ann_)
+        << " " << members(bob_) << " " << members(carl_);
+}
+
+TEST_F(CallControllerTest, EachListsTheOthersByTheNamesTheyGive) {
+    both_in();
+    EXPECT_EQ(member(ann_, "Bob").value("peer").toString().size(), 8) << "a short id beside it";
+    EXPECT_EQ(id_of(ann_, "Bob").size(), 64);
+
+    bob_.setName(QString("Robert\n\tthe   ") + QString(200, QChar(0x044F)));  // 'я'
+    ASSERT_TRUE(wait_for([&] { return member(ann_, "Bob").isEmpty() && members(ann_) == 1; }));
+    const QString told = ann_.memberList().get(0).value("name").toString();
+    EXPECT_TRUE(told.startsWith("Robert the яя")) << told.toStdString();
+    EXPECT_LE(told.toUtf8().size(), qsizetype(Presence::kMaxNameSize));
+}
+
+TEST_F(CallControllerTest, EveryoneTalksAndIsSeenSpeakingUntilMutedOrDeafened) {
+    both_in();
+    const auto bob = [&] { return member(ann_, "Bob"); };
+    ASSERT_TRUE(wait_for([&] {
+        return bob().value("speaking").toBool() && member(bob_, "Ann").value("speaking").toBool();
+    })) << "each hears the other's voice";
+    EXPECT_TRUE(wait_for([&] { return ann_.speaking() && bob_.speaking(); }));
+
+    bob_.setMuted(true);
+    EXPECT_FALSE(bob_.speaking());
+    EXPECT_TRUE(wait_for(
+        [&] { return bob().value("muted").toBool() && !bob().value("speaking").toBool(); }));
+    bob_.setMuted(false);
+    EXPECT_TRUE(wait_for([&] { return bob().value("speaking").toBool(); }));
+
+    // Deafened: hears nobody, and nobody hears it, whatever muted says.
+    bob_.setDeafened(true);
+    EXPECT_FALSE(bob_.muted()) << "the user's own choice, kept";
+    EXPECT_TRUE(wait_for([&] {
+        return bob().value("deafened").toBool() && bob().value("muted").toBool() &&
+               !bob().value("speaking").toBool();
+    }));
+    bob_.setDeafened(false);
+    EXPECT_TRUE(wait_for(
+        [&] { return !bob().value("muted").toBool() && bob().value("speaking").toBool(); }));
+}
+
+TEST_F(CallControllerTest, WithoutAMicrophoneTheRoomGoesOn) {
+    CallController::Environment mute = environment();
+    mute.open_microphone = [] { return std::unique_ptr<AudioSource>{}; };
+    bob_.setEnvironment(mute);
+    bob_.setName("Bob");
+    both_in();
+    EXPECT_FALSE(bob_.notice().isEmpty());
+    EXPECT_TRUE(wait_for([&] { return member(bob_, "Ann").value("speaking").toBool(); }));
+    EXPECT_FALSE(member(ann_, "Bob").value("speaking").toBool());
+}
+
+TEST_F(CallControllerTest, AnyoneSharesAndStopsWhileTheRoomGoesOn) {
+    both_in();
+    ann_.share(false, true);
+    EXPECT_TRUE(ann_.choosing());
+    ASSERT_TRUE(wait_for([&] { return ann_.sharing(); })) << ann_.notice().toStdString();
+    EXPECT_FALSE(ann_.choosing());
+
+    // Nothing chosen: the first share offered is watched.
+    const QString ann = id_of(bob_, "Ann");
+    ASSERT_TRUE(wait_for([&] { return bob_.watching() == ann; }));
+    EXPECT_TRUE(wait_for([&] { return bob_view_.pictureSize() == QSize(320, 240); }))
         << "the pictures reach the view";
-    EXPECT_TRUE(wait_for([&] { return sharer_.viewers() == 1; }));
-    EXPECT_TRUE(viewer_.notice().isEmpty());
+    EXPECT_TRUE(member(bob_, "Ann").value("sharing").toBool());
+    EXPECT_TRUE(ann_.watching().isEmpty()) << "not one's own";
 
-    viewer_.leave();
-    EXPECT_EQ(viewer_.state(), State::Idle);
-    EXPECT_TRUE(view_.pictureSize().isEmpty()) << "the view cleared";
-    EXPECT_TRUE(wait_for([&] { return sharer_.viewers() == 0; }));
-    EXPECT_EQ(sharer_.state(), State::Sharing) << "still sharing, for the next to join";
+    ann_.stopSharing();
+    EXPECT_FALSE(ann_.sharing());
+    EXPECT_TRUE(wait_for([&] { return bob_.watching().isEmpty(); }));
+    EXPECT_TRUE(bob_view_.pictureSize().isEmpty()) << "the view cleared";
+    EXPECT_TRUE(wait_for([&] { return !member(bob_, "Ann").value("sharing").toBool(); }));
+    EXPECT_EQ(ann_.state(), State::InRoom);
+    EXPECT_EQ(members(bob_), 1);
+
+    // And again: one room, any number of shares.
+    ann_.share(true, false);
+    EXPECT_TRUE(wait_for([&] { return bob_.watching() == ann; }));
+}
+
+TEST_F(CallControllerTest, WhatIsWatchedIsChosen) {
+    both_in();
+    ann_.share(false, false);
+    const QString ann = id_of(bob_, "Ann");
+    ASSERT_TRUE(wait_for([&] { return bob_.watching() == ann; }));
+
+    bob_.watch("");
+    EXPECT_TRUE(wait_for([&] { return bob_.watching().isEmpty(); }));
+    EXPECT_TRUE(bob_view_.pictureSize().isEmpty());
+    EXPECT_TRUE(member(bob_, "Ann").value("sharing").toBool()) << "still on offer";
+
+    bob_.watch(ann);
+    EXPECT_TRUE(wait_for(
+        [&] { return bob_.watching() == ann && bob_view_.pictureSize() == QSize(320, 240); }));
+}
+
+TEST_F(CallControllerTest, EachSeesEveryCameraInAViewOfItsOwnAndItsOwn) {
+    VideoView ann_preview;
+    VideoView bob_preview;
+    VideoView bob_at_ann;
+    VideoView ann_at_bob;
+    ann_.setPreview(&ann_preview);
+    bob_.setPreview(&bob_preview);
+
+    // Bob's on before he joins; Ann's once he is there.
+    bob_.setCamera(true);
+    both_in();
+    ann_.setCameraView(id_of(ann_, "Bob"), &bob_at_ann);
+    bob_.setCameraView(id_of(bob_, "Ann"), &ann_at_bob);
+    ann_.setCamera(true);
+    EXPECT_TRUE(wait_for([&] {
+        return bob_at_ann.pictureSize() == QSize(160, 120) &&
+               ann_at_bob.pictureSize() == QSize(160, 120) &&
+               ann_preview.pictureSize() == QSize(160, 120) &&
+               bob_preview.pictureSize() == QSize(160, 120);
+    })) << "each camera seen at both ends";
+    EXPECT_TRUE(wait_for([&] { return ann_.cameras() == 1 && bob_.cameras() == 1; }));
+    EXPECT_TRUE(member(ann_, "Bob").value("camera").toBool());
+
+    // A camera off is that camera gone, and nothing else.
+    bob_.setCamera(false);
+    EXPECT_TRUE(bob_preview.pictureSize().isEmpty());
+    EXPECT_TRUE(
+        wait_for([&] { return bob_at_ann.pictureSize().isEmpty() && ann_.cameras() == 0; }));
+    EXPECT_EQ(ann_at_bob.pictureSize(), QSize(160, 120));
+    EXPECT_EQ(members(ann_), 1);
+
+    bob_.leave();
+    EXPECT_TRUE(ann_at_bob.pictureSize().isEmpty());
+    EXPECT_TRUE(ann_.camera()) << "kept on, as the user left it";
+}
+
+TEST_F(CallControllerTest, WithoutACameraItIsTurnedOffAndTheRoomGoesOn) {
+    CallController::Environment blind = environment();
+    blind.open_camera = [] { return std::unique_ptr<VideoSource>{}; };
+    bob_.setEnvironment(blind);
+    bob_.setName("Bob");
+    bob_.setCamera(true);
+    both_in();
+    EXPECT_FALSE(bob_.camera());
+    EXPECT_FALSE(bob_.notice().isEmpty());
 }
 
 TEST_F(CallControllerTest, EachSideReportsHowTheCallGoes) {
@@ -152,159 +328,45 @@ TEST_F(CallControllerTest, EachSideReportsHowTheCallGoes) {
         return titles;
     };
     int reports = 0;
-    QObject::connect(&viewer_, &CallController::statsChanged, [&] { ++reports; });
-    viewer_.setStatsEvery(1);
+    QObject::connect(&bob_, &CallController::statsChanged, [&] { ++reports; });
+    bob_.setStatsEvery(1);
     testing::internal::CaptureStdout();
-    viewer_.join(share());
+    both_in();
+    ann_.share(false, true);
     ASSERT_TRUE(wait_for([&] {
-        return titles(viewer_).contains("Pictures") && titles(sharer_).contains("Sent: screen") &&
+        return titles(bob_).contains("Pictures") && titles(ann_).contains("Sent: screen") &&
                reports >= 2;
-    })) << titles(viewer_).join(", ").toStdString()
-        << " / " << titles(sharer_).join(", ").toStdString();
+    })) << titles(bob_).join(", ").toStdString()
+        << " / " << titles(ann_).join(", ").toStdString();
     const std::string printed = testing::internal::GetCapturedStdout();
 
     // The call first, with its CPU; a quality, and a line a part printed.
-    EXPECT_EQ(titles(viewer_).value(0), "Call");
-    const QVariantMap call = viewer_.stats().value(0).toMap();
+    EXPECT_EQ(titles(bob_).value(0), "Call");
+    const QVariantMap call = bob_.stats().value(0).toMap();
     EXPECT_EQ(call.value("rows").toList().value(0).toMap().value("label").toString(), "CPU");
-    EXPECT_FALSE(viewer_.quality().isEmpty());
+    EXPECT_FALSE(bob_.quality().isEmpty());
     EXPECT_NE(printed.find("[   1s] "), std::string::npos) << printed;
-    EXPECT_NE(printed.find("pictures"), std::string::npos) << printed;
-    EXPECT_TRUE(sharer_.statsEvery() == 0 && viewer_.statsEvery() == 1);
+    EXPECT_NE(printed.find("voice "), std::string::npos) << printed;
+    EXPECT_TRUE(ann_.statsEvery() == 0 && bob_.statsEvery() == 1);
 
-    viewer_.leave();
-    EXPECT_TRUE(viewer_.stats().isEmpty());
-    EXPECT_TRUE(viewer_.quality().isEmpty());
+    bob_.leave();
+    EXPECT_TRUE(bob_.stats().isEmpty());
+    EXPECT_TRUE(bob_.quality().isEmpty());
 }
 
-TEST_F(CallControllerTest, EachListsTheOtherByTheNameItGives) {
-    // The member a controller lists, once there is exactly one.
-    const auto member = [](const CallController& controller) {
-        const QVariantList members = controller.members();
-        return members.size() == 1 ? members.front().toMap() : QVariantMap{};
-    };
-    sharer_.setName("Ann");
-    viewer_.setName("Bob");
-    viewer_.join(share());
-    ASSERT_TRUE(wait_for([&] {
-        return member(sharer_).value("name") == "Bob" && member(viewer_).value("name") == "Ann";
-    }));
-    EXPECT_FALSE(member(sharer_).value("muted").toBool());
-    EXPECT_EQ(member(sharer_).value("peer").toString().size(), 8) << "a short id beside it";
-
-    // Muted, and renamed: told at once.
-    viewer_.setMuted(true);
-    EXPECT_TRUE(wait_for([&] { return member(sharer_).value("muted").toBool(); }));
-    viewer_.setName(QString("Robert\n\tthe   ") + QString(200, QChar(0x044F)));  // 'я'
-    ASSERT_TRUE(wait_for([&] { return member(sharer_).value("name") != "Bob"; }));
-    const QString told = member(sharer_).value("name").toString();
-    EXPECT_TRUE(told.startsWith("Robert the яя")) << told.toStdString();
-    EXPECT_LE(told.toUtf8().size(), qsizetype(Presence::kMaxNameSize));
-
-    viewer_.leave();
-    EXPECT_TRUE(viewer_.members().isEmpty());
-    EXPECT_TRUE(wait_for([&] { return sharer_.members().isEmpty(); }));
-}
-
-TEST_F(CallControllerTest, BothTalkAndAMutedOneIsNotHeard) {
-    viewer_.join(share());
-    ASSERT_TRUE(wait_for([&] { return viewer_.state() == State::Watching; }));
-    EXPECT_TRUE(wait_for([&] { return sharer_.hearing() && viewer_.hearing(); }))
-        << "the sharer hears the viewer's voice, the viewer the sharer's and the screen's";
-
-    viewer_.setMuted(true);
-    EXPECT_FALSE(viewer_.speaking());
-    EXPECT_TRUE(wait_for([&] { return !sharer_.hearing(); }));
-    viewer_.setMuted(false);
-    EXPECT_TRUE(wait_for([&] { return sharer_.hearing(); }));
-
-    viewer_.leave();
-    EXPECT_FALSE(viewer_.hearing());
-}
-
-TEST_F(CallControllerTest, WithoutAMicrophoneTheCallGoesOn) {
-    CallController::Environment deaf = environment();
-    deaf.open_microphone = [] { return std::unique_ptr<AudioSource>{}; };
-    viewer_.setEnvironment(deaf);
-    viewer_.join(share());
-    ASSERT_TRUE(wait_for([&] { return viewer_.state() == State::Watching; }));
-    EXPECT_FALSE(viewer_.notice().isEmpty()) << "still said once the picture plays";
-    EXPECT_TRUE(wait_for([&] { return !sharer_.hearing() && viewer_.hearing(); }));
-}
-
-TEST_F(CallControllerTest, EachSeesTheOthersCameraAndItsOwn) {
-    VideoView sharer_camera;
-    VideoView sharer_preview;
-    VideoView viewer_camera;
-    VideoView viewer_preview;
-    sharer_.setCameraView(&sharer_camera);
-    sharer_.setPreview(&sharer_preview);
-    viewer_.setCameraView(&viewer_camera);
-    viewer_.setPreview(&viewer_preview);
-
-    // The viewer's on before it joins; the sharer's while it shares.
-    viewer_.setCamera(true);
-    viewer_.join(share());
-    ASSERT_TRUE(wait_for([&] { return viewer_.state() == State::Watching; }));
-    sharer_.setCamera(true);
-    ASSERT_TRUE(wait_for([&] { return sharer_.cameraShown() && viewer_.cameraShown(); }));
-    EXPECT_TRUE(wait_for([&] {
-        return sharer_camera.pictureSize() == QSize(160, 120) &&
-               viewer_camera.pictureSize() == QSize(160, 120) &&
-               sharer_preview.pictureSize() == QSize(160, 120) &&
-               viewer_preview.pictureSize() == QSize(160, 120);
-    })) << "each camera seen at both ends";
-    // Watching is the screen's player started: its first picture may come after the cameras'.
-    EXPECT_TRUE(wait_for([&] { return view_.pictureSize() == QSize(320, 240); }))
-        << "the screen apart";
-
-    // A camera off is not the screen gone.
-    viewer_.setCamera(false);
-    EXPECT_TRUE(viewer_preview.pictureSize().isEmpty());
-    EXPECT_TRUE(wait_for([&] { return !sharer_.cameraShown(); }));
-    EXPECT_TRUE(sharer_camera.pictureSize().isEmpty());
-    EXPECT_EQ(viewer_.state(), State::Watching);
-    EXPECT_TRUE(viewer_.cameraShown());
-
-    viewer_.leave();
-    EXPECT_FALSE(viewer_.cameraShown());
-    EXPECT_TRUE(viewer_camera.pictureSize().isEmpty());
-    EXPECT_TRUE(sharer_.camera()) << "kept on, as the user left it";
-}
-
-TEST_F(CallControllerTest, WithoutACameraItIsTurnedOffAndTheCallGoesOn) {
-    CallController::Environment blind = environment();
-    blind.open_camera = [] { return std::unique_ptr<VideoSource>{}; };
-    viewer_.setEnvironment(blind);
-    viewer_.setCamera(true);
-    viewer_.join(share());
-    EXPECT_FALSE(viewer_.camera());
-    ASSERT_TRUE(wait_for([&] { return viewer_.state() == State::Watching; }));
-    EXPECT_FALSE(viewer_.notice().isEmpty()) << "still said once the picture plays";
-}
-
-TEST_F(CallControllerTest, TheSharerLeavingIsNews) {
-    viewer_.join(share());
-    ASSERT_TRUE(wait_for([&] { return viewer_.state() == State::Watching; }));
-    sharer_.leave();
-    EXPECT_TRUE(sharer_.invites().isEmpty());
-    // The stream ends first, then the peer goes: waiting, and told why.
-    EXPECT_TRUE(
-        wait_for([&] { return viewer_.state() == State::Joining && !viewer_.notice().isEmpty(); }));
-}
-
-TEST_F(CallControllerTest, AShareThatRunsOutEnds) {
+TEST_F(CallControllerTest, AShareThatRunsOutStopsAndTheRoomGoesOn) {
     CallController::Environment short_share = environment();
     short_share.open_share = [](const ScreenShareConfig&, std::stop_token) {
         return Result<ScreenShareSources>(
             ScreenShareSources{.pictures = std::make_unique<ShortPattern>()});
     };
-    sharer_.setEnvironment(short_share);
-    sharer_.share(true, false);
-    ASSERT_TRUE(wait_for([&] { return sharer_.state() == State::Sharing; }));
-    EXPECT_TRUE(wait_for([&] { return sharer_.state() == State::Idle; }));
-    EXPECT_FALSE(sharer_.notice().isEmpty()) << "the desktop stopped it, not the user";
-    EXPECT_TRUE(sharer_.invites().isEmpty());
+    ann_.setEnvironment(short_share);
+    make_room();
+    ann_.share(true, false);
+    ASSERT_TRUE(wait_for([&] { return ann_.sharing(); }));
+    EXPECT_TRUE(wait_for([&] { return !ann_.sharing(); }));
+    EXPECT_FALSE(ann_.notice().isEmpty()) << "the desktop stopped it, not the user";
+    EXPECT_EQ(ann_.state(), State::InRoom);
 }
 
 TEST_F(CallControllerTest, CallingOffTheDialogIsNoNews) {
@@ -312,11 +374,13 @@ TEST_F(CallControllerTest, CallingOffTheDialogIsNoNews) {
     declined.open_share = [](const ScreenShareConfig&, std::stop_token) {
         return Result<ScreenShareSources>(fail(Errc::Cancelled));
     };
-    sharer_.setEnvironment(declined);
-    sharer_.share(false, true);
-    EXPECT_EQ(sharer_.state(), State::Choosing);
-    ASSERT_TRUE(wait_for([&] { return sharer_.state() == State::Idle; }));
-    EXPECT_TRUE(sharer_.notice().isEmpty());
+    ann_.setEnvironment(declined);
+    make_room();
+    ann_.share(false, true);
+    EXPECT_TRUE(ann_.choosing());
+    ASSERT_TRUE(wait_for([&] { return !ann_.choosing(); }));
+    EXPECT_FALSE(ann_.sharing());
+    EXPECT_TRUE(ann_.notice().isEmpty());
 }
 
 TEST_F(CallControllerTest, AShareTheDesktopCannotMakeSaysWhy) {
@@ -324,34 +388,44 @@ TEST_F(CallControllerTest, AShareTheDesktopCannotMakeSaysWhy) {
     unavailable.open_share = [](const ScreenShareConfig&, std::stop_token) {
         return Result<ScreenShareSources>(fail(Errc::Unavailable));
     };
-    sharer_.setEnvironment(unavailable);
-    sharer_.share(false, true);
-    ASSERT_TRUE(wait_for([&] { return sharer_.state() == State::Idle; }));
-    EXPECT_TRUE(sharer_.notice().contains("unavailable")) << sharer_.notice().toStdString();
+    ann_.setEnvironment(unavailable);
+    make_room();
+    ann_.share(false, true);
+    ASSERT_TRUE(wait_for([&] { return !ann_.choosing(); }));
+    EXPECT_TRUE(ann_.notice().contains("unavailable")) << ann_.notice().toStdString();
+    EXPECT_EQ(ann_.state(), State::InRoom);
 }
 
-TEST_F(CallControllerTest, LeavingWhileTheDialogIsOpenCallsItOff) {
-    std::atomic<bool> called_off{false};
+TEST_F(CallControllerTest, LeavingOrStoppingWhileTheDialogIsOpenCallsItOff) {
+    std::atomic<int> called_off{0};
     CallController::Environment waiting = environment();
     waiting.open_share = [&](const ScreenShareConfig&, std::stop_token cancel) {
         while (!cancel.stop_requested()) std::this_thread::sleep_for(1ms);  // the user ponders
-        called_off = true;
+        ++called_off;
         return Result<ScreenShareSources>(fail(Errc::Cancelled));
     };
-    sharer_.setEnvironment(waiting);
-    sharer_.share(false, true);
-    sharer_.leave();
-    EXPECT_TRUE(called_off);
-    EXPECT_EQ(sharer_.state(), State::Idle);
+    ann_.setEnvironment(waiting);
+    make_room();
+    ann_.share(false, true);
+    ann_.stopSharing();
+    ASSERT_TRUE(wait_for([&] { return !ann_.choosing(); }));
+    EXPECT_EQ(called_off, 1);
+    EXPECT_TRUE(ann_.notice().isEmpty());
+
+    ann_.share(false, true);
+    ann_.leave();
+    EXPECT_EQ(called_off, 2);
+    EXPECT_EQ(ann_.state(), State::Idle);
+    EXPECT_FALSE(ann_.choosing());
     QCoreApplication::processEvents();  // the dialog's answer, dropped
-    EXPECT_EQ(sharer_.state(), State::Idle);
-    EXPECT_TRUE(sharer_.notice().isEmpty());
+    EXPECT_EQ(ann_.state(), State::Idle);
+    EXPECT_TRUE(ann_.notice().isEmpty());
 }
 
 TEST_F(CallControllerTest, ALinkThatIsNoneIsRefused) {
-    viewer_.join("http://example.org");
-    EXPECT_EQ(viewer_.state(), State::Idle);
-    EXPECT_FALSE(viewer_.notice().isEmpty());
+    bob_.join("http://example.org");
+    EXPECT_EQ(bob_.state(), State::Idle);
+    EXPECT_FALSE(bob_.notice().isEmpty());
 }
 
 }  // namespace

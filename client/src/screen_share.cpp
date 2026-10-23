@@ -12,9 +12,6 @@
 namespace ratcast {
 namespace {
 
-constexpr StreamId kPictures = 1;
-constexpr StreamId kSound = 2;
-
 /// Where the desktop's choice for a share of this kind is kept.
 std::filesystem::path token_path(const ScreenShareConfig& config) {
     return std::filesystem::path(config.data_dir) /
@@ -54,7 +51,7 @@ Result<ScreenShareSources> open_screen_share(const ScreenShareConfig& config,
 Result<void> publish_screen_share(Call& call, ScreenShareSources sources,
                                   const ScreenShareConfig& config) {
     VideoPublisherConfig video;
-    video.stream = kPictures;
+    video.stream = kScreenStream;
     video.label = config.window ? "window" : "screen";
     video.lifetime = config.latency;
     video.encoder = config.video;
@@ -67,7 +64,7 @@ Result<void> publish_screen_share(Call& call, ScreenShareSources sources,
 
     // Music: Opus codes it in CELT, which has no FEC, and silence is rare.
     AudioPublisherConfig sound;
-    sound.stream = kSound;
+    sound.stream = kScreenSoundStream;
     sound.label = "sound";
     sound.lifetime = config.latency;
     sound.encoder.content = AudioContent::Music;
@@ -76,10 +73,15 @@ Result<void> publish_screen_share(Call& call, ScreenShareSources sources,
     sound.encoder.expected_loss = 0;
     if (Result<AudioPublisher*> published = call.publish(std::move(sources.sound), sound);
         !published) {
-        call.unpublish(kPictures);
+        call.unpublish(kScreenStream);
         return fail(published.error());
     }
     return {};
+}
+
+void unpublish_screen_share(Call& call) {
+    call.unpublish(kScreenStream);
+    call.unpublish(kScreenSoundStream);
 }
 
 }  // namespace ratcast

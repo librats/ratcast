@@ -11,8 +11,9 @@
  * both on a call. The desktop's choice is kept in a data directory, so the next share of the same
  * kind asks no more where the desktop allows that (GNOME, KDE, Windows).
  *
- * The pictures go as a rate-controlled video stream (1), the sound as music:
- * stereo, full band, no DTX or FEC (2).
+ * The pictures go as a rate-controlled video stream (kScreenStream), the
+ * sound as music: stereo, full band, no DTX or FEC (kScreenSoundStream).
+ * unpublish_screen_share() stops both, and the call goes on.
  */
 
 #include <memory>
@@ -28,6 +29,9 @@
 #include "ratcast/engine/video_source.h"
 
 namespace ratcast {
+
+inline constexpr StreamId kScreenStream = 1;
+inline constexpr StreamId kScreenSoundStream = 2;
 
 struct ScreenShareConfig {
     bool window = false;  ///< a single window, not a whole screen
@@ -69,5 +73,8 @@ Result<ScreenShareSources> open_screen_share(const ScreenShareConfig& config,
 /// then nothing is published.
 Result<void> publish_screen_share(Call& call, ScreenShareSources sources,
                                   const ScreenShareConfig& config);
+
+/// Stop sharing on `call`: the pictures and the sound withdrawn.
+void unpublish_screen_share(Call& call);
 
 }  // namespace ratcast

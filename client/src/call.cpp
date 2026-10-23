@@ -175,7 +175,13 @@ uint16_t Call::port() const noexcept { return listens(config_) ? node_.listen_po
 
 std::vector<std::string> Call::invites() const {
     std::vector<std::string> links;
-    if (config_.discoverable && !dialed_peer(config_)) links.push_back(to_string(RatsUrl{id()}));
+    // A room joined by peer id is found under that id: its members announce
+    // themselves there too.
+    if (const PeerId* dialed = dialed_peer(config_); dialed && config_.mesh) {
+        links.push_back(to_string(RatsUrl{*dialed}));
+    } else if (config_.discoverable && !dialed) {
+        links.push_back(to_string(RatsUrl{id()}));
+    }
     const uint16_t listening = port();
     if (listening == 0) return links;
 
@@ -540,6 +546,18 @@ std::optional<AudioPlayerStats> Call::sound_stats() const {
     std::lock_guard lock(playing_);
     if (!sound_) return std::nullopt;
     return sound_.player->stats();
+}
+
+std::vector<PeerId> Call::speaking(Duration hold) const {
+    const Timestamp now = SteadyClock::instance().now();
+    std::vector<PeerId> speaking;
+    std::lock_guard lock(playing_);
+    for (const auto& [peer, member] : members_) {
+        if (!member.voice) continue;
+        const std::optional<Timestamp> heard = member.voice.player->stats().heard;
+        if (heard && now - *heard < hold) speaking.push_back(peer);
+    }
+    return speaking;
 }
 
 std::map<PeerId, AudioPlayerStats> Call::voice_stats() const {

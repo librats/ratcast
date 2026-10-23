@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <filesystem>
+#include <map>
 #include <mutex>
 #include <utility>
 
@@ -16,6 +17,8 @@ namespace ratcast::app {
 namespace {
 
 QString describe(Errc error) { return QString::fromLatin1(to_string(error)); }
+
+QString id_of(const PeerId& peer) { return QString::fromStdString(peer.to_hex()); }
 
 /// `name` as a presence may carry it: whitespace runs made one space, control
 /// characters dropped, and cut to whole characters within kMaxNameSize bytes.
@@ -74,13 +77,23 @@ struct CallController::Pictures {
     }
 };
 
-/// Every peer's camera into `pictures`: one at a time, as the window shows them.
-std::function<VideoPlayer::Sink(const PeerId&)> CallController::cameras(
-    std::shared_ptr<Pictures> pictures) {
-    return [pictures = std::move(pictures)](const PeerId&) -> VideoPlayer::Sink {
-        return [pictures](VideoFrame picture) { (*pictures)(std::move(picture)); };
-    };
-}
+/// Where each member's camera goes, by member id: asked by a camera's player
+/// as it starts, set by QML as it shows one, whichever comes first.
+struct CallController::Cameras {
+    std::mutex mutex;
+    std::map<QString, std::shared_ptr<Pictures>> by_member;
+
+    std::shared_ptr<Pictures> of(const QString& id) {
+        std::lock_guard lock(mutex);
+        std::shared_ptr<Pictures>& pictures = by_member[id];
+        if (!pictures) pictures = std::make_shared<Pictures>();
+        return pictures;
+    }
+    void clear() {
+        std::lock_guard lock(mutex);
+        by_member.clear();
+    }
+};
 
 CallController::Environment CallController::Environment::system() {
     Environment environment;
@@ -116,10 +129,13 @@ CallController::CallController(QObject* parent)
       environment_(Environment::system()),
       name_(environment_.name),
       pictures_(std::make_shared<Pictures>()),
-      camera_pictures_(std::make_shared<Pictures>()),
-      preview_pictures_(std::make_shared<Pictures>()) {
+      preview_pictures_(std::make_shared<Pictures>()),
+      cameras_(std::make_shared<Cameras>()) {
     levels_.setInterval(100);
-    connect(&levels_, &QTimer::timeout, this, &CallController::update_levels);
+    connect(&levels_, &QTimer::timeout, this, [this] {
+        update_levels();
+        update_members();
+    });
     reporting_.setInterval(1000);
     connect(&reporting_, &QTimer::timeout, this, &CallController::update_stats);
     connect(&printing_, &QTimer::timeout, this, &CallController::print_stats);
@@ -127,8 +143,8 @@ CallController::CallController(QObject* parent)
 
 CallController::~CallController() {
     ++generation_;
-    choosing_.request_stop();
-    if (choosing_.joinable()) choosing_.join();
+    dialog_.request_stop();
+    if (dialog_.joinable()) dialog_.join();
     monitor_.reset();
     printer_.reset();
     call_.reset();
@@ -152,77 +168,24 @@ void CallController::setVideo(VideoView* video) {
     if (attach(video_, *pictures_, video)) Q_EMIT videoChanged();
 }
 
-void CallController::setCameraView(VideoView* view) {
-    if (attach(camera_view_, *camera_pictures_, view)) Q_EMIT cameraViewChanged();
-}
-
 void CallController::setPreview(VideoView* view) {
     if (attach(preview_, *preview_pictures_, view)) Q_EMIT previewChanged();
 }
 
-// ── Sharing ─────────────────────────────────────────────────────────────────
+void CallController::setCameraView(const QString& id, VideoView* view) {
+    QPointer<VideoView>& slot = camera_views_[id];
+    attach(slot, *cameras_->of(id), view);
+    if (!view) camera_views_.remove(id);
+}
 
-void CallController::share(bool window, bool sound) {
+// ── In and out of a room ────────────────────────────────────────────────────
+
+void CallController::create() {
     if (state_ != State::Idle) return;
-    set_notice({});
-    ScreenShareConfig config;
-    config.window = window;
-    config.sound = sound;
+    CallConfig config = environment_.call;
     config.data_dir = environment_.data_dir;
-    const uint64_t generation = ++generation_;
-    set_state(State::Choosing);
-    // The desktop's dialog waits on the user: off the GUI thread.
-    choosing_ = std::jthread(
-        [this, generation, config, open = environment_.open_share](std::stop_token cancel) {
-            auto sources = std::make_shared<Result<ScreenShareSources>>(open(config, cancel));
-            QMetaObject::invokeMethod(
-                this,
-                [this, generation, config, sources] {
-                    share_opened(generation, config, std::move(*sources));
-                },
-                Qt::QueuedConnection);
-        });
+    start(std::move(config), State::InRoom);
 }
-
-void CallController::share_opened(uint64_t generation, const ScreenShareConfig& config,
-                                  Result<ScreenShareSources> sources) {
-    if (generation != generation_) return;  // left meanwhile
-    if (!sources) {
-        end(sources.error() == Errc::Cancelled
-                ? QString()
-                : tr("The screen cannot be shared (%1).").arg(describe(sources.error())));
-        return;
-    }
-    open_voice();
-    CallConfig config_of_call = environment_.call;
-    config_of_call.data_dir = environment_.data_dir;
-    config_of_call.mesh = true;                      // whoever joins meets everyone
-    config_of_call.playback.sound = speaker_.get();  // the viewers' voices
-    config_of_call.playback.cameras = cameras(camera_pictures_);
-    Result<std::unique_ptr<Call>> started =
-        Call::start(std::move(config_of_call), handlers(generation));
-    if (!started) {
-        end(tr("The call cannot start (%1).").arg(describe(started.error())));
-        return;
-    }
-    call_ = std::move(*started);
-    if (Result<void> shared = publish_screen_share(*call_, std::move(*sources), config); !shared) {
-        end(tr("The screen cannot be shared (%1).").arg(describe(shared.error())));
-        return;
-    }
-    invites_.clear();
-    for (const std::string& invite : call_->invites()) {
-        invites_.push_back(QString::fromStdString(invite));
-    }
-    Q_EMIT invitesChanged();
-    count_viewers();
-    set_state(State::Sharing);
-    tell_presence();
-    start_monitoring();
-    talk();
-}
-
-// ── Watching ────────────────────────────────────────────────────────────────
 
 void CallController::join(const QString& link) {
     if (state_ != State::Idle) return;
@@ -231,22 +194,34 @@ void CallController::join(const QString& link) {
         set_notice(tr("That is not a rats:// link."));
         return;
     }
-    set_notice({});
-    const uint64_t generation = ++generation_;
-    open_voice();
-
     CallConfig config = environment_.call;
-    // An identity of its own, so that a host can share and watch at once.
+    // An identity of its own, so that one host can be in a room twice.
     if (!environment_.data_dir.empty()) {
         config.data_dir = (std::filesystem::path(environment_.data_dir) / "guest").string();
     }
     config.discoverable = false;
-    config.mesh = true;  // everyone in the call, and listening for who comes later
     config.dial = *url;
+    start(std::move(config), State::Joining);
+}
+
+void CallController::start(CallConfig config, State state) {
+    set_notice({});
+    const uint64_t generation = ++generation_;
+    voice_ = std::make_unique<VoiceChannel>(environment_.voice);
+    std::unique_ptr<AudioOutput> device =
+        environment_.open_speaker ? environment_.open_speaker() : nullptr;
+    speaker_ = device ? voice_->speaker(std::move(device)) : nullptr;
+    apply_voice();
+
+    config.mesh = true;  // whoever joins meets everyone
     config.playback.pictures = [pictures = pictures_](VideoFrame picture) {
         (*pictures)(std::move(picture));
     };
-    config.playback.cameras = cameras(camera_pictures_);
+    config.playback.cameras = [cameras = cameras_](const PeerId& peer) -> VideoPlayer::Sink {
+        return [pictures = cameras->of(id_of(peer))](VideoFrame picture) {
+            (*pictures)(std::move(picture));
+        };
+    };
     config.playback.sound = speaker_.get();
     Result<std::unique_ptr<Call>> started = Call::start(std::move(config), handlers(generation));
     if (!started) {
@@ -254,28 +229,54 @@ void CallController::join(const QString& link) {
         return;
     }
     call_ = std::move(*started);
-    set_state(State::Joining);
+    for (const std::string& invite : call_->invites()) {
+        invites_.push_back(QString::fromStdString(invite));
+    }
+    Q_EMIT invitesChanged();
+    set_state(state);
     tell_presence();
     start_monitoring();
     talk();
 }
 
-// ── Either ──────────────────────────────────────────────────────────────────
+void CallController::leave() { end(); }
 
-void CallController::open_voice() {
-    voice_ = std::make_unique<VoiceChannel>(environment_.voice);
-    voice_->set_muted(muted_);
-    std::unique_ptr<AudioOutput> device =
-        environment_.open_speaker ? environment_.open_speaker() : nullptr;
-    speaker_ = device ? voice_->speaker(std::move(device)) : nullptr;
+void CallController::end(QString notice) {
+    ++generation_;
+    dialog_.request_stop();
+    if (dialog_.joinable()) dialog_.join();
+    levels_.stop();
+    stop_monitoring();
+    call_.reset();
+    speaker_.reset();
+    voice_.reset();
+    cameras_->clear();
+    for (const QPointer<VideoView>& view : std::as_const(camera_views_)) {
+        if (view) view->clear();
+    }
+    if (video_) video_->clear();
+    if (preview_) preview_->clear();
+    update_levels();
+    update_members();
+    set_choosing(false);
+    set_sharing(false);
+    set_watching({});
+    if (!invites_.isEmpty()) {
+        invites_.clear();
+        Q_EMIT invitesChanged();
+    }
+    set_notice(std::move(notice));
+    set_state(State::Idle);
 }
+
+// ── Talking ─────────────────────────────────────────────────────────────────
 
 void CallController::talk() {
     levels_.start();
     if (camera_) start_camera();
     std::unique_ptr<AudioSource> device =
         environment_.open_microphone ? environment_.open_microphone() : nullptr;
-    // Not heard is no reason to end the call: said, and the call goes on.
+    // Not heard is no reason to leave: said, and the room goes on.
     if (!device) {
         set_notice(tr("There is no microphone: the others will not hear you."));
         return;
@@ -288,6 +289,143 @@ void CallController::talk() {
         set_notice(tr("The microphone cannot be used (%1).").arg(describe(published.error())));
     }
 }
+
+void CallController::setMuted(bool muted) {
+    if (muted == muted_) return;
+    muted_ = muted;
+    Q_EMIT mutedChanged();
+    apply_voice();
+}
+
+void CallController::setDeafened(bool deafened) {
+    if (deafened == deafened_) return;
+    deafened_ = deafened;
+    Q_EMIT deafenedChanged();
+    apply_voice();
+}
+
+void CallController::apply_voice() {
+    if (voice_) {
+        voice_->set_muted(muted_ || deafened_);
+        voice_->set_deafened(deafened_);
+    }
+    update_levels();
+    tell_presence();
+}
+
+void CallController::setName(const QString& name) {
+    if (name == name_) return;
+    name_ = name;
+    Q_EMIT nameChanged();
+    tell_presence();
+}
+
+void CallController::tell_presence() {
+    if (!call_) return;
+    // Valid by construction: presence_name() keeps only what may be told.
+    (void)call_->set_presence(
+        {.name = presence_name(name_), .muted = muted_ || deafened_, .deafened = deafened_});
+}
+
+void CallController::update_levels() {
+    const bool speaking = voice_ && voice_->speaking();
+    if (speaking == speaking_) return;
+    speaking_ = speaking;
+    Q_EMIT speakingChanged();
+}
+
+void CallController::update_members() {
+    std::vector<Member> members;
+    if (call_) {
+        const std::vector<PeerId> speaking = call_->speaking();
+        const std::vector<OfferedStream> offered = call_->session().offered();
+        const auto offers = [&](const PeerId& peer, bool camera) {
+            return std::ranges::any_of(offered, [&](const OfferedStream& stream) {
+                return stream.peer == peer && stream.description.kind() == MediaKind::Video &&
+                       (stream.description.label == kCameraLabel) == camera;
+            });
+        };
+        std::vector<PeerId> peers = call_->peers();
+        std::sort(peers.begin(), peers.end());
+        for (const PeerId& peer : peers) {
+            const Presence presence = call_->presence(peer).value_or(Presence{});
+            members.push_back({
+                .id = id_of(peer),
+                .peer = QString::fromStdString(peer.short_hex()),
+                .name = QString::fromStdString(presence.name),
+                .muted = presence.muted,
+                .deafened = presence.deafened,
+                .speaking = std::ranges::find(speaking, peer) != speaking.end(),
+                .camera = offers(peer, true),
+                .sharing = offers(peer, false),
+            });
+        }
+    }
+    const int cameras = int(std::ranges::count_if(members, &Member::camera));
+    members_.set(std::move(members));
+    if (cameras == cameras_on_) return;
+    cameras_on_ = cameras;
+    Q_EMIT camerasChanged();
+}
+
+// ── Sharing and watching ────────────────────────────────────────────────────
+
+void CallController::share(bool window, bool sound) {
+    if (state_ != State::InRoom || sharing_ || choosing_) return;
+    set_notice({});
+    ScreenShareConfig config;
+    config.window = window;
+    config.sound = sound;
+    config.data_dir = environment_.data_dir;
+    set_choosing(true);
+    // The desktop's dialog waits on the user: off the GUI thread. The last
+    // one has said its say: assigning joins it.
+    dialog_ = std::jthread([this, generation = generation_, config,
+                            open = environment_.open_share](std::stop_token cancel) {
+        auto sources = std::make_shared<Result<ScreenShareSources>>(open(config, cancel));
+        QMetaObject::invokeMethod(
+            this,
+            [this, generation, config, sources] {
+                share_opened(generation, config, std::move(*sources));
+            },
+            Qt::QueuedConnection);
+    });
+}
+
+void CallController::share_opened(uint64_t generation, const ScreenShareConfig& config,
+                                  Result<ScreenShareSources> sources) {
+    if (generation != generation_) return;  // left meanwhile
+    set_choosing(false);
+    if (!sources) {
+        if (sources.error() != Errc::Cancelled) {
+            set_notice(tr("The screen cannot be shared (%1).").arg(describe(sources.error())));
+        }
+        return;
+    }
+    if (Result<void> shared = publish_screen_share(*call_, std::move(*sources), config); !shared) {
+        set_notice(tr("The screen cannot be shared (%1).").arg(describe(shared.error())));
+        return;
+    }
+    set_sharing(true);
+}
+
+void CallController::stopSharing() {
+    if (choosing_) dialog_.request_stop();  // its answer, Cancelled, ends it
+    if (!sharing_) return;
+    unpublish_screen_share(*call_);
+    set_sharing(false);
+}
+
+void CallController::watch(const QString& id) {
+    if (!call_) return;
+    if (id.isEmpty()) {
+        call_->watch(std::nullopt);
+        return;
+    }
+    if (const std::optional<PeerId> peer = PeerId::from_hex(id.toStdString())) call_->watch(*peer);
+}
+
+// ── The camera ──────────────────────────────────────────────────────────────
 
 void CallController::setCamera(bool on) {
     if (on == camera_) return;
@@ -324,67 +462,7 @@ void CallController::camera_off(QString notice) {
     Q_EMIT cameraChanged();
 }
 
-void CallController::set_camera_shown(bool shown) {
-    if (!shown && camera_view_) camera_view_->clear();
-    if (shown == camera_shown_) return;
-    camera_shown_ = shown;
-    Q_EMIT cameraShownChanged();
-}
-
-void CallController::setMuted(bool muted) {
-    if (muted == muted_) return;
-    muted_ = muted;
-    if (voice_) voice_->set_muted(muted);
-    Q_EMIT mutedChanged();
-    update_levels();
-    tell_presence();
-}
-
-void CallController::setName(const QString& name) {
-    if (name == name_) return;
-    name_ = name;
-    Q_EMIT nameChanged();
-    tell_presence();
-}
-
-void CallController::tell_presence() {
-    if (!call_) return;
-    // Valid by construction: presence_name() keeps only what may be told.
-    (void)call_->set_presence({.name = presence_name(name_), .muted = muted_});
-}
-
-void CallController::update_members() {
-    QVariantList members;
-    if (call_) {
-        std::vector<PeerId> peers = call_->peers();
-        std::sort(peers.begin(), peers.end());
-        for (const PeerId& peer : peers) {
-            const Presence presence = call_->presence(peer).value_or(Presence{});
-            members.push_back(QVariantMap{
-                {QStringLiteral("peer"), QString::fromStdString(peer.short_hex())},
-                {QStringLiteral("name"), QString::fromStdString(presence.name)},
-                {QStringLiteral("muted"), presence.muted},
-                {QStringLiteral("deafened"), presence.deafened},
-            });
-        }
-    }
-    if (members == members_) return;
-    members_ = std::move(members);
-    Q_EMIT membersChanged();
-}
-
-void CallController::update_levels() {
-    const bool speaking = voice_ && voice_->speaking();
-    const bool hearing = voice_ && voice_->hearing();
-    if (speaking != speaking_) {
-        speaking_ = speaking;
-        Q_EMIT speakingChanged();
-    }
-    if (hearing != hearing_) {
-        hearing_ = hearing;
-        Q_EMIT hearingChanged();
-    }
-}
+// ── How it goes ─────────────────────────────────────────────────────────────
 
 void CallController::setStatsEvery(int seconds) {
     seconds = std::max(seconds, 0);
@@ -437,90 +515,50 @@ void CallController::print_stats() {
     std::fflush(stdout);
 }
 
-void CallController::leave() { end(); }
-
 void CallController::copy(const QString& text) { QGuiApplication::clipboard()->setText(text); }
 
-void CallController::end(QString notice) {
-    ++generation_;
-    choosing_.request_stop();
-    if (choosing_.joinable()) choosing_.join();
-    levels_.stop();
-    stop_monitoring();
-    call_.reset();
-    speaker_.reset();
-    voice_.reset();
-    update_levels();
-    if (video_) video_->clear();
-    if (preview_) preview_->clear();
-    set_camera_shown(false);
-    if (!invites_.isEmpty()) {
-        invites_.clear();
-        Q_EMIT invitesChanged();
-    }
-    if (viewers_ != 0) {
-        viewers_ = 0;
-        Q_EMIT viewersChanged();
-    }
-    update_members();
-    set_notice(std::move(notice));
-    set_state(State::Idle);
-}
+// ── The call's events ───────────────────────────────────────────────────────
 
 CallHandlers CallController::handlers(uint64_t generation) {
     return CallHandlers{
         .joined =
             [this, generation](const PeerId&) {
                 post(generation, [this] {
-                    count_viewers();
+                    if (state_ == State::Joining) set_state(State::InRoom);
                     update_members();
                 });
             },
-        .left =
-            [this, generation](const PeerId&) {
-                post(generation, [this] {
-                    count_viewers();
-                    update_members();
-                    set_camera_shown(false);
-                    if (state_ != State::Watching && state_ != State::Joining) return;
-                    if (video_) video_->clear();
-                    set_notice(tr("The other side left."));
-                    other_side_left_ = true;
-                    set_state(State::Joining);
-                });
-            },
+        .left = [this,
+                 generation](const PeerId&) { post(generation, [this] { update_members(); }); },
         .playing =
-            [this, generation](const PeerId&, const StreamDescription& stream,
+            [this, generation](const PeerId& peer, const StreamDescription& stream,
                                Result<void> outcome) {
                 if (stream.kind() != MediaKind::Video && outcome) return;
                 const QString label = QString::fromStdString(stream.label);
-                const bool camera = stream.label == kCameraLabel;
-                post(generation, [this, outcome, label, camera] {
+                const bool share = stream.label != kCameraLabel;
+                post(generation, [this, id = id_of(peer), outcome, label, share] {
+                    update_members();
                     if (!outcome) {
                         set_notice(tr("'%1' cannot be played (%2).")
                                        .arg(label, describe(outcome.error())));
                         return;
                     }
-                    if (camera) {
-                        set_camera_shown(true);
-                        return;
-                    }
-                    // Back: no longer news. What else was said stands.
-                    if (other_side_left_) set_notice({});
-                    set_state(State::Watching);
+                    if (share) set_watching(id);
                 });
             },
         .ended =
-            [this, generation](const PeerId&, const StreamDescription& stream) {
+            [this, generation](const PeerId& peer, const StreamDescription& stream) {
                 if (stream.kind() != MediaKind::Video) return;
-                const bool camera = stream.label == kCameraLabel;
-                post(generation, [this, camera] {
-                    if (camera) {
-                        set_camera_shown(false);
+                const bool share = stream.label != kCameraLabel;
+                post(generation, [this, id = id_of(peer), share] {
+                    update_members();
+                    if (!share) {
+                        if (const QPointer<VideoView> view = camera_views_.value(id)) view->clear();
                         return;
                     }
+                    if (id != watching_) return;
                     if (video_) video_->clear();
-                    if (state_ == State::Watching) set_state(State::Joining);
+                    set_watching({});
                 });
             },
         .presence = [this, generation](
@@ -529,16 +567,19 @@ CallHandlers CallController::handlers(uint64_t generation) {
         .source_ended =
             [this, generation](StreamId stream, Result<void> outcome) {
                 post(generation, [this, stream, outcome] {
-                    // The camera going is the camera's business; the screen's,
-                    // the share's.
                     if (stream == kCameraStream) {
                         camera_off(
                             outcome ? tr("The camera went.")
                                     : tr("The camera failed (%1).").arg(describe(outcome.error())));
                         return;
                     }
-                    end(outcome ? tr("Sharing stopped.")
-                                : tr("Sharing failed (%1).").arg(describe(outcome.error())));
+                    if (stream != kScreenStream && stream != kScreenSoundStream) return;
+                    if (!sharing_) return;
+                    // Either half gone is the share over: the desktop stopped it.
+                    unpublish_screen_share(*call_);
+                    set_sharing(false);
+                    set_notice(outcome ? tr("Sharing stopped.")
+                                       : tr("Sharing failed (%1).").arg(describe(outcome.error())));
                 });
             },
     };
@@ -553,14 +594,7 @@ void CallController::post(uint64_t generation, std::function<void()> event) {
         Qt::QueuedConnection);
 }
 
-void CallController::count_viewers() {
-    const int viewers = call_ && state_ != State::Joining && state_ != State::Watching
-                            ? int(call_->peers().size())
-                            : 0;
-    if (viewers == viewers_) return;
-    viewers_ = viewers;
-    Q_EMIT viewersChanged();
-}
+// ── State ───────────────────────────────────────────────────────────────────
 
 void CallController::set_state(State state) {
     if (state == state_) return;
@@ -569,10 +603,27 @@ void CallController::set_state(State state) {
 }
 
 void CallController::set_notice(QString notice) {
-    other_side_left_ = false;
     if (notice == notice_) return;
     notice_ = std::move(notice);
     Q_EMIT noticeChanged();
+}
+
+void CallController::set_sharing(bool sharing) {
+    if (sharing == sharing_) return;
+    sharing_ = sharing;
+    Q_EMIT sharingChanged();
+}
+
+void CallController::set_choosing(bool choosing) {
+    if (choosing == choosing_) return;
+    choosing_ = choosing;
+    Q_EMIT choosingChanged();
+}
+
+void CallController::set_watching(QString id) {
+    if (id == watching_) return;
+    watching_ = std::move(id);
+    Q_EMIT watchingChanged();
 }
 
 }  // namespace ratcast::app

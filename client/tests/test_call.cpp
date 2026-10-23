@@ -358,6 +358,13 @@ TEST_F(CallTest, AScreenShareGoesAsPicturesAndMusic) {
     EXPECT_LE(pictures->bitrate, 1'000'000u);
     ASSERT_TRUE(guest->sound_stats());
     EXPECT_EQ(guest->sound_stats()->jitter.lost, 0u);
+
+    // Stopped, and the call goes on.
+    unpublish_screen_share(*host);
+    EXPECT_TRUE(wait_for([&] { return guest.told("ended window") && guest.told("ended sound"); }));
+    EXPECT_FALSE(host->session().outgoing_stats(kScreenStream));
+    EXPECT_FALSE(host->session().outgoing_stats(kScreenSoundStream));
+    EXPECT_EQ(guest->peers().size(), 1u);
 }
 
 TEST_F(CallTest, ACameraPlaysApartFromTheScreen) {
@@ -448,6 +455,7 @@ TEST_F(CallTest, EveryonesVoiceAndCameraPlay) {
     EXPECT_EQ(asked, both) << "each camera to a place of its own";
     const size_t heard = host.heard();
     EXPECT_TRUE(wait_for([&] { return host.heard() >= heard + 50; })) << "both mixed, playing";
+    EXPECT_TRUE(wait_for([&] { return host->speaking().size() == 2; })) << "both heard speaking";
     const CallReport report = CallMonitor(*host).report();
     EXPECT_EQ(report.voices.size(), 2u);
     EXPECT_EQ(report.cameras.size(), 2u);
@@ -459,6 +467,7 @@ TEST_F(CallTest, EveryonesVoiceAndCameraPlay) {
     EXPECT_TRUE(host->voice_stats().contains(ann->id()));
     EXPECT_TRUE(host->camera_stats().contains(ann->id()));
     EXPECT_EQ(host.told_times("ended voice"), 1u);
+    EXPECT_EQ(host->speaking(), std::vector{ann->id()});
 }
 
 TEST_F(CallTest, PlaysTheScreenOfWhomItWatchesAndReceivesNoOther) {

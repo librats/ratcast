@@ -24,7 +24,7 @@ int main(int argc, char* argv[]) {
     QGuiApplication::setApplicationVersion(QString::fromLatin1(ratcast::version()));
 
     QCommandLineParser options;
-    options.setApplicationDescription(QStringLiteral("Share a screen, or watch one."));
+    options.setApplicationDescription(QStringLiteral("Rooms to talk, share a screen and watch one in."));
     options.addHelpOption();
     options.addVersionOption();
     const QCommandLineOption stats(
@@ -36,7 +36,7 @@ int main(int argc, char* argv[]) {
         QStringLiteral("seconds"));
     options.addOptions({stats, stats_every});
     options.addPositionalArgument(QStringLiteral("link"),
-                                  QStringLiteral("A rats:// link to watch at once."),
+                                  QStringLiteral("A rats:// link to a room, to join at once."),
                                   QStringLiteral("[link]"));
     options.process(app);
     int every = options.isSet(stats) ? 2 : 0;

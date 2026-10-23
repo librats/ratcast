@@ -181,9 +181,10 @@ public:
     const PeerId& id() const noexcept;
     /// The port it listens on; 0 if it does not.
     uint16_t port() const noexcept;
-    /// rats:// links the other side can call this one by: the peer id if the
-    /// call is discoverable, then each of the host's addresses (or the one it
-    /// listens on) with the port. None for a call that does not listen.
+    /// rats:// links the other side can call this one by: a peer id the DHT
+    /// finds the call under — this call's, if it is discoverable, or, in a
+    /// room, the one it dialed — then each of the host's addresses (or the one
+    /// it listens on) with the port. None for a call that does not listen.
     std::vector<std::string> invites() const;
     std::vector<PeerId> peers() const;
     /// Say who this side is — a name, muted, deafened — to every peer now and
@@ -221,6 +222,9 @@ public:
     /// The pictures and the sound with them, of the one watched.
     std::optional<ReceivedVideoStats> video_stats() const;
     std::optional<AudioPlayerStats> sound_stats() const;
+    /// The peers whose voice was heard within `hold`: who is speaking, held a
+    /// moment after they stop so that a UI showing it does not flicker.
+    std::vector<PeerId> speaking(Duration hold = std::chrono::milliseconds(300)) const;
     /// Each peer's camera and voice playing, by peer.
     std::map<PeerId, ReceivedVideoStats> camera_stats() const;
     std::map<PeerId, AudioPlayerStats> voice_stats() const;

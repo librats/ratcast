@@ -1,10 +1,12 @@
-# Ratcast.Call: CallController, a call as QML sees it — share a screen or join
-# one, and leave — over client's Call. A static QML module: the app links its
-# plugin.
+# Ratcast.Call: CallController, a room as QML sees it — make one or join one,
+# talk, share and watch — over client's Call, and the members it lists. A
+# static QML module: the app links its plugin.
 
 qt_add_library(ratcast_call STATIC
     call_controller.cpp
     call_controller.h
+    members_model.cpp
+    members_model.h
 )
 qt_add_qml_module(ratcast_call
     URI     Ratcast.Call

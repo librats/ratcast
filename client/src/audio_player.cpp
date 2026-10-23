@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <utility>
 
+#include "audible.h"
+
 #include "librats/util/logger.h"
 
 namespace ratcast {
@@ -144,8 +146,10 @@ void AudioPlayer::pull(std::span<float> out, Timestamp play_time) {
         }
     }
     const AudioDecoderStats decoded = decoder_->stats();
+    const bool heard = audible(out);
     std::lock_guard lock(mutex_);
     stats_.decoded = decoded;
+    if (heard) stats_.heard = play_time;
 }
 
 // Sound for `next`: the frame decoded, or the gap made up — from FEC where the

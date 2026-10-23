@@ -6,6 +6,8 @@
 #include <mutex>
 #include <utility>
 
+#include "audible.h"
+
 #include "librats/util/logger.h"
 
 namespace ratcast {
@@ -13,15 +15,6 @@ namespace {
 
 /// How long speaking() and hearing() hold after the sound stops.
 constexpr Duration kHold = std::chrono::milliseconds(300);
-/// Louder than this is someone there: -45 dBFS, as RMS.
-constexpr float kAudible = 0.0056f;
-
-bool audible(std::span<const float> samples) {
-    if (samples.empty()) return false;
-    double sum = 0;
-    for (float s : samples) sum += double(s) * s;
-    return std::sqrt(sum / double(samples.size())) > kAudible;
-}
 
 }  // namespace
 
@@ -66,6 +59,7 @@ struct VoiceChannel::State {
     std::mutex echo_mutex;                      ///< held by each played()
     bool echo_from_system = false;              ///< rather than the speaker's
     std::atomic<bool> muted{false};
+    std::atomic<bool> deafened{false};
     std::atomic<int64_t> spoke_us{0};  ///< when a voice was last on the microphone
     std::atomic<int64_t> heard_us{0};  ///< when the speaker last played something
 };
@@ -165,6 +159,7 @@ public:
         return device_->start(
             [this, pull = std::move(pull)](std::span<float> out, Timestamp play_time) {
                 pull(out, play_time);
+                if (state_->deafened.load(std::memory_order_relaxed)) std::ranges::fill(out, 0.0f);
                 if (processes_) state_->played(false, out, play_time);
                 if (audible(out)) state_->mark(state_->heard_us);
             },
@@ -195,6 +190,12 @@ void VoiceChannel::set_muted(bool muted) noexcept {
     state_->muted.store(muted, std::memory_order_relaxed);
 }
 bool VoiceChannel::muted() const noexcept { return state_->muted.load(std::memory_order_relaxed); }
+void VoiceChannel::set_deafened(bool deafened) noexcept {
+    state_->deafened.store(deafened, std::memory_order_relaxed);
+}
+bool VoiceChannel::deafened() const noexcept {
+    return state_->deafened.load(std::memory_order_relaxed);
+}
 bool VoiceChannel::speaking() const noexcept {
     return !muted() && state_->recent(state_->spoke_us);
 }
