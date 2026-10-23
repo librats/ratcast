@@ -27,6 +27,7 @@ option(RATCAST_BUILD_TOOLS "Build ratcast-send and ratcast-recv (tools/)" ON)
 
 include(RatcastCompiler)
 include(RatcastPkgConfig)
+include(RatcastInstall)  # before librats, whose GNUInstallDirs would set bin/ first
 include(RatcastLibrats)
 
 if(RATCAST_BUILD_TESTS)
@@ -50,3 +51,5 @@ endif()
 if(RATCAST_BUILD_APP)
     add_subdirectory(app)
 endif()
+
+ratcast_install_runtime()

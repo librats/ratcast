@@ -31,9 +31,13 @@ Visual Studio 2022 (MSVC) and the Windows SDK; the media libraries come from
 in this repository:
 
 ```powershell
-vcpkg install ffmpeg[avcodec,avformat,swscale,nvcodec,dav1d,svt-av1] opus pkgconf `
-    webrtc-audio-processing --overlay-ports=cmake/vcpkg-ports --triplet x64-windows
+vcpkg install ffmpeg[avcodec,avformat,swscale,nvcodec,amf,qsv,dav1d,svt-av1,aom,openh264] `
+    opus pkgconf webrtc-audio-processing sdl3 --overlay-ports=cmake/vcpkg-ports --triplet x64-windows
 ```
+
+FFmpeg's features are every encoder the engine may pick: NVENC, AMF and Quick Sync for the GPUs
+(their runtimes come with the drivers), SVT-AV1, libaom and OpenH264 where there is none. Never
+add `gpl` or `version3`: the app is MIT and ships FFmpeg as LGPL 2.1.
 
 Then configure with vcpkg's toolchain and Qt's prefix, e.g. in a `CMakeUserPresets.json`:
 
@@ -54,6 +58,11 @@ Then configure with vcpkg's toolchain and Qt's prefix, e.g. in a `CMakeUserPrese
 Screens and windows are captured through Windows.Graphics.Capture (Windows 10 1903+), sound
 through WASAPI (the applications' sound without the call's own needs Windows 10 2004+), cameras
 through Media Foundation.
+
+`cmake --install` lays out a folder that runs on a bare Windows: the programs, the DLLs they
+import, Qt's (windeployqt) and MSVC's runtime. That folder, zipped, is what
+[the release workflow](.github/workflows/release.yml) publishes for a `v*` tag (one matching
+`project(VERSION)`), and leaves as an artifact for every push to main.
 
 Already cloned without `--recursive`: `git submodule update --init --recursive`.
 

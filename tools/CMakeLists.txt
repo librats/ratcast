@@ -62,6 +62,9 @@ else()
     message(STATUS "SDL3 not found: ratcast-recv is headless only")
 endif()
 
+# The two that stream and play; the rest are for measuring, from a build.
+ratcast_install_programs(ratcast_send ratcast_recv)
+
 if(RATCAST_BUILD_TESTS)
     add_subdirectory(tests)
 endif()

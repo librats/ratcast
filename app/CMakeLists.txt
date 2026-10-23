@@ -66,8 +66,9 @@ qt_add_qml_module(ratcast_app
 
 # The QML import scan exists to link QML plugins into a static Qt. A shared Qt
 # loads them at run time, and distribution packages do not ship the plugin
-# targets the scan looks for, so it would only warn about each of them.
-if(QT6_IS_SHARED_LIBS_BUILD)
+# targets the scan looks for, so it would only warn about each of them. On
+# Windows it stays: the install deploys the QML modules it finds.
+if(QT6_IS_SHARED_LIBS_BUILD AND NOT WIN32)
     set_target_properties(ratcast_app PROPERTIES QT_QML_MODULE_NO_IMPORT_SCAN TRUE)
 endif()
 
@@ -78,3 +79,18 @@ target_link_libraries(ratcast_app PRIVATE
     ratcast::ratcast
 )
 ratcast_target_defaults(ratcast_app)
+
+ratcast_install_programs(ratcast_app)
+
+# Qt's libraries, plugins and the QML modules Main.qml imports, beside the app
+# (windeployqt). The compiler's runtime is ratcast_install_runtime()'s.
+if(WIN32)
+    qt_generate_deploy_qml_app_script(
+        TARGET ratcast_app
+        OUTPUT_SCRIPT deploy_script
+        NO_TRANSLATIONS
+        NO_COMPILER_RUNTIME
+        EXCLUDE_PLUGIN_TYPES qmltooling  # the QML debugger's
+    )
+    install(SCRIPT "${deploy_script}")
+endif()

@@ -1,0 +1,181 @@
+name: Release
+
+# The app as people get it: a folder that runs on a bare Windows, zipped. Every
+# push to main leaves one as an artifact (and keeps vcpkg's cache warm for the
+# tags, which may read only main's); a v* tag makes it a GitHub release.
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+    paths-ignore: ['docs/**', '**/*.md', 'bench/**']
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
+
+permissions: {}
+
+env:
+  QT_VERSION: '6.10.*'
+  VCPKG_TRIPLET: x64-windows-release
+
+jobs:
+  windows:
+    name: Windows x64
+    runs-on: windows-latest
+    permissions:
+      contents: read
+    env:
+      VCPKG_BINARY_SOURCES: clear;files,${{ github.workspace }}\vcpkg-cache,readwrite
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          persist-credentials: false
+
+      - name: Version
+        id: version
+        run: |
+          if ("${{ github.ref }}" -match '^refs/tags/v(.+)$') {
+            $version = $matches[1]
+            # The binaries say the project's version: a tag must name it.
+            $project = (Select-String -Path CMakeLists.txt -Pattern '^\s+VERSION\s+(\S+)').Matches[0].Groups[1].Value
+            if (($version -replace '-.*$') -ne $project) {
+              throw "Tag v$version does not match project(VERSION $project) in CMakeLists.txt"
+            }
+          } else {
+            $version = "dev-$("${{ github.sha }}".Substring(0, 8))"
+          }
+          "name=ratcast-$version-windows-x64" >> $env:GITHUB_OUTPUT
+
+      # The media libraries, each with all it can do: every GPU's encoders
+      # (NVENC, AMF, Quick Sync through oneVPL — their runtimes come with the
+      # drivers), software ones for a machine with none (SVT-AV1, libaom,
+      # OpenH264), dav1d for AV1, D3D11VA and Media Foundation (FFmpeg's own on
+      # Windows). LGPL: no gpl or version3 feature may join them.
+      # vcpkg's packages are kept between runs as files; FFmpeg alone takes
+      # most of an hour to build.
+      - name: Restore vcpkg's packages
+        uses: actions/cache/restore@v4
+        with:
+          path: vcpkg-cache
+          key: vcpkg-${{ env.VCPKG_TRIPLET }}-
+          restore-keys: vcpkg-${{ env.VCPKG_TRIPLET }}-
+
+      - name: Install media libraries
+        run: |
+          New-Item -ItemType Directory -Force vcpkg-cache | Out-Null
+          & "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" install `
+            "ffmpeg[core,avcodec,avformat,swscale,nvcodec,amf,qsv,dav1d,svt-av1,aom,openh264]" `
+            opus pkgconf webrtc-audio-processing sdl3 `
+            --overlay-ports=cmake/vcpkg-ports --overlay-triplets=cmake/vcpkg-triplets `
+            --triplet $env:VCPKG_TRIPLET --host-triplet $env:VCPKG_TRIPLET
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          $files = (Get-ChildItem vcpkg-cache -Recurse -File | Sort-Object Name | ForEach-Object Name) -join "`n"
+          $hash = [BitConverter]::ToString([Security.Cryptography.SHA256]::Create().ComputeHash(
+            [Text.Encoding]::UTF8.GetBytes($files))).Replace('-', '').Substring(0, 16)
+          "VCPKG_CACHE_KEY=vcpkg-$env:VCPKG_TRIPLET-$hash" >> $env:GITHUB_ENV
+
+      # Saved under what it holds: a run that built nothing new saves nothing.
+      - name: Save vcpkg's packages
+        uses: actions/cache/save@v4
+        with:
+          path: vcpkg-cache
+          key: ${{ env.VCPKG_CACHE_KEY }}
+
+      - uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.QT_VERSION }}
+          arch: win64_msvc2022_64
+          modules: qtshadertools
+          cache: true
+
+      - name: Configure
+        run: >
+          cmake -S . -B build -A x64
+          -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
+          -DVCPKG_TARGET_TRIPLET="$env:VCPKG_TRIPLET"
+          -DCMAKE_PREFIX_PATH="$env:QT_ROOT_DIR"
+          -DRATCAST_BUILD_TESTS=OFF -DRATCAST_BUILD_APP=ON
+          -DRATCAST_WITH_FFMPEG=ON -DRATCAST_WITH_OPUS=ON -DRATCAST_WITH_WEBRTC_APM=ON
+
+      - name: Build
+        run: cmake --build build --config RelWithDebInfo --parallel
+
+      # The programs, the DLLs they import, Qt's with its plugins and QML
+      # modules, MSVC's runtime (cmake/RatcastInstall.cmake).
+      - name: Install
+        run: |
+          $dir = "package/${{ steps.version.outputs.name }}"
+          cmake --install build --config RelWithDebInfo --prefix $dir
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          New-Item -ItemType Directory -Force "$dir/licenses" | Out-Null
+          Copy-Item LICENSE "$dir/licenses/ratcast.txt"
+          Get-ChildItem "$env:VCPKG_INSTALLATION_ROOT/installed/$env:VCPKG_TRIPLET/share/*/copyright" |
+            ForEach-Object { Copy-Item $_ "$dir/licenses/$($_.Directory.Name).txt" }
+
+      # What the folder must do on a machine with nothing installed: start with
+      # Windows' own PATH and no Qt around, and carry every codec.
+      - name: Check the package
+        run: |
+          $dir = (Resolve-Path "package/${{ steps.version.outputs.name }}").Path
+
+          $avcodec = Get-ChildItem "$dir/avcodec-*.dll" | Select-Object -First 1
+          if (-not $avcodec) { throw "FFmpeg's libavcodec is not in the package" }
+          $text = [Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes($avcodec.FullName))
+          if (-not $text.Contains("LGPL version 2.1 or later")) { throw "$($avcodec.Name) is not LGPL 2.1" }
+          $missing = @('av1_nvenc', 'hevc_nvenc', 'h264_nvenc', 'av1_amf', 'hevc_amf', 'h264_amf',
+                       'av1_qsv', 'hevc_qsv', 'h264_qsv', 'libsvtav1', 'libaom-av1', 'libopenh264',
+                       'libdav1d', 'h264_d3d11va', 'hevc_d3d11va', 'av1_d3d11va') |
+            Where-Object { -not $text.Contains("$_`0") }
+          if ($missing) { throw "Missing from $($avcodec.Name): $($missing -join ', ')" }
+
+          $env:PATH = "$env:SystemRoot\System32;$env:SystemRoot"
+          Remove-Item Env:QT_PLUGIN_PATH, Env:QML2_IMPORT_PATH -ErrorAction SilentlyContinue
+          foreach ($tool in 'ratcast-send', 'ratcast-recv') {
+            & "$dir/$tool.exe" --help | Out-Null
+            if ($LASTEXITCODE) { throw "$tool.exe --help: exit code $LASTEXITCODE" }
+          }
+          # The app quits if its QML fails to load; still up, it found it all.
+          $env:QSG_RHI_PREFER_SOFTWARE_RENDERER = '1'  # no GPU on the runner: WARP
+          $app = Start-Process "$dir/ratcast.exe" -WorkingDirectory $env:RUNNER_TEMP -PassThru
+          Start-Sleep -Seconds 10
+          if ($app.HasExited) { throw "ratcast.exe quit at start: exit code $($app.ExitCode)" }
+          Stop-Process -Id $app.Id -Force
+
+      - name: Zip
+        run: |
+          $name = "${{ steps.version.outputs.name }}"
+          7z a -tzip "$name.zip" "./package/$name"
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          7z a -tzip "$name-symbols.zip" ./build/bin/RelWithDebInfo/ratcast*.pdb
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.version.outputs.name }}
+          path: |
+            ${{ steps.version.outputs.name }}.zip
+            ${{ steps.version.outputs.name }}-symbols.zip
+          compression-level: 0  # zips already
+          retention-days: 30
+
+  release:
+    name: GitHub release
+    needs: [windows]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*.zip
+          generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, '-') }}
