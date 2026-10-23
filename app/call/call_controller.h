@@ -62,6 +62,7 @@
 #include "ratcast/client/screen_share.h"
 #include "ratcast/client/voice.h"
 #include "ratcast/engine/audio_device.h"
+#include "ratcast/engine/screen_awake.h"
 #include "video_view.h"
 
 namespace ratcast::app {
@@ -142,6 +143,8 @@ public:
         VoiceConfig voice = {};
         /// What the others call this side until the user says otherwise.
         QString name = {};
+        /// The screen kept on while a share is watched; null: left alone.
+        std::function<std::unique_ptr<ScreenAwake>()> keep_screen_awake = {};
 
         /// This computer's: its desktop, its speaker, the user's data
         /// directory and name, discoverable through the DHT.
@@ -303,6 +306,7 @@ private:
     uint64_t generation_ = 0;
     std::jthread dialog_;  ///< the desktop's
     std::unique_ptr<VoiceChannel> voice_;
+    std::unique_ptr<ScreenAwake> awake_;    ///< while a share is watched
     std::unique_ptr<AudioOutput> speaker_;  ///< the voice channel's
     std::unique_ptr<Call> call_;            ///< after the speaker: it plays into it
     /// After the call, which they watch: the panel's and standard output's.

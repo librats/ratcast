@@ -1,6 +1,7 @@
 // The portal client against a fake portal on a private D-Bus: what it asks
 // for, what it makes of the answers, and that it leaves no session open
-// whatever the outcome. Skipped where dbus-daemon is missing.
+// whatever the outcome; the screen kept on through it, and let go. Skipped
+// where dbus-daemon is missing.
 
 #include "linux/portal.h"
 
@@ -8,13 +9,16 @@
 #include <gtest/gtest.h>
 #include <unistd.h>
 
+#include <chrono>
 #include <cstdlib>
 #include <future>
 #include <optional>
 #include <stop_token>
 #include <string>
+#include <thread>
 
 #include "fake_portal.h"
+#include "ratcast/engine/screen_awake.h"
 
 using namespace ratcast;
 using test::FakePortal;
@@ -167,4 +171,39 @@ TEST_F(PortalTest, AskingForNothingIsInvalid) {
     request.monitors = false;
     request.windows = false;
     EXPECT_EQ(portal::start_screen_cast(request).error(), Errc::InvalidArgument);
+}
+
+TEST_F(PortalTest, KeepsTheScreenOnUntilLetGo) {
+    auto fake = portal();
+    std::unique_ptr<ScreenAwake> awake = keep_screen_awake("Watching a share");
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+    while (!awake->held() && std::chrono::steady_clock::now() < deadline) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    }
+    ASSERT_TRUE(awake->held());
+    const FakePortal::Seen seen = fake->seen();
+    EXPECT_EQ(seen.inhibitions, 1);
+    EXPECT_EQ(seen.inhibit_flags, 8u) << "idleness, and nothing else";
+    EXPECT_EQ(seen.inhibit_reason, "Watching a share");
+    EXPECT_EQ(seen.requests_closed, 0);
+
+    awake.reset();
+    EXPECT_TRUE(fake->wait_until([](const FakePortal::Seen& s) { return s.requests_closed == 1; }))
+        << "let go: the inhibition's request closed";
+}
+
+TEST_F(PortalTest, APortalThatCannotInhibitLeavesTheScreenAlone) {
+    auto fake = portal({.inhibits = false});
+    Result<std::unique_ptr<portal::Inhibition>> inhibition = portal::inhibit_idle("Watching");
+    ASSERT_FALSE(inhibition);
+    EXPECT_EQ(inhibition.error(), Errc::Unavailable);
+    std::unique_ptr<ScreenAwake> awake = keep_screen_awake("Watching");
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    EXPECT_FALSE(awake->held());
+}
+
+TEST_F(PortalTest, NoPortalNoInhibition) {
+    EXPECT_EQ(portal::inhibit_idle("Watching").error(), Errc::Unavailable);
+    // Asked and let go at once: it never waits.
+    keep_screen_awake("Watching").reset();
 }

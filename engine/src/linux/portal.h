@@ -2,7 +2,7 @@
 
 /**
  * @file portal.h
- * @brief Asking xdg-desktop-portal for a screen cast.
+ * @brief Asking xdg-desktop-portal for a screen cast, and to keep the screen on.
  *
  * The portal is how a Linux desktop lets an application capture the screen:
  * the application asks over D-Bus, the desktop shows its own picker, and the
@@ -11,7 +11,7 @@
  * picker, so the user is asked once.
  *
  * Each cast has a D-Bus connection of its own, so that the portal closes the
- * session even if the process dies without saying so.
+ * session even if the process dies without saying so; so has each inhibition.
  */
 
 #include <cstdint>
@@ -49,5 +49,18 @@ public:
 /// or it cannot cast what was asked for.
 Result<std::unique_ptr<ScreenCast>> start_screen_cast(const ScreenCastRequest& request,
                                                       std::stop_token stop = {});
+
+/// The desktop not blanking, locking or saving the screen for idleness while
+/// this lives. Destroying it ends the inhibition.
+class Inhibition {
+public:
+    virtual ~Inhibition() = default;
+};
+
+/// Ask the portal to keep the screen on, saying `reason`. Unavailable when
+/// there is no portal or it refused; Cancelled when `stop` was requested
+/// before it answered.
+Result<std::unique_ptr<Inhibition>> inhibit_idle(const std::string& reason,
+                                                 std::stop_token stop = {});
 
 }  // namespace ratcast::portal

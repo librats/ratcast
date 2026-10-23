@@ -73,6 +73,7 @@ if(RATCAST_PIPEWIRE_FOUND)
         src/linux/pipewire_capture.cpp
         src/linux/pipewire_stream.cpp
         src/linux/portal.cpp
+        src/linux/screen_awake.cpp
         src/linux/screen_capture.cpp
     )
     target_link_libraries(ratcast_engine PRIVATE ratcast::pipewire ratcast::gio)
@@ -83,6 +84,7 @@ elseif(WIN32)
         src/windows/d3d11.cpp
         src/windows/graphics_capture.cpp
         src/windows/nv12_converter.cpp
+        src/windows/screen_awake.cpp
         src/windows/screen_capture.cpp
         src/windows/wasapi_audio.cpp
     )
@@ -93,6 +95,7 @@ else()
         src/audio/audio_device_unavailable.cpp
         src/capture/camera_capture_unavailable.cpp
         src/capture/screen_capture_unavailable.cpp
+        src/screen_awake_unavailable.cpp
     )
 endif()
 

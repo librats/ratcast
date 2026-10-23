@@ -1,4 +1,6 @@
-// The ScreenCast portal over GDBus. Every step of a cast is a method that
+// The ScreenCast and Inhibit portals over GDBus.
+//
+// ScreenCast: Every step of a cast is a method that
 // returns a Request object at once and answers later, with a Response signal
 // on that object — after the user has chosen, for Start. The signal is
 // subscribed to before the call, at the path the portal will use (it is made
@@ -31,6 +33,12 @@ constexpr const char* kObjectPath = "/org/freedesktop/portal/desktop";
 constexpr const char* kScreenCast = "org.freedesktop.portal.ScreenCast";
 constexpr const char* kRequest = "org.freedesktop.portal.Request";
 constexpr const char* kSession = "org.freedesktop.portal.Session";
+constexpr const char* kInhibit = "org.freedesktop.portal.Inhibit";
+
+// What Inhibit keeps from happening: the session going idle.
+constexpr uint32_t kInhibitIdle = 8;
+/// How long closing an inhibition may take: it is done as its owner goes.
+constexpr int kCloseTimeoutMs = 1000;
 
 // ScreenCast's source types, cursor modes and persist modes.
 constexpr uint32_t kSourceMonitor = 1;
@@ -265,7 +273,59 @@ void init_options(GVariantBuilder* builder, const char* handle_token) {
     g_variant_builder_add(builder, "{sv}", "handle_token", g_variant_new_string(handle_token));
 }
 
+/// An inhibition the portal granted: its request, open on its connection.
+class Inhibited final : public Inhibition {
+public:
+    Inhibited(GDBusConnection* connection, std::string request)
+        : connection_(connection), request_(std::move(request)) {}
+    Inhibited(const Inhibited&) = delete;
+    Inhibited& operator=(const Inhibited&) = delete;
+    ~Inhibited() override {
+        Error error;
+        VariantPtr reply(g_dbus_connection_call_sync(
+            connection_, kBusName, request_.c_str(), kRequest, "Close", nullptr, nullptr,
+            G_DBUS_CALL_FLAGS_NONE, kCloseTimeoutMs, nullptr, error.out()));
+        if (!reply) LOG_DEBUG("engine", "ending the inhibition: " << error.message());
+        g_dbus_connection_close_sync(connection_, nullptr, nullptr);
+        g_object_unref(connection_);
+    }
+
+private:
+    GDBusConnection* connection_;
+    std::string request_;  ///< its object path: closed, the inhibition ends
+};
+
 }  // namespace
+
+Result<std::unique_ptr<Inhibition>> inhibit_idle(const std::string& reason, std::stop_token stop) {
+    GDBusConnection* connection = connect_session_bus();
+    if (!connection) return fail(Errc::Unavailable);
+    // The call called off when `stop` is requested.
+    GCancellable* cancellable = g_cancellable_new();
+    const std::stop_callback cancel(stop, [cancellable] { g_cancellable_cancel(cancellable); });
+
+    // No Response comes: the request stands for the inhibition until closed.
+    GVariantBuilder options;
+    g_variant_builder_init(&options, G_VARIANT_TYPE_VARDICT);
+    g_variant_builder_add(&options, "{sv}", "handle_token", g_variant_new_string("ratcast"));
+    g_variant_builder_add(&options, "{sv}", "reason", g_variant_new_string(reason.c_str()));
+    Error error;
+    const VariantPtr handle(g_dbus_connection_call_sync(
+        connection, kBusName, kObjectPath, kInhibit, "Inhibit",
+        g_variant_new("(sua{sv})", "", kInhibitIdle, &options), G_VARIANT_TYPE("(o)"),
+        G_DBUS_CALL_FLAGS_NONE, -1, cancellable, error.out()));
+    const bool cancelled = g_cancellable_is_cancelled(cancellable);
+    g_object_unref(cancellable);
+    if (!handle) {
+        if (!cancelled) LOG_WARN("engine", "the screen may blank: " << error.message());
+        g_dbus_connection_close_sync(connection, nullptr, nullptr);
+        g_object_unref(connection);
+        return fail(cancelled ? Errc::Cancelled : Errc::Unavailable);
+    }
+    const char* request = nullptr;
+    g_variant_get(handle.get(), "(&o)", &request);
+    return std::unique_ptr<Inhibition>(std::make_unique<Inhibited>(connection, request));
+}
 
 Result<std::unique_ptr<ScreenCast>> start_screen_cast(const ScreenCastRequest& request,
                                                       std::stop_token stop) {

@@ -64,6 +64,16 @@ private:
     std::thread thread_;
 };
 
+/// Screens kept on, by every side: the system's left alone.
+std::atomic<int> g_screens_kept{0};
+
+class KeptAwake final : public ScreenAwake {
+public:
+    KeptAwake() { ++g_screens_kept; }
+    ~KeptAwake() override { --g_screens_kept; }
+    bool held() const noexcept override { return true; }
+};
+
 /// The test's own: loopback, its own protocol, nothing kept, a pattern for
 /// the screen and a tone for its sound, another for each voice, a speaker
 /// that plays to nobody.
@@ -92,6 +102,7 @@ CallController::Environment environment() {
     environment.open_camera = [] {
         return std::make_unique<PatternSource>(PatternConfig{PixelFormat::NV12, 160, 120, 30, 1});
     };
+    environment.keep_screen_awake = [] { return std::make_unique<KeptAwake>(); };
     // Tones for voices: not for the echo canceller or the noise suppressor.
     environment.voice.processing.echo_cancellation = false;
     environment.voice.processing.noise_suppression = false;
@@ -263,16 +274,21 @@ TEST_F(CallControllerTest, WhatIsWatchedIsChosen) {
     ASSERT_TRUE(wait_for([&] { return bob_.watching() == ann; }));
     EXPECT_EQ(bob_.watched().value("name").toString(), "Ann") << "whose share, by name";
     EXPECT_EQ(bob_.watched().value("peerId").toString(), ann);
+    EXPECT_EQ(g_screens_kept, 1) << "Bob's screen kept on while he watches";
 
     bob_.watch("");
     EXPECT_TRUE(wait_for([&] { return bob_.watching().isEmpty(); }));
     EXPECT_TRUE(bob_.watched().isEmpty());
+    EXPECT_EQ(g_screens_kept, 0) << "and let go when he stops";
     EXPECT_TRUE(bob_view_.pictureSize().isEmpty());
     EXPECT_TRUE(member(bob_, "Ann").value("sharing").toBool()) << "still on offer";
 
     bob_.watch(ann);
     EXPECT_TRUE(wait_for(
         [&] { return bob_.watching() == ann && bob_view_.pictureSize() == QSize(320, 240); }));
+    EXPECT_EQ(g_screens_kept, 1);
+    bob_.leave();
+    EXPECT_EQ(g_screens_kept, 0) << "nothing watched once out of the room";
 }
 
 TEST_F(CallControllerTest, EachSeesEveryCameraInAViewOfItsOwnAndItsOwn) {

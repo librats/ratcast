@@ -1019,10 +1019,21 @@ while a share is watched.
   picture of its view's size half a pixel in was drawn all grey (127, 127, 127) for black
   and white columns a pixel wide; now column for column. Tested: that picture read back from
   a window, at 10.5, 20.25; the snapping at ratios 1, 1.25 and 2.
-- **11.3 The screen kept on** ← now: while a share is watched, full screen or not: the desktop portal's
-  Inhibit (idle) on Linux, `SetThreadExecutionState` on Windows; in `engine`, tested against the
+- **11.3 The screen kept on** ✅: while a share is watched, full screen or not: the desktop
+  portal's Inhibit (idle) on Linux, a power request on Windows; in `engine`, tested against the
   fake portal.
-- **11.4 Checked**: screenshots of the stand; on a real monitor (60 Hz, faster if there is one),
+  Done so: `keep_screen_awake()` (`ratcast/engine/screen_awake.h`), held until destroyed and
+  asked on a thread of its own, so the GUI never waits on a portal starting; on Linux
+  `portal::inhibit_idle()` — Inhibit with the idle flag (8) and a reason, the request it answers
+  with closed to let go, a connection of its own so a process that dies lets go too; on Windows
+  `PowerCreateRequest` / `PowerSetRequest(PowerRequestDisplayRequired)`, a handle where
+  `SetThreadExecutionState` would bind it to a thread; elsewhere a warning. `CallController`
+  holds one while `watching` is someone (`Environment::keep_screen_awake`, which tests stand
+  in for). Tested: the fake portal asked with flag 8 and the reason and its request closed when
+  let go; a portal without Inhibit and no portal (Unavailable, never waiting); the controller
+  keeping one while watching and none after stopping or leaving. On this host's GNOME,
+  `org.gnome.SessionManager.IsInhibited(8)` read false, true while held, false after.
+- **11.4 Checked** ← now: screenshots of the stand; on a real monitor (60 Hz, faster if there is one),
   smoothness and that nothing but the share is drawn — the user's eyes, as the VM has no screen.
 
 ### Stage 7 — Conferences

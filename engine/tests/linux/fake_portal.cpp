@@ -42,7 +42,19 @@ constexpr const char* kIntrospection = R"(
   <interface name='org.freedesktop.portal.Request'>
     <method name='Close'/>
   </interface>
+  <interface name='org.freedesktop.portal.Inhibit'>
+    <method name='Inhibit'>
+      <arg type='s' direction='in'/><arg type='u' direction='in'/>
+      <arg type='a{sv}' direction='in'/><arg type='o' direction='out'/>
+    </method>
+  </interface>
 </node>)";
+
+// The interfaces above, by their place.
+constexpr int kScreenCastInterface = 0;
+constexpr int kSessionInterface = 1;
+constexpr int kRequestInterface = 2;
+constexpr int kInhibitInterface = 3;
 
 /// The path xdg-desktop-portal gives a caller's object: ":1.42" and "tok"
 /// under `kind` become .../kind/1_42/tok.
@@ -83,7 +95,8 @@ public:
                                               G_DBUS_CONNECTION_FLAGS_MESSAGE_BUS_CONNECTION),
             nullptr, nullptr, nullptr);
         if (connection_) {
-            register_object(kObjectPath, 0);
+            register_object(kObjectPath, kScreenCastInterface);
+            if (owner_.config_.inhibits) register_object(kObjectPath, kInhibitInterface);
             owner_id_ = g_bus_own_name_on_connection(
                 connection_, kBusName, G_BUS_NAME_OWNER_FLAGS_NONE,
                 [](GDBusConnection*, const gchar*, gpointer self) {
@@ -176,13 +189,27 @@ private:
             object_path("request", sender, lookup_string(options, "handle_token"));
         g_dbus_method_invocation_return_value(invocation, g_variant_new("(o)", request.c_str()));
 
+        if (method == "Inhibit") {  // no Response: the request stands until closed
+            uint32_t flags = 0;
+            g_variant_get_child(parameters, 1, "u", &flags);
+            const std::string reason = lookup_string(options, "reason");
+            record([&](Seen& seen) {
+                ++seen.inhibitions;
+                seen.inhibit_flags = flags;
+                seen.inhibit_reason = reason;
+            });
+            register_object(request, kRequestInterface);
+            g_variant_unref(options);
+            return;
+        }
+
         GVariantBuilder results;
         g_variant_builder_init(&results, G_VARIANT_TYPE_VARDICT);
         uint32_t response = 0;
         if (method == "CreateSession") {
             const std::string session =
                 object_path("session", sender, lookup_string(options, "session_handle_token"));
-            register_object(session, 1);
+            register_object(session, kSessionInterface);
             g_variant_builder_add(&results, "{sv}", "session_handle",
                                   g_variant_new_string(session.c_str()));
         } else if (method == "SelectSources") {
@@ -202,7 +229,7 @@ private:
             record([](Seen& seen) { seen.started = true; });
             const Config& c = owner_.config_;
             if (!c.answer_start) {  // the dialog stays up until the caller closes it
-                register_object(request, 2);
+                register_object(request, kRequestInterface);
                 g_variant_builder_clear(&results);
                 g_variant_unref(options);
                 return;
@@ -247,6 +274,11 @@ FakePortal::~FakePortal() {
 FakePortal::Seen FakePortal::seen() {
     std::lock_guard lock(mutex_);
     return seen_;
+}
+
+bool FakePortal::wait_until(bool (*done)(const Seen&)) {
+    std::unique_lock lock(mutex_);
+    return changed_.wait_for(lock, std::chrono::seconds(5), [&] { return done(seen_); });
 }
 
 bool FakePortal::wait_until_started() {

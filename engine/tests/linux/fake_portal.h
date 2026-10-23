@@ -2,7 +2,8 @@
 
 /**
  * @file fake_portal.h
- * @brief A ScreenCast portal on a test bus, answering as a desktop would.
+ * @brief A ScreenCast and Inhibit portal on a test bus, answering as a desktop
+ * would.
  *
  * It implements the protocol the way xdg-desktop-portal does — a Request
  * object per call, answered with a Response signal at the path made from the
@@ -30,6 +31,7 @@ public:
         uint32_t start_response = 0;        ///< 0 granted, 1 cancelled, 2 failed
         uint32_t node = 42;
         std::string restore_token = "restore-1";
+        bool inhibits = true;  ///< false: no Inhibit interface
     };
 
     /// What the portal was asked, as of now.
@@ -42,6 +44,10 @@ public:
         bool started = false;
         int requests_closed = 0;
         int sessions_closed = 0;
+        /// Inhibit: how often, the last one's flags and reason.
+        int inhibitions = 0;
+        std::optional<uint32_t> inhibit_flags;
+        std::string inhibit_reason;
     };
 
     /// Serve on the bus at `address`; returns once the portal's name is ours.
@@ -51,6 +57,8 @@ public:
     Seen seen();
     /// Until Start has been called, or a few seconds have passed.
     bool wait_until_started();
+    /// Until `done` holds of what was seen, or a few seconds have passed.
+    bool wait_until(bool (*done)(const Seen&));
     /// The far end of the PipeWire connection the portal handed out.
     int peer_fd() const noexcept { return peer_fd_; }
 

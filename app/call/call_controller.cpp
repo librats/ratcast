@@ -121,6 +121,7 @@ CallController::Environment CallController::Environment::system() {
             open_audio_capture({.format = format, .source = AudioCaptureSource::SystemSound});
         return sound ? std::move(*sound) : nullptr;
     };
+    environment.keep_screen_awake = [] { return ratcast::keep_screen_awake("Watching a share"); };
     return environment;
 }
 
@@ -624,6 +625,12 @@ void CallController::set_choosing(bool choosing) {
 void CallController::set_watching(QString id) {
     if (id == watching_) return;
     watching_ = std::move(id);
+    // Nobody touches anything while a film plays: the screen kept on.
+    if (watching_.isEmpty()) {
+        awake_.reset();
+    } else if (!awake_ && environment_.keep_screen_awake) {
+        awake_ = environment_.keep_screen_awake();
+    }
     Q_EMIT watchingChanged();
     update_watched();
 }
