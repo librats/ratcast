@@ -378,7 +378,8 @@ void CallController::share(bool window, bool sound) {
     ScreenShareConfig config;
     config.window = window;
     config.sound = sound;
-    config.data_dir = environment_.data_dir;
+    // No data_dir: the desktop asks every time, as a room's member chooses
+    // anew what to show. A choice kept would stand for the dialog for good.
     set_choosing(true);
     // The desktop's dialog waits on the user: off the GUI thread. The last
     // one has said its say: assigning joins it.

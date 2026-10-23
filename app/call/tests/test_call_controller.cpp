@@ -13,6 +13,7 @@
 
 #include <QCoreApplication>
 #include <QGuiApplication>
+#include <QTemporaryDir>
 
 #include <atomic>
 #include <chrono>
@@ -400,6 +401,26 @@ TEST_F(CallControllerTest, CallingOffTheDialogIsNoNews) {
     ASSERT_TRUE(wait_for([&] { return !ann_.choosing(); }));
     EXPECT_FALSE(ann_.sharing());
     EXPECT_TRUE(ann_.notice().isEmpty());
+}
+
+TEST_F(CallControllerTest, EveryShareIsChosenInTheDialog) {
+    // The identity kept, but not the desktop's last choice: that would stand
+    // for the dialog from then on.
+    QTemporaryDir data;
+    ASSERT_TRUE(data.isValid());
+    CallController::Environment kept = environment();
+    kept.data_dir = data.path().toStdString();
+    std::string asked_with = "unasked";
+    kept.open_share = [&asked_with, open = kept.open_share](const ScreenShareConfig& config,
+                                                            std::stop_token cancel) {
+        asked_with = config.data_dir;
+        return open(config, std::move(cancel));
+    };
+    ann_.setEnvironment(kept);
+    make_room();
+    ann_.share(false, false);
+    ASSERT_TRUE(wait_for([&] { return ann_.sharing(); })) << ann_.notice().toStdString();
+    EXPECT_EQ(asked_with, "") << "no choice kept to restore";
 }
 
 TEST_F(CallControllerTest, AShareTheDesktopCannotMakeSaysWhy) {

@@ -126,7 +126,7 @@ public:
     struct Environment {
         /// What every room starts from: where it listens, its protocol.
         CallConfig call = {};
-        /// Where the identity and the desktop's choices are kept.
+        /// Where the identity is kept.
         std::string data_dir = {};
         std::function<Result<ScreenShareSources>(const ScreenShareConfig&, std::stop_token)>
             open_share = {};
