@@ -158,13 +158,13 @@ final place and shape: stage 0 is a walking skeleton, not a throwaway prototype.
 | **2. Sound** ✅ | audio, A/V sync; latency profiles put off to stages 5 and 6 | L4 ✅ |
 | **3. Standalone library** ✅ | MPEG-TS in and out, `rats://` URLs, a benchmark against librist and SRT, C API | — |
 | **4. Platforms** — in part | GPU paths and hardware codecs; Windows ✅ (its GPU path too) and macOS capture; netsim ✅ | — |
-| **5. Watch together** — after 11 | one-to-many: forwarding tree, simulcast / SVC, SFU, SFrame E2EE, synchronized playout | L5 |
+| **5. Watch together** — next | one-to-many: forwarding tree, simulcast / SVC, SFU, SFrame E2EE, synchronized playout | L5 |
 | **6. App** ✅ | Qt app MVP, one to one: invites, voice with AEC / NS, screen / window / app-audio share, camera; on Linux first, the other OSes as stage 4 reaches them | — |
 | **7. Conferences** | active speaker, last-N, grid, moderation, text chat | — |
 | **8. Beyond** | Android, cinema mode, HDR, polish | — |
 | **9. Call monitor** ✅ | what a call does, as it does it: quality, bitrate, size, frame time, whether each end keeps up — a line a second in the console, a panel in the app | — |
 | **10. Room** ✅ | a voice lobby for a few, as Discord's: everyone with everyone, all talking from the start, who is there and who speaks, mute and deafen, anyone's screen or camera on and off while the room goes on | — |
-| **11. Full screen** ← now | a share watched on the whole screen with nothing else on it, the controls and the cursor there while the mouse moves; the picture pixel-exact; the screen kept awake while watching | — |
+| **11. Full screen** ✅ | a share watched on the whole screen with nothing else on it, the controls and the cursor there while the mouse moves; the picture pixel-exact; the screen kept awake while watching | — |
 
 ### Stage 0 — Skeleton ✅
 
@@ -982,7 +982,7 @@ lost without leaving is not dialed again (the member rejoins); presence is not i
 punching is librats' and untested here (loopback has no NAT); the app's room has not been
 clicked through on two hosts; the sharer's uplink is stage 5's (above).
 
-### Stage 11 — Full screen
+### Stage 11 — Full screen ✅
 
 Watching as a film is watched: the share on the whole screen, nothing else on it. The room
 shows a share between the members and the controls; nothing stops the screen saver; the picture
@@ -1033,8 +1033,16 @@ while a share is watched.
   let go; a portal without Inhibit and no portal (Unavailable, never waiting); the controller
   keeping one while watching and none after stopping or leaving. On this host's GNOME,
   `org.gnome.SessionManager.IsInhibited(8)` read false, true while held, false after.
-- **11.4 Checked** ← now: screenshots of the stand; on a real monitor (60 Hz, faster if there is one),
-  smoothness and that nothing but the share is drawn — the user's eyes, as the VM has no screen.
+- **11.4 Checked** ✅: screenshots of the stand — the room with the Full screen button, full
+  screen with its controls and after a still moment without them, the ending said — and the
+  screen kept on against this host's GNOME (11.3). What a real monitor shows — smoothness at 60
+  Hz and faster, the cursor gone, the share pixel for pixel — is the user's to see: the VM has
+  no screen to look at, and the stage closed on the user's word without that report.
+
+Closed with every test passing (509; ASan 509, TSan 474). Left for later: a monitor of another
+refresh rate than the share's frame rate is drawn at the window's own pace (the newest picture
+each frame), not paced to the share's; the cursor's hiding and the bars' fading not seen on a
+real desktop.
 
 ### Stage 7 — Conferences
 
