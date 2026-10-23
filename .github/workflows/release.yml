@@ -52,11 +52,8 @@ jobs:
         run: |
           if ("${{ github.ref }}" -match '^refs/tags/v(.+)$') {
             $version = $matches[1]
-            # The binaries say the project's version: a tag must name it.
-            $project = (Select-String -Path CMakeLists.txt -Pattern '^\s+VERSION\s+(\S+)').Matches[0].Groups[1].Value
-            if (($version -replace '-.*$') -ne $project) {
-              throw "Tag v$version does not match project(VERSION $project) in CMakeLists.txt"
-            }
+            # The binaries say the tag's version (CMakeLists.txt, RATCAST_VERSION).
+            "version=$version" >> $env:GITHUB_OUTPUT
           } else {
             $version = "dev-$("${{ github.sha }}".Substring(0, 8))"
           }
@@ -105,6 +102,7 @@ jobs:
           -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
           -DVCPKG_TARGET_TRIPLET="$env:VCPKG_TRIPLET"
           -DCMAKE_PREFIX_PATH="$env:QT_ROOT_DIR"
+          -DRATCAST_VERSION="${{ steps.version.outputs.version }}"
           -DRATCAST_BUILD_TESTS=OFF -DRATCAST_BUILD_APP=ON
           -DRATCAST_WITH_FFMPEG=ON -DRATCAST_WITH_OPUS=ON -DRATCAST_WITH_WEBRTC_APM=ON
           -DRATCAST_UPDATES=ON
@@ -193,12 +191,8 @@ jobs:
         run: |
           if [[ "$GITHUB_REF" =~ ^refs/tags/v(.+)$ ]]; then
             version="${BASH_REMATCH[1]}"
-            # The binaries say the project's version: a tag must name it.
-            project=$(sed -nE 's/^\s+VERSION\s+(\S+).*/\1/p' CMakeLists.txt | head -n 1)
-            if [[ "${version%%-*}" != "$project" ]]; then
-              echo "::error::Tag v$version does not match project(VERSION $project) in CMakeLists.txt"
-              exit 1
-            fi
+            # The binaries say the tag's version (CMakeLists.txt, RATCAST_VERSION).
+            echo "version=$version" >> "$GITHUB_OUTPUT"
           else
             version="dev-${GITHUB_SHA::8}"
           fi
@@ -250,6 +244,7 @@ jobs:
           -DCMAKE_TOOLCHAIN_FILE="$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
           -DVCPKG_TARGET_TRIPLET="$VCPKG_TRIPLET"
           -DCMAKE_PREFIX_PATH="$QT_ROOT_DIR"
+          -DRATCAST_VERSION="${{ steps.version.outputs.version }}"
           -DRATCAST_BUILD_TESTS=OFF -DRATCAST_BUILD_TOOLS=OFF -DRATCAST_BUILD_APP=ON
           -DRATCAST_WITH_FFMPEG=ON -DRATCAST_WITH_OPUS=ON -DRATCAST_WITH_WEBRTC_APM=ON
           -DRATCAST_UPDATES=ON

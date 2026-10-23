@@ -1,7 +1,26 @@
 cmake_minimum_required(VERSION 3.22)
 
+# The version is the release tag's: release.yml passes it (v1.2.3, a
+# pre-release's -rc1 not part of it); any other build takes the last v* tag git
+# sees, or 0.0.0 without one.
+if(NOT RATCAST_VERSION)
+    execute_process(
+        COMMAND git describe --tags --abbrev=0 --match "v[0-9]*"
+        WORKING_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}"
+        OUTPUT_VARIABLE RATCAST_VERSION
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        RESULT_VARIABLE git_result
+        ERROR_QUIET)
+    if(NOT git_result EQUAL 0)
+        set(RATCAST_VERSION 0.0.0)
+    endif()
+endif()
+if(NOT RATCAST_VERSION MATCHES "^v?([0-9]+\\.[0-9]+\\.[0-9]+)(-.*)?$")
+    message(FATAL_ERROR "RATCAST_VERSION \"${RATCAST_VERSION}\" is not a version like v1.2.3")
+endif()
+
 project(ratcast
-    VERSION 0.1.0
+    VERSION ${CMAKE_MATCH_1}
     DESCRIPTION "P2P calls and screen streaming on top of librats"
     HOMEPAGE_URL "https://github.com/librats/ratcast"
     LANGUAGES C CXX
