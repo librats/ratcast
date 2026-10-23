@@ -6,6 +6,7 @@
 #include <QSGTexture>
 
 #include <array>
+#include <cmath>
 #include <cstring>
 #include <memory>
 
@@ -169,11 +170,10 @@ void VideoNode::set_picture(VideoFrame picture) {
     markDirty(DirtyMaterial);
 }
 
-void VideoNode::fit(const QRectF& bounds) {
-    const QRectF place = fitted(picture_size_, bounds);
-    if (place == placed_) return;
-    placed_ = place;
-    QSGGeometry::updateTexturedRectGeometry(geometry(), place, QRectF(0, 0, 1, 1));
+void VideoNode::place(const QRectF& rect) {
+    if (rect == placed_) return;
+    placed_ = rect;
+    QSGGeometry::updateTexturedRectGeometry(geometry(), rect, QRectF(0, 0, 1, 1));
     markDirty(DirtyGeometry);
 }
 
@@ -182,6 +182,13 @@ QRectF fitted(QSizeF picture, const QRectF& bounds) {
     const QSizeF size = picture.scaled(bounds.size(), Qt::KeepAspectRatio);
     return {bounds.x() + (bounds.width() - size.width()) / 2,
             bounds.y() + (bounds.height() - size.height()) / 2, size.width(), size.height()};
+}
+
+QRectF snapped(const QRectF& rect, qreal ratio) {
+    if (rect.isEmpty() || ratio <= 0) return rect;
+    const auto snap = [ratio](qreal at) { return std::round(at * ratio) / ratio; };
+    return QRectF(QPointF(snap(rect.left()), snap(rect.top())),
+                  QPointF(snap(rect.right()), snap(rect.bottom())));
 }
 
 }  // namespace ratcast::app

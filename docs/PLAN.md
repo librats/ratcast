@@ -1009,10 +1009,17 @@ while a share is watched.
   cleared); on the screenshot stand (a stand-in controller) — in and out by F, Esc, a double click
   and the button, not without a share, the controls there and gone after a still moment, the
   ending said, the window back to its size; names plain text there too.
-- **11.2 Pixel for pixel** ← now: the picture's place snapped to the screen's pixels (HiDPI's scale
+- **11.2 Pixel for pixel** ✅: the picture's place snapped to the screen's pixels (HiDPI's scale
   included), so one the screen's size is drawn one to one, and a scaled one without a
   half-pixel shift. Tested by reading back a picture drawn at an odd offset.
-- **11.3 The screen kept on** while a share is watched, full screen or not: the desktop portal's
+  Done so: `VideoView` fits the picture, then moves each edge to the nearest of the screen's
+  pixels (`snapped()`: through the scene, at the window's device pixel ratio, so a mirror
+  transform and the item's position count), and places it anew when it moves or the ratio
+  changes (another screen); the node draws where the view says. The fault was real: a
+  picture of its view's size half a pixel in was drawn all grey (127, 127, 127) for black
+  and white columns a pixel wide; now column for column. Tested: that picture read back from
+  a window, at 10.5, 20.25; the snapping at ratios 1, 1.25 and 2.
+- **11.3 The screen kept on** ← now: while a share is watched, full screen or not: the desktop portal's
   Inhibit (idle) on Linux, `SetThreadExecutionState` on Windows; in `engine`, tested against the
   fake portal.
 - **11.4 Checked**: screenshots of the stand; on a real monitor (60 Hz, faster if there is one),

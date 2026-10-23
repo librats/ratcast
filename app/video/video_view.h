@@ -7,7 +7,9 @@
  * Pictures come from any thread — a VideoPlayer's sink() — and the newest one
  * is drawn at the next frame of the window: those that come between two are
  * skipped, never queued. The picture is fitted into the item, its shape kept,
- * centred; what it leaves of the item is not drawn.
+ * centred, its edges on the screen's pixels — one of the screen's size is drawn
+ * pixel for pixel; what it leaves of the item is not drawn. An item that moves
+ * with its parent, its size the same, is placed anew at the next picture.
  *
  * Drawing is the GPU's: the picture's planes go up as they are (one byte a
  * sample for Y, U and V; two for NV12's interleaved chroma) and a shader turns
@@ -56,6 +58,7 @@ Q_SIGNALS:
 protected:
     QSGNode* updatePaintNode(QSGNode* old, UpdatePaintNodeData* data) override;
     void geometryChange(const QRectF& now, const QRectF& before) override;
+    void itemChange(ItemChange change, const ItemChangeData& data) override;
 
 private:
     /// What the sink and the view share: the newest picture, and the view
@@ -73,6 +76,9 @@ private:
 
     /// On the GUI thread, after a sink took a picture.
     void picture_arrived();
+    /// Where a `picture`-sized picture is drawn in the item: fitted, and
+    /// snapped to the screen's pixels.
+    QRectF placed(QSize picture) const;
 
     std::shared_ptr<Inbox> inbox_;
     QSize picture_size_;

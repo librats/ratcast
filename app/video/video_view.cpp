@@ -1,6 +1,7 @@
 #include "video_view.h"
 
 #include <QMetaObject>
+#include <QQuickWindow>
 #include <utility>
 
 #include "video_node.h"
@@ -78,13 +79,27 @@ QSGNode* VideoView::updatePaintNode(QSGNode* old, UpdatePaintNodeData*) {
         delete node;
         return nullptr;
     }
-    if (node) node->fit(boundingRect());
+    if (node) node->place(placed(node->picture_size()));
     return node;
+}
+
+QRectF VideoView::placed(QSize picture) const {
+    const QRectF fit = fitted(picture, boundingRect());
+    if (fit.isEmpty() || !window()) return fit;
+    // In the window's units, where its pixels lie; a transform (a mirror) and
+    // the item's own position go there and back.
+    return mapRectFromScene(snapped(mapRectToScene(fit), window()->effectiveDevicePixelRatio()));
 }
 
 void VideoView::geometryChange(const QRectF& now, const QRectF& before) {
     QQuickItem::geometryChange(now, before);
-    if (now.size() != before.size()) update();
+    // Moved, the picture may be off the screen's pixels.
+    if (now != before) update();
+}
+
+void VideoView::itemChange(ItemChange change, const ItemChangeData& data) {
+    QQuickItem::itemChange(change, data);
+    if (change == ItemDevicePixelRatioHasChanged) update();
 }
 
 }  // namespace ratcast::app

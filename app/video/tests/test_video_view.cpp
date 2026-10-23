@@ -49,6 +49,21 @@ VideoFrame quadrants(uint32_t width, uint32_t height, PixelFormat format, ColorS
     return convert_frame(std::move(bgra).freeze(Timestamp{}), format, space).value();
 }
 
+/// Columns a pixel wide, black and white by turns, starting black: what a
+/// picture drawn a fraction of a pixel off, or scaled, blurs to grey.
+VideoFrame stripes(uint32_t width, uint32_t height) {
+    MutableVideoFrame bgra = MutableVideoFrame::allocate(PixelFormat::BGRA, width, height);
+    for (uint32_t y = 0; y < height; ++y) {
+        uint8_t* row = bgra.plane(0).data + y * bgra.plane(0).stride;
+        for (uint32_t x = 0; x < width; ++x) {
+            const uint8_t level = x % 2 == 0 ? 0 : 0xFF;
+            row[4 * x] = row[4 * x + 1] = row[4 * x + 2] = level;
+            row[4 * x + 3] = 0xFF;
+        }
+    }
+    return convert_frame(std::move(bgra).freeze(Timestamp{}), PixelFormat::I420, {}).value();
+}
+
 ::testing::AssertionResult near(QRgb actual, QRgb expected) {
     const bool close = std::abs(qRed(actual) - qRed(expected)) <= kTolerance &&
                        std::abs(qGreen(actual) - qGreen(expected)) <= kTolerance &&
@@ -140,6 +155,25 @@ TEST_F(VideoViewTest, AResizedViewFitsThePictureAgain) {
     EXPECT_TRUE(near(image.pixel(32, 8), qRgb(0, 0, 0)));
 }
 
+TEST_F(VideoViewTest, APictureOfItsSizeIsDrawnPixelForPixelWhereverItLies) {
+    // Its own size, half a pixel in: drawn where it lies, it would be grey.
+    view_->setPosition(QPointF(10.5, 20.25));
+    view_->setSize(QSizeF(64, 32));
+    show(stripes(64, 32));
+    const QImage image = draw();
+    // Snapped to whole pixels, it starts at one of the two next to it.
+    const int left =
+        near(image.pixel(10, 36), qRgb(0, 0, 0)) && near(image.pixel(11, 36), qRgb(255, 255, 255))
+            ? 10
+            : 11;
+    for (int x = 0; x < 64; ++x) {
+        const QRgb wanted = x % 2 == 0 ? qRgb(0, 0, 0) : qRgb(255, 255, 255);
+        for (const int y : {21, 36, 51}) {
+            EXPECT_TRUE(near(image.pixel(left + x, y), wanted)) << "column " << x << ", row " << y;
+        }
+    }
+}
+
 TEST_F(VideoViewTest, ClearedItDrawsNothing) {
     show(quadrants(64, 64, PixelFormat::I420, {}));
     draw();
@@ -163,6 +197,15 @@ TEST(VideoNode, FitsAPictureKeepingItsShape) {
     EXPECT_EQ(fitted({640, 480}, {10, 20, 1280, 480}), QRectF(330, 20, 640, 480));
     EXPECT_EQ(fitted({}, {0, 0, 100, 100}), QRectF());
     EXPECT_EQ(fitted({100, 100}, {}), QRectF());
+}
+
+TEST(VideoNode, SnapsToTheScreensPixels) {
+    EXPECT_EQ(snapped({10.5, 20.25, 64, 32}, 1), QRectF(11, 20, 64, 32));
+    EXPECT_EQ(snapped({10.3, 20.7, 64.6, 31.1}, 1), QRectF(10, 21, 65, 31));
+    // At 125%, a picture 1920 pixels wide in 1536 of the window's units.
+    EXPECT_EQ(snapped({0.3, 140.1, 1536, 864}, 1.25), QRectF(0, 140, 1536, 864));
+    EXPECT_EQ(snapped({0.25, 0.75, 10, 10}, 2), QRectF(0.5, 1, 10, 10));
+    EXPECT_EQ(snapped({}, 1), QRectF());
 }
 
 }  // namespace
