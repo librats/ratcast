@@ -26,8 +26,9 @@
  *     the last of them (the decoder's affair: the gap comes with that frame).
  *   - The delay grows where sound is made up anyway — while the next frame is
  *     not there, which while short of target it waits for rather than give it
- *     up, and in DTX's silence — and shrinks in silence too, by cutting it
- *     short.
+ *     up, until the delay is all of the target (no less, or the FEC after a
+ *     loss may come too late), and in DTX's silence — and shrinks in silence
+ *     too, by cutting it short.
  *     Only a delay well over target for a second together, in sound without
  *     silence, costs a frame: it is dropped.
  *   - A floor under the target (set_min_delay(): lip sync, when the pictures

@@ -176,6 +176,32 @@ TEST(JitterBufferTest, MakesUpALostFrameWithTheFecOfTheNext) {
     EXPECT_EQ(sim.buffer().stats().concealed, kFrame);
 }
 
+TEST(JitterBufferTest, ALostFrameWaitsForTheNextOnAPathThatLearntToBeLate) {
+    // A sender woken by a 15.625 ms timer (Windows' own): each frame goes out
+    // on the tick after it is complete, up to a tick late. Playing starts
+    // before that is learnt, at a delay short of the target it then has.
+    Simulation sim;
+    sim.transit = [](FrameNumber n) -> std::optional<Duration> {
+        if (n > 25 && n % 25 == 10) return std::nullopt;
+        const int64_t complete = int64_t(n + 1) * 20'000 + 11'000;
+        const int64_t tick = 15'625;
+        const int64_t sent = (complete + tick - 1) / tick * tick;
+        return Duration{sent - int64_t(n) * 20'000 + 1'000};
+    };
+    sim.run(3s, 150);
+    const JitterBuffer::Stats& stats = sim.buffer().stats();
+    EXPECT_EQ(stats.lost, 5u);
+    // Each made up with the FEC of the frame after it.
+    for (FrameNumber lost : {35u, 60u, 85u, 110u, 135u}) {
+        EXPECT_TRUE(std::ranges::any_of(sim.played, [&](const Played& p) {
+            return p.kind == Kind::Gap && p.frame == lost + 1;
+        })) << lost;
+    }
+    // Waited for no longer than the target asks.
+    EXPECT_GE(sim.buffer().delay(), sim.buffer().target());
+    EXPECT_LT(sim.buffer().delay(), sim.buffer().target() + kFrame / 2);
+}
+
 TEST(JitterBufferTest, PlaysReorderedFramesInOrder) {
     Simulation sim;
     // Every odd frame overtakes the even one before it.

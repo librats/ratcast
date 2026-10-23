@@ -14,6 +14,10 @@ using namespace std::chrono_literals;
 /// within this of the cursor is on it.
 constexpr Duration kTolerance = 1ms;
 
+/// The least gap worth making up: a decoder's unit (Opus's), shorter gaps
+/// coming out of it as nothing.
+constexpr Duration kLeastGap = 2500us;
+
 /// A delay over target by more than a frame and a half (so that one frame
 /// fewer leaves it still over), for kOverFor together, costs a frame every
 /// kDropEvery until it is not; one under the floor by more than a frame has a
@@ -137,10 +141,13 @@ JitterBuffer::Next JitterBuffer::next(Timestamp now) {
 
         if (frames_.empty()) {
             // Nothing there: lost, late, or silence until the next frame says
-            // which. Short of target, the cursor stays, and the delay grows.
-            if (delay_ < target_ - frame / 2) {
-                stats_.expanded += frame;
-                return gap(frame, std::nullopt, false);
+            // which. Short of target, the cursor stays, and the delay grows
+            // to it: all of it, or the frame after a lost one may not be there
+            // with its FEC when the lost one is due.
+            if (delay_ < target_) {
+                const Duration wait = std::clamp(target_ - delay_, kLeastGap, frame);
+                stats_.expanded += wait;
+                return gap(wait, std::nullopt, false);
             }
             stats_.concealed += frame;
             unexplained_ += frame;
@@ -162,11 +169,12 @@ JitterBuffer::Next JitterBuffer::next(Timestamp now) {
             // Frames before it are missing. Short of target they may yet come:
             // wait, and the delay grows. Otherwise they are lost: made up, the
             // last of them with the FEC that `front` carries.
-            const Duration piece = std::min(ahead, frame);
-            if (delay_ < target_ - frame / 2) {
-                stats_.expanded += piece;
-                return gap(piece, std::nullopt, false);
+            if (delay_ < target_) {
+                const Duration wait = std::clamp(target_ - delay_, kLeastGap, frame);
+                stats_.expanded += wait;
+                return gap(wait, std::nullopt, false);
             }
+            const Duration piece = std::min(ahead, frame);
             stats_.concealed += piece;
             return gap(piece, piece == ahead ? std::optional(front) : std::nullopt, true);
         }
