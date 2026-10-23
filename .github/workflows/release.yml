@@ -1,8 +1,9 @@
 name: Release
 
-# The app as people get it: a folder that runs on a bare Windows, zipped. Every
-# push to main leaves one as an artifact (and keeps vcpkg's cache warm for the
-# tags, which may read only main's); a v* tag makes it a GitHub release.
+# The app as people get it: on Windows a folder that runs on a bare system,
+# zipped; on Linux an AppImage. Every push to main leaves them as artifacts (and
+# keeps vcpkg's caches warm for the tags, which may read only main's); a v* tag
+# makes them a GitHub release.
 
 on:
   push:
@@ -19,7 +20,17 @@ permissions: {}
 
 env:
   QT_VERSION: '6.10.*'
-  VCPKG_TRIPLET: x64-windows-release
+  # FFmpeg with all it can do: every GPU's encoders (NVENC, AMF, Quick Sync
+  # through oneVPL — their runtimes come with the drivers), software ones for a
+  # machine with none (SVT-AV1, libaom, OpenH264), dav1d for AV1. LGPL: no gpl
+  # or version3 feature may join them. Built by vcpkg, whose packages are kept
+  # between runs as files: FFmpeg alone takes most of an hour.
+  FFMPEG: ffmpeg[core,avcodec,avformat,swscale,nvcodec,amf,qsv,dav1d,svt-av1,aom,openh264]
+  # What the package check looks for in libavcodec: the encoder table's
+  # (engine/src/ffmpeg/video_encoder.cpp) but VideoToolbox's, and dav1d.
+  CODECS: >-
+    av1_nvenc hevc_nvenc h264_nvenc av1_amf hevc_amf h264_amf av1_qsv hevc_qsv h264_qsv
+    libsvtav1 libaom-av1 libopenh264 libdav1d
 
 jobs:
   windows:
@@ -28,6 +39,7 @@ jobs:
     permissions:
       contents: read
     env:
+      VCPKG_TRIPLET: x64-windows-release
       VCPKG_BINARY_SOURCES: clear;files,${{ github.workspace }}\vcpkg-cache,readwrite
     steps:
       - uses: actions/checkout@v4
@@ -50,13 +62,6 @@ jobs:
           }
           "name=ratcast-$version-windows-x64" >> $env:GITHUB_OUTPUT
 
-      # The media libraries, each with all it can do: every GPU's encoders
-      # (NVENC, AMF, Quick Sync through oneVPL — their runtimes come with the
-      # drivers), software ones for a machine with none (SVT-AV1, libaom,
-      # OpenH264), dav1d for AV1, D3D11VA and Media Foundation (FFmpeg's own on
-      # Windows). LGPL: no gpl or version3 feature may join them.
-      # vcpkg's packages are kept between runs as files; FFmpeg alone takes
-      # most of an hour to build.
       - name: Restore vcpkg's packages
         uses: actions/cache/restore@v4
         with:
@@ -64,12 +69,13 @@ jobs:
           key: vcpkg-${{ env.VCPKG_TRIPLET }}-
           restore-keys: vcpkg-${{ env.VCPKG_TRIPLET }}-
 
+      # Opus, WebRTC's AudioProcessing (the overlay port), SDL3 for
+      # ratcast-recv's window, pkg-config's tool that finds them.
       - name: Install media libraries
         run: |
           New-Item -ItemType Directory -Force vcpkg-cache | Out-Null
-          & "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" install `
-            "ffmpeg[core,avcodec,avformat,swscale,nvcodec,amf,qsv,dav1d,svt-av1,aom,openh264]" `
-            opus pkgconf webrtc-audio-processing sdl3 `
+          & "$env:VCPKG_INSTALLATION_ROOT\vcpkg.exe" install $env:FFMPEG opus pkgconf `
+            webrtc-audio-processing sdl3 `
             --overlay-ports=cmake/vcpkg-ports --overlay-triplets=cmake/vcpkg-triplets `
             --triplet $env:VCPKG_TRIPLET --host-triplet $env:VCPKG_TRIPLET
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
@@ -117,7 +123,8 @@ jobs:
             ForEach-Object { Copy-Item $_ "$dir/licenses/$($_.Directory.Name).txt" }
 
       # What the folder must do on a machine with nothing installed: start with
-      # Windows' own PATH and no Qt around, and carry every codec.
+      # Windows' own PATH and no Qt around, and carry every codec — D3D11VA's
+      # decoders too, FFmpeg's own on Windows.
       - name: Check the package
         run: |
           $dir = (Resolve-Path "package/${{ steps.version.outputs.name }}").Path
@@ -126,9 +133,7 @@ jobs:
           if (-not $avcodec) { throw "FFmpeg's libavcodec is not in the package" }
           $text = [Text.Encoding]::ASCII.GetString([IO.File]::ReadAllBytes($avcodec.FullName))
           if (-not $text.Contains("LGPL version 2.1 or later")) { throw "$($avcodec.Name) is not LGPL 2.1" }
-          $missing = @('av1_nvenc', 'hevc_nvenc', 'h264_nvenc', 'av1_amf', 'hevc_amf', 'h264_amf',
-                       'av1_qsv', 'hevc_qsv', 'h264_qsv', 'libsvtav1', 'libaom-av1', 'libopenh264',
-                       'libdav1d', 'h264_d3d11va', 'hevc_d3d11va', 'av1_d3d11va') |
+          $missing = (-split $env:CODECS) + @('h264_d3d11va', 'hevc_d3d11va', 'av1_d3d11va') |
             Where-Object { -not $text.Contains("$_`0") }
           if ($missing) { throw "Missing from $($avcodec.Name): $($missing -join ', ')" }
 
@@ -161,9 +166,158 @@ jobs:
           compression-level: 0  # zips already
           retention-days: 30
 
+  linux:
+    name: Linux x64
+    # An AppImage runs where glibc and PipeWire are at least this system's
+    # (2.39, 1.0): Ubuntu 24.04, Debian 13, Fedora 40 and later.
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    env:
+      VCPKG_TRIPLET: x64-linux-dynamic-release
+      VCPKG_BINARY_SOURCES: clear;files,${{ github.workspace }}/vcpkg-cache,readwrite
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          persist-credentials: false
+
+      - name: Version
+        id: version
+        run: |
+          if [[ "$GITHUB_REF" =~ ^refs/tags/v(.+)$ ]]; then
+            version="${BASH_REMATCH[1]}"
+            # The binaries say the project's version: a tag must name it.
+            project=$(sed -nE 's/^\s+VERSION\s+(\S+).*/\1/p' CMakeLists.txt | head -n 1)
+            if [[ "${version%%-*}" != "$project" ]]; then
+              echo "::error::Tag v$version does not match project(VERSION $project) in CMakeLists.txt"
+              exit 1
+            fi
+          else
+            version="dev-${GITHUB_SHA::8}"
+          fi
+          echo "name=ratcast-$version-linux-x86_64" >> "$GITHUB_OUTPUT"
+
+      # From the system: PipeWire and GIO (the AppImage uses the machine's, as
+      # its daemon and desktop are), what vcpkg builds with, what Qt's xcb
+      # platform links, and Xvfb with Mesa for the package check.
+      - name: Install system packages
+        run: >
+          sudo apt-get update && sudo apt-get install -y ninja-build pkg-config nasm
+          autoconf-archive libpipewire-0.3-dev libglib2.0-dev libgl-dev libegl-dev
+          libxkbcommon-dev libxkbcommon-x11-0 libxcb-cursor0 libxcb-icccm4 libxcb-image0
+          libxcb-keysyms1 libxcb-render-util0 libxcb-shape0 libxcb-xinerama0 libxcb-xkb1
+          libxcb-randr0 xvfb libgl1-mesa-dri
+
+      - name: Restore vcpkg's packages
+        uses: actions/cache/restore@v4
+        with:
+          path: vcpkg-cache
+          key: vcpkg-${{ env.VCPKG_TRIPLET }}-
+          restore-keys: vcpkg-${{ env.VCPKG_TRIPLET }}-
+
+      - name: Install media libraries
+        run: |
+          mkdir -p vcpkg-cache
+          "$VCPKG_INSTALLATION_ROOT/vcpkg" install "$FFMPEG" opus webrtc-audio-processing \
+            --overlay-ports=cmake/vcpkg-ports --overlay-triplets=cmake/vcpkg-triplets \
+            --triplet "$VCPKG_TRIPLET" --host-triplet "$VCPKG_TRIPLET"
+          hash=$(find vcpkg-cache -type f -printf '%f\n' | sort | sha256sum | cut -c1-16)
+          echo "VCPKG_CACHE_KEY=vcpkg-$VCPKG_TRIPLET-$hash" >> "$GITHUB_ENV"
+
+      - name: Save vcpkg's packages
+        uses: actions/cache/save@v4
+        with:
+          path: vcpkg-cache
+          key: ${{ env.VCPKG_CACHE_KEY }}
+
+      - uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.QT_VERSION }}
+          modules: qtshadertools
+          cache: true
+
+      - name: Configure
+        run: >
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          -DCMAKE_TOOLCHAIN_FILE="$VCPKG_INSTALLATION_ROOT/scripts/buildsystems/vcpkg.cmake"
+          -DVCPKG_TARGET_TRIPLET="$VCPKG_TRIPLET"
+          -DCMAKE_PREFIX_PATH="$QT_ROOT_DIR"
+          -DRATCAST_BUILD_TESTS=OFF -DRATCAST_BUILD_TOOLS=OFF -DRATCAST_BUILD_APP=ON
+          -DRATCAST_WITH_FFMPEG=ON -DRATCAST_WITH_OPUS=ON -DRATCAST_WITH_WEBRTC_APM=ON
+          -DRATCAST_WITH_PIPEWIRE=ON
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      # The app, its menu entry and icon into an AppDir; linuxdeploy brings
+      # the libraries it links (vcpkg's and Qt's, but the system's own:
+      # PipeWire, GLib, GL, X), Qt's plugins and the QML modules Main.qml
+      # imports, and packs it. Its symbols go aside.
+      - name: AppImage
+        env:
+          APPIMAGE_EXTRACT_AND_RUN: '1'  # no FUSE on the runner
+          NO_STRIP: '1'  # linuxdeploy's strip is older than this system's binaries
+          QML_SOURCES_PATHS: ${{ github.workspace }}/app/qml
+        run: |
+          name="${{ steps.version.outputs.name }}"
+          DESTDIR=AppDir cmake --install build --prefix /usr
+          objcopy --only-keep-debug AppDir/usr/bin/ratcast ratcast.debug
+          strip --strip-unneeded AppDir/usr/bin/ratcast
+          tar -czf "$name-symbols.tar.gz" ratcast.debug
+
+          licenses=AppDir/usr/share/licenses/ratcast
+          mkdir -p "$licenses"
+          cp LICENSE "$licenses/ratcast.txt"
+          for copyright in "$VCPKG_INSTALLATION_ROOT/installed/$VCPKG_TRIPLET"/share/*/copyright; do
+            cp "$copyright" "$licenses/$(basename "$(dirname "$copyright")").txt"
+          done
+
+          for tool in linuxdeploy linuxdeploy-plugin-qt linuxdeploy-plugin-appimage; do
+            curl -fsSL -o "$tool" \
+              "https://github.com/linuxdeploy/$tool/releases/download/continuous/$tool-x86_64.AppImage"
+            chmod +x "$tool"
+          done
+          export QMAKE="$QT_ROOT_DIR/bin/qmake"
+          export LD_LIBRARY_PATH="$QT_ROOT_DIR/lib:$VCPKG_INSTALLATION_ROOT/installed/$VCPKG_TRIPLET/lib"
+          export OUTPUT="$name.AppImage"
+          ./linuxdeploy --appdir AppDir --plugin qt --output appimage \
+            --exclude-library 'libpipewire-0.3.so*' \
+            --exclude-library 'libglib-2.0.so*' --exclude-library 'libgobject-2.0.so*' \
+            --exclude-library 'libgio-2.0.so*' --exclude-library 'libgmodule-2.0.so*'
+
+      # What the AppImage must do: carry every codec, and start on a display
+      # with none of Qt or vcpkg around.
+      - name: Check the package
+        run: |
+          name="${{ steps.version.outputs.name }}"
+          avcodec=$(ls AppDir/usr/lib/libavcodec.so.* | head -n 1)
+          strings -n 4 "$avcodec" > avcodec.strings
+          grep -qF "LGPL version 2.1 or later" avcodec.strings ||
+            { echo "::error::$avcodec is not LGPL 2.1"; exit 1; }
+          missing=""
+          for codec in $CODECS; do
+            grep -qxF "$codec" avcodec.strings || missing="$missing $codec"
+          done
+          if [[ -n "$missing" ]]; then echo "::error::Missing from $avcodec:$missing"; exit 1; fi
+
+          # The app quits if its QML fails to load; still up, it found it all.
+          unset LD_LIBRARY_PATH QT_PLUGIN_PATH QML2_IMPORT_PATH
+          status=0
+          APPIMAGE_EXTRACT_AND_RUN=1 xvfb-run -a timeout 10 "./$name.AppImage" || status=$?
+          if [[ $status -ne 124 ]]; then echo "::error::ratcast quit at start: exit code $status"; exit 1; fi
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.version.outputs.name }}
+          path: |
+            ${{ steps.version.outputs.name }}.AppImage
+            ${{ steps.version.outputs.name }}-symbols.tar.gz
+          retention-days: 30
+
   release:
     name: GitHub release
-    needs: [windows]
+    needs: [windows, linux]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:
@@ -176,6 +330,6 @@ jobs:
 
       - uses: softprops/action-gh-release@v2
         with:
-          files: artifacts/*.zip
+          files: artifacts/*
           generate_release_notes: true
           prerelease: ${{ contains(github.ref_name, '-') }}

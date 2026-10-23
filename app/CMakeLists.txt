@@ -93,4 +93,10 @@ if(WIN32)
         EXCLUDE_PLUGIN_TYPES qmltooling  # the QML debugger's
     )
     install(SCRIPT "${deploy_script}")
+elseif(UNIX AND NOT APPLE)
+    # The desktop's menu entry and icon; Qt and the libraries are bundled into
+    # the AppImage by linuxdeploy (.github/workflows/release.yml).
+    install(FILES resources/ratcast.desktop DESTINATION "${CMAKE_INSTALL_DATADIR}/applications")
+    install(FILES resources/ratcast.svg
+            DESTINATION "${CMAKE_INSTALL_DATADIR}/icons/hicolor/scalable/apps")
 endif()

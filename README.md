@@ -62,7 +62,9 @@ through Media Foundation.
 `cmake --install` lays out a folder that runs on a bare Windows: the programs, the DLLs they
 import, Qt's (windeployqt) and MSVC's runtime. That folder, zipped, is what
 [the release workflow](.github/workflows/release.yml) publishes for a `v*` tag (one matching
-`project(VERSION)`), and leaves as an artifact for every push to main.
+`project(VERSION)`), and leaves as an artifact for every push to main — beside a Linux AppImage
+(the app with FFmpeg's same encoders, Qt and the rest, but PipeWire and GLib, which are the
+machine's: glibc 2.39 and PipeWire 1.0 or newer, as on Ubuntu 24.04, Debian 13, Fedora 40).
 
 Already cloned without `--recursive`: `git submodule update --init --recursive`.
 

@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=ratcast
+GenericName=Calls and screen sharing
+Comment=Rooms to talk, share a screen and watch one in
+Exec=ratcast %u
+Icon=ratcast
+Terminal=false
+Categories=AudioVideo;Network;VideoConference;
