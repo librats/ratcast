@@ -46,6 +46,7 @@
 #include <QStringList>
 #include <QTimer>
 #include <QVariantList>
+#include <QVariantMap>
 
 #include <cstdint>
 #include <functional>
@@ -99,6 +100,8 @@ class CallController : public QObject {
     Q_PROPERTY(bool choosing READ choosing NOTIFY choosingChanged)
     /// The id of the member whose share plays into `video`; "" for none.
     Q_PROPERTY(QString watching READ watching NOTIFY watchingChanged)
+    /// That member as a row of `members` (a map of its roles); empty for none.
+    Q_PROPERTY(QVariantMap watched READ watched NOTIFY watchedChanged)
     /// Where the share watched is drawn, and this side's own camera.
     Q_PROPERTY(ratcast::app::VideoView* video READ video WRITE setVideo NOTIFY videoChanged)
     Q_PROPERTY(ratcast::app::VideoView* preview READ preview WRITE setPreview NOTIFY previewChanged)
@@ -186,6 +189,7 @@ public:
     bool sharing() const { return sharing_; }
     bool choosing() const { return choosing_; }
     QString watching() const { return watching_; }
+    QVariantMap watched() const { return watched_; }
     VideoView* video() const { return video_; }
     void setVideo(VideoView* video);
     VideoView* preview() const { return preview_; }
@@ -209,6 +213,7 @@ Q_SIGNALS:
     void sharingChanged();
     void choosingChanged();
     void watchingChanged();
+    void watchedChanged();
     void videoChanged();
     void previewChanged();
     void statsChanged();
@@ -250,6 +255,8 @@ private:
     /// The others, and this side's own voice, as they are now: a few times a
     /// second, and as the call says something changed.
     void update_members();
+    /// `watched` anew, from the row of the member watched.
+    void update_watched();
     void update_levels();
     /// Report on the call just started, every second and, if asked, on
     /// standard output.
@@ -274,6 +281,7 @@ private:
     bool sharing_ = false;
     bool choosing_ = false;
     QString watching_;
+    QVariantMap watched_;
     QTimer levels_;
     QTimer reporting_;
     QTimer printing_;

@@ -12,6 +12,8 @@ import Ratcast.Video
 // and share are on — the share watched in the middle with the cameras beside
 // it, and the controls along the bottom: microphone, sound, camera, sharing,
 // how the call goes (a panel on a button or Ctrl+I, its quality a dot), leave.
+// A share watched may go full screen (F, a double click): only the share, on
+// black, its controls and the cursor there while the mouse moves.
 // The start also says what the updater does: a new version on its way, or in
 // place and to restart into.
 ApplicationWindow {
@@ -29,11 +31,22 @@ ApplicationWindow {
     /// Cameras shown: this side's, if on, and the others'.
     readonly property int cameraTiles: (call.camera ? 1 : 0) + call.cameras
 
+    /// The share watched on the whole screen, nothing else drawn.
+    property bool fullScreen: false
+    /// Whose share went full screen — another's, or none, ends it — and
+    /// their name, to say so.
+    property string fullScreenOf: ""
+    property string fullScreenName: ""
+    /// How the window was before, to go back to.
+    property int windowedVisibility: Window.Windowed
+    /// Said over the stage a few seconds: a share that ended full screen.
+    property string stageNotice: ""
+
     width: 1100
     height: 680
     visible: true
     title: "ratcast"
-    color: "#1e1f22"
+    color: root.fullScreen ? "black" : "#1e1f22"
     Material.theme: Material.Dark
     Material.accent: Material.Teal
 
@@ -51,6 +64,58 @@ ApplicationWindow {
     }
 
     Component.onCompleted: if (root.link.length > 0) call.join(root.link)
+
+    /// The name of the member watched, as the members' list shows it.
+    function watchedName() {
+        return root.memberName(call.watched.name ?? "", call.watched.peer ?? "")
+    }
+
+    /// Into full screen with the share watched, or out of it, back to the
+    /// window as it was.
+    function setFullScreen(on) {
+        if (on === root.fullScreen || (on && !root.watching))
+            return
+        if (on) {
+            root.windowedVisibility = root.visibility
+            root.fullScreenOf = call.watching
+            root.fullScreenName = root.watchedName()
+            root.fullScreen = true
+            root.showFullScreen()
+            chrome.wake()
+        } else {
+            root.fullScreen = false
+            root.visibility = root.windowedVisibility
+        }
+    }
+
+    // The share full screen ended, or another plays in its place: out, and why.
+    Connections {
+        target: call
+        function onWatchedChanged() {
+            if (root.fullScreen && call.watched.peerId === root.fullScreenOf)
+                root.fullScreenName = root.watchedName()
+        }
+        function onWatchingChanged() {
+            if (!root.fullScreen || call.watching === root.fullScreenOf)
+                return
+            root.setFullScreen(false)
+            root.stageNotice = qsTr("%1 stopped sharing").arg(root.fullScreenName)
+            stageNoticeTimer.restart()
+        }
+    }
+
+    // The desktop may take the window out of full screen itself.
+    onVisibilityChanged: {
+        if (root.fullScreen && root.visibility !== Window.FullScreen
+                && root.visibility !== Window.Minimized && root.visibility !== Window.Hidden)
+            root.fullScreen = false
+    }
+
+    Timer {
+        id: stageNoticeTimer
+        interval: 5000
+        onTriggered: root.stageNotice = ""
+    }
 
     // What is kept from one run to the next.
     Settings {
@@ -244,7 +309,7 @@ ApplicationWindow {
         anchors.top: parent.top
         anchors.bottom: controls.top
         width: 280
-        visible: root.inRoom
+        visible: root.inRoom && !root.fullScreen
         Material.elevation: 2
 
         ColumnLayout {
@@ -361,14 +426,17 @@ ApplicationWindow {
         }
     }
 
-    // The share watched, and the cameras: beside it, or alone in the middle.
+    // The share watched, and the cameras: beside it, or alone in the middle;
+    // full screen, the share alone on the whole of it.
     Item {
         id: stage
-        anchors.left: side.right
+        readonly property bool camerasBeside: root.watching && root.cameraTiles > 0
+                                              && !root.fullScreen
+        anchors.left: root.fullScreen ? parent.left : side.right
         anchors.right: parent.right
         anchors.top: parent.top
-        anchors.bottom: controls.top
-        anchors.margins: 12
+        anchors.bottom: root.fullScreen ? parent.bottom : controls.top
+        anchors.margins: root.fullScreen ? 0 : 12
         visible: root.inRoom
 
         VideoView {
@@ -376,19 +444,51 @@ ApplicationWindow {
             anchors.left: parent.left
             anchors.top: parent.top
             anchors.bottom: parent.bottom
-            anchors.right: root.watching && root.cameraTiles > 0 ? cameras.left : parent.right
-            anchors.rightMargin: root.watching && root.cameraTiles > 0 ? 12 : 0
+            anchors.right: stage.camerasBeside ? cameras.left : parent.right
+            anchors.rightMargin: stage.camerasBeside ? 12 : 0
             visible: root.watching
+        }
+
+        // A double click on the share takes it full screen and back; full
+        // screen, the mouse moving brings the controls and the cursor.
+        MouseArea {
+            anchors.fill: picture
+            enabled: root.watching
+            hoverEnabled: root.fullScreen
+            cursorShape: root.fullScreen && !chrome.shown ? Qt.BlankCursor : Qt.ArrowCursor
+            onDoubleClicked: root.setFullScreen(!root.fullScreen)
+            onPositionChanged: if (root.fullScreen) chrome.wake()
         }
 
         RowLayout {
             anchors.top: parent.top
             anchors.horizontalCenter: picture.horizontalCenter
-            visible: root.watching
+            visible: root.watching && !root.fullScreen
 
             Button {
                 text: qsTr("Stop watching")
                 onClicked: call.watch("")
+            }
+            Button {
+                text: qsTr("Full screen")
+                onClicked: root.setFullScreen(true)
+                ToolTip.visible: hovered
+                ToolTip.text: qsTr("F, or a double click on the share; Esc to leave")
+            }
+        }
+
+        Label {
+            anchors.top: parent.top
+            anchors.topMargin: 56
+            anchors.horizontalCenter: parent.horizontalCenter
+            z: 1  // over the cameras
+            padding: 8
+            text: root.stageNotice
+            textFormat: Text.PlainText
+            visible: text.length > 0 && !root.watching
+            background: Rectangle {
+                color: "#e6111214"
+                radius: 6
             }
         }
 
@@ -437,6 +537,7 @@ ApplicationWindow {
             anchors.top: parent.top
             width: root.watching ? tileWidth : parent.width
             spacing: 8
+            visible: !root.fullScreen
 
             // A tile a member, shown while its camera is on: the view stays
             // as long as the member does.
@@ -575,6 +676,16 @@ ApplicationWindow {
         enabled: root.inRoom
         onActivated: stats.shown = !stats.shown
     }
+    Shortcut {
+        sequence: "F"
+        enabled: root.inRoom && root.watching
+        onActivated: root.setFullScreen(!root.fullScreen)
+    }
+    Shortcut {
+        sequence: "Escape"
+        enabled: root.fullScreen
+        onActivated: root.setFullScreen(false)
+    }
 
     // ── The controls ────────────────────────────────────────────────────────
 
@@ -583,7 +694,7 @@ ApplicationWindow {
         anchors.left: parent.left
         anchors.right: parent.right
         anchors.bottom: parent.bottom
-        visible: root.inRoom
+        visible: root.inRoom && !root.fullScreen
         Material.elevation: 4
 
         RowLayout {
@@ -669,6 +780,131 @@ ApplicationWindow {
                 text: qsTr("Leave")
                 Material.background: Material.color(Material.Red, Material.Shade700)
                 onClicked: call.leave()
+            }
+        }
+    }
+
+    // ── Full screen's controls ──────────────────────────────────────────────
+
+    // Whose share along the top, the controls along the bottom: there while
+    // the mouse moves or is over the controls, gone with the cursor after a
+    // moment still.
+    Item {
+        id: chrome
+
+        property bool awake: true
+        readonly property bool shown: awake || controlsHover.hovered
+
+        function wake() {
+            awake = true
+            stillTimer.restart()
+        }
+
+        anchors.fill: parent
+        visible: root.fullScreen && opacity > 0
+        opacity: shown ? 1 : 0
+        Behavior on opacity {
+            NumberAnimation {
+                duration: 250
+            }
+        }
+
+        Timer {
+            id: stillTimer
+            interval: 2500
+            onTriggered: chrome.awake = false
+        }
+
+        Rectangle {
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.top: parent.top
+            height: 64
+            gradient: Gradient {
+                GradientStop {
+                    position: 0
+                    color: "#cc000000"
+                }
+                GradientStop {
+                    position: 1
+                    color: "transparent"
+                }
+            }
+
+            PlainLabel {
+                anchors.left: parent.left
+                anchors.right: parent.right
+                anchors.top: parent.top
+                anchors.margins: 16
+                font.pixelSize: 16
+                text: qsTr("%1's share").arg(root.fullScreenName)
+            }
+        }
+
+        Rectangle {
+            anchors.left: parent.left
+            anchors.right: parent.right
+            anchors.bottom: parent.bottom
+            height: 96
+            gradient: Gradient {
+                GradientStop {
+                    position: 0
+                    color: "transparent"
+                }
+                GradientStop {
+                    position: 1
+                    color: "#cc000000"
+                }
+            }
+
+            RowLayout {
+                anchors.horizontalCenter: parent.horizontalCenter
+                anchors.bottom: parent.bottom
+                anchors.bottomMargin: 16
+                spacing: 8
+
+                HoverHandler {
+                    id: controlsHover
+                }
+
+                Button {
+                    text: call.muted ? qsTr("Unmute") : qsTr("Mute")
+                    checkable: true
+                    checked: call.muted
+                    onToggled: call.muted = checked
+                }
+                Button {
+                    text: call.deafened ? qsTr("Undeafen") : qsTr("Deafen")
+                    checkable: true
+                    checked: call.deafened
+                    onToggled: call.deafened = checked
+                }
+                Dot {
+                    Layout.leftMargin: 8
+                    color: root.qualityColor(call.quality)
+
+                    HoverHandler {
+                        id: fullQualityHover
+                    }
+                    ToolTip.visible: fullQualityHover.hovered && call.quality.length > 0
+                    ToolTip.text: call.qualityReason.length > 0
+                                  ? call.quality + ": " + call.qualityReason : call.quality
+                }
+                Button {
+                    Layout.leftMargin: 8
+                    text: qsTr("Stop watching")
+                    onClicked: {
+                        root.setFullScreen(false)
+                        call.watch("")
+                    }
+                }
+                Button {
+                    text: qsTr("Leave full screen")
+                    highlighted: true
+                    onClicked: root.setFullScreen(false)
+                    ToolTip.visible: hovered
+                    ToolTip.text: qsTr("Esc, F, or a double click")
+                }
             }
         }
     }

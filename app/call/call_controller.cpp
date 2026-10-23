@@ -363,6 +363,7 @@ void CallController::update_members() {
     }
     const int cameras = int(std::ranges::count_if(members, &Member::camera));
     members_.set(std::move(members));
+    update_watched();
     if (cameras == cameras_on_) return;
     cameras_on_ = cameras;
     Q_EMIT camerasChanged();
@@ -624,6 +625,17 @@ void CallController::set_watching(QString id) {
     if (id == watching_) return;
     watching_ = std::move(id);
     Q_EMIT watchingChanged();
+    update_watched();
+}
+
+void CallController::update_watched() {
+    QVariantMap watched;
+    const std::vector<Member>& rows = members_.members();
+    const auto it = std::ranges::find(rows, watching_, &Member::id);
+    if (!watching_.isEmpty() && it != rows.end()) watched = members_.get(int(it - rows.begin()));
+    if (watched == watched_) return;
+    watched_ = std::move(watched);
+    Q_EMIT watchedChanged();
 }
 
 }  // namespace ratcast::app

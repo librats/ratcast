@@ -146,7 +146,8 @@ when it is first in the librats order or when nothing else in the stage can move
 The current stage and the next are broken into steps; later ones stay coarse until reached.
 Stages keep their numbers when their order changes (steps and `docs/bench.md` refer to them):
 the app (6) comes before watching together (5), as one viewer is enough for its first version,
-the call monitor (9) right after the app, and the room (10) after it, before 5.
+the call monitor (9) right after the app, the room (10) after it and full screen (11) after
+that, before 5.
 Every step ends with tests (and benchmarks when it moves a number) and leaves the code in its
 final place and shape: stage 0 is a walking skeleton, not a throwaway prototype.
 
@@ -157,12 +158,13 @@ final place and shape: stage 0 is a walking skeleton, not a throwaway prototype.
 | **2. Sound** ✅ | audio, A/V sync; latency profiles put off to stages 5 and 6 | L4 ✅ |
 | **3. Standalone library** ✅ | MPEG-TS in and out, `rats://` URLs, a benchmark against librist and SRT, C API | — |
 | **4. Platforms** — in part | GPU paths and hardware codecs; Windows ✅ (its GPU path too) and macOS capture; netsim ✅ | — |
-| **5. Watch together** — next | one-to-many: forwarding tree, simulcast / SVC, SFU, SFrame E2EE, synchronized playout | L5 |
+| **5. Watch together** — after 11 | one-to-many: forwarding tree, simulcast / SVC, SFU, SFrame E2EE, synchronized playout | L5 |
 | **6. App** ✅ | Qt app MVP, one to one: invites, voice with AEC / NS, screen / window / app-audio share, camera; on Linux first, the other OSes as stage 4 reaches them | — |
 | **7. Conferences** | active speaker, last-N, grid, moderation, text chat | — |
 | **8. Beyond** | Android, cinema mode, HDR, polish | — |
 | **9. Call monitor** ✅ | what a call does, as it does it: quality, bitrate, size, frame time, whether each end keeps up — a line a second in the console, a panel in the app | — |
 | **10. Room** ✅ | a voice lobby for a few, as Discord's: everyone with everyone, all talking from the start, who is there and who speaks, mute and deafen, anyone's screen or camera on and off while the room goes on | — |
+| **11. Full screen** ← now | a share watched on the whole screen with nothing else on it, the controls and the cursor there while the mouse moves; the picture pixel-exact; the screen kept awake while watching | — |
 
 ### Stage 0 — Skeleton ✅
 
@@ -979,6 +981,42 @@ failed twice under 10.4's TSan runs passed) and 10.5's small netem run. Left for
 lost without leaving is not dialed again (the member rejoins); presence is not in the C API;
 punching is librats' and untested here (loopback has no NAT); the app's room has not been
 clicked through on two hosts; the sharer's uplink is stage 5's (above).
+
+### Stage 11 — Full screen
+
+Watching as a film is watched: the share on the whole screen, nothing else on it. The room
+shows a share between the members and the controls; nothing stops the screen saver; the picture
+is placed in fractions of a pixel, so a share the screen's own size may lie half a pixel off and
+blur. *Done when* a share is watched full screen on the monitor the window is on, the controls
+and the cursor show while the mouse moves and go after a moment still, the room going on
+throughout; a picture of the screen's size is drawn pixel for pixel; and the screen stays on
+while a share is watched.
+
+- **11.1 The mode** ✅: in on F, a double click on the share or a button; out on Esc, F, a
+  double click or a button. The window full screen where it is; only the share, on black, the
+  members, cameras and controls gone. Moving the mouse brings a bar along the bottom (Mute,
+  Deafen, Stop watching, leave full screen, the quality) and whose share it is along the top;
+  still for 2.5 s, they fade with the cursor, never while the mouse is over them or a menu is
+  open. A share that ends, or is no longer watched, ends full screen and says so.
+  Done so: in `Main.qml` — the window's own full screen (`showFullScreen()`, the window as it
+  was — maximised or not — when it ends, and ended too if the desktop takes it out); the stage
+  the whole window, on black, the side, the cameras and the controls hidden; a double click on
+  the share, F and Esc, and a Full screen button beside Stop watching. The controls fade after
+  2.5 s still, with the cursor, held only while the mouse is over them: over the bands they lie
+  in, moving still wakes them. Another share played in its place, or none, ends it with "*name*
+  stopped sharing" over the stage for 5 s. `CallController::watched`: the member watched as a
+  row of the members, for whose share it is. Tested: the controller's `watched` (by name,
+  cleared); on the screenshot stand (a stand-in controller) — in and out by F, Esc, a double click
+  and the button, not without a share, the controls there and gone after a still moment, the
+  ending said, the window back to its size; names plain text there too.
+- **11.2 Pixel for pixel** ← now: the picture's place snapped to the screen's pixels (HiDPI's scale
+  included), so one the screen's size is drawn one to one, and a scaled one without a
+  half-pixel shift. Tested by reading back a picture drawn at an odd offset.
+- **11.3 The screen kept on** while a share is watched, full screen or not: the desktop portal's
+  Inhibit (idle) on Linux, `SetThreadExecutionState` on Windows; in `engine`, tested against the
+  fake portal.
+- **11.4 Checked**: screenshots of the stand; on a real monitor (60 Hz, faster if there is one),
+  smoothness and that nothing but the share is drawn — the user's eyes, as the VM has no screen.
 
 ### Stage 7 — Conferences
 

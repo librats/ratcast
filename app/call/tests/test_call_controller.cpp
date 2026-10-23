@@ -261,9 +261,12 @@ TEST_F(CallControllerTest, WhatIsWatchedIsChosen) {
     ann_.share(false, false);
     const QString ann = id_of(bob_, "Ann");
     ASSERT_TRUE(wait_for([&] { return bob_.watching() == ann; }));
+    EXPECT_EQ(bob_.watched().value("name").toString(), "Ann") << "whose share, by name";
+    EXPECT_EQ(bob_.watched().value("peerId").toString(), ann);
 
     bob_.watch("");
     EXPECT_TRUE(wait_for([&] { return bob_.watching().isEmpty(); }));
+    EXPECT_TRUE(bob_.watched().isEmpty());
     EXPECT_TRUE(bob_view_.pictureSize().isEmpty());
     EXPECT_TRUE(member(bob_, "Ann").value("sharing").toBool()) << "still on offer";
 
