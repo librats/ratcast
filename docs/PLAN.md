@@ -157,12 +157,12 @@ final place and shape: stage 0 is a walking skeleton, not a throwaway prototype.
 | **2. Sound** ✅ | audio, A/V sync; latency profiles put off to stages 5 and 6 | L4 ✅ |
 | **3. Standalone library** ✅ | MPEG-TS in and out, `rats://` URLs, a benchmark against librist and SRT, C API | — |
 | **4. Platforms** — in part | GPU paths and hardware codecs; Windows ✅ (its GPU path too) and macOS capture; netsim ✅ | — |
-| **5. Watch together** — after 6 | one-to-many: forwarding tree, simulcast / SVC, SFU, SFrame E2EE, synchronized playout | L5 |
+| **5. Watch together** — next | one-to-many: forwarding tree, simulcast / SVC, SFU, SFrame E2EE, synchronized playout | L5 |
 | **6. App** ✅ | Qt app MVP, one to one: invites, voice with AEC / NS, screen / window / app-audio share, camera; on Linux first, the other OSes as stage 4 reaches them | — |
 | **7. Conferences** | active speaker, last-N, grid, moderation, text chat | — |
 | **8. Beyond** | Android, cinema mode, HDR, polish | — |
 | **9. Call monitor** ✅ | what a call does, as it does it: quality, bitrate, size, frame time, whether each end keeps up — a line a second in the console, a panel in the app | — |
-| **10. Room** ← now | a voice lobby for a few, as Discord's: everyone with everyone, all talking from the start, who is there and who speaks, mute and deafen, anyone's screen or camera on and off while the room goes on | — |
+| **10. Room** ✅ | a voice lobby for a few, as Discord's: everyone with everyone, all talking from the start, who is there and who speaks, mute and deafen, anyone's screen or camera on and off while the room goes on | — |
 
 ### Stage 0 — Skeleton ✅
 
@@ -671,6 +671,10 @@ version is one to one, over the path straight between the two. Coarse until reac
 
 - Capacity-aware forwarding tree: viewers with spare uplink re-forward without transcoding.
   librats: **needs** L5.
+- One uplink, many viewers: each viewer's rate controller sees its own path, not the uplink
+  they all share, so a sharer to several fills the network's queue below its cap and its own
+  voice waits behind its pictures (10.5: 186 ms against 81–86 on `cap-6`, four in a room).
+  A sender's budget across its paths, or the tree taking the copies off it.
 - Simulcast / SVC layer selection per receiver.
 - SFU mode and the `server` node for big rooms and hard NATs. librats: **better with** L8, L11.
 - SFrame E2EE, room key from the owner over Noise (MLS later).
@@ -862,7 +866,7 @@ later: in the app, with a real speaker, the pictures play 35–50 ms from the so
 `ratcast-recv` to a virtual output) — the output's own delay not yet in the lip sync; and the
 app's console carries librats' INFO lines, which the tools keep to warnings.
 
-### Stage 10 — Room
+### Stage 10 — Room ✅
 
 The app as a place to be together, not only a screen to watch: a few people in one call, as
 in Discord's voice channels, each hearing everyone and seeing who is there, any of them sharing
@@ -954,7 +958,27 @@ room goes on, the others watching whose share they choose.
   `VoiceChannel`; `Call::speaking()`; a share stopped with the call going on. Debug and ASan 490,
   TSan 466 of 467 (`PipeWireApplicationsTest.OneThatStartsLaterIsHeard`, the real daemon's
   capture under TSan and a full suite's load, twice; alone, 3 of 3).
-- **10.5 Checked** ← now: three or four members on loopback and over netem's paths, a small run.
+- **10.5 Checked** ✅: three or four members on loopback and over netem's paths, a small run.
+  Done so: `ratcast-room`, a room's member without a window (a `Call` in a mesh, as the app's):
+  a stamped tone for a voice, the stamped pattern shared as a screen if asked, every voice and
+  the share watched played to nobody, each voice's latency, breaks and losses measured
+  (`VoiceMeter`, a `PlaybackMeter` a peer; `CallPlayback::heard` says whose sound it is).
+  `bench/netem.py --room N` puts each member in a namespace of its own on a bridge, its uplink
+  the scenario's forward direction, each joining through the one before. Measured
+  (`docs/bench.md`, "A room"): everyone meets everyone on every path, the last to join hearing
+  all in 34–43 ms on the bare link and 0.3–0.6 s at 50–100 ms round trips; a voice in a room is
+  a voice in a call (60 ms bare, 111 ms at 100 ms RTT); the sharer sends a copy to each viewer.
+  Found: on a narrow uplink the sharer's voice waits in the network's queue behind its
+  pictures (186 ms against 81–86 for the others on `cap-6`) — each viewer's rate controller
+  sees its own path, not the uplink they share; a burst of loss keeps a tone's delay up for
+  the jitter buffer's 10 s memory. Tested: the meter (each voice from start, together, intervals),
+  `heard` telling whose (three nodes), the histogram's sum.
+
+Closed with every test passing (493; ASan clean, TSan 470 — the PipeWire capture test that
+failed twice under 10.4's TSan runs passed) and 10.5's small netem run. Left for later: a link
+lost without leaving is not dialed again (the member rejoins); presence is not in the C API;
+punching is librats' and untested here (loopback has no NAT); the app's room has not been
+clicked through on two hosts; the sharer's uplink is stage 5's (above).
 
 ### Stage 7 — Conferences
 

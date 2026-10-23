@@ -93,7 +93,10 @@ struct CallPlayback {
     std::function<VideoPlayer::Sink(const PeerId& peer)> cameras = {};
     /// The device the sound and the voices play into; must outlive the call.
     AudioOutput* sound = nullptr;
-    AudioPlayer::Observer heard = {};
+    /// Each frame of sound from `peer` — a voice, or the watched's — captured
+    /// at `capture_time` on its clock, heard at `play_time` on the output's.
+    /// Called on the output's thread.
+    std::function<void(const PeerId& peer, Timestamp capture_time, Timestamp play_time)> heard = {};
     /// Pictures and sound of one sender in step; apart, each keeps its own
     /// time (their distance is measured all the same).
     bool sync = true;

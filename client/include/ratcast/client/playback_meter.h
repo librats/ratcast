@@ -37,6 +37,8 @@ namespace ratcast {
 class LatencyHistogram {
 public:
     void add(Duration value) noexcept;
+    /// Every value `other` holds as well.
+    void add(const LatencyHistogram& other) noexcept;
     void clear() noexcept;
 
     uint64_t count() const noexcept { return count_; }
@@ -107,8 +109,9 @@ public:
                            Duration stall_after = std::chrono::milliseconds(100));
 
     /// Start measuring now: every count is cleared, and the wait for the first
-    /// picture counts from here.
+    /// picture counts from here — or from `since`, a moment before.
     void start();
+    void start(Timestamp since);
 
     /// A picture is shown now; `latency` from its capture, if known.
     void picture(std::optional<Duration> latency = std::nullopt);

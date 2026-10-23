@@ -30,6 +30,19 @@ late it came, what was lost anyway, what crossed the link and the CPU it took.
     bench/netem.py --feed --transport ratcast,srt local
     bench/netem.py --list
 
+With --room N it measures a room instead: N members (ratcast-room), each in a
+namespace of its own on a bridge, everyone talking -- a stamped tone each --
+and, with --share, the first sharing the stamped pattern. Each joins through
+the one before it and meets the rest through them. Each member's uplink is the
+scenario's forward direction (its backward one is not used), so a path between
+two members is one scenario long, and a cap is what each may send to all the
+others together. The table says whether everyone heard everyone, how soon the
+last to join heard them all, how each voice fared -- the worst member's --
+how the share played to the others, and what each member sent.
+
+    bench/netem.py --room 4 local loss-2 cap-6
+    bench/netem.py --room 3 --share --size 1280x720 --bitrate 3000 --fps 30 rtt-100
+
 With --netsim the same scenarios run through ratcast-netsim instead: a proxy
 on loopback whose two directions follow netem's rules in user space, with no
 namespaces, no tc, no root, on any OS. The viewer dials the proxy, which
@@ -67,6 +80,8 @@ TRANSPORTS = ("ratcast", "srt", "rist")
 # With --netsim: everything on loopback, the viewer dialing the proxy.
 LOOPBACK = "127.0.0.1"
 NETSIM_PORT = 7710
+# With --room: member i in namespace m<i> at this address, on bridge "room".
+ROOM_ADDRESS = "10.77.1.{}"
 
 
 @dataclass
@@ -132,16 +147,25 @@ def in_viewer(*command):
     return ["ip", "netns", "exec", "viewer", *command]
 
 
-def make_network():
-    """Two namespaces joined by veth: this one (the sender's) and 'viewer'."""
-    # `ip netns` keeps its names under /run/netns, which we may not create:
-    # then /run itself is replaced, in our mount namespace only.
+def netns_dir():
+    """Where `ip netns` keeps its names, /run/netns, made ours."""
+    # It may not be ours to create: then /run itself is replaced, in our mount
+    # namespace only.
     try:
         Path("/run/netns").mkdir(exist_ok=True)
     except PermissionError:
         sh("mount", "-t", "tmpfs", "none", "/run")
         Path("/run/netns").mkdir()
     sh("mount", "-t", "tmpfs", "none", "/run/netns")
+
+
+def mac(*show):
+    return re.search(r"link/ether (\S+)", sh(*show).stdout).group(1)
+
+
+def make_network():
+    """Two namespaces joined by veth: this one (the sender's) and 'viewer'."""
+    netns_dir()
     sh("ip", "netns", "add", "viewer")
     sh("ip", "link", "add", "va", "type", "veth", "peer", "name", "vb", "netns", "viewer")
     sh("ip", "addr", "add", f"{SENDER_ADDRESS}/24", "dev", "va")
@@ -153,13 +177,50 @@ def make_network():
     # Each end knows the other's MAC address from the start: the first packet
     # of a run would otherwise wait for ARP across the shaped link, a round
     # trip no real path to a gateway pays.
-    def mac(*show):
-        return re.search(r"link/ether (\S+)", sh(*show).stdout).group(1)
-
     sh("ip", "neigh", "replace", VIEWER_ADDRESS, "lladdr",
        mac(*in_viewer("ip", "-o", "link", "show", "vb")), "dev", "va", "nud", "permanent")
     sh(*in_viewer("ip", "neigh", "replace", SENDER_ADDRESS, "lladdr",
                   mac("ip", "-o", "link", "show", "va"), "dev", "vb", "nud", "permanent"))
+
+
+def in_member(index, *command):
+    return ["ip", "netns", "exec", f"m{index}", *command]
+
+
+def make_room_network(members):
+    """A namespace for each member, m0, m1, ..., each on a veth to one bridge
+    in this one; every member knows every other's MAC address from the start."""
+    netns_dir()
+    sh("ip", "link", "add", "room", "type", "bridge")
+    sh("ip", "link", "set", "room", "up")
+    for i in range(members):
+        sh("ip", "netns", "add", f"m{i}")
+        sh("ip", "link", "add", f"r{i}", "type", "veth", "peer", "name", "eth0", "netns", f"m{i}")
+        sh("ip", "link", "set", f"r{i}", "master", "room", "up")
+        sh(*in_member(i, "ip", "addr", "add", f"{ROOM_ADDRESS.format(i + 1)}/24", "dev", "eth0"))
+        sh(*in_member(i, "ip", "link", "set", "eth0", "up"))
+        sh(*in_member(i, "ip", "link", "set", "lo", "up"))
+    macs = [mac(*in_member(i, "ip", "-o", "link", "show", "eth0")) for i in range(members)]
+    for i in range(members):
+        for j in range(members):
+            if i != j:
+                sh(*in_member(i, "ip", "neigh", "replace", ROOM_ADDRESS.format(j + 1), "lladdr",
+                              macs[j], "dev", "eth0", "nud", "permanent"))
+
+
+def shape_uplinks(members, options):
+    """Each member's uplink shaped by `options` (netem's), or left alone."""
+    for i in range(members):
+        sh(*in_member(i, "tc", "qdisc", "del", "dev", "eth0", "root"), check=False)
+        if options:
+            sh(*in_member(i, "tc", "qdisc", "add", "dev", "eth0", "root", "netem",
+                          *options.split()))
+
+
+def uplink_bytes(index):
+    """Bytes member `index` has sent so far."""
+    show = in_member(index, "ip", "-j", "-s", "link", "show", "dev", "eth0")
+    return json.loads(sh(*show).stdout)[0]["stats64"]["tx"]["bytes"]
 
 
 def shape(scenario):
@@ -400,6 +461,123 @@ def run_feed(scenario, transport, args, log_dir, index):
     return summary
 
 
+def run_room(scenario, args, log_dir, index):
+    """A room of args.room members, each joining through the one before, all
+    leaving together: each member's summary, with what it sent (Mbit/s)."""
+    stem = log_dir / f"{scenario.name}.{index}"
+    members = args.room
+    shape_uplinks(members, scenario.forward)
+    changes = [threading.Timer(at, shape_uplinks, (members, options))
+               for at, options in scenario.changes]
+    logs = [open(f"{stem}.m{i}.log", "w+") for i in range(members)]
+    processes = []
+    try:
+        for i in range(members):
+            # Everyone leaves when the last has been in for --duration.
+            stay = args.duration + (members - 1 - i) * args.join_after
+            command = [str(tool(args.bin, "ratcast-room")), "--name", f"m{i}", "--port", str(PORT),
+                       "--duration", f"{stay:.0f}"]
+            if i > 0:
+                command.append(f"rats://{ROOM_ADDRESS.format(i)}:{PORT}")
+            if i == 0 and args.share:
+                command += ["--share", "--size", args.size, "--bitrate", str(args.bitrate),
+                            "--fps", str(args.fps), "--codec", args.codec]
+            processes.append(subprocess.Popen(in_member(i, *command, *args.send_args),
+                                              stdout=logs[i], stderr=subprocess.STDOUT, text=True))
+            deadline = time.monotonic() + 15
+            while "members join with" not in Path(logs[i].name).read_text():
+                if processes[i].poll() is not None or time.monotonic() > deadline:
+                    raise RuntimeError(f"member {i} did not start, see {logs[i].name}")
+                time.sleep(0.05)
+            if i == 0:
+                for change in changes:
+                    change.start()
+                sent_before = [uplink_bytes(m) for m in range(members)]
+                started = time.monotonic()
+            if i + 1 < members:
+                time.sleep(args.join_after)
+        for process in processes:
+            process.wait(timeout=args.duration + members * args.join_after + 30)
+        took = time.monotonic() - started
+        sent = [uplink_bytes(m) for m in range(members)]
+    finally:
+        for change in changes:
+            change.cancel()
+        for process in processes:
+            if process.poll() is None:
+                stop(process)
+        for log in logs:
+            log.close()
+    summaries = []
+    for i in range(members):
+        summary = parse_summary(Path(logs[i].name).read_text()) or {}
+        summary["uplink_mbps"] = (sent[i] - sent_before[i]) * 8 / took / 1e6
+        summaries.append(summary)
+    return summaries
+
+
+def room_run(summaries):
+    """One run of a room, summed up: whether everyone met, the worst member's
+    voices, the share as the others saw it, what the members sent."""
+    def values(key, who=summaries):
+        return [s[key] for s in who if key in s]
+
+    def worst(key, who=summaries, pick=max):
+        found = values(key, who)
+        return pick(found) if found else None
+
+    viewers = summaries[1:]
+    return {
+        "met": min(int(s.get("voices", 0)) for s in summaries),
+        "joined_ms": summaries[-1].get("voices_ms"),
+        **{key: worst(f"voice_latency_{key}_ms") for key in ("p50", "p95", "p99", "max")},
+        "breaks": sum(values("voice_breaks")),
+        "lost": sum(values("voice_lost")),
+        "concealed_ms": sum(values("voice_concealed_ms")),
+        "first_picture_ms": worst("first_picture_ms", viewers),
+        "fps": worst("fps", viewers, min),
+        "picture_p95": worst("latency_p95_ms", viewers),
+        "stalls": sum(values("stalls", viewers)) if values("stalls", viewers) else None,
+        "uplink_first": summaries[0].get("uplink_mbps"),
+        "uplink_others": worst("uplink_mbps", viewers),
+        "cpu": worst("cpu"),
+    }
+
+
+def room_table(results, args):
+    members = args.room
+    rows = [
+        f"A room of {members}, each talking (a tone, Opus voice), each joining through the one "
+        f"before; each member's uplink the scenario's forward direction"
+        + (f"; the first shares {args.size} at {args.fps} fps, {args.codec}, {args.bitrate} "
+           f"kbit/s at most" if args.share else "")
+        + (f", members {' '.join(args.send_args)}" if args.send_args else "")
+        + f"; {args.duration} s with everyone in, medians of {args.repeat}. Voices: the worst "
+        f"member's; breaks, losses and concealment: all members' together.",
+        "",
+        "| scenario | path | voices heard | all heard after, ms | voice latency p50 / p95 / p99 "
+        "/ max, ms | breaks | lost / concealed, ms "
+        + ("| share: first picture, ms | fps | latency p95, ms | stalls " if args.share else "")
+        + "| sent, Mbit/s: first / others | CPU, % |",
+        "|---|---|---:|---:|---:|---:|---:|" + ("---:|---:|---:|---:|" if args.share else "")
+        + "---:|---:|",
+    ]
+    for scenario, runs in results:
+        def m(key, digits=0):
+            found = [r[key] for r in runs if r.get(key) is not None]
+            return cell(statistics.median(found) if found else None, digits)
+
+        met = min(r["met"] for r in runs)
+        rows.append(
+            f"| {scenario.name} | {scenario.path} | {met} of {members - 1} | {m('joined_ms')} "
+            f"| {m('p50', 1)} / {m('p95', 1)} / {m('p99', 1)} / {m('max', 1)} | {m('breaks')} "
+            f"| {m('lost')} / {m('concealed_ms')} "
+            + (f"| {m('first_picture_ms')} | {m('fps')} | {m('picture_p95', 1)} | {m('stalls')} "
+               if args.share else "")
+            + f"| {m('uplink_first', 2)} / {m('uplink_others', 2)} | {m('cpu')} |")
+    return "\n".join(rows)
+
+
 def median(runs, side, key):
     values = [r[side][key] for r in runs if r[side] and key in r[side]]
     return statistics.median(values) if values else None
@@ -527,6 +705,10 @@ def main():
                         help="SRT's and librist's tools (bench/peers.sh builds them)")
     parser.add_argument("--netsim", action="store_true",
                         help="the path through ratcast-netsim on loopback, not tc netem")
+    parser.add_argument("--room", type=int, default=0, metavar="N",
+                        help="measure a room of N members instead (2 to 8)")
+    parser.add_argument("--share", action="store_true",
+                        help="with --room: the first member shares the pattern")
     args = parser.parse_args()
 
     if args.list:
@@ -539,11 +721,19 @@ def main():
     unknown = set(args.scenarios) - {s.name for s in SCENARIOS}
     if unknown:
         parser.error(f"no such scenario: {', '.join(sorted(unknown))} (see --list)")
+    if args.room and not 2 <= args.room <= 8:
+        parser.error("--room: 2 to 8 members")
+    if args.room and (args.netsim or args.feed):
+        parser.error("--room runs over netem's namespaces: no --netsim, no --feed")
+    if args.share and not args.room:
+        parser.error("--share is --room's")
     transports = args.transport.split(",")
     if not set(transports) <= set(TRANSPORTS):
         parser.error(f"--transport: of {', '.join(TRANSPORTS)}, please")
-    for name in ("ratcast-send", "ratcast-recv", *(["ratcast-tsprobe"] if args.feed else []),
-                 *(["ratcast-netsim"] if args.netsim else [])):
+    needed = (["ratcast-room"] if args.room else
+              ["ratcast-send", "ratcast-recv", *(["ratcast-tsprobe"] if args.feed else []),
+               *(["ratcast-netsim"] if args.netsim else [])])
+    for name in needed:
         if not tool(args.bin, name).exists():
             parser.error(f"no {name} in {args.bin}: build the release preset, or pass --bin")
     if args.feed:
@@ -559,10 +749,27 @@ def main():
             command = ["unshare", "--user", "--map-root-user", "--net", "--mount",
                        "--propagation", "private", sys.executable, *sys.argv]
             os.execvp(command[0], command)
-        make_network()
+        if args.room:
+            make_room_network(args.room)
+        else:
+            make_network()
     log_dir = args.out / time.strftime("%Y%m%d-%H%M%S")
     log_dir.mkdir(parents=True)
     chosen = [s for s in SCENARIOS if not args.scenarios or s.name in args.scenarios]
+    if args.room:
+        results = []
+        for scenario in chosen:
+            runs = []
+            for index in range(args.repeat):
+                run = room_run(run_room(scenario, args, log_dir, index))
+                runs.append(run)
+                print(f"{scenario.name} #{index + 1}: heard {run['met']} of {args.room - 1}, "
+                      f"voice p95 {cell(run['p95'], 1)} ms, breaks {run['breaks']}",
+                      file=sys.stderr)
+            results.append((scenario, runs))
+        print(room_table(results, args))
+        print(f"\nlogs: {log_dir}", file=sys.stderr)
+        return 0
     if args.feed:
         results = []
         for scenario in chosen:

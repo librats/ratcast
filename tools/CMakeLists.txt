@@ -1,6 +1,7 @@
 # Command-line tools: ratcast-send streams a screen, window, file or test
 # pattern; ratcast-recv plays it in a window (SDL3, when found) or headless;
-# ratcast-tsprobe sends and measures a stamped MPEG-TS feed; ratcast-netsim
+# ratcast-room is a member of a room, headless, with a stamped tone for a
+# voice; ratcast-tsprobe sends and measures a stamped MPEG-TS feed; ratcast-netsim
 # emulates a path between them in user space.
 # Thin over client/: what they do beyond parsing options and printing stats
 # belongs in the libraries — but for netsim, which is no part of ratcast and
@@ -23,6 +24,11 @@ add_executable(ratcast_recv recv/main.cpp)
 set_target_properties(ratcast_recv PROPERTIES OUTPUT_NAME ratcast-recv)
 target_link_libraries(ratcast_recv PRIVATE ratcast_tool_common)
 ratcast_target_defaults(ratcast_recv)
+
+add_executable(ratcast_room room/main.cpp)
+set_target_properties(ratcast_room PROPERTIES OUTPUT_NAME ratcast-room)
+target_link_libraries(ratcast_room PRIVATE ratcast_tool_common)
+ratcast_target_defaults(ratcast_room)
 
 add_executable(ratcast_tsprobe probe/main.cpp)
 set_target_properties(ratcast_tsprobe PROPERTIES OUTPUT_NAME ratcast-tsprobe)

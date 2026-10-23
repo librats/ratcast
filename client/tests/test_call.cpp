@@ -15,6 +15,7 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -110,9 +111,10 @@ public:
             };
         }
         config.playback.sound = &speaker_;
-        config.playback.heard = [this](Timestamp, Timestamp) {
+        config.playback.heard = [this](const PeerId& peer, Timestamp, Timestamp) {
             std::lock_guard lock(mutex_);
             ++heard_;
+            ++heard_from_[peer];
         };
         Result<std::unique_ptr<Call>> started = Call::start(std::move(config), handlers());
         ASSERT_TRUE(started) << to_string(started.error());
@@ -159,6 +161,11 @@ public:
     size_t heard() {
         std::lock_guard lock(mutex_);
         return heard_;
+    }
+    size_t heard_from(const PeerId& peer) {
+        std::lock_guard lock(mutex_);
+        const auto it = heard_from_.find(peer);
+        return it != heard_from_.end() ? it->second : 0;
     }
     size_t camera_pictures() {
         std::lock_guard lock(mutex_);
@@ -215,6 +222,7 @@ private:
     size_t camera_pictures_ = 0;
     std::vector<PeerId> cameras_asked_;
     size_t heard_ = 0;
+    std::map<PeerId, size_t> heard_from_;
     std::vector<std::string> events_;
     VirtualOutput speaker_{VirtualOutputConfig{}};
     std::unique_ptr<Call> call_;  ///< last: it plays into the rest
@@ -453,8 +461,12 @@ TEST_F(CallTest, EveryonesVoiceAndCameraPlay) {
     std::vector<PeerId> both{ann->id(), bob->id()};
     std::sort(both.begin(), both.end());
     EXPECT_EQ(asked, both) << "each camera to a place of its own";
-    const size_t heard = host.heard();
-    EXPECT_TRUE(wait_for([&] { return host.heard() >= heard + 50; })) << "both mixed, playing";
+    const size_t from_ann = host.heard_from(ann->id());
+    const size_t from_bob = host.heard_from(bob->id());
+    EXPECT_TRUE(wait_for([&] {
+        return host.heard_from(ann->id()) >= from_ann + 25 &&
+               host.heard_from(bob->id()) >= from_bob + 25;
+    })) << "both mixed, playing, each told by whose";
     EXPECT_TRUE(wait_for([&] { return host->speaking().size() == 2; })) << "both heard speaking";
     const CallReport report = CallMonitor(*host).report();
     EXPECT_EQ(report.voices.size(), 2u);

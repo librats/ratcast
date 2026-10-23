@@ -337,10 +337,17 @@ void Call::play(Playing<Player>& slot, const PeerId& peer, const StreamDescripti
     } else if constexpr (std::is_same_v<Player, AudioPlayer>) {
         // A voice keeps its own time; the other sound goes with the pictures.
         const bool voice = description.label == kVoiceLabel;
+        AudioPlayer::Observer observer;
+        if (playback.heard) {
+            observer = [&heard = playback.heard, peer](Timestamp capture_time,
+                                                       Timestamp play_time) {
+                heard(peer, capture_time, play_time);
+            };
+        }
         output = mixer_->input();
         player = std::make_unique<AudioPlayer>(media, peer, description, *output,
                                                AudioPlayerConfig{.sync = voice ? nullptr : &sync_},
-                                               playback.heard);
+                                               std::move(observer));
     } else {
         player = std::make_unique<DataPlayer>(media, peer, description, *playback.feed,
                                               playback.feed_config);

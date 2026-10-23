@@ -12,6 +12,7 @@
 #include <utility>
 
 #include "ratcast/core/time.h"
+#include "ratcast/engine/video_frame.h"
 #include "ratcast/stream/stream_description.h"
 
 namespace ratcast::tools {
@@ -39,5 +40,13 @@ public:
     Timestamp now() const noexcept override;
     static WallClock& instance() noexcept;
 };
+
+/// The latency of a picture from its capture, if it carries the pattern's
+/// stamp (WallClock's) and that stamp makes sense here: the sender's clock may
+/// be another's.
+std::optional<Duration> stamped_latency(const VideoFrame& picture);
+/// The latency of sound from its capture, stamped on WallClock (the tone's),
+/// to `play_time` on the steady clock, where it makes sense here.
+std::optional<Duration> stamped_latency(Timestamp capture_time, Timestamp play_time);
 
 }  // namespace ratcast::tools

@@ -143,6 +143,18 @@ TEST(LatencyHistogram, SinceAnEarlierCopyHoldsWhatWasAddedAfter) {
     EXPECT_EQ(earlier.since(h).count(), earlier.count()) << "one that started over: all of it";
 }
 
+TEST(LatencyHistogram, AnotherAddedHoldsBoth) {
+    LatencyHistogram a;
+    LatencyHistogram b;
+    for (int64_t v : {10, 20, 30}) a.add(us(v));
+    for (int64_t v : {40, 5'000}) b.add(us(v));
+    a.add(b);
+    EXPECT_EQ(a.count(), 5u);
+    EXPECT_EQ(a.mean(), us(1'020));
+    EXPECT_EQ(a.max(), us(5'000));
+    EXPECT_EQ(a.percentile(0.8), us(40));
+}
+
 TEST(FramePace, MeasuresTheIntervalsAndHowMuchTheyChange) {
     FramePace pace;
     Timestamp at{};

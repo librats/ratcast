@@ -4,6 +4,7 @@
 #include <charconv>
 #include <csignal>
 
+#include "ratcast/engine/pattern_source.h"
 #include "ratcast/engine/video_codec.h"
 
 #include "librats/util/logger.h"
@@ -67,6 +68,27 @@ Timestamp WallClock::now() const noexcept {
 WallClock& WallClock::instance() noexcept {
     static WallClock clock;
     return clock;
+}
+
+namespace {
+
+/// Stamps of a clock this host's is not synchronised with read as nonsense.
+std::optional<Duration> plausible(Duration latency) {
+    if (latency < Duration::zero() || latency > std::chrono::seconds(10)) return std::nullopt;
+    return latency;
+}
+
+}  // namespace
+
+std::optional<Duration> stamped_latency(const VideoFrame& picture) {
+    const std::optional<Timestamp> stamp = read_timestamp(picture);
+    if (!stamp) return std::nullopt;
+    return plausible(WallClock::instance().now() - *stamp);
+}
+
+std::optional<Duration> stamped_latency(Timestamp capture_time, Timestamp play_time) {
+    return plausible(WallClock::instance().now() - SteadyClock::instance().now() +
+                     (play_time - capture_time));
 }
 
 }  // namespace ratcast::tools

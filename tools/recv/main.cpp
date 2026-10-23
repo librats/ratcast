@@ -21,7 +21,6 @@
 #include "ratcast/client/cpu_meter.h"
 #include "ratcast/client/playback_meter.h"
 #include "ratcast/engine/audio_device.h"
-#include "ratcast/engine/pattern_source.h"
 #include "ratcast/engine/ts_io.h"
 #include "ratcast/engine/virtual_output.h"
 
@@ -161,25 +160,6 @@ void print_playing(const PeerId& peer, const StreamDescription& stream, Result<v
         std::fprintf(g_out, "writing feed '%s' from %s out, %.0f ms behind\n", stream.label.c_str(),
                      peer.short_hex().c_str(), ms(buffer.value_or(stream.lifetime)));
     }
-}
-
-/// Latency of a picture from its capture, if it carries the pattern's stamp
-/// and that stamp makes sense here: the sender's clock may be another's.
-std::optional<Duration> latency_of(const VideoFrame& picture) {
-    const std::optional<Timestamp> stamp = read_timestamp(picture);
-    if (!stamp) return std::nullopt;
-    const Duration latency = WallClock::instance().now() - *stamp;
-    if (latency < Duration::zero() || latency > std::chrono::seconds(10)) return std::nullopt;
-    return latency;
-}
-
-/// Latency of a frame of sound from its capture to the speaker, if its
-/// capture time is the time of day (the tone's) and makes sense here.
-std::optional<Duration> latency_of(Timestamp capture_time, Timestamp play_time) {
-    const Duration latency =
-        WallClock::instance().now() - SteadyClock::instance().now() + (play_time - capture_time);
-    if (latency < Duration::zero() || latency > std::chrono::seconds(10)) return std::nullopt;
-    return latency;
 }
 
 /// A report a second, from the call's monitor, with the latency the stamps
@@ -410,15 +390,17 @@ int main(int argc, char** argv) {
     const CallPlayback playback{
         .pictures =
             [&](VideoFrame picture) {
-                decoded.picture(latency_of(picture));
+                decoded.picture(stamped_latency(picture));
 #ifdef RATCAST_TOOLS_WINDOW
                 if (window) window->show(std::move(picture));
 #endif
             },
         .video = {.max_delay = o.buffer},
         .sound = output.get(),
-        .heard = [&](Timestamp capture_time,
-                     Timestamp play_time) { heard.picture(latency_of(capture_time, play_time)); },
+        .heard =
+            [&](const PeerId&, Timestamp capture_time, Timestamp play_time) {
+                heard.picture(stamped_latency(capture_time, play_time));
+            },
         .sync = o.sync,
         .feed = feed.get(),
         .feed_config = {.latency = o.buffer},
@@ -466,7 +448,7 @@ int main(int argc, char** argv) {
 #ifdef RATCAST_TOOLS_WINDOW
     if (window) {
         window->run(keep_going,
-                    [&](const VideoFrame& picture) { shown->picture(latency_of(picture)); });
+                    [&](const VideoFrame& picture) { shown->picture(stamped_latency(picture)); });
     } else
 #endif
     {

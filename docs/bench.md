@@ -30,6 +30,12 @@ The test pattern carries its capture time (the time of day) in every picture, so
 the latency from capture to decoded picture off each one. Both tools end with a `summary` line
 of `key=value` pairs; the table is made from those.
 
+**A room** (`bench/netem.py --room N`): N `ratcast-room` members, each in a namespace of its
+own on one bridge, each talking (the stamped tone), with `--share` the first sharing the
+pattern; each joins through the one before. Each member's uplink is the scenario's forward
+direction, so a path between two members is one scenario long and a cap is what a member sends
+to everyone together. "A room (10.5)" below.
+
 **Without namespaces** (`bench/netem.py --netsim`, any OS): the same scenarios through
 `ratcast-netsim`, a UDP proxy on loopback whose two directions follow netem's rules in user space;
 the viewer dials the proxy, which forwards to the sender. How its paths compare with netem's:
@@ -1231,3 +1237,51 @@ pictures (6.5) shares the path with them by their most (`MediaSession` tests, in
 the voice both ways and its echo cancellation (6.4, 6.6) are tested against WebRTC's processing
 and PipeWire on this host. `ratcast-send` carries one picture stream and one sound, so a
 shared path is measured here once a tool sends a camera beside a screen.
+
+## A room (10.5)
+
+Stage 10's rooms over netem: `ratcast-room` members, each a `Call` in a mesh as the app's are,
+talking with the stamped tone (Opus voice, DTX and FEC, as `publish_voice()` codes a
+microphone), each measuring every voice it hears — capture to speaker — and the share it
+watches. Each joins through the one before it and meets the rest through them (librats'
+peer exchange). One run each, 10 s with everyone in: a small run to close the stage, not a
+survey. Voices are the worst member's; breaks, losses and concealment all members' together.
+
+Three members, talking only — `bench/netem.py --room 3 --duration 8 local loss-2`:
+
+| scenario | path | voices heard | all heard after, ms | voice latency p50 / p95 / p99 / max, ms | breaks | lost / concealed, ms | sent, Mbit/s: first / others | CPU, % |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| local | veth, no shaping | 2 of 2 | 34 | 62.5 / 63.5 / 64.5 / 65.3 | 0 | 0 / 0 | 0.12 / 0.12 | 9 |
+| loss-2 | 50 ms RTT, 2% loss | 2 of 2 | 499 | 90.1 / 143.4 / 143.4 / 145.4 | 0 | 45 / 180 | 0.12 / 0.13 | 9 |
+
+Four, the first sharing — `bench/netem.py --room 4 --share --size 1280x720 --bitrate 3000
+--fps 30 --duration 10 local rtt-100 loss-2 cap-6`:
+
+| scenario | path | voices heard | all heard after, ms | voice latency p50 / p95 / p99 / max, ms | breaks | lost / concealed, ms | share: first picture, ms | fps | latency p95, ms | stalls | sent, Mbit/s: first / others | CPU, % |
+|---|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| local | veth, no shaping | 3 of 3 | 43 | 60.4 / 62.5 / 63.5 / 86.2 | 0 | 2 / 40 | 88 | 29 | 22.5 | 0 | 7.70 / 0.20 | 64 |
+| rtt-100 | 100 ms RTT | 3 of 3 | 554 | 110.6 / 116.7 / 116.7 / 123.6 | 0 | 0 / 0 | 817 | 27 | 88.1 | 0 | 7.45 / 0.25 | 65 |
+| loss-2 | 50 ms RTT, 2% loss | 3 of 3 | 295 | 124.9 / 172.0 / 172.0 / 237.6 | 5 | 72 / 1040 | 381 | 28 | 127.0 | 4 | 8.03 / 0.25 | 65 |
+| cap-6 | 50 ms RTT, 6 Mbit/s (below the stream) | 3 of 3 | 448 | 88.1 / 208.0 / 208.0 / 251.0 | 2 | 58 / 1140 | 719 | 25 | 172.0 | 16 | 4.07 / 0.24 | 70 |
+
+- **Everyone meets everyone**, on every row: each hears all the others, those it joined
+  through and those it met through them. The last to join hears them all 34–43 ms after it
+  starts on the bare link, 0.3–0.6 s with a round trip of 50–100 ms: a connection, the peer
+  exchange's question and answer, a dial and its handshake.
+- **A voice in a room is a voice in a call:** 60 ms from capture to the speaker on the bare
+  link, 111 ms at a 100 ms round trip — stage 6's sound, 59 and 108 ms, one to one.
+- **The one who shares sends a copy to each.** 7.7 Mbit/s from the first member for three
+  viewers of a 2.5 Mbit/s share; the others send their voice, 0.2 Mbit/s with feedback. A mesh's
+  room is as big as its sharer's uplink: stage 5's forwarding is the way past it.
+- **The sharer's voice waits behind its pictures** on a narrow uplink. On `cap-6` the others
+  hear the sharer at 186 ms, each other at 81–86: its voice queues with three copies of the
+  share in the path's 100 ms buffer, which rate control keeps from overflowing but not from
+  filling — each viewer's controller sees its own path, not the uplink they share (4.1 Mbit/s
+  sent of 6). Nothing librats can order: the queue is the network's.
+- **A burst of loss raises a voice's delay for 10 s** (`loss-2`: 85 → 145 ms, and staying):
+  the jitter buffer remembers lateness for 10 s (`JitterBuffer::Config::memory`) and shrinks in
+  silence, and a tone has none. Speech pauses, so a voice comes back sooner than this one.
+- **Not counted:** a first run of the four's `cap-6` had the VM stop every process for 830 ms
+  at once (each one's tone fell behind its own clock), its voices breaking together; the row
+  is a second run's.
+

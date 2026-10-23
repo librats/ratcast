@@ -21,6 +21,7 @@ add_library(ratcast_client STATIC
     src/video_player.cpp
     src/video_publisher.cpp
     src/voice.cpp
+    src/voice_meter.cpp
 )
 add_library(ratcast::client ALIAS ratcast_client)
 

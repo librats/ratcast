@@ -12,6 +12,7 @@ ratcast_add_test(client_tests
         test_ts_probe.cpp
         test_video_pipeline.cpp
         test_voice.cpp
+        test_voice_meter.cpp
     LIBS
         ratcast::client
 )

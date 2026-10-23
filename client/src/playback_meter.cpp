@@ -36,6 +36,13 @@ void LatencyHistogram::add(Duration value) noexcept {
     max_ = std::max(max_, Duration{static_cast<Duration::rep>(us)});
 }
 
+void LatencyHistogram::add(const LatencyHistogram& other) noexcept {
+    for (size_t b = 0; b < buckets_.size(); ++b) buckets_[b] += other.buckets_[b];
+    count_ += other.count_;
+    sum_us_ += other.sum_us_;
+    max_ = std::max(max_, other.max_);
+}
+
 void LatencyHistogram::clear() noexcept { *this = LatencyHistogram{}; }
 
 Duration LatencyHistogram::mean() const noexcept {
@@ -120,9 +127,11 @@ FramePace FramePace::since(const FramePace& earlier) const noexcept {
 PlaybackMeter::PlaybackMeter(Clock& clock, Duration stall_after)
     : clock_(clock), stall_after_(stall_after), started_(clock.now()) {}
 
-void PlaybackMeter::start() {
+void PlaybackMeter::start() { start(clock_.now()); }
+
+void PlaybackMeter::start(Timestamp since) {
     std::lock_guard lock(mutex_);
-    started_ = clock_.now();
+    started_ = since;
     last_picture_.reset();
     total_ = PlaybackStats{};
     interval_ = PlaybackStats{};
