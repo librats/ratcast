@@ -114,7 +114,8 @@ jobs:
       # modules, MSVC's runtime (cmake/RatcastInstall.cmake).
       - name: Install
         run: |
-          $dir = "package/${{ steps.version.outputs.name }}"
+          # Absolute: Qt's deploy script refuses a relative prefix.
+          $dir = "${{ github.workspace }}/package/${{ steps.version.outputs.name }}"
           cmake --install build --config RelWithDebInfo --prefix $dir
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           New-Item -ItemType Directory -Force "$dir/licenses" | Out-Null
