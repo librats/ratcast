@@ -166,6 +166,14 @@ public:
         return pictures_.size();
     }
 
+    /// "WxH" of the latest picture, for a failure to say.
+    std::string last_size() {
+        std::lock_guard lock(mutex_);
+        if (pictures_.empty()) return "none";
+        const VideoFrame& picture = pictures_.back();
+        return std::to_string(picture.width()) + "x" + std::to_string(picture.height());
+    }
+
 private:
     std::mutex mutex_;
     std::condition_variable changed_;
@@ -287,7 +295,8 @@ TEST_F(GraphicsCaptureTest, AResizedWindowComesAtItsNewSize) {
         return std::abs(int(picture.width()) - size.cx) <= 16 &&
                std::abs(int(picture.height()) - size.cy) <= 16;
     });
-    EXPECT_TRUE(resized) << "never at " << size.cx << "x" << size.cy;
+    EXPECT_TRUE(resized) << "never at " << size.cx << "x" << size.cy << ", the latest at "
+                         << seen.last_size() << " of " << seen.count();
 }
 
 TEST_F(GraphicsCaptureTest, AWindowThatClosesEndsTheCapture) {

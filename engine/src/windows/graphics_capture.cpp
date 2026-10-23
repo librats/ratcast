@@ -219,7 +219,7 @@ public:
                              "convert them");
                 }
             }
-            size_ = item_.Size();
+            size_ = pool_size();
             pool_ = capture::Direct3D11CaptureFramePool::CreateFreeThreaded(device_.winrt, kPixels,
                                                                             kFrames, size_);
             session_ = pool_.CreateCaptureSession(item_);
@@ -261,6 +261,23 @@ public:
     }
 
 private:
+    /// The frames the pool makes: for a window, as large as its screen, so
+    /// that it grows up to that with no pool made again. Made again, the pool
+    /// has a picture at the new size only when the window draws itself once
+    /// more, which a still window may never do in a way that is captured.
+    winrt::Windows::Graphics::SizeInt32 pool_size() const {
+        winrt::Windows::Graphics::SizeInt32 size = item_.Size();
+        if (!window_) return size;
+        MONITORINFO info{};
+        info.cbSize = sizeof info;
+        if (GetMonitorInfoW(MonitorFromWindow(window_, MONITOR_DEFAULTTONEAREST), &info)) {
+            size.Width = std::max(size.Width, int32_t(info.rcMonitor.right - info.rcMonitor.left));
+            size.Height =
+                std::max(size.Height, int32_t(info.rcMonitor.bottom - info.rcMonitor.top));
+        }
+        return size;
+    }
+
     /// The pointer, the yellow border, how often: as far as this Windows goes.
     void configure() {
         try {
@@ -287,9 +304,10 @@ private:
             if (!frame) return;
             const winrt::Windows::Graphics::SizeInt32 content = frame.ContentSize();
             if (content.Width > size_.Width || content.Height > size_.Height) {
-                // Grown past the frames the pool makes, which cut this one
-                // short: larger ones from now on, and the window asked to
-                // draw itself again into them. Smaller content fits as it is.
+                // Grown past the frames the pool makes (past its screen),
+                // which cut this one short: larger ones from now on, and the
+                // window asked to draw itself again into them. Smaller
+                // content fits as it is.
                 size_ = {std::max(content.Width, size_.Width),
                          std::max(content.Height, size_.Height)};
                 pool_.Recreate(device_.winrt, kPixels, kFrames, size_);
