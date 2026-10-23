@@ -65,6 +65,12 @@ import, Qt's (windeployqt) and MSVC's runtime. That folder, zipped, is what
 `project(VERSION)`), and leaves as an artifact for every push to main — beside a Linux AppImage
 (the app with FFmpeg's same encoders, Qt and the rest, but PipeWire and GLib, which are the
 machine's: glibc 2.39 and PipeWire 1.0 or newer, as on Ubuntu 24.04, Debian 13, Fedora 40).
+Both keep themselves at the latest release (`-DRATCAST_UPDATES=ON`, which only that workflow
+sets): a little after the start and every six hours the app looks at GitHub's latest release,
+downloads its package for the system — never while a call is on — checks it against the SHA-256
+GitHub gives, and puts it in place. The AppImage is replaced at once; the Windows folder at the
+next start. It starts with the next launch, or at once with "Restart now"; "Update
+automatically", unticked, leaves it to the user.
 
 Already cloned without `--recursive`: `git submodule update --init --recursive`.
 

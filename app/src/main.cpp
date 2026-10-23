@@ -1,3 +1,4 @@
+#include "install.h"
 #include "ratcast/version.h"
 
 #include <QtQml/qqmlextensionplugin.h>
@@ -13,6 +14,7 @@
 // Our QML modules, linked in statically.
 Q_IMPORT_QML_PLUGIN(Ratcast_VideoPlugin)
 Q_IMPORT_QML_PLUGIN(Ratcast_CallPlugin)
+Q_IMPORT_QML_PLUGIN(Ratcast_UpdatePlugin)
 
 int main(int argc, char* argv[]) {
     QGuiApplication app(argc, argv);
@@ -22,6 +24,9 @@ int main(int argc, char* argv[]) {
     QGuiApplication::setApplicationName(QStringLiteral("ratcast"));
     QGuiApplication::setOrganizationName(QStringLiteral("librats"));
     QGuiApplication::setApplicationVersion(QString::fromLatin1(ratcast::version()));
+    // An update an earlier run downloaded, put in place before anything else
+    // is loaded: the new version then starts in this one's place.
+    if (ratcast::app::update::start_updated()) return EXIT_SUCCESS;
 
     QCommandLineParser options;
     options.setApplicationDescription(

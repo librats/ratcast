@@ -3,6 +3,7 @@ import QtQuick
 import QtQuick.Controls.Material
 import QtQuick.Layouts
 import Ratcast.Call
+import Ratcast.Update
 import Ratcast.Video
 
 // One window, three faces: the start (a name, a room to make or a link to
@@ -11,6 +12,8 @@ import Ratcast.Video
 // and share are on — the share watched in the middle with the cameras beside
 // it, and the controls along the bottom: microphone, sound, camera, sharing,
 // how the call goes (a panel on a button or Ctrl+I, its quality a dot), leave.
+// The start also says what the updater does: a new version on its way, or in
+// place and to restart into.
 ApplicationWindow {
     id: root
 
@@ -39,6 +42,12 @@ ApplicationWindow {
         video: picture
         preview: ownCamera
         statsEvery: root.statsEvery
+    }
+
+    // Nothing downloaded while a call needs the line.
+    Updater {
+        id: updater
+        quiet: call.state !== CallController.Idle
     }
 
     Component.onCompleted: if (root.link.length > 0) call.join(root.link)
@@ -100,6 +109,65 @@ ApplicationWindow {
             Layout.alignment: Qt.AlignHCenter
             text: "v" + root.ratcastVersion + "  ·  librats " + root.libratsVersion
             opacity: 0.6
+        }
+
+        ColumnLayout {
+            Layout.fillWidth: true
+            spacing: 4
+            visible: updater.supported
+
+            Label {
+                Layout.fillWidth: true
+                horizontalAlignment: Text.AlignHCenter
+                wrapMode: Text.Wrap
+                opacity: 0.6
+                text: {
+                    switch (updater.state) {
+                    case Updater.Checking:
+                        return qsTr("Looking for a new version…")
+                    case Updater.Downloading:
+                        return qsTr("Downloading version %1… %2%").arg(updater.version)
+                                                                 .arg(Math.round(updater.progress * 100))
+                    case Updater.Installing:
+                        return qsTr("Installing version %1…").arg(updater.version)
+                    case Updater.Installed:
+                        return qsTr("Version %1 is installed: it starts next time.").arg(updater.version)
+                    default:
+                        return updater.notice
+                    }
+                }
+                visible: text.length > 0
+            }
+
+            RowLayout {
+                Layout.alignment: Qt.AlignHCenter
+                spacing: 8
+
+                Button {
+                    text: qsTr("Restart now")
+                    highlighted: true
+                    visible: updater.state === Updater.Installed
+                    onClicked: updater.restart()
+                }
+                Button {
+                    text: qsTr("Download page")
+                    flat: true
+                    visible: updater.state === Updater.Idle && updater.notice.length > 0
+                             && updater.page.toString().length > 0
+                    onClicked: Qt.openUrlExternally(updater.page)
+                }
+                Button {
+                    text: qsTr("Check for updates")
+                    flat: true
+                    visible: updater.state === Updater.Idle && !updater.automatic
+                    onClicked: updater.check()
+                }
+                CheckBox {
+                    text: qsTr("Update automatically")
+                    checked: updater.automatic
+                    onToggled: updater.automatic = checked
+                }
+            }
         }
 
         TextField {

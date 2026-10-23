@@ -9,7 +9,7 @@
 # QRhi's API is semi-public: it may change between Qt's minor versions, which
 # is understood (Qt Multimedia draws video the same way).
 set(QT_NO_PRIVATE_MODULE_WARNING ON)
-find_package(Qt6 6.6 QUIET COMPONENTS Quick ShaderTools GuiPrivate)
+find_package(Qt6 6.6 QUIET COMPONENTS Quick ShaderTools GuiPrivate Network)
 
 # Debian ships GuiPrivate's CMake package with qt6-base-dev and its headers with
 # qt6-base-private-dev: found, it may still have no QRhi header.
@@ -19,7 +19,8 @@ if(NOT EXISTS "${qt_headers}/rhi/qrhi.h" AND
     set(Qt6GuiPrivate_FOUND FALSE)
 endif()
 
-if(NOT Qt6Quick_FOUND OR NOT Qt6ShaderTools_FOUND OR NOT Qt6GuiPrivate_FOUND)
+if(NOT Qt6Quick_FOUND OR NOT Qt6ShaderTools_FOUND OR NOT Qt6GuiPrivate_FOUND OR
+   NOT Qt6Network_FOUND)
     message(WARNING
         "Qt 6.6+ with Qt Quick, Qt Shader Tools and QtGui's private headers not found: "
         "skipping the desktop app.\n"
@@ -40,6 +41,7 @@ add_compile_definitions(QT_NO_KEYWORDS)
 
 add_subdirectory(video)
 add_subdirectory(call)
+add_subdirectory(update)
 
 qt_add_executable(ratcast_app
     src/main.cpp
@@ -76,6 +78,8 @@ target_link_libraries(ratcast_app PRIVATE
     Qt6::Quick
     ratcast_videoplugin
     ratcast_callplugin
+    ratcast_updateplugin
+    ratcast_update
     ratcast::ratcast
 )
 ratcast_target_defaults(ratcast_app)

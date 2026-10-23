@@ -60,6 +60,7 @@ jobs:
           } else {
             $version = "dev-$("${{ github.sha }}".Substring(0, 8))"
           }
+          # The updater finds the package by this name (app/update/release.h).
           "name=ratcast-$version-windows-x64" >> $env:GITHUB_OUTPUT
 
       - name: Restore vcpkg's packages
@@ -106,6 +107,7 @@ jobs:
           -DCMAKE_PREFIX_PATH="$env:QT_ROOT_DIR"
           -DRATCAST_BUILD_TESTS=OFF -DRATCAST_BUILD_APP=ON
           -DRATCAST_WITH_FFMPEG=ON -DRATCAST_WITH_OPUS=ON -DRATCAST_WITH_WEBRTC_APM=ON
+          -DRATCAST_UPDATES=ON
 
       - name: Build
         run: cmake --build build --config RelWithDebInfo --parallel
@@ -129,6 +131,9 @@ jobs:
       - name: Check the package
         run: |
           $dir = (Resolve-Path "package/${{ steps.version.outputs.name }}").Path
+
+          # The updater fetches from GitHub over TLS: Windows' own, through Qt's plugin.
+          if (-not (Test-Path "$dir/plugins/tls/qschannelbackend.dll")) { throw "Qt's TLS plugin is not in the package" }
 
           $avcodec = Get-ChildItem "$dir/avcodec-*.dll" | Select-Object -First 1
           if (-not $avcodec) { throw "FFmpeg's libavcodec is not in the package" }
@@ -197,6 +202,7 @@ jobs:
           else
             version="dev-${GITHUB_SHA::8}"
           fi
+          # The updater finds the package by this name (app/update/release.h).
           echo "name=ratcast-$version-linux-x86_64" >> "$GITHUB_OUTPUT"
 
       # From the system: PipeWire and GIO (the AppImage uses the machine's, as
@@ -246,6 +252,7 @@ jobs:
           -DCMAKE_PREFIX_PATH="$QT_ROOT_DIR"
           -DRATCAST_BUILD_TESTS=OFF -DRATCAST_BUILD_TOOLS=OFF -DRATCAST_BUILD_APP=ON
           -DRATCAST_WITH_FFMPEG=ON -DRATCAST_WITH_OPUS=ON -DRATCAST_WITH_WEBRTC_APM=ON
+          -DRATCAST_UPDATES=ON
           -DRATCAST_WITH_PIPEWIRE=ON
 
       - name: Build
@@ -292,6 +299,10 @@ jobs:
       - name: Check the package
         run: |
           name="${{ steps.version.outputs.name }}"
+          # The updater fetches from GitHub over TLS: the system's OpenSSL,
+          # through Qt's plugin.
+          ls AppDir/usr/plugins/tls/libqopensslbackend.so > /dev/null ||
+            { echo "::error::Qt's TLS plugin is not in the AppImage"; exit 1; }
           avcodec=$(ls AppDir/usr/lib/libavcodec.so.* | head -n 1)
           strings -n 4 "$avcodec" > avcodec.strings
           grep -qF "LGPL version 2.1 or later" avcodec.strings ||

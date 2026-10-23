@@ -24,6 +24,11 @@ option(RATCAST_BUILD_APP   "Build the Qt 6 desktop application (needs Qt 6 Quick
 option(RATCAST_BUILD_TESTS "Build unit tests" ${PROJECT_IS_TOP_LEVEL})
 option(RATCAST_BUILD_BENCH "Build benchmarks (bench/)" OFF)
 option(RATCAST_BUILD_TOOLS "Build ratcast-send and ratcast-recv (tools/)" ON)
+# The release packages (.github/workflows/release.yml) keep themselves at the
+# latest release of this repository on GitHub; any other build never updates.
+option(RATCAST_UPDATES "The app updates itself from GitHub's releases (release packages)" OFF)
+set(RATCAST_UPDATE_REPOSITORY "librats/ratcast" CACHE STRING
+    "The GitHub repository (owner/name) whose releases the app updates itself to")
 
 include(RatcastCompiler)
 include(RatcastPkgConfig)
