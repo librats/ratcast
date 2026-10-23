@@ -10,6 +10,7 @@
 #include <atomic>
 #include <chrono>
 #include <mutex>
+#include <optional>
 #include <set>
 #include <string>
 #include <thread>
@@ -248,14 +249,34 @@ TEST(NetsimProxyTest, RatcastRepairsTheLossOfAnEmulatedPath) {
         ASSERT_TRUE(sender->session().send_frame(feed.id, info, std::move(payload)));
         std::this_thread::sleep_for(3ms);
     }
-    EXPECT_TRUE(wait_for(
+    const bool all = wait_for(
         [&] {
             std::lock_guard lock(mutex);
             return received.size() == kFrames;
         },
-        3s))
-        << "received " << received.size() << " of " << kFrames;
+        3s);
     const Proxy::Stats stats = proxy->stats();
+    if (!all) {
+        // Which frames, and who gave them up: the sender, its lifetime run out,
+        // or the receiver, past what it held for them.
+        size_t got = 0;
+        std::string missing;
+        {
+            std::lock_guard lock(mutex);
+            got = received.size();
+            for (FrameNumber n = 0; n < kFrames; ++n) {
+                if (!received.contains(n)) missing += " " + std::to_string(n);
+            }
+        }
+        const std::optional<librats::PathStats> path =
+            sender_node.path_stats(viewer_node.local_id());
+        ADD_FAILURE() << "received " << got << " of " << kFrames << ", missing" << missing
+                      << "; the path lost " << stats.forward.lost << " of " << stats.forward.packets
+                      << " (" << stats.send_failures << " refused); the sender sent "
+                      << (path ? path->live_sent : 0) << " live, "
+                      << (path ? path->live_expired : 0) << " expired, srtt "
+                      << (path ? path->srtt_us / 1000 : 0) << " ms";
+    }
     EXPECT_GT(stats.forward.lost, 0u) << "the path lost some";
     EXPECT_EQ(stats.dialers, 1u);
 }
