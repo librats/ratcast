@@ -25,6 +25,7 @@
 #include <vector>
 
 #include "librats/util/logger.h"
+#include "sleeper.h"
 #include "ts/pcr_pacer.h"
 #include "ts/ts_url.h"
 #include "windows/com.h"
@@ -185,31 +186,6 @@ Result<void> write_all(HANDLE file, std::span<const uint8_t> bytes) {
     }
     return {};
 }
-
-/// Sleeps that end within a fraction of a millisecond of when asked.
-class Sleeper {
-public:
-    Sleeper()
-        : timer_(CreateWaitableTimerExW(nullptr, nullptr, CREATE_WAITABLE_TIMER_HIGH_RESOLUTION,
-                                        TIMER_ALL_ACCESS)) {}
-
-    void until(std::chrono::steady_clock::time_point when) {
-        const auto left = when - std::chrono::steady_clock::now();
-        if (left <= std::chrono::steady_clock::duration::zero()) return;
-        if (!timer_) {  // before Windows 10 1803: as close as Sleep() goes
-            std::this_thread::sleep_for(left);
-            return;
-        }
-        LARGE_INTEGER due;  // negative: relative, in 100 ns
-        due.QuadPart = -std::max<int64_t>(
-            std::chrono::duration_cast<std::chrono::nanoseconds>(left).count() / 100, 1);
-        if (SetWaitableTimer(timer_.get(), &due, 0, nullptr, nullptr, FALSE))
-            WaitForSingleObject(timer_.get(), INFINITE);
-    }
-
-private:
-    win::Handle timer_;
-};
 
 // ── Inputs ──────────────────────────────────────────────────────────────────
 

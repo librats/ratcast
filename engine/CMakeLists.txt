@@ -99,6 +99,13 @@ else()
     )
 endif()
 
+# Real-time waits: Windows' own timer, as Sleep() steps in 15.6 ms.
+if(WIN32)
+    target_sources(ratcast_engine PRIVATE src/windows/sleeper.cpp)
+else()
+    target_sources(ratcast_engine PRIVATE src/sleeper.cpp)
+endif()
+
 if(UNIX)
     target_sources(ratcast_engine PRIVATE src/posix/ts_io.cpp)
 elseif(WIN32)

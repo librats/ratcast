@@ -5,6 +5,8 @@
 #include <cmath>
 #include <numbers>
 
+#include "sleeper.h"
+
 namespace ratcast {
 
 AudioFrame draw_tone(const ToneConfig& config, uint64_t first, size_t length,
@@ -50,14 +52,14 @@ void ToneSource::run(Sink sink) {
     // device, the source neither drifts nor skips.
     const steady_clock::time_point start = steady_clock::now();
     const Timestamp first_capture = clock_.now();
+    Sleeper sleeper;
     for (uint64_t sample = 0; running_.load(std::memory_order_relaxed); sample += block) {
         const steady_clock::time_point due =
             start + std::chrono::duration_cast<steady_clock::duration>(
                         audio_duration(sample + block, rate));
         // Short sleeps, so that stop() is never kept waiting long.
         while (running_.load(std::memory_order_relaxed) && steady_clock::now() < due) {
-            std::this_thread::sleep_until(
-                std::min(due, steady_clock::now() + std::chrono::milliseconds(5)));
+            sleeper.until(std::min(due, steady_clock::now() + std::chrono::milliseconds(5)));
         }
         if (!running_.load(std::memory_order_relaxed)) break;
         sink(draw_tone(config_, sample, block, first_capture + audio_duration(sample, rate)));

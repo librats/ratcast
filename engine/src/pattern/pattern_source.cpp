@@ -3,6 +3,7 @@
 #include <chrono>
 
 #include "ratcast/engine/pattern_source.h"
+#include "sleeper.h"
 
 namespace ratcast {
 
@@ -36,6 +37,7 @@ void PatternSource::run(Sink sink) {
     // slow sink makes the source skip pictures instead of drifting.
     const steady_clock::time_point start = steady_clock::now();
     uint64_t index = 0;
+    Sleeper sleeper;
     while (running_.load(std::memory_order_relaxed)) {
         sink(draw_pattern(config_, index, clock_.now()));
 
@@ -44,8 +46,7 @@ void PatternSource::run(Sink sink) {
         const steady_clock::time_point due = start + interval * static_cast<int64_t>(index);
         // Short sleeps, so that stop() is never kept waiting long.
         while (running_.load(std::memory_order_relaxed) && steady_clock::now() < due) {
-            std::this_thread::sleep_until(
-                std::min(due, steady_clock::now() + std::chrono::milliseconds(5)));
+            sleeper.until(std::min(due, steady_clock::now() + std::chrono::milliseconds(5)));
         }
     }
 }

@@ -4,6 +4,8 @@
 #include <chrono>
 #include <vector>
 
+#include "sleeper.h"
+
 namespace ratcast {
 
 VirtualOutput::VirtualOutput(VirtualOutputConfig config, Tap tap, Clock& clock)
@@ -37,14 +39,14 @@ void VirtualOutput::run(Pull pull) {
     // Each block is pulled as the one before it runs out, counted from the
     // start: like a device, the output neither drifts nor skips.
     const steady_clock::time_point start = steady_clock::now();
+    Sleeper sleeper;
     for (uint64_t sample = 0; running_.load(std::memory_order_relaxed); sample += block) {
         const steady_clock::time_point due =
             start +
             std::chrono::duration_cast<steady_clock::duration>(audio_duration(sample, rate));
         // Short sleeps, so that stop() is never kept waiting long.
         while (running_.load(std::memory_order_relaxed) && steady_clock::now() < due) {
-            std::this_thread::sleep_until(
-                std::min(due, steady_clock::now() + std::chrono::milliseconds(5)));
+            sleeper.until(std::min(due, steady_clock::now() + std::chrono::milliseconds(5)));
         }
         if (!running_.load(std::memory_order_relaxed)) break;
         const Timestamp play_time = clock_.now() + config_.latency;
