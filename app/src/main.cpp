@@ -24,7 +24,8 @@ int main(int argc, char* argv[]) {
     QGuiApplication::setApplicationVersion(QString::fromLatin1(ratcast::version()));
 
     QCommandLineParser options;
-    options.setApplicationDescription(QStringLiteral("Rooms to talk, share a screen and watch one in."));
+    options.setApplicationDescription(
+        QStringLiteral("Rooms to talk, share a screen and watch one in."));
     options.addHelpOption();
     options.addVersionOption();
     const QCommandLineOption stats(
