@@ -417,16 +417,19 @@ struct MediaSession::OutgoingStream {
     /// first — one sent to already, else one of `forwarders` made a
     /// subscriber now, if `new_forwarder` — then the subscriber the fewest hops
     /// from here, passing it on to the fewest, the nearest (the round trip from
-    /// here: what is known of where it is); with `forwarders_only`, a
-    /// forwarder or none.
+    /// here: what is known of where it is). With `carried` — a viewer a server
+    /// carries anyway, its frames through the server however they are sent —
+    /// a forwarder or none, in time or not: the way is no longer for it.
     std::shared_ptr<PeerState> relay_for(const Copy& viewer, const Forwarders& forwarders,
-                                         bool new_forwarder, bool forwarders_only = false) {
+                                         bool new_forwarder, bool carried = false) {
+        const auto timely = [&](Duration reach, Duration rtt) {
+            return carried || in_time(reach, rtt, description.lifetime);
+        };
         const Copy* best = nullptr;
         std::tuple<bool, size_t, size_t, Duration> best_by{};
         for (const Copy& copy : fanout.copies) {
-            if (!may_pass_on(viewer, *copy.peer) ||
-                (forwarders_only && !copy.peer->is_forwarder()) ||
-                !in_time(reach(copy), between(viewer, copy), description.lifetime)) {
+            if (!may_pass_on(viewer, *copy.peer) || (carried && !copy.peer->is_forwarder()) ||
+                !timely(reach(copy), between(viewer, copy))) {
                 continue;
             }
             const std::tuple by{!copy.peer->is_forwarder(), hops(copy), passed_on_by(*copy.peer),
@@ -442,7 +445,7 @@ struct MediaSession::OutgoingStream {
                 const Duration apart =
                     std::chrono::abs(viewer.peer->least_rtt() - forwarder->least_rtt());
                 if (subscriber_of(forwarder->id) || !may_pass_on(viewer, *forwarder) ||
-                    !in_time(forwarder->least_rtt() / 2, apart, description.lifetime)) {
+                    !timely(forwarder->least_rtt() / 2, apart)) {
                     continue;
                 }
                 // Sent to from now on, from the next keyframe, as a subscriber.
@@ -450,7 +453,7 @@ struct MediaSession::OutgoingStream {
                 return forwarder;
             }
         }
-        return best && !forwarders_only ? best->peer : nullptr;
+        return best && !carried ? best->peer : nullptr;
     }
 
     /// `viewer`'s frames go through `relay` from now on (null: from here);
@@ -1654,8 +1657,10 @@ void MediaSession::arrange(OutgoingStream& stream) {
     std::vector<std::pair<PeerId, Buffer>> told;
     if (!forwarders.empty()) {
         // Carried by a server anyway: through its forwarder, one copy for all
-        // of them where each would take one through the same server. Asked of
-        // the network outside the stream's lock.
+        // of them where each would take one through the same server, and no
+        // later for it — so whatever the round trips, which are not yet known
+        // as viewers first subscribe. Asked of the network outside the
+        // stream's lock.
         std::vector<PeerId> carried;
         {
             std::lock_guard lock(stream.mutex);
@@ -1671,8 +1676,7 @@ void MediaSession::arrange(OutgoingStream& stream) {
             const Copy* viewer = s.direct_subscriber_of(peer);
             if (!viewer || s.passed_on_by(*viewer->peer) != 0) continue;
             if (std::shared_ptr<PeerState> forwarder =
-                    s.relay_for(*viewer, forwarders, /*new_forwarder=*/true,
-                                /*forwarders_only=*/true)) {
+                    s.relay_for(*viewer, forwarders, /*new_forwarder=*/true, /*carried=*/true)) {
                 s.move(*s.subscriber_of(peer), std::move(forwarder), told);
             }
         }
@@ -1886,6 +1890,7 @@ void MediaSession::on_relayed_path(const PeerId& relay, const wire::RelayedPath&
     if (!stream) return;
     std::optional<uint32_t> bitrate;
     bool too_far = false;
+    bool forwarder = false;
     {
         std::lock_guard lock(stream->mutex);
         OutgoingStream& s = *stream;
@@ -1896,12 +1901,15 @@ void MediaSession::on_relayed_path(const PeerId& relay, const wire::RelayedPath&
         copy->backpressured = copy->backpressured || report.backpressured;
         copy->relayed_rtt = report.signal.rtt - report.signal.queue_rise;
         too_far = !in_time(s.reach(*through), *copy->relayed_rtt, s.description.lifetime);
+        forwarder = through->peer->is_forwarder();
         bitrate = s.follow(*copy, report.signal, std::nullopt, clock_.now());
     }
     if (bitrate) notify(handlers_.bitrate_changed, report.stream, *bitrate);
     // Its frames cannot arrive in time that way: as if the relay could not
-    // reach it at all.
-    if (too_far) on_cannot_reach(relay, wire::CannotReach{report.stream, report.viewer});
+    // reach it at all — unless it is a forwarder whose server carries the
+    // viewer anyway, its frames that way however sent.
+    if (too_far && !(forwarder && network_.relayed(report.viewer)))
+        on_cannot_reach(relay, wire::CannotReach{report.stream, report.viewer});
 }
 
 // ── Playing in step ─────────────────────────────────────────────────────────

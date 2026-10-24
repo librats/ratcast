@@ -1826,6 +1826,24 @@ TEST_F(ForwarderTest, ViewersTheServerCarriesAnywayGoThroughItsForwarder) {
     EXPECT_EQ(relaying_to(server), 2u) << "a and b, not c";
 }
 
+// However far the server and whatever is known of the paths to them: their
+// frames go through it either way. As they first subscribe, nothing is.
+TEST_F(ForwarderTest, CarriedViewersGoThroughItsForwarderHoweverFar) {
+    sender.endpoint.carried = {a.id, b.id};
+    PathStats far = path();
+    far.srtt_us = 100'000;  // 50 ms to it, and a repair from there late
+    sender.session.on_peer_path(server.id, far);
+    watch({&a, &b});
+    EXPECT_EQ(sender.session.outgoing_stats(2)->relayed, 2u);
+    EXPECT_EQ(relaying_to(server), 2u);
+    // Nor taken back as the server finds the path on from it as long.
+    server.session.on_peer_path(a.id, far);
+    hub.deliver_all();
+    EXPECT_EQ(hub.delivered[wire::MessageKind::RelayedPath], 1);
+    EXPECT_EQ(sender.session.outgoing_stats(2)->relayed, 2u);
+    EXPECT_EQ(relaying_to(server), 2u);
+}
+
 TEST_F(ForwarderTest, AForwarderLeftWithNobodyIsLetGo) {
     watch({&a, &b, &c});
     fill_uplink();

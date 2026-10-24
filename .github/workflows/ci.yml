@@ -41,8 +41,10 @@ jobs:
           -DRATCAST_BUILD_TESTS=ON
           -DRATCAST_BUILD_BENCH=ON
 
+      # A job per core: a bare --parallel is make's unbounded -j, every file at once,
+      # and ~400 MB a test file in Debug outgrows the runner's memory.
       - name: Build
-        run: cmake --build build --config ${{ matrix.build-type }} --parallel
+        run: cmake --build build --config ${{ matrix.build-type }} --parallel 4
 
       - name: Test
         run: ctest --test-dir build --build-config ${{ matrix.build-type }} --output-on-failure
