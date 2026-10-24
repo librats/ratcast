@@ -253,7 +253,7 @@ TEST(JitterBufferTest, ADelayLongOverTargetCostsFramesWhereThereIsNoSilence) {
     sim.run(10s, 500);
     const JitterBuffer::Stats& stats = sim.buffer().stats();
     EXPECT_GT(stats.dropped, 0u);
-    EXPECT_LE(sim.buffer().delay(), sim.buffer().target() + kFrame * 3 / 2);
+    EXPECT_LE(sim.buffer().delay(), sim.buffer().target() + kFrame * 5 / 4);
 }
 
 TEST(JitterBufferTest, DropsDuplicatesAndFramesPastTheirTime) {
@@ -296,7 +296,7 @@ TEST(JitterBufferTest, AFloorIsReachedThroughSoundAndLeftWhenItGoes) {
     EXPECT_EQ(stats.lost, 0u);
     EXPECT_EQ(stats.concealed, 0ms);
     EXPECT_GT(stats.dropped, 0u);  // the floor gone, the delay comes back
-    EXPECT_LE(after.buffer().delay(), after.buffer().target() + kFrame * 3 / 2);
+    EXPECT_LE(after.buffer().delay(), after.buffer().target() + kFrame * 5 / 4);
 }
 
 TEST(JitterBufferTest, AFloorOutlivesAReset) {

@@ -1295,7 +1295,11 @@ so at once — frames expired, or the round trip risen 25 ms over its least of t
 samples running, which comes before the overflow — takes what they carried together over the
 last second for what it carries, and keeps the copies to 85% of it, each stream's in proportion
 to its most, the most it was found to carry kept for a minute. A viewer joining an uplink known
-to be full brings the copies down before its keyframe. ratcast 74ac7c2 + 5.1, librats 529f037.
+to be full brings the copies down before its keyframe. And each path with copies is paced to its
+part of the uplink (librats L20, `PeerNetwork::set_send_ceiling`), so that a frame's copies,
+leaving together, fit it too: without that, three copies each paced by its own controller at
+4–5 Mbit/s overfilled a 6 Mbit/s uplink for a moment every frame, and the sharer's voice queued
+behind them. ratcast 74ac7c2 + 5.1, librats 529f037 + L20.
 
 On the way, a fault in rate control (1.1) found by it: after a cut at a known ceiling the target
 is 85% of it, rounded; rounded down, it sat a hair short of where "quickly back" aims, a step
@@ -1310,7 +1314,12 @@ Four in a room, the first sharing — `bench/netem.py --room 4 --share --size 12
 |---|---|---:|---:|---:|---:|---:|---:|---:|
 | before | 1.07 → 1.47 Mbit/s, then held there (the fault above) | 102.4 / 196.6 / 204.8 / 310.4 | 18 | 141 / 2989 | 29 | 122.9 | 30 | 4.84 |
 | the fault fixed, no budget | 1.05 – 3.00 Mbit/s, overfilling the uplink every few seconds | 112.6 / 245.8 / 245.8 / 651.0 | 63 | 889 / 19518 | 28 | 155.6 | 81 | 4.83 |
-| 5.1 | 1.57 Mbit/s from the 10th second on (an uplink of 6.2 found) | 90.1 / 188.4 / 192.5 / 508.0 | 14 | 250 / 5144 | 29 | 100.4 | 10 | 4.93 |
+| the budget | 1.57 Mbit/s from the 10th second on (an uplink of 6.2 found) | 90.1 / 188.4 / 192.5 / 508.0 | 14 | 250 / 5144 | 29 | 100.4 | 10 | 4.93 |
+| 5.1: the budget, the paths paced to it, the jitter buffer's excess played out | 1.35 Mbit/s from the 5th second on (5.3 found) | 102.4 / 143.4 / 163.8 / 229.3 | 0 | 22 / 782 | 30 | 96.3 | 1 | 4.34 |
+
+The sharer's voice and the others', as each viewer hears them, seconds 20–60 (the mean of each
+second's mean): before 155 and 117 ms, with the budget alone 136 and 89, with all of 5.1 97 and
+93.
 
 - **Rate control alone cannot share an uplink**: with the fault fixed and no budget, each copy
   climbs until the uplink overflows — every path's frames expire at once, the voices with them
@@ -1318,11 +1327,20 @@ Four in a room, the first sharing — `bench/netem.py --room 4 --share --size 12
 - **With the budget it is found once and kept**: the third viewer's joining overflows the uplink
   (nothing knew it yet; the second copy's ramp met it the same moment), and from then on the
   copies hold 1.57 Mbit/s each, 4.9 of 6 sent, the paths' round trips back at their least.
-- **What it does not yet do: the voice after that one overflow.** The sharer's voice, heard at
-  80–85 ms before, is heard at 140–180 ms after, for the rest of the run: its jitter buffer grew
-  for the overflow and shrinks only in silence, which a tone never has (every member's voice
-  here is a tone). A real voice pauses and comes back sooner; music, which does not, would
-  not. Next: playing out the excess of a buffer without waiting for silence.
+- **The budget alone left the sharer's voice slow**, at 140–180 ms against the others' 80–90,
+  for two reasons. Its frames did come late: each frame of the share left as three copies at
+  once, each paced at its own path's 4–5 Mbit/s, together past the uplink for 10–15 ms a frame,
+  and a voice packet in the uplink's queue then waited behind them (its jitter buffer aimed at
+  56–60 ms where the others' aimed at 24). Paced to their parts (2 Mbit/s each here), the
+  copies leave as the uplink takes them, the frames wait in the sender's own queue — where its
+  sound goes first — and the paths' round trips stay at their least (55 ms on a 50 ms path):
+  the buffer aims at ~36 ms. And the buffer stayed up to 30 ms over its aim for good: in sound
+  that never pauses it gave up a frame only when over by more than a frame and a half
+  (`JitterBuffer`); now by more than a frame and a quarter, which a frame fewer still leaves
+  over. With both, the sharer is heard as quickly as anyone, 97 against 93 ms.
+- **Left: the one overflow before the uplink is known.** The third viewer still overflows it once,
+  as it joins: the second copy's ramp meets it the same second. Every voice's buffer then aims
+  past 100 ms for the ten seconds it remembers lateness.
 - **Nothing else is taken for a full uplink**: `local`, `rtt-100`, `loss-2`, `jitter` and
   `cap-20`, four in a room for 15 s, keep the copies at their most (3 Mbit/s) — the rise of a
   jittery path is over its own least of ten seconds, not over the least it ever had. The breaks

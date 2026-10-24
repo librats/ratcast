@@ -58,6 +58,13 @@ public:
 
     /// Largest live message the network carries.
     virtual size_t max_live_message() const = 0;
+
+    /// Send to `peer` no faster than `bits_per_second`, whatever its path would
+    /// take; 0 lifts the ceiling (librats' set_send_ceiling). What keeps the
+    /// copies of a stream to several peers within the uplink they all go through
+    /// (shared_uplink.h). Forgotten when the peer disconnects. Default: not
+    /// offered, the network's sends are not paced.
+    virtual void set_send_ceiling(const PeerId& /*peer*/, uint64_t /*bits_per_second*/) {}
 };
 
 }  // namespace ratcast

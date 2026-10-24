@@ -2,9 +2,9 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cmath>
 #include <mutex>
 #include <type_traits>
-#include <unordered_set>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -419,14 +419,13 @@ MediaSession::Copies MediaSession::copies() const {
         for (const auto& [id, stream] : outgoing_) streams.push_back(stream);
     }
     Copies copies;
-    std::unordered_set<PeerId, PeerId::Hash> paths;
     for (const auto& stream : streams) {
         std::lock_guard lock(stream->mutex);
         if (!stream->rate) continue;
-        copies.weight += double(stream->rate->limits().max) * double(stream->subscribers.size());
-        for (const auto& subscriber : stream->subscribers) paths.insert(subscriber.peer->id);
+        const double max = stream->rate->limits().max;
+        copies.weight += max * double(stream->subscribers.size());
+        for (const auto& subscriber : stream->subscribers) copies.paths[subscriber.peer->id] += max;
     }
-    copies.paths = paths.size();
     return copies;
 }
 
@@ -603,6 +602,7 @@ void MediaSession::on_peer_disconnected(const PeerId& peer) {
     {
         std::lock_guard lock(uplink_mutex_);
         uplink_.forget(peer);
+        ceilings_.erase(peer);  // the network forgot it too
     }
     for (const auto& [id, stream] : streams) {
         std::optional<uint32_t> bitrate;
@@ -664,11 +664,12 @@ void MediaSession::on_peer_path(const PeerId& peer, const PathStats& sample) {
     bool found = false;
     {
         std::lock_guard lock(uplink_mutex_);
-        found = uplink_.update(peer, signal, overused, all.paths, now);
+        found = uplink_.update(peer, signal, overused, all.paths.size(), now);
         uplink = uplink_.capacity();
     }
     const std::optional<double> per_most = all.per_most(uplink);
     if (found && per_most) limit_to_uplink(*per_most);
+    pace_to_uplink(all, uplink);
     for (const auto& [id, stream] : streams) {
         std::optional<uint32_t> bitrate;
         {
@@ -849,6 +850,36 @@ void MediaSession::on_subscribe(const PeerId& peer, StreamId stream_id) {
               ask_keyframe(*stream, clock_.now());
     }
     if (ask) notify(handlers_.keyframe_needed, stream_id);
+}
+
+void MediaSession::pace_to_uplink(const Copies& all, std::optional<uint64_t> uplink) {
+    // A ceiling is told again only when it moved by more than this: every path
+    // samples ten times a second, and the uplink and its parts seldom change.
+    constexpr double kWorthTelling = 0.05;
+    std::vector<std::pair<PeerId, uint64_t>> told;
+    {
+        std::lock_guard lock(uplink_mutex_);
+        for (auto it = ceilings_.begin(); it != ceilings_.end();) {
+            if (uplink && all.paths.contains(it->first)) {
+                ++it;
+                continue;
+            }
+            told.emplace_back(it->first, 0);
+            it = ceilings_.erase(it);
+        }
+        if (uplink && all.weight > 0) {
+            for (const auto& [id, weight] : all.paths) {
+                const auto ceiling = static_cast<uint64_t>(double(*uplink) * weight / all.weight);
+                uint64_t& was = ceilings_[id];
+                if (was != 0 &&
+                    std::abs(double(ceiling) - double(was)) <= double(was) * kWorthTelling)
+                    continue;
+                was = ceiling;
+                told.emplace_back(id, ceiling);
+            }
+        }
+    }
+    for (const auto& [id, ceiling] : told) network_.set_send_ceiling(id, ceiling);
 }
 
 void MediaSession::limit_to_uplink(double per_most) {

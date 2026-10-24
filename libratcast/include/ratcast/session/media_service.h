@@ -51,6 +51,7 @@ private:
                    LiveRank rank) override;
     bool writable(const PeerId& peer) const override;
     size_t max_live_message() const override;
+    void set_send_ceiling(const PeerId& peer, uint64_t bits_per_second) override;
 
     void run();
 

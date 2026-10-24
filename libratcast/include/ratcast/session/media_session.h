@@ -255,10 +255,10 @@ private:
     void on_keyframe_request(const PeerId& peer, StreamId stream);
 
     /// The copies of the rate-controlled streams: each weighed by the most
-    /// its stream may take, and the peers that receive any.
+    /// its stream may take, all of them and by the peer they go to.
     struct Copies {
         double weight = 0;
-        size_t paths = 0;
+        std::unordered_map<PeerId, double, PeerId::Hash> paths;
 
         /// A copy's part of an uplink that carries `uplink`, by bit per second
         /// of its stream's most; nullopt while the uplink is not known.
@@ -270,6 +270,10 @@ private:
     /// uplink, `per_most` by bit per second of its most. Takes the streams'
     /// locks.
     void limit_to_uplink(double per_most);
+    /// Each path with copies sent no faster than its part of an uplink that
+    /// carries `uplink` (its copies' weight in all of them), so that bursts to
+    /// all at once fit it too; no ceiling where the uplink is not known.
+    void pace_to_uplink(const Copies& all, std::optional<uint64_t> uplink);
 
     void deliver_ready(const PeerId& peer, StreamId id, IncomingStream& stream, Timestamp now);
     bool ask_keyframe(OutgoingStream& stream, Timestamp now);
@@ -294,8 +298,10 @@ private:
     /// The next stream's slot in the tags of its frames; never 0, so no tag is.
     uint16_t next_slot_ = 1;
 
-    mutable std::mutex uplink_mutex_;  ///< guards `uplink_`; taken holding no other lock
+    mutable std::mutex uplink_mutex_;  ///< guards the two below; taken holding no other lock
     SharedUplink uplink_;
+    /// The ceilings the network was told, by peer (pace_to_uplink).
+    std::unordered_map<PeerId, uint64_t, PeerId::Hash> ceilings_;
 
     std::atomic<uint64_t> rejected_{0};
 };

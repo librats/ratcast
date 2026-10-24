@@ -105,4 +105,10 @@ bool MediaService::writable(const PeerId& peer) const {
 
 size_t MediaService::max_live_message() const { return librats::SendOptions::kMaxLivePayload; }
 
+void MediaService::set_send_ceiling(const PeerId& peer, uint64_t bits_per_second) {
+    if (librats::PeerNetwork* network = network_.load(std::memory_order_acquire)) {
+        network->set_send_ceiling(peer, bits_per_second);
+    }
+}
+
 }  // namespace ratcast

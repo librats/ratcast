@@ -18,10 +18,12 @@ constexpr Duration kTolerance = 1ms;
 /// coming out of it as nothing.
 constexpr Duration kLeastGap = 2500us;
 
-/// A delay over target by more than a frame and a half (so that one frame
-/// fewer leaves it still over), for kOverFor together, costs a frame every
-/// kDropEvery until it is not; one under the floor by more than a frame has a
-/// frame made up as often.
+/// A delay over target by more than a frame and a quarter (so that one frame
+/// fewer leaves it still over, by more than the few milliseconds a pull's
+/// timing moves it), for kOverFor together, costs a frame every kDropEvery
+/// until it is not; one under the floor by more than a frame has a frame made
+/// up as often. By a frame and a half, as it was, a delay up to 30 ms over its
+/// target stayed there for good in sound that never pauses.
 constexpr Duration kOverFor = 1s;
 constexpr Duration kDropEvery = 100ms;
 
@@ -213,7 +215,7 @@ std::optional<JitterBuffer::Next> JitterBuffer::play_front(Timestamp now) {
     cursor_ = std::max(cursor_, frame.info.capture_time) + frame_duration_;
     next_number_ = number + 1;
 
-    if (delay_ <= target_ + frame_duration_ * 3 / 2) {
+    if (delay_ <= target_ + frame_duration_ * 5 / 4) {
         over_since_.reset();
     } else if (!over_since_) {
         over_since_ = now;

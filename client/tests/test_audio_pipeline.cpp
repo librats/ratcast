@@ -268,9 +268,9 @@ TEST_F(AudioPipelineTest, FramesLostOnTheWayAreMadeUpWithoutABreak) {
     const auto ms = [](Duration d) { return std::to_string(d.count() / 1000) + " ms"; };
     EXPECT_LE(quiet, 1) << "of " << rms.size() << " windows of 20 ms, quiet at" << where
                         << "; lost " << played.jitter.lost << ", late " << played.jitter.late
-                        << ", made up " << ms(played.jitter.concealed) << " + "
-                        << ms(played.jitter.expanded) << " expanded; recovered "
-                        << ms(played.decoded.recovered) << ", concealed "
+                        << ", dropped " << played.jitter.dropped << ", made up "
+                        << ms(played.jitter.concealed) << " + " << ms(played.jitter.expanded)
+                        << " expanded; recovered " << ms(played.decoded.recovered) << ", concealed "
                         << ms(played.decoded.concealed) << "; delay " << ms(played.delay) << " for "
                         << ms(played.target);
 }

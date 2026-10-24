@@ -116,7 +116,16 @@ public:
     }
     bool writable(const PeerId& peer) const override { return !full_.contains(peer); }
     size_t max_live_message() const override { return 64 * 1024; }
+    void set_send_ceiling(const PeerId& peer, uint64_t bits_per_second) override {
+        if (bits_per_second == 0) {
+            ceilings.erase(peer);
+        } else {
+            ceilings[peer] = bits_per_second;
+        }
+    }
 
+    /// The send ceilings set, by peer.
+    std::map<PeerId, uint64_t> ceilings;
     /// What each live message was given, in the order they were sent.
     std::vector<Duration> lifetimes;
     std::vector<uint64_t> tags;
@@ -809,6 +818,10 @@ TEST_F(MediaSessionTest, CopiesThroughAFullUplinkShareIt) {
     sender.session.on_peer_path(other.id, carried(37'500, 1));
     EXPECT_EQ(sender.session.uplink_capacity(), 6'000'000u);
     EXPECT_EQ(sender.bitrates, Bitrates{1'700'000});
+    // Each path sent no faster than its half of it, bursts and all.
+    using Ceilings = std::map<PeerId, uint64_t>;
+    EXPECT_EQ(sender.endpoint.ceilings,
+              (Ceilings{{receiver.id, 3'000'000}, {other.id, 3'000'000}}));
 
     // Climbing again, no higher than its part: 85% of 3 Mbit/s a copy, less
     // the 10% any raise leaves.
@@ -827,6 +840,17 @@ TEST_F(MediaSessionTest, CopiesThroughAFullUplinkShareIt) {
     hub.deliver_all();
     subscribe(third, 2);
     EXPECT_EQ(sender.bitrates, (Bitrates{1'700'000, 2'295'000, 1'530'000}));
+    // And each path to a third of the uplink, as its samples come.
+    sender.session.on_peer_path(third.id, carried(0));
+    EXPECT_EQ(sender.endpoint.ceilings,
+              (Ceilings{{receiver.id, 2'000'000}, {other.id, 2'000'000}, {third.id, 2'000'000}}));
+
+    // A minute after it was found full, the uplink is forgotten, and so are
+    // the ceilings: rate control finds it again if it is still there.
+    clock.advance(SharedUplink::kMemory + 1s);
+    sender.session.on_peer_path(receiver.id, carried(bytes));
+    EXPECT_FALSE(sender.session.uplink_capacity());
+    EXPECT_TRUE(sender.endpoint.ceilings.empty());
 }
 
 TEST_F(MediaSessionTest, CopiesComeDownAsTheUplinksQueueBuildsBeforeItOverflows) {

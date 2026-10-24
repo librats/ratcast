@@ -675,7 +675,7 @@ when* a share reaches every viewer of a room on an uplink that carries one copy 
 viewer at the quality its own path allows, all of them seeing the same picture at the same
 moment, and the sharer's voice heard as quickly as anyone's.
 
-- **5.1 A sender's budget across its paths**: the copies to all viewers fit the uplink they
+- **5.1 A sender's budget across its paths** ✅: the copies to all viewers fit the uplink they
   share. Each viewer's rate controller sees its own path, not the uplink, so a sharer to
   several fills the network's queue below its cap and its own voice waits behind its pictures
   (10.5: 186 ms against 81–86 on `cap-6`, four in a room). Found first: what fills it — the
@@ -683,24 +683,30 @@ moment, and the sharer's voice heard as quickly as anyone's.
   the sum: a queue that grows on every path at once is the uplink's, and the encoder comes down
   for it. *Done when* on `--room 4 --share cap-6` the sharer's voice is heard as quickly as the
   others' and the share plays without stalls, at the most the uplink carries.
-  Done so far: what fills it is the copies' steady rate — each path, looking as wide as the
-  uplink, lets the one encoder climb to 3 Mbit/s for two viewers (6 of 6), and the third
-  viewer's copy and keyframe overflow it; `SharedUplink` (`session/shared_uplink.h`) finds the
-  uplink full when every path with copies says so within a second — expiries, or the round trip
-  25 ms over its least of ten seconds in two samples running, before the overflow (a path
-  younger than a second need not; a sample 300 ms late is a stalled node, and none count for a
-  second) — takes what they carried over the last second (`PathSignal::carried`) for what it
-  carries, the most found kept a minute and found again only while the copies carry more than
-  their 85% of it, and keeps every rate-controlled stream to its part, in proportion to its
-  most: at once when found (`RateController::limit()`), as a ceiling to every raise after, and
-  before a joining viewer's keyframe. Found on the way and fixed: rate control stuck for good
-  a hair short of where a cut at a ceiling left it (85%, rounded down), half of all such cuts
-  — `cap-drop` never climbed back after its narrow five seconds. `docs/bench.md`, "A sender's
-  budget (5.1)": a minute of `cap-6`, four in a room, the copies held at 1.57 Mbit/s each from
-  the 10th second (6.2 found), 10 stalls against 81 with the fault fixed and no budget. Left:
-  the one overflow before the uplink is known leaves the sharer's voice at 140–180 ms for good
-  with a tone — its jitter buffer shrinks only in silence; next, playing out a buffer's excess
-  without waiting for it.
+  Done so: what filled it was the copies' steady rate — each path, looking as wide as the
+  uplink, let the one encoder climb to 3 Mbit/s for two viewers (6 of 6), and the third
+  viewer's copy and keyframe overflowed it — and, once that was held, their bursts: a frame's
+  three copies left together, each paced at its own path's 4–5 Mbit/s, past the uplink for
+  10–15 ms a frame, the sharer's voice queued behind them. `SharedUplink`
+  (`session/shared_uplink.h`) finds the uplink full when every path with copies says so within
+  a second — expiries, or the round trip 25 ms over its least of ten seconds in two samples
+  running, before the overflow (a path younger than a second need not; a sample 300 ms late is
+  a stalled node, and none count for a second) — takes what they carried over the last second
+  (`PathSignal::carried`) for what it carries, the most found kept a minute and found again
+  only while the copies carry more than their 85% of it, and keeps every rate-controlled stream
+  to its part, in proportion to its most: at once when found (`RateController::limit()`), as a
+  ceiling to every raise after, and before a joining viewer's keyframe. Each path with copies
+  is paced to its part of the uplink (librats L20: `MediaNetwork::set_send_ceiling`), so the
+  frames wait in the sender's queue, its sound first, rather than in the uplink's. The jitter
+  buffer gives up a frame when over its aim by more than a frame and a quarter, not a half: it
+  stayed up to 30 ms over for good in sound that never pauses. Found on the way and fixed: rate
+  control stuck for good a hair short of where a cut at a ceiling left it (85%, rounded down),
+  half of all such cuts — `cap-drop` never climbed back after its narrow five seconds.
+  `docs/bench.md`, "A sender's budget (5.1)": a minute of `cap-6`, four in a room, the copies
+  held at 1.35 Mbit/s each from the 5th second, 1 stall and no break of a voice, the sharer
+  heard at 97 ms and the others at 93 (seconds 20–60; before, 155 and 117). Left: the one
+  overflow before the uplink is known, as the third viewer joins, which raises every voice's
+  buffer for the ten seconds it remembers lateness.
 - **5.2 Synchronised playout**: every viewer sees a frame at the same moment, so a room reacts
   to a film together. Each viewer's clock against the sender's over librats' round trips (L10
   not needed), its latency told to the sender, and a common playout delay — the slowest
@@ -1108,6 +1114,7 @@ and the list is in priority order:
 | | L2 (b) | A live flow's start: shedding by Startup's rate | needed | 3.2 (feeds); 1.2 (long paths) | ✅ |
 | | L18 | What was said on a link that lost a cross-connect race | needed | 10.2 | ✅ |
 | | L19 | Peer exchange that closes a small mesh | needed | 10.2 | ✅ |
+| | L20 | A send ceiling for a peer | needed | 5.1 | ✅ |
 | 1 | L2 (a) | A live flow's start: the initial window | needed | 1.2 (long paths) | put off; eased by (b) |
 | 2 | L5 | Absolute deadlines when forwarding | needed | stage 5 (tree) | |
 | 3 | L15 | Fewer system calls per reactor turn | improves | 3.2 (CPU) | |
@@ -1226,6 +1233,22 @@ identified, or not listening — never hears of the asker, and two joining throu
 once can each ask before the other is named. `introduce_requesters` has the node name the asker
 to those its answer left out (those it named dial the asker themselves; telling them too would
 only race two links). An ordinary response, no wire change; off by default.
+
+**L20 — A send ceiling for a peer.** ✅ *Needed by 5.1.* Copies of a stream to several peers
+all go through the sender's uplink, and each connection is paced by its own controller at what
+its path would take — the whole uplink, each — so a frame's copies, leaving together, overfill it
+for a moment every frame, and whatever else goes through it (the sender's voice) waits in the
+network's queue, where librats' ranks cannot reach. `PeerNetwork::set_send_ceiling(peer, bps)`
+paces a peer's connection no faster than that, whatever its controller says: the application,
+which knows the uplink (ratcast's `SharedUplink`), gives each path its part, and the frames wait
+in librats' own queue, sound first. Kept by `Node` for the peer across a change of link,
+forgotten when it disconnects; UDP only (TCP leaves pacing to the kernel). While the ceiling is
+what holds data back, `Recovery` marks the rate samples app-limited (the controller must not
+take the ceiling for the path: it climbs back at once when lifted), holds an empty pipe to it
+too (on a LAN, whose acks come back within a packet's time, the pipe empties after every packet,
+and "an empty pipe is never paced" let a 2 Mbit/s ceiling send 2.9), and BBR pads nothing under
+it. Tested in virtual time (20 Mbit/s path held to 5, the estimate kept, the rate back on lifting)
+and between two nodes (set before the peer connects, lifted while it is connected).
 
 **L13 — Fewer ACKs for live data.** *Optional; tried, put off.* An ACK every second packet
 (RFC 9000) is ~440 a second for an 8 Mbit/s feed in full frames — 0.22 Mbit/s back (2.7% of the
