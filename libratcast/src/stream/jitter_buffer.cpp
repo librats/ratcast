@@ -154,8 +154,7 @@ JitterBuffer::Next JitterBuffer::next(Timestamp now) {
                 stats_.expanded += wait;
                 return gap(wait, std::nullopt, false);
             }
-            stats_.concealed += frame;
-            unexplained_ += frame;
+            stats_.unexplained += frame;
             return gap(frame, std::nullopt, true);
         }
 
@@ -207,14 +206,15 @@ std::optional<JitterBuffer::Next> JitterBuffer::play_front(Timestamp now) {
     EncodedFrame frame = std::move(frames_.front());
     frames_.erase(frames_.begin());
     const FrameNumber number = frame.info.number;
+    // What was made up before it while nothing was there: for the frames
+    // missing before it, or silence.
     if (number > next_number_) {
         stats_.lost += number - next_number_;
+        stats_.concealed += stats_.unexplained;
     } else {
-        // What was made up before it while nothing was there was silence.
-        stats_.concealed -= unexplained_;
-        stats_.silence += unexplained_;
+        stats_.silence += stats_.unexplained;
     }
-    unexplained_ = Duration::zero();
+    stats_.unexplained = Duration::zero();
     cursor_ = std::max(cursor_, frame.info.capture_time) + frame_duration_;
     next_number_ = number + 1;
 

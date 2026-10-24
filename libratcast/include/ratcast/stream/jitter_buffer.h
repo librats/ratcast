@@ -24,6 +24,8 @@
  *     is made up; if it arrives after, it is dropped as late. A later frame
  *     there already means the missing ones are lost, and its FEC may stand for
  *     the last of them (the decoder's affair: the gap comes with that frame).
+ *     Sound made up while nothing was there is a loss or DTX's silence, and
+ *     counted as neither until the next frame says which.
  *   - The delay grows where sound is made up anyway — while the next frame is
  *     not there, which while short of target it waits for rather than give it
  *     up, until the delay is all of the target (no less, or the FEC after a
@@ -79,10 +81,14 @@ public:
         uint64_t late = 0;      ///< arrived after their time, or twice
         uint64_t lost = 0;      ///< frame numbers whose time passed before they came
         uint64_t dropped = 0;   ///< played over to bring the delay down, or for room
-        Duration concealed{};   ///< made up for frames that were not there
+        Duration concealed{};   ///< made up for frames found lost
         Duration silence{};     ///< DTX's silence, as long as it was played
         Duration expanded{};    ///< added to raise the delay
         Duration cut{};         ///< taken out of silence to lower it
+        /// Made up since the last frame played, while none was there: silence
+        /// or a loss, which the next frame to come will tell (it goes to
+        /// `silence` or `concealed` then).
+        Duration unexplained{};
     };
 
     /// What to play next.
@@ -168,9 +174,6 @@ private:
     Timestamp cursor_{};
     FrameNumber next_number_ = 0;
     Duration delay_{};
-    /// Made up since the last frame played, while none was there: silence
-    /// after all if the next frame turns out to follow on in numbers.
-    Duration unexplained_{};
     std::optional<Timestamp> over_since_;   ///< the delay has been well over target since
     std::optional<Timestamp> under_since_;  ///< and well under the floor since
 };

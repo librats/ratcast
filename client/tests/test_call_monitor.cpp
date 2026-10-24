@@ -178,6 +178,18 @@ TEST(CallMonitor, SoundMadeUpIsFairThenPoor) {
     EXPECT_EQ(report.verdict.reason.rfind("sound: ", 0), 0u);
 }
 
+TEST(CallMonitor, DtxSilenceIsGoodAndOnlyNothingComingForLongIsPoor) {
+    Snapshots s;
+    s.earlier.sound = sound(500, {});
+    s.now.sound = sound(502, {});
+    s.now.sound->jitter.unexplained = 380ms;  // between DTX's frames
+    EXPECT_EQ(compare(s.earlier, s.now).sound->verdict.quality, Quality::Good);
+    s.now.sound->jitter.unexplained = 1500ms;
+    const CallReport report = compare(s.earlier, s.now);
+    EXPECT_EQ(report.sound->verdict.quality, Quality::Poor);
+    EXPECT_EQ(report.verdict.reason, "sound: no sound came for over a second");
+}
+
 TEST(CallMonitor, EachPeersVoiceAndCameraAreTheirOwn) {
     Snapshots s;
     s.earlier.voices = {{kAnn, sound(500, {})}, {kBob, sound(500, {})}};

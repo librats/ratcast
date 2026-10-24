@@ -221,8 +221,33 @@ TEST(JitterBufferTest, DtxSilenceIsPlayedAsSilenceNotAsLoss) {
     const JitterBuffer::Stats& stats = sim.buffer().stats();
     EXPECT_EQ(stats.silence, 400ms);
     EXPECT_EQ(stats.concealed, 0ms);
+    EXPECT_EQ(stats.unexplained, 0ms);
     EXPECT_EQ(stats.lost, 0u);
     EXPECT_EQ(stats.played, 100u);
+}
+
+TEST(JitterBufferTest, SoundMadeUpWhileNothingCameIsNeitherUntilTheNextFrameSays) {
+    Simulation sim;
+    sim.silent_from = 50;
+    sim.silence = 400ms;
+    // Into the silence: nothing has come for 200 ms.
+    sim.run(1200ms, 100);
+    const JitterBuffer::Stats& stats = sim.buffer().stats();
+    EXPECT_EQ(stats.concealed, 0ms);
+    EXPECT_GE(stats.unexplained, 140ms);
+    EXPECT_LE(stats.unexplained, 200ms);
+
+    // The frame after a silence and a loss: all made up.
+    Simulation lost;
+    lost.silent_from = 50;
+    lost.silence = 400ms;
+    lost.transit = [](FrameNumber n) {
+        return n == 50 ? std::nullopt : std::optional<Duration>(30ms);
+    };
+    lost.run(3s, 100);
+    EXPECT_EQ(lost.buffer().stats().lost, 1u);
+    EXPECT_GE(lost.buffer().stats().concealed, 400ms);
+    EXPECT_EQ(lost.buffer().stats().unexplained, 0ms);
 }
 
 TEST(JitterBufferTest, ASpikeRaisesTheDelayAndSilenceBringsItBack) {

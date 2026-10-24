@@ -16,6 +16,9 @@ using namespace std::chrono_literals;
 
 /// Sound made up beyond this share of the time is heard as broken.
 constexpr double kConcealedPoor = 0.02;
+/// Nothing come for longer than this is more than DTX's silence, which sends
+/// a frame every 400 ms.
+constexpr Duration kNothingCamePoor = 1s;
 /// Pictures skipped beyond this share of the source's are a stutter.
 constexpr double kSkippedPoor = 0.1;
 /// Sound and pictures further apart than this are noticed.
@@ -242,6 +245,9 @@ ReceivedSoundReport received_sound(const AudioPlayerStats& now, const AudioPlaye
         sound.verdict.at_least(Quality::Poor, "sound made up for frames that never came");
     } else if (sound.concealed > Duration{}) {
         sound.verdict.at_least(Quality::Fair, "some sound made up");
+    }
+    if (jitter.unexplained > kNothingCamePoor) {
+        sound.verdict.at_least(Quality::Poor, "no sound came for over a second");
     }
     return sound;
 }

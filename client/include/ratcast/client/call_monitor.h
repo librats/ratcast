@@ -25,7 +25,8 @@
  *     decode, or decoding is slower than the frames come; fair when frames
  *     came late or decoding takes more than half a frame's time;
  *   - sound played: poor when more than 2% of it was made up for frames that
- *     never came (or failed to decode), fair when any was;
+ *     never came (or failed to decode), or nothing has come for over a
+ *     second, fair when any was made up;
  *   - a feed played: poor when frames were lost, fair when late;
  *   - sound and pictures: fair when they played more than 100 ms apart;
  *   - a path: poor when live messages expired on it, fair when it lost more
