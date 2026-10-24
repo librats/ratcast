@@ -1461,30 +1461,39 @@ as far apart each time, up to 8 s; one narrower, or grown, every second again. r
 this, librats fd21fa1.
 
 Four in a room, the sharer's uplink one copy wide (`bench/netem.py --room 4 --share
---member-paths local,local,local cap-6 --duration 60`), the two builds in turn, two runs each:
+--member-paths local,local,local cap-6 --duration 60`), the two builds in turn, three runs each:
 
 | build | cuts / raises / keyframes, a minute | share: fps | latency p95, ms | stalls (by viewer) | sent, Mbit/s: sharer / the relay |
 |---|---:|---:|---:|---:|---:|
 | before | 9 / 41 / 58 | 58 | 151.6 | 17 (7, 5, 5) | 4.66 / 8.87 |
 | before | 9 / 41 / 58 | 58 | 147.5 | 34 (12, 11, 11) | 4.39 / 8.30 |
+| before | 8 / 44 / 59 | 58 | 151.6 | 23 (7, 9, 7) | 4.67 / 8.88 |
 | after | 5 / 20 / 31 | 59 | 135.2 | 20 (9, 6, 5) | 4.73 / 8.99 |
 | after | 6 / 21 / 33 | 59 | 124.9 | 16 (6, 5, 5) | 4.61 / 8.77 |
+| after | 5 / 24 / 35 | 59 | 143.4 | 19 (5, 7, 7) | 4.69 / 8.93 |
 
 - **Half the cuts, half the raises**: the steps past 5.85 Mbit/s come 2, then 4, then 8 s apart,
   four of them from a cut to the next (4.75 → 6.5, the encoder sending 4–5.5): at 8 s apart, a
-  cut every half a minute or so where it was every 7 s. More of the path used, not less:
-  4.6–4.7 Mbit/s sent where it was 4.4–4.7.
+  cut every half a minute or so where it was every 7 s. Past the 20th second the target went
+  to the stream's most in every cycle before; after, once in three runs — the first ceiling,
+  found while the viewers joined, too low (4.7), the path carrying 5.5 past it: found grown, as
+  it was, and the right one (5.8) found by the cut that followed. More of the path used, not
+  less: 4.4–4.5 Mbit/s sent past the 20th second where it was 4.0–4.4.
 - **Each raise costs a keyframe here** (SVT-AV1 changes its bitrate only by opening anew): a gap
   of 65–100 ms between two pictures at the viewers, not a stall. A frame is lost only at a cut;
   with half the raises, half those gaps too.
 - **Stalls are the VM's as much as rate control's**: the same build gives 17 and 34. The
   voice breaks (0–25 a run) come with the whole machine stopping for 300–450 ms, every
   voice at once; the sound goes ahead of the pictures in the sender's queue (librats L4).
-- **One to one** (`--repeat 3`, medians, before → after): `local` 58 → 59 fps, stalls 2 (500
-  ms) → 0; `jitter` 0 → 1 (154); `loss-2` 1 (101) → 1 (117); `cap-6` 58 → 59 fps, 4.0 (2 cuts)
-  → 4.1 (2), stalls 2 (213) → 1 (114); `cap-drop` 56 → 54 fps, 3.3 (4) → 3.3 (3), stalls 10
-  (1605) → 8 (1704). The same within the VM's noise: 15 s holds one or two cuts, before the
-  steps are far apart; on `cap-drop` the path that narrowed is probed every second again.
+- **One to one** (`--repeat 2 --duration 30 local cap-20 cap-6 cap-drop`, medians, before →
+  after): on `local` and `cap-20` the most (8 Mbit/s) in 6 s and held, as before, 7.5–7.7
+  Mbit/s sent; `cap-6` 58 → 59 fps, 4.2 (4 cuts) → 4.3 (3), stalls 2 (354 ms) → 0 (52), the
+  target 4.7–8.0 → 4.7–7.3, keyframes 26 → 18; `cap-drop` 56 → 57 fps, stalls 8 (1864) → 10
+  (1872), but back at the most 4–8 s later: 13 and 17 s → 21 and 17 s, the path wide again from
+  the 10th. That is the price: a path grown is found only as it carries well past the ceiling,
+  and an encoder sending 75–80% of its target needs the target some 30–40% past it for that,
+  +8% a second. (15 s, three runs each, `local`, `jitter`, `loss-2`, `cap-6`, `cap-drop`: the
+  same within the VM's noise.)
 - **Tried and left out**: no step past a ceiling further than one past what the paths carried
   — a target held just past the 5.85 with no cut for 40 s — but a ceiling found too low (a cut
   while the machine stalled: 3.85) then held for good, the encoder sending too little ever to
