@@ -9,6 +9,7 @@
 #include "librats/subsystems/dht_discovery.h"
 #include "librats/subsystems/hole_punch.h"
 #include "librats/subsystems/peer_exchange.h"
+#include "librats/subsystems/port_mapping_service.h"
 #include "librats/util/network_utils.h"
 
 namespace ratcast {
@@ -127,9 +128,12 @@ Call::Call(CallConfig config, CallHandlers handlers)
     media_ = node_.add_subsystem(std::make_unique<MediaService>(
         session_handlers(),
         SessionConfig{.capture_clock = config_.capture_clock, .relays = config_.relays}));
-    // One key to meet under: the peer dialed, or this call's own.
+    // One key to meet under: the peer dialed, or this call's own. Whoever is
+    // met there dials the port the router forwards, if it does: the call is
+    // then reached through a NAT with no punch.
     const PeerId* dialed = dialed_peer(config_);
     if (dialed || config_.discoverable) {
+        node_.add_subsystem(std::make_unique<librats::PortMappingService>());
         librats::DhtDiscovery::Config discovery;
         discovery.discovery_key = discovery_key(dialed ? *dialed : node_.local_id());
         discovery.data_dir = config_.data_dir;

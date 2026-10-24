@@ -1208,19 +1208,21 @@ and the list is in priority order:
 | | L19 | Peer exchange that closes a small mesh | needed | 10.2 | ✅ |
 | | L20 | A send ceiling for a peer | needed | 5.1 | ✅ |
 | | L5 | Absolute deadlines when forwarding | needed | 5.3 | ✅ |
-| 1 | L2 (a) | A live flow's start: the initial window | needed | 1.2 (long paths) | put off; eased by (b) |
-| 2 | L15 | Fewer system calls per reactor turn | improves | 3.2 (CPU) | |
-| 3 | L16 | ProbeRTT that does not starve a live flow | improves | 3.2 (`reorder`) | |
-| 4 | L8 | `send_many` with a shared buffer | improves | stage 5 (SFU) | |
-| 5 | L11 | One copy fewer on the send path | improves | with L8 | |
-| 6 | L6 | FEC across messages | optional | 2.1 | if Opus FEC + RED fall short |
-| 7 | L9 | Path MTU discovery | optional | 3.4, 4K | |
-| 8 | L10 | A clock-sync service | not needed | stage 5 (playout) | libratcast does it on its media lane (5.2) |
-| 9 | L7 | A delay-sensitive realtime mode | optional | — | mostly done with L2 (c) |
-| 10 | L12 | Live outcomes and ranks in the C ABI | optional | other bindings | when one needs them |
-| 11 | L13 | Fewer ACKs for live data | optional | feedback on a narrow uplink | tried: needs receive timestamps |
-| 12 | L14 | A faster ChaCha20-Poly1305 | optional | — | ~0.5% of a core at 8 Mbit/s |
-| 13 | L17 | A finer timer on Windows | optional | 4.3 | tried: no gain measured |
+| | L21 (a) | Two behind NATs meeting in the DHT: dialed again, the router's port | needed | 6, 10 (over the internet) | ✅ |
+| 1 | L21 (b, c) | The same: the shared socket's own external port; a node both reach to meet and relay through | needed | 6, 10 (over the internet) | |
+| 2 | L2 (a) | A live flow's start: the initial window | needed | 1.2 (long paths) | put off; eased by (b) |
+| 3 | L15 | Fewer system calls per reactor turn | improves | 3.2 (CPU) | |
+| 4 | L16 | ProbeRTT that does not starve a live flow | improves | 3.2 (`reorder`) | |
+| 5 | L8 | `send_many` with a shared buffer | improves | stage 5 (SFU) | |
+| 6 | L11 | One copy fewer on the send path | improves | with L8 | |
+| 7 | L6 | FEC across messages | optional | 2.1 | if Opus FEC + RED fall short |
+| 8 | L9 | Path MTU discovery | optional | 3.4, 4K | |
+| 9 | L10 | A clock-sync service | not needed | stage 5 (playout) | libratcast does it on its media lane (5.2) |
+| 10 | L7 | A delay-sensitive realtime mode | optional | — | mostly done with L2 (c) |
+| 11 | L12 | Live outcomes and ranks in the C ABI | optional | other bindings | when one needs them |
+| 12 | L13 | Fewer ACKs for live data | optional | feedback on a narrow uplink | tried: needs receive timestamps |
+| 13 | L14 | A faster ChaCha20-Poly1305 | optional | — | ~0.5% of a core at 8 Mbit/s |
+| 14 | L17 | A finer timer on Windows | optional | 4.3 | tried: no gain measured |
 
 Where it stands after L1, L2 (c) and L3: the steady state holds — one-way delay + ~18 ms on a
 clean path, 59–60 fps under 1–5% loss, bursts, jitter and reordering, and BBR's estimate follows
@@ -1341,6 +1343,26 @@ too (on a LAN, whose acks come back within a packet's time, the pipe empties aft
 and "an empty pipe is never paced" let a 2 Mbit/s ceiling send 2.9), and BBR pads nothing under
 it. Tested in virtual time (20 Mbit/s path held to 5, the estimate kept, the rate back on lifting)
 and between two nodes (set before the peer connects, lifted while it is connected).
+
+**L21 — Two behind NATs that meet in the DHT.** *Needed by calls over the internet (6, 10).*
+A `rats://PEER-ID` link meets in the DHT: the host announces itself under its id, whoever
+dials it announces itself there too, and each dials what it finds. Behind two NATs neither dial
+gets in — a NAT drops what comes in unless something went out to that peer first — unless they
+overlap, and each address was dialed once, ever (three Initials over 3.5 s); `HolePunch` needs a
+peer both are connected to, which two strangers do not have.
+- (a) ✅ A peer found again and not connected is punched (`DialProfile::punch()`, eight
+  Initials 200 ms apart over the shared socket) each time it is found, no oftener than every 5 s,
+  for two minutes after it was first found (`DhtDiscovery::Redials`): both sides keep dialing
+  more often than a NAT's mapping lives, so the second's dial lands in the way the first's
+  opened. The port announced is the router's for ours once UPnP or NAT-PMP maps it
+  (`PortMappingService` tells `PortMapped`); ratcast's calls that use the DHT ask for one. This
+  gets through NATs that keep the listen port as it is and map it alike for every peer.
+- (b) The external port of the shared datagram socket, by STUN from that socket, announced in
+  place of the listen port: a NAT that maps it to another port (most carrier-grade NATs) gets
+  dialed where it listens. `NatStatus` learns it only from peers already connected.
+- (c) A node both reach (a public one, as the `server` of 5.6 will be): a rendezvous for
+  `HolePunch` between peers that share no other, and `Relay` where no punch can work (a mapping
+  per destination).
 
 **L13 — Fewer ACKs for live data.** *Optional; tried, put off.* An ACK every second packet
 (RFC 9000) is ~440 a second for an 8 Mbit/s feed in full frames — 0.22 Mbit/s back (2.7% of the

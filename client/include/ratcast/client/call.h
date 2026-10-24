@@ -122,7 +122,11 @@ struct CallConfig {
     /// table, across runs; "": a new identity each run.
     std::string data_dir = {};
     /// Findable by peer id through the DHT (invites() lists rats://PEER-ID).
-    /// It takes a minute or two to converge on the open internet.
+    /// It takes a minute or two to converge on the open internet. A call that
+    /// meets through the DHT (this, or dialing a peer id) asks the router to
+    /// forward its port (UPnP, NAT-PMP), and both sides dial each other again
+    /// while not connected, which gets through two NATs that keep a port to
+    /// every peer alike.
     bool discoverable = false;
     /// Who to call: an address, dialed at once, or a discoverable node's peer
     /// id, looked for through the DHT. None: wait to be called.
