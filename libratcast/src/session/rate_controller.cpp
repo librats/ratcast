@@ -27,6 +27,10 @@ constexpr double kPastCeiling = 1.15;
 /// A raise smaller than this is not worth a keyframe.
 constexpr double kMinRaise = 1.05;
 constexpr Duration kRaiseInterval = std::chrono::seconds(1);
+/// What a path carried is measured over this much.
+constexpr Duration kCarriedOver = std::chrono::seconds(1);
+/// A round trip's rise is over the least of this much.
+constexpr Duration kRiseOver = std::chrono::seconds(10);
 constexpr Duration kHoldAfterCut = std::chrono::seconds(2);
 
 }  // namespace
@@ -52,6 +56,10 @@ PathSignal PathMonitor::update(const PathStats& sample, Timestamp now) {
     PathSignal signal;
     if (!sample.valid) return signal;
     signal.rtt = Duration{sample.srtt_us};
+    while (!least_rtts_.empty() && least_rtts_.back().second >= signal.rtt) least_rtts_.pop_back();
+    least_rtts_.emplace_back(now, signal.rtt);
+    while (now - least_rtts_.front().first > kRiseOver) least_rtts_.pop_front();
+    signal.queue_rise = signal.rtt - least_rtts_.front().second;
     signal.starting = double(sample.pacing_bps) > double(sample.bandwidth_bps) * kStartupPacing;
 
     const Duration queue_delay =
@@ -65,16 +73,29 @@ PathSignal PathMonitor::update(const PathStats& sample, Timestamp now) {
     // The counters start at zero with the connection, so the first sample
     // counts from there; a rate needs the time between two.
     signal.expired = sample.live_expired > (last_ ? last_->live_expired : 0);
+    const uint64_t media =
+        sample.bytes_delivered - std::min(sample.live_repair_bytes, sample.bytes_delivered);
+    if (!last_) media_ = {{now, media}};
+    if (!last_ || now <= last_at_) {
+        last_ = sample;
+        last_at_ = now;
+        return signal;
+    }
+    while (media_.size() > 1 && now - media_[1].first >= kCarriedOver) media_.pop_front();
+    const auto& [since, before] = media_.front();
+    signal.carried = static_cast<uint64_t>(double(media - std::min(before, media)) * 8 /
+                                           std::chrono::duration<double>(now - since).count());
+    media_.emplace_back(now, media);
+
+    signal.since = now - last_at_;
+    const double seconds = std::chrono::duration<double>(signal.since).count();
+    const double repair_bps =
+        double(sample.live_repair_bytes - last_->live_repair_bytes) * 8 / seconds;
+    const double delivered_bps =
+        double(sample.bytes_delivered - last_->bytes_delivered) * 8 / seconds;
     // A keyframe alone keeps a path busy for a moment; one busy in two samples
     // running delivered what it carries in between.
-    const bool busy =
-        !signal.starting && last_ && now > last_at_ && !last_->app_limited && !sample.app_limited;
-    if (busy) {
-        const double seconds = std::chrono::duration<double>(now - last_at_).count();
-        const double repair_bps =
-            double(sample.live_repair_bytes - last_->live_repair_bytes) * 8 / seconds;
-        const double delivered_bps =
-            double(sample.bytes_delivered - last_->bytes_delivered) * 8 / seconds;
+    if (!signal.starting && !last_->app_limited && !sample.app_limited) {
         signal.delivered = static_cast<uint64_t>(std::max(delivered_bps - repair_bps, 0.0));
         // With an estimate that has stopped growing, it is full.
         if (sample.bandwidth_bps > 0 &&
@@ -128,14 +149,21 @@ std::optional<uint32_t> RateController::on_clear(Timestamp now,
     if (ceiling_ && target_ > *ceiling_ * kPastCeiling) ceiling_.reset();
     double next = target_ * kRampGain;
     if (ceiling_) {
-        // Quickly back to where a cut at the ceiling leaves it, carefully on.
+        // Quickly back to where a cut at the ceiling leaves it, carefully on
+        // from there — and from short of it by less than a raise is worth.
         const double below = *ceiling_ * kBackoff;
-        next = target_ < below ? std::min(next, below) : target_ * kProbeGain;
+        next = target_ * kMinRaise < below ? std::min(next, below) : target_ * kProbeGain;
     }
     if (capacity) next = std::min(next, double(*capacity) * kHeadroom);
     if (next < target_ * kMinRaise) return std::nullopt;
     last_raise_ = now;
     return set_target(next);
+}
+
+std::optional<uint32_t> RateController::limit(uint64_t capacity) noexcept {
+    const double most = double(capacity) * kHeadroom;
+    if (target_ <= most) return std::nullopt;
+    return set_target(most);
 }
 
 std::optional<uint32_t> RateController::restart() noexcept {

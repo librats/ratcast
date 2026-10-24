@@ -785,6 +785,87 @@ TEST_F(MediaSessionTest, AStreamThePeerDoesNotWatchTakesNoPartOfItsPath) {
     EXPECT_EQ(sender.session.outgoing_stats(3)->bitrate, kCamera.start);
 }
 
+/// A path the sender does not fill, wide on its own, that carried `bytes`
+/// since it opened: one of several through the sender's uplink.
+PathStats carried(uint64_t bytes, uint64_t expired = 0) {
+    PathStats s = path(expired);
+    s.bytes_delivered = bytes;
+    return s;
+}
+
+TEST_F(MediaSessionTest, CopiesThroughAFullUplinkShareIt) {
+    Party other(hub, clock, 3);
+    connect(sender, other);
+    add_rated_stream();
+    subscribe(receiver, 2);
+    subscribe(other, 2);
+
+    // Each path wide on its own, but both lose frames at once with 3 Mbit/s
+    // through each: the uplink they share is full at 6.
+    for (Party* to : {&receiver, &other}) sender.session.on_peer_path(to->id, carried(0));
+    clock.advance(100ms);
+    sender.session.on_peer_path(receiver.id, carried(37'500, 1));
+    EXPECT_FALSE(sender.session.uplink_capacity());  // one path alone is its own
+    sender.session.on_peer_path(other.id, carried(37'500, 1));
+    EXPECT_EQ(sender.session.uplink_capacity(), 6'000'000u);
+    EXPECT_EQ(sender.bitrates, Bitrates{1'700'000});
+
+    // Climbing again, no higher than its part: 85% of 3 Mbit/s a copy, less
+    // the 10% any raise leaves.
+    uint64_t bytes = 37'500;
+    for (int second = 0; second < 4; ++second) {
+        clock.advance(1s);
+        bytes += 150'000;
+        for (Party* to : {&receiver, &other})
+            sender.session.on_peer_path(to->id, carried(bytes, 1));
+    }
+    EXPECT_EQ(sender.bitrates, (Bitrates{1'700'000, 2'295'000}));
+
+    // A third viewer: three copies through it, down before its keyframe.
+    Party third(hub, clock, 4);
+    connect(sender, third);
+    hub.deliver_all();
+    subscribe(third, 2);
+    EXPECT_EQ(sender.bitrates, (Bitrates{1'700'000, 2'295'000, 1'530'000}));
+}
+
+TEST_F(MediaSessionTest, CopiesComeDownAsTheUplinksQueueBuildsBeforeItOverflows) {
+    Party other(hub, clock, 3);
+    connect(sender, other);
+    add_rated_stream();
+    subscribe(receiver, 2);
+    subscribe(other, 2);
+
+    // 2 Mbit/s through each, and the round trips rising together, two
+    // samples running: 4 Mbit/s fill the uplink, nothing expired yet.
+    uint64_t bytes = 0;
+    for (uint32_t rtt : {50'000u, 80'000u, 85'000u}) {
+        for (Party* to : {&receiver, &other}) {
+            PathStats s = carried(bytes);
+            s.srtt_us = rtt;
+            sender.session.on_peer_path(to->id, s);
+        }
+        clock.advance(100ms);
+        bytes += 25'000;
+    }
+    EXPECT_EQ(sender.session.uplink_capacity(), 4'000'000u);
+    // Each copy at once to its part: 85% of 2 Mbit/s, less 10%.
+    EXPECT_EQ(sender.bitrates, Bitrates{1'530'000});
+}
+
+TEST_F(MediaSessionTest, AnUplinkIsNotFullWhenOnlySomeOfItsPathsAre) {
+    Party other(hub, clock, 3);
+    connect(sender, other);
+    add_rated_stream();
+    subscribe(receiver, 2);
+    subscribe(other, 2);
+    for (Party* to : {&receiver, &other}) sender.session.on_peer_path(to->id, carried(0));
+    clock.advance(100ms);
+    sender.session.on_peer_path(receiver.id, carried(37'500, 1));
+    sender.session.on_peer_path(other.id, carried(37'500));
+    EXPECT_FALSE(sender.session.uplink_capacity());
+}
+
 TEST_F(MediaSessionTest, AStreamNobodyWatchesStartsAfresh) {
     add_rated_stream();
     subscribe(receiver, 2);

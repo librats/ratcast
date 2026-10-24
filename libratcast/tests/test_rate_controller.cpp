@@ -132,6 +132,46 @@ TEST(PathMonitor, MeasuresWhatABusyPathDeliveredLessRepairs) {
     EXPECT_EQ(signal.capacity, 9'800'000u);
 }
 
+TEST(PathMonitor, SaysWhatAnyPathCarriedBusyOrNot) {
+    PathMonitor monitor;
+    PathStats s = sample(10'000'000, true);
+    EXPECT_FALSE(monitor.update(s, Timestamp{1s}).carried);  // nothing to count from
+
+    s.bytes_delivered = 25'000;  // 2 Mbit/s over 100 ms
+    s.live_repair_bytes = 2'500;
+    const PathSignal signal = monitor.update(s, Timestamp{1100ms});
+    EXPECT_EQ(signal.carried, 1'800'000u);
+    EXPECT_EQ(signal.since, 100ms);
+    EXPECT_FALSE(signal.delivered);  // idle: no measure of the path itself
+}
+
+TEST(PathMonitor, SaysHowFarTheRoundTripRoseOverItsLeastOfTenSeconds) {
+    PathMonitor monitor;
+    PathStats s = sample(10'000'000, true);
+    const auto rise = [&](uint32_t rtt_ms, Timestamp at) {
+        s.srtt_us = rtt_ms * 1000;
+        return monitor.update(s, at).queue_rise;
+    };
+    EXPECT_EQ(rise(80, Timestamp{1s}), 0ms);  // a jittery path: always above its least ever
+    EXPECT_EQ(rise(70, Timestamp{2s}), 0ms);
+    EXPECT_EQ(rise(110, Timestamp{3s}), 40ms);
+    EXPECT_EQ(rise(110, Timestamp{12s}), 40ms);     // 70 ms is still within ten seconds
+    EXPECT_EQ(rise(110, Timestamp{12500ms}), 0ms);  // no longer: the queue stands
+}
+
+TEST(PathMonitor, SaysWhatAPathCarriedOverTheLastSecond) {
+    PathMonitor monitor;
+    PathStats s = sample(10'000'000, true);
+    monitor.update(s, Timestamp{1s});
+    for (int i = 1; i <= 15; ++i) {
+        // 4 Mbit/s for a second, then nothing acknowledged for half a second.
+        if (i <= 10) s.bytes_delivered += 50'000;
+        const PathSignal signal = monitor.update(s, Timestamp{1s} + i * 100ms);
+        if (i == 10) EXPECT_EQ(signal.carried, 4'000'000u);
+        if (i == 15) EXPECT_EQ(signal.carried, 2'000'000u);  // over the last second
+    }
+}
+
 TEST(PathMonitor, SaysNothingOfThePathWhileTheTransportIsStillFindingIt) {
     PathMonitor monitor;
     PathStats s = sample(1'000'000, false);
@@ -235,6 +275,13 @@ TEST_F(RateControllerTest, ClimbsBackQuicklyToBelowTheCeiling) {
     EXPECT_EQ(clear(1s), 1'836'000u);  // then +8%
 }
 
+TEST_F(RateControllerTest, ProbesOnFromJustShortOfWhereACutLeftIt) {
+    clear(0s);
+    // 85% of the ceiling, rounded down: a hair short of it, which is no raise.
+    EXPECT_EQ(overuse(0s, 1'000'005), 850'004u);
+    EXPECT_EQ(clear(2s), 918'004u);  // +8%
+}
+
 TEST_F(RateControllerTest, ACutWithThePathNotKnownToBeFullLeavesNoCeiling) {
     clear(0s);
     EXPECT_EQ(overuse(0s), 1'700'000u);
@@ -253,4 +300,11 @@ TEST_F(RateControllerTest, RestartGoesBackToTheStartAndForgetsThePath) {
     EXPECT_EQ(rate.restart(), std::nullopt);
     clear(0s);
     EXPECT_EQ(clear(1s), 3'000'000u);  // ramping, no ceiling, no hold
+}
+
+TEST_F(RateControllerTest, ALimitComesDownAtOnceToWhereARaiseWouldStop) {
+    EXPECT_EQ(rate.limit(2'000'000), 1'800'000u);
+    EXPECT_EQ(rate.limit(2'000'000), std::nullopt);   // already below
+    EXPECT_EQ(rate.limit(10'000'000), std::nullopt);  // never up
+    EXPECT_EQ(rate.target(), 1'800'000u);
 }

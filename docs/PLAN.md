@@ -158,7 +158,7 @@ final place and shape: stage 0 is a walking skeleton, not a throwaway prototype.
 | **2. Sound** ✅ | audio, A/V sync; latency profiles put off to stages 5 and 6 | L4 ✅ |
 | **3. Standalone library** ✅ | MPEG-TS in and out, `rats://` URLs, a benchmark against librist and SRT, C API | — |
 | **4. Platforms** — in part | GPU paths and hardware codecs; Windows ✅ (its GPU path too) and macOS capture; netsim ✅ | — |
-| **5. Watch together** — next | one-to-many: forwarding tree, simulcast / SVC, SFU, SFrame E2EE, synchronized playout | L5 |
+| **5. Watch together** — in progress | one-to-many: a sender's budget, synchronised playout, forwarding tree, simulcast, cinema, SFU and E2EE | L5 |
 | **6. App** ✅ | Qt app MVP, one to one: invites, voice with AEC / NS, screen / window / app-audio share, camera; on Linux first, the other OSes as stage 4 reaches them | — |
 | **7. Conferences** | active speaker, last-N, grid, moderation, text chat | — |
 | **8. Beyond** | Android, cinema mode, HDR, polish | — |
@@ -668,21 +668,58 @@ a Windows machine at hand: the app and the tools run there now.
 
 ### Stage 5 — Watch together
 
-The main use case: one person streams, many watch. After the app (stage 6), whose first
-version is one to one, over the path straight between the two. Coarse until reached.
+The main use case: one person streams, many watch. The app (6) and the room (10) made it a
+mesh: whoever shares sends a copy to each viewer, over the path straight to them, and the one
+encoder follows the narrowest of those paths. That holds for a few on a wide uplink. *Done
+when* a share reaches every viewer of a room on an uplink that carries one copy or two, each
+viewer at the quality its own path allows, all of them seeing the same picture at the same
+moment, and the sharer's voice heard as quickly as anyone's.
 
-- Capacity-aware forwarding tree: viewers with spare uplink re-forward without transcoding.
-  librats: **needs** L5.
-- One uplink, many viewers: each viewer's rate controller sees its own path, not the uplink
-  they all share, so a sharer to several fills the network's queue below its cap and its own
-  voice waits behind its pictures (10.5: 186 ms against 81–86 on `cap-6`, four in a room).
-  A sender's budget across its paths, or the tree taking the copies off it.
-- Simulcast / SVC layer selection per receiver.
-- SFU mode and the `server` node for big rooms and hard NATs. librats: **better with** L8, L11.
-- SFrame E2EE, room key from the owner over Noise (MLS later).
-- Synchronized playout: clock sync, a common playout delay. librats: L10 optional.
-- The `cinema` latency profile (from 2.3): seconds of buffer for retransmission to repair
-  anything, held as encoded frames (decoded 1080p is ~3 MB a picture), lip sync over it.
+- **5.1 A sender's budget across its paths**: the copies to all viewers fit the uplink they
+  share. Each viewer's rate controller sees its own path, not the uplink, so a sharer to
+  several fills the network's queue below its cap and its own voice waits behind its pictures
+  (10.5: 186 ms against 81–86 on `cap-6`, four in a room). Found first: what fills it — the
+  copies' steady rate, or bursts (a keyframe to each viewer at once). Then rate control over
+  the sum: a queue that grows on every path at once is the uplink's, and the encoder comes down
+  for it. *Done when* on `--room 4 --share cap-6` the sharer's voice is heard as quickly as the
+  others' and the share plays without stalls, at the most the uplink carries.
+  Done so far: what fills it is the copies' steady rate — each path, looking as wide as the
+  uplink, lets the one encoder climb to 3 Mbit/s for two viewers (6 of 6), and the third
+  viewer's copy and keyframe overflow it; `SharedUplink` (`session/shared_uplink.h`) finds the
+  uplink full when every path with copies says so within a second — expiries, or the round trip
+  25 ms over its least of ten seconds in two samples running, before the overflow (a path
+  younger than a second need not; a sample 300 ms late is a stalled node, and none count for a
+  second) — takes what they carried over the last second (`PathSignal::carried`) for what it
+  carries, the most found kept a minute and found again only while the copies carry more than
+  their 85% of it, and keeps every rate-controlled stream to its part, in proportion to its
+  most: at once when found (`RateController::limit()`), as a ceiling to every raise after, and
+  before a joining viewer's keyframe. Found on the way and fixed: rate control stuck for good
+  a hair short of where a cut at a ceiling left it (85%, rounded down), half of all such cuts
+  — `cap-drop` never climbed back after its narrow five seconds. `docs/bench.md`, "A sender's
+  budget (5.1)": a minute of `cap-6`, four in a room, the copies held at 1.57 Mbit/s each from
+  the 10th second (6.2 found), 10 stalls against 81 with the fault fixed and no budget. Left:
+  the one overflow before the uplink is known leaves the sharer's voice at 140–180 ms for good
+  with a tone — its jitter buffer shrinks only in silence; next, playing out a buffer's excess
+  without waiting for it.
+- **5.2 Synchronised playout**: every viewer sees a frame at the same moment, so a room reacts
+  to a film together. Each viewer's clock against the sender's over librats' round trips (L10
+  not needed), its latency told to the sender, and a common playout delay — the slowest
+  viewer's and a margin — told back; `PlayoutClock` plays to it. *Done when* viewers on
+  different paths (`local`, `rtt-100`, `loss-2` in one room) show the same frame within a few
+  tens of milliseconds.
+- **5.3 Forwarding tree**: viewers with spare uplink re-forward without transcoding, taking the
+  copies off the sender's. librats: **needs** L5 (absolute deadlines: a frame's time left goes
+  with it, so latency does not add up per hop). Who gets the stream through whom, from each
+  member's uplink (5.1's budget) and paths; a relay that leaves hands its viewers on. *Done
+  when* a room of four on a sender's uplink that carries one copy plays at every viewer.
+- **5.4 Simulcast**: one weak path no longer pulls everyone down — the share in two layers (the
+  full one and ~720p), each viewer receiving the one its path carries. SVC later where an
+  encoder has it. Costs a second encode: on the software codecs, measured first.
+- **5.5 The `cinema` latency profile** (from 2.3): seconds of buffer for retransmission to
+  repair anything, held as encoded frames (decoded 1080p is ~3 MB a picture), lip sync over it.
+- **5.6 SFU and E2EE**: the `server` node for big rooms and hard NATs (librats: **better with**
+  L8, L11); SFrame E2EE once a relay that is not a member carries the frames, room key from the
+  owner over Noise (MLS later). Viewers relaying in 5.3 are members, entitled to the share.
 
 ### Stage 6 — App ✅
 

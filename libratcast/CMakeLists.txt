@@ -13,6 +13,7 @@ add_library(ratcast
     src/session/media_session.cpp
     src/session/presence.cpp
     src/session/rate_controller.cpp
+    src/session/shared_uplink.cpp
     src/stream/delivery_buffer.cpp
     src/stream/delivery_thread.cpp
     src/stream/fastest_transit.cpp

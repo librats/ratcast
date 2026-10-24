@@ -4,6 +4,7 @@
 #include <atomic>
 #include <mutex>
 #include <type_traits>
+#include <unordered_set>
 #include <utility>
 #include <variant>
 #include <vector>
@@ -164,8 +165,11 @@ struct MediaSession::OutgoingStream {
         return bitrate;
     }
 
-    /// Rate control hears a sample of `subscriber`'s path.
-    std::optional<uint32_t> follow(Subscriber& subscriber, const PathSignal& path, Timestamp now) {
+    /// Rate control hears a sample of `subscriber`'s path, of which a copy may
+    /// take at most `uplink` where the uplink they all go through is known.
+    std::optional<uint32_t> follow(Subscriber& subscriber, PathSignal path,
+                                   std::optional<uint64_t> uplink, Timestamp now) {
+        if (uplink) path.capacity = std::min(path.capacity.value_or(*uplink), *uplink);
         subscriber.capacity = path.capacity;
         const uint32_t before = rate->target();
         if (std::exchange(subscriber.backpressured, false) || rate->overused(path)) {
@@ -403,6 +407,34 @@ bool MediaSession::ask_keyframe(OutgoingStream& stream, Timestamp now) {
     return true;
 }
 
+std::optional<uint64_t> MediaSession::uplink_capacity() const {
+    std::lock_guard lock(uplink_mutex_);
+    return uplink_.capacity();
+}
+
+MediaSession::Copies MediaSession::copies() const {
+    std::vector<std::shared_ptr<OutgoingStream>> streams;
+    {
+        std::shared_lock lock(mutex_);
+        for (const auto& [id, stream] : outgoing_) streams.push_back(stream);
+    }
+    Copies copies;
+    std::unordered_set<PeerId, PeerId::Hash> paths;
+    for (const auto& stream : streams) {
+        std::lock_guard lock(stream->mutex);
+        if (!stream->rate) continue;
+        copies.weight += double(stream->rate->limits().max) * double(stream->subscribers.size());
+        for (const auto& subscriber : stream->subscribers) paths.insert(subscriber.peer->id);
+    }
+    copies.paths = paths.size();
+    return copies;
+}
+
+std::optional<double> MediaSession::Copies::per_most(std::optional<uint64_t> uplink) const {
+    if (!uplink || weight <= 0) return std::nullopt;
+    return double(*uplink) * SharedUplink::kCopies / weight;
+}
+
 std::optional<OutgoingStreamStats> MediaSession::outgoing_stats(StreamId stream_id) const {
     const std::shared_ptr<OutgoingStream> stream = find_outgoing(stream_id);
     if (!stream) return std::nullopt;
@@ -568,6 +600,10 @@ void MediaSession::on_peer_disconnected(const PeerId& peer) {
         }
         for (const auto& [id, stream] : outgoing_) streams.emplace_back(id, stream);
     }
+    {
+        std::lock_guard lock(uplink_mutex_);
+        uplink_.forget(peer);
+    }
     for (const auto& [id, stream] : streams) {
         std::optional<uint32_t> bitrate;
         {
@@ -610,13 +646,29 @@ void MediaSession::on_peer_path(const PeerId& peer, const PathStats& sample) {
     // The rate-controlled streams the peer watches share its path, each in
     // proportion to the most it may take.
     double most = 0;
+    bool overused = false;
     std::erase_if(streams, [&](const auto& entry) {
         std::lock_guard lock(entry.second->mutex);
         OutgoingStream& s = *entry.second;
-        if (!s.rate || !s.subscriber_of(peer)) return true;
+        const OutgoingStream::Subscriber* subscriber = s.rate ? s.subscriber_of(peer) : nullptr;
+        if (!subscriber) return true;
         most += s.rate->limits().max;
+        overused = overused || subscriber->backpressured || s.rate->overused(signal);
         return false;
     });
+    if (streams.empty()) return;
+
+    // And every path that carries copies goes through this node's uplink.
+    const Copies all = copies();
+    std::optional<uint64_t> uplink;
+    bool found = false;
+    {
+        std::lock_guard lock(uplink_mutex_);
+        found = uplink_.update(peer, signal, overused, all.paths, now);
+        uplink = uplink_.capacity();
+    }
+    const std::optional<double> per_most = all.per_most(uplink);
+    if (found && per_most) limit_to_uplink(*per_most);
     for (const auto& [id, stream] : streams) {
         std::optional<uint32_t> bitrate;
         {
@@ -625,7 +677,10 @@ void MediaSession::on_peer_path(const PeerId& peer, const PathStats& sample) {
             // Gone since, or unsubscribed: the others' parts stay as they were.
             OutgoingStream::Subscriber* subscriber = s.rate ? s.subscriber_of(peer) : nullptr;
             if (!subscriber) continue;
-            bitrate = s.follow(*subscriber, share_of(signal, s.rate->limits().max / most), now);
+            const double max = s.rate->limits().max;
+            std::optional<uint64_t> part;
+            if (per_most) part = static_cast<uint64_t>(*per_most * max);
+            bitrate = s.follow(*subscriber, share_of(signal, max / most), part, now);
         }
         if (bitrate) notify(handlers_.bitrate_changed, id, *bitrate);
     }
@@ -781,9 +836,39 @@ void MediaSession::on_subscribe(const PeerId& peer, StreamId stream_id) {
         });
         if (known) return;
         stream->subscribers.emplace_back(std::move(state));
-        ask = !stream->stands_alone() && ask_keyframe(*stream, clock_.now());
+    }
+    // One more copy through an uplink known to be full: down to fit before
+    // its keyframe is made, which would otherwise be the one to overfill it.
+    if (stream->rate) {
+        if (const std::optional<double> per_most = copies().per_most(uplink_capacity()))
+            limit_to_uplink(*per_most);
+    }
+    {
+        std::lock_guard lock(stream->mutex);
+        ask = !stream->stands_alone() && stream->subscriber_of(peer) &&
+              ask_keyframe(*stream, clock_.now());
     }
     if (ask) notify(handlers_.keyframe_needed, stream_id);
+}
+
+void MediaSession::limit_to_uplink(double per_most) {
+    std::vector<std::pair<StreamId, std::shared_ptr<OutgoingStream>>> streams;
+    {
+        std::shared_lock lock(mutex_);
+        for (const auto& [id, stream] : outgoing_) streams.emplace_back(id, stream);
+    }
+    for (const auto& [id, stream] : streams) {
+        std::optional<uint32_t> bitrate;
+        {
+            std::lock_guard lock(stream->mutex);
+            OutgoingStream& s = *stream;
+            if (!s.rate || s.subscribers.empty()) continue;
+            const uint32_t before = s.rate->target();
+            bitrate = s.count(s.rate->limit(static_cast<uint64_t>(per_most * s.rate->limits().max)),
+                              before);
+        }
+        if (bitrate) notify(handlers_.bitrate_changed, id, *bitrate);
+    }
 }
 
 void MediaSession::on_unsubscribe(const PeerId& peer, StreamId stream_id) {

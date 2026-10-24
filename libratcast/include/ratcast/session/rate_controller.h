@@ -55,7 +55,9 @@
  */
 
 #include <cstdint>
+#include <deque>
 #include <optional>
+#include <utility>
 
 #include "ratcast/core/time.h"
 #include "ratcast/export.h"
@@ -89,10 +91,19 @@ struct PathSignal {
     bool starting = false;
     /// Live messages to the peer expired since the previous sample.
     bool expired = false;
+    /// The time since the previous sample, zero for the first. Samples come
+    /// every 100 ms or so; one much later than that is of a node that was not
+    /// running in between, whose frames expired waiting for it, not for a
+    /// path.
+    Duration since{};
     /// How long a new message waits before it is sent: the lesser of the last
     /// two samples, so a keyframe draining is not taken for a growing queue.
     Duration queue_delay{};
     Duration rtt{};
+    /// How far the smoothed round trip is above the least it was over the last
+    /// ten seconds: a queue building beyond the sender, where the round trip
+    /// itself says nothing (a jittery path's stays well above its least ever).
+    Duration queue_rise{};
     /// What the path carries for media — the congestion controller's estimate
     /// less forward error correction — when the path is full: busy in this
     /// sample and the last, with an estimate that has stopped growing. nullopt
@@ -103,6 +114,12 @@ struct PathSignal {
     /// the last few seconds) still remembers it wider. nullopt otherwise: an
     /// idle path delivers what it is given.
     std::optional<uint64_t> delivered;
+    /// What the path delivered for media over the last second or so, busy or
+    /// not: its part of an uplink it shares with others (shared_uplink.h). A
+    /// second, so that a moment's stall of the acknowledgements — a full
+    /// queue's losses — does not read as an uplink that carries little.
+    /// nullopt for the first sample, which has nothing to count from.
+    std::optional<uint64_t> carried;
 };
 
 /// `path` as one of the streams sharing it sees it: `share` (0–1] of what it
@@ -119,6 +136,12 @@ private:
     std::optional<PathStats> last_;
     Timestamp last_at_{};
     Duration last_queue_delay_{};
+    /// Media bytes delivered (repairs left out) since the connection opened,
+    /// as of each sample of the last second, and the one before them.
+    std::deque<std::pair<Timestamp, uint64_t>> media_;
+    /// The smoothed round trips of the last ten seconds that no later one is
+    /// below: the least of them first.
+    std::deque<std::pair<Timestamp, Duration>> least_rtts_;
 };
 
 class RATCAST_EXPORT RateController {
@@ -140,6 +163,12 @@ public:
     /// A path reported no overuse. `capacity` is the least any path of the
     /// stream is known to carry. Returns the new target if it changed.
     std::optional<uint32_t> on_clear(Timestamp now, std::optional<uint64_t> capacity) noexcept;
+
+    /// Each copy of the stream is known to have at most `capacity` (its part
+    /// of an uplink found full, or of one that takes another copy): the target
+    /// comes down at once to where a raise would stop. Returns the new target
+    /// if it changed.
+    std::optional<uint32_t> limit(uint64_t capacity) noexcept;
 
     /// Back to `start`, forgetting the paths: nobody is watching any more.
     /// Returns the new target if it changed.

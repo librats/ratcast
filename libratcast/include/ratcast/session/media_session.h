@@ -73,6 +73,7 @@
 #include "ratcast/session/media_network.h"
 #include "ratcast/session/presence.h"
 #include "ratcast/session/rate_controller.h"
+#include "ratcast/session/shared_uplink.h"
 #include "ratcast/stream/frame.h"
 #include "ratcast/stream/frame_tracker.h"
 #include "ratcast/stream/stream_description.h"
@@ -167,6 +168,10 @@ public:
 
     std::optional<OutgoingStreamStats> outgoing_stats(StreamId stream) const;
 
+    /// What this node's uplink is known to carry for media, bits per second
+    /// (shared_uplink.h); nullopt until the copies are found to fill it.
+    std::optional<uint64_t> uplink_capacity() const;
+
     // ── Streams peers send ──────────────────────────────────────────────────
 
     /// Receive `peer`'s `stream`, from its next keyframe on. Fails with
@@ -249,6 +254,23 @@ private:
     void on_unsubscribe(const PeerId& peer, StreamId stream);
     void on_keyframe_request(const PeerId& peer, StreamId stream);
 
+    /// The copies of the rate-controlled streams: each weighed by the most
+    /// its stream may take, and the peers that receive any.
+    struct Copies {
+        double weight = 0;
+        size_t paths = 0;
+
+        /// A copy's part of an uplink that carries `uplink`, by bit per second
+        /// of its stream's most; nullopt while the uplink is not known.
+        std::optional<double> per_most(std::optional<uint64_t> uplink) const;
+    };
+    /// Takes the streams' locks: never call it holding one.
+    Copies copies() const;
+    /// Every rate-controlled stream watched comes down to its part of the
+    /// uplink, `per_most` by bit per second of its most. Takes the streams'
+    /// locks.
+    void limit_to_uplink(double per_most);
+
     void deliver_ready(const PeerId& peer, StreamId id, IncomingStream& stream, Timestamp now);
     bool ask_keyframe(OutgoingStream& stream, Timestamp now);
     FrameTracker::Config tracker_config(const StreamDescription& description) const;
@@ -271,6 +293,9 @@ private:
     std::optional<Presence> presence_;  ///< this node's, once said
     /// The next stream's slot in the tags of its frames; never 0, so no tag is.
     uint16_t next_slot_ = 1;
+
+    mutable std::mutex uplink_mutex_;  ///< guards `uplink_`; taken holding no other lock
+    SharedUplink uplink_;
 
     std::atomic<uint64_t> rejected_{0};
 };

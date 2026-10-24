@@ -1285,3 +1285,51 @@ Four, the first sharing — `bench/netem.py --room 4 --share --size 1280x720 --b
   at once (each one's tone fell behind its own clock), its voices breaking together; the row
   is a second run's.
 
+
+## A sender's budget (5.1)
+
+The copies of a share to several viewers all go through the sharer's uplink, and each viewer's
+rate control sees only its own path, which looks as wide as the uplink. `SharedUplink`
+(`libratcast/session/shared_uplink.h`) finds the uplink full when every path with copies says
+so at once — frames expired, or the round trip risen 25 ms over its least of ten seconds in two
+samples running, which comes before the overflow — takes what they carried together over the
+last second for what it carries, and keeps the copies to 85% of it, each stream's in proportion
+to its most, the most it was found to carry kept for a minute. A viewer joining an uplink known
+to be full brings the copies down before its keyframe. ratcast 74ac7c2 + 5.1, librats 529f037.
+
+On the way, a fault in rate control (1.1) found by it: after a cut at a known ceiling the target
+is 85% of it, rounded; rounded down, it sat a hair short of where "quickly back" aims, a step
+too small to take — and so no step at all, for good. Half of all cuts at a ceiling left the
+bitrate there for the rest of the run. Now from short of it by less than a raise is worth, it
+probes on (+8%).
+
+Four in a room, the first sharing — `bench/netem.py --room 4 --share --size 1280x720 --bitrate
+3000 --fps 30 --duration 60 cap-6`, one run each:
+
+| build | copies' bitrate after joining | voice latency p50 / p95 / p99 / max, ms | breaks | lost / concealed, ms | share: fps | latency p95, ms | stalls | sent, Mbit/s: first |
+|---|---|---:|---:|---:|---:|---:|---:|---:|
+| before | 1.07 → 1.47 Mbit/s, then held there (the fault above) | 102.4 / 196.6 / 204.8 / 310.4 | 18 | 141 / 2989 | 29 | 122.9 | 30 | 4.84 |
+| the fault fixed, no budget | 1.05 – 3.00 Mbit/s, overfilling the uplink every few seconds | 112.6 / 245.8 / 245.8 / 651.0 | 63 | 889 / 19518 | 28 | 155.6 | 81 | 4.83 |
+| 5.1 | 1.57 Mbit/s from the 10th second on (an uplink of 6.2 found) | 90.1 / 188.4 / 192.5 / 508.0 | 14 | 250 / 5144 | 29 | 100.4 | 10 | 4.93 |
+
+- **Rate control alone cannot share an uplink**: with the fault fixed and no budget, each copy
+  climbs until the uplink overflows — every path's frames expire at once, the voices with them
+  — is cut, and climbs again: 81 stalls in a minute and 19.5 s of voice made up.
+- **With the budget it is found once and kept**: the third viewer's joining overflows the uplink
+  (nothing knew it yet; the second copy's ramp met it the same moment), and from then on the
+  copies hold 1.57 Mbit/s each, 4.9 of 6 sent, the paths' round trips back at their least.
+- **What it does not yet do: the voice after that one overflow.** The sharer's voice, heard at
+  80–85 ms before, is heard at 140–180 ms after, for the rest of the run: its jitter buffer grew
+  for the overflow and shrinks only in silence, which a tone never has (every member's voice
+  here is a tone). A real voice pauses and comes back sooner; music, which does not, would
+  not. Next: playing out the excess of a buffer without waiting for silence.
+- **Nothing else is taken for a full uplink**: `local`, `rtt-100`, `loss-2`, `jitter` and
+  `cap-20`, four in a room for 15 s, keep the copies at their most (3 Mbit/s) — the rise of a
+  jittery path is over its own least of ten seconds, not over the least it ever had. The breaks
+  in those runs are the VM's: every voice breaks together, the viewers' too, whose uplinks
+  carry only their voice.
+- **The fault fixed, one to one** (`bench/netem.py --repeat 3 cap-6 cap-drop`, before → after):
+  `cap-6` 59 → 58 fps, stalls 2 (219 ms) → 5 (619 ms), cuts 2 → 3; `cap-drop` 55 → 52 fps,
+  stalls 7 (1405) → 9 (2245), cuts 4 → 6 — it probes past the ceiling, as it was meant to,
+  and on `cap-drop` that is the path's 20 Mbit/s found again after its narrow five seconds:
+  before, two runs of three stayed at 3.1–3.4 Mbit/s to the end; now they climb back to 7–8.
