@@ -1209,7 +1209,8 @@ and the list is in priority order:
 | | L20 | A send ceiling for a peer | needed | 5.1 | ✅ |
 | | L5 | Absolute deadlines when forwarding | needed | 5.3 | ✅ |
 | | L21 (a) | Two behind NATs meeting in the DHT: dialed again, the router's port | needed | 6, 10 (over the internet) | ✅ |
-| 1 | L21 (b, c) | The same: the shared socket's own external port; a node both reach to meet and relay through | needed | 6, 10 (over the internet) | |
+| | L21 (b) | The same: the shared socket's own external port, by STUN | needed | 6, 10 (over the internet) | ✅ |
+| 1 | L21 (c) | The same: a node both reach to meet and relay through | needed | 6, 10 (over the internet) | |
 | 2 | L2 (a) | A live flow's start: the initial window | needed | 1.2 (long paths) | put off; eased by (b) |
 | 3 | L15 | Fewer system calls per reactor turn | improves | 3.2 (CPU) | |
 | 4 | L16 | ProbeRTT that does not starve a live flow | improves | 3.2 (`reorder`) | |
@@ -1357,9 +1358,15 @@ peer both are connected to, which two strangers do not have.
   opened. The port announced is the router's for ours once UPnP or NAT-PMP maps it
   (`PortMappingService` tells `PortMapped`); ratcast's calls that use the DHT ask for one. This
   gets through NATs that keep the listen port as it is and map it alike for every peer.
-- (b) The external port of the shared datagram socket, by STUN from that socket, announced in
-  place of the listen port: a NAT that maps it to another port (most carrier-grade NATs) gets
-  dialed where it listens. `NatStatus` learns it only from peers already connected.
+- (b) ✅ The external port of the shared datagram socket, by STUN from that socket, announced
+  over IPv4 in place of the listen port (the router's port still first): a NAT that maps it to
+  another port (most carrier-grade NATs) is dialed where its mapping is. `NatStatus` learns it
+  only from peers already connected; the mux now hands a datagram of another protocol (no
+  fixed bit) to a handler and sends one, and `ReflexiveProbe` matches STUN's answer by its
+  transaction id. Asked again every 20 s, which also keeps the mapping alive while no peer
+  does; a second server asked once, and a NAT that maps the socket anew for it (symmetric) is
+  told in the log — only (c) reaches that one. The dev VM, behind two NATs: 87.110.133.5:7700,
+  the port kept by both.
 - (c) A node both reach (a public one, as the `server` of 5.6 will be): a rendezvous for
   `HolePunch` between peers that share no other, and `Relay` where no punch can work (a mapping
   per destination).
