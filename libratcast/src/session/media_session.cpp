@@ -78,30 +78,181 @@ struct MediaSession::PeerState {
     std::optional<InStep> in_step;
 };
 
+namespace {
+
+/// Where a frame goes among the live messages to a peer: sound first, then
+/// a keyframe, then the frames that depend on it, and data with them.
+LiveRank rank_of(MediaKind kind, const FrameInfo& info) noexcept {
+    switch (kind) {
+        case MediaKind::Audio: return LiveRank::Sound;
+        case MediaKind::Data: return LiveRank::Frame;
+        case MediaKind::Video: break;
+    }
+    return info.keyframe ? LiveRank::Keyframe : LiveRank::Frame;
+}
+
+}  // namespace
+
+struct MediaSession::Copy {
+    explicit Copy(std::shared_ptr<PeerState> state) : peer(std::move(state)) {}
+
+    std::shared_ptr<PeerState> peer;
+    /// Missed a frame (or has seen none yet): the frames before the next
+    /// keyframe are of no use to it.
+    bool awaiting_keyframe = true;
+    /// A frame was held back for it since its path's last sample: its queue
+    /// was full, which rate control takes for overuse.
+    bool backpressured = false;
+    /// What its path is known to carry, as of the last sample.
+    std::optional<uint64_t> capacity;
+
+    /// A keyframe of the stream is known to have reached it.
+    bool joined = false;
+    /// Its first keyframe, on its way: none before it is sent, nor once the
+    /// network has said what became of it.
+    std::optional<FrameNumber> joining;
+    /// What the last frame to it was given, and when.
+    Duration lifetime{};
+    Timestamp sent_at{};
+
+    /// At a stream's sender: the relay its frames go through, which passes
+    /// them on to it; none: they are sent to it.
+    std::shared_ptr<PeerState> relay;
+
+    /// Its frames are sent to it from here.
+    bool direct() const noexcept { return relay == nullptr; }
+
+    /// Its frames take another way: it starts over from the next keyframe, as
+    /// one that never had any, and what the old way said no longer counts.
+    void moved() noexcept {
+        awaiting_keyframe = true;
+        backpressured = false;
+        capacity.reset();
+        joined = false;
+        joining.reset();
+    }
+};
+
+struct MediaSession::Fanout {
+    std::vector<Copy> copies;
+    /// The last keyframe sent.
+    std::optional<FrameNumber> last_keyframe;
+    /// Counts, as the outgoing stats name them.
+    uint64_t messages = 0;
+    uint64_t bytes = 0;
+    uint64_t awaiting_keyframe = 0;
+    uint64_t held_back = 0;
+
+    Copy* find(const PeerId& peer) {
+        const auto it =
+            std::ranges::find_if(copies, [&](const Copy& copy) { return copy.peer->id == peer; });
+        return it == copies.end() ? nullptr : &*it;
+    }
+
+    /// How long `copy` is given for a frame sent now that has `left` (its
+    /// stream's lifetime at its sender, what is left of it at a relay). Its
+    /// first keyframe gets kJoinRoundTrips round trips more; the frames after
+    /// it get what the one before them got, less half the time since, so each
+    /// is still due after the one before it.
+    static Duration lifetime_for(Copy& copy, const FrameInfo& info, Duration left,
+                                 bool stands_alone, Timestamp now) {
+        if (stands_alone) return left;
+        if (!copy.joined && info.keyframe && copy.awaiting_keyframe) {
+            copy.joining = info.number;
+            copy.lifetime = left + kJoinRoundTrips * copy.peer->rtt();
+        } else {
+            copy.lifetime = std::max(left, copy.lifetime - (now - copy.sent_at) / 2);
+        }
+        copy.sent_at = now;
+        return copy.lifetime;
+    }
+
+    /// Send a frame that has `left` to every copy sent to from here that can
+    /// use it, the message made by `encode()` at the first that can, once for
+    /// all. Returns whether a copy waits for a keyframe; fails as `encode()`
+    /// does.
+    template <typename Encode>
+    Result<bool> send(MediaNetwork& network, const FrameInfo& info, MediaKind kind, Duration left,
+                      uint64_t tag, Timestamp now, Encode&& encode) {
+        const bool stands_alone = kind != MediaKind::Video;
+        if (info.keyframe) last_keyframe = std::max(last_keyframe.value_or(0), info.number);
+        std::optional<Buffer> message;
+        bool want_keyframe = false;
+        for (Copy& copy : copies) {
+            if (!copy.direct()) continue;
+            const bool useful = info.keyframe || !copy.awaiting_keyframe;
+            if (copy.peer->blocked.load(std::memory_order_acquire)) {
+                // Everything after this frame may reference it, so the copy can
+                // only pick up again at a keyframe. Not asked for yet: it could
+                // not be sent either, and keyframes are the last thing a full
+                // queue needs. The first frame after it drains asks.
+                if (useful) {
+                    copy.awaiting_keyframe = true;
+                    copy.backpressured = true;
+                    held_back += 1;
+                } else {
+                    awaiting_keyframe += 1;
+                }
+                continue;
+            }
+            if (!useful) {
+                awaiting_keyframe += 1;
+                want_keyframe = true;
+                continue;
+            }
+
+            if (!message) {
+                Result<Buffer> encoded = encode();
+                if (!encoded) return fail(encoded.error());
+                message = std::move(*encoded);
+            }
+            const Duration lifetime = lifetime_for(copy, info, left, stands_alone, now);
+            copy.awaiting_keyframe = false;
+            messages += 1;
+            bytes += message->size();
+            if (!network.send_live(copy.peer->id, *message, lifetime, tag, rank_of(kind, info))) {
+                copy.peer->blocked.store(true, std::memory_order_release);
+                copy.backpressured = true;
+            }
+        }
+        return want_keyframe;
+    }
+
+    /// A frame that can no longer arrive in time is not sent: the copies that
+    /// could have used it wait for a keyframe. Returns whether any does.
+    bool miss(const FrameInfo& info, bool stands_alone) {
+        if (stands_alone) return false;
+        bool missed = false;
+        for (Copy& copy : copies) {
+            if (!copy.direct() || (!info.keyframe && copy.awaiting_keyframe)) continue;
+            copy.awaiting_keyframe = true;
+            held_back += 1;
+            missed = true;
+        }
+        return missed;
+    }
+
+    /// The network settled frame `number` to `copy`. Returns whether that
+    /// leaves it needing a keyframe.
+    bool settle(Copy& copy, FrameNumber number, bool delivered) {
+        if (copy.joining && number == *copy.joining) {
+            copy.joining.reset();
+            if (delivered) {
+                copy.joined = true;
+                return false;
+            }
+            copy.awaiting_keyframe = true;  // what follows it is of no use
+            return true;
+        }
+        // What follows a frame given up on cannot be decoded, up to a keyframe
+        // sent after it. Behind a joining keyframe still on its way too: asked
+        // for now, the next one goes right behind it, as late as it may be.
+        return !delivered && (copy.joined || copy.joining.has_value()) &&
+               !(last_keyframe && *last_keyframe > number);
+    }
+};
+
 struct MediaSession::OutgoingStream {
-    struct Subscriber {
-        explicit Subscriber(std::shared_ptr<PeerState> state) : peer(std::move(state)) {}
-
-        std::shared_ptr<PeerState> peer;
-        /// Missed a frame (or has seen none yet): the frames before the next
-        /// keyframe are of no use to it.
-        bool awaiting_keyframe = true;
-        /// A frame was held back for it since its path's last sample: its
-        /// queue was full, which rate control takes for overuse.
-        bool backpressured = false;
-        /// What its path is known to carry, as of the last sample.
-        std::optional<uint64_t> capacity;
-
-        /// A keyframe of the stream is known to have reached it.
-        bool joined = false;
-        /// Its first keyframe, on its way: none before it is sent, nor once the
-        /// network has said what became of it.
-        std::optional<FrameNumber> joining;
-        /// What the last frame to it was given, and when.
-        Duration lifetime{};
-        Timestamp sent_at{};
-    };
-
     OutgoingStream(StreamDescription d, std::optional<BitrateLimits> bitrate, uint16_t tag_slot)
         : slot(tag_slot), description(std::move(d)) {
         if (bitrate) rate.emplace(*bitrate, description.lifetime);
@@ -112,59 +263,12 @@ struct MediaSession::OutgoingStream {
     /// time than the others.
     bool stands_alone() const noexcept { return description.kind() != MediaKind::Video; }
 
-    /// Where a frame goes among the live messages to a peer: sound first, then
-    /// a keyframe, then the frames that depend on it, and data with them.
-    LiveRank rank_of(const FrameInfo& info) const noexcept {
-        switch (description.kind()) {
-            case MediaKind::Audio: return LiveRank::Sound;
-            case MediaKind::Data: return LiveRank::Frame;
-            case MediaKind::Video: break;
-        }
-        return info.keyframe ? LiveRank::Keyframe : LiveRank::Frame;
-    }
-
-    /// How long `subscriber` is given for a frame sent now. Its first keyframe
-    /// gets kJoinRoundTrips round trips more than the stream's lifetime; the
-    /// frames after it get what the one before them got, less half the time
-    /// since, so each is still due after the one before it.
-    Duration lifetime_for(Subscriber& subscriber, const FrameInfo& info, Timestamp now) {
-        if (stands_alone()) return description.lifetime;
-        if (!subscriber.joined && info.keyframe && subscriber.awaiting_keyframe) {
-            subscriber.joining = info.number;
-            subscriber.lifetime = description.lifetime + kJoinRoundTrips * subscriber.peer->rtt();
-        } else {
-            subscriber.lifetime = std::max(description.lifetime,
-                                           subscriber.lifetime - (now - subscriber.sent_at) / 2);
-        }
-        subscriber.sent_at = now;
-        return subscriber.lifetime;
-    }
-
-    /// The network settled frame `number` to `subscriber`. Returns whether that
-    /// leaves it needing a keyframe.
-    bool settle(Subscriber& subscriber, FrameNumber number, bool delivered) {
-        if (subscriber.joining && number == *subscriber.joining) {
-            subscriber.joining.reset();
-            if (delivered) {
-                subscriber.joined = true;
-                return false;
-            }
-            subscriber.awaiting_keyframe = true;  // what follows it is of no use
-            return true;
-        }
-        // What follows a frame given up on cannot be decoded, up to a keyframe
-        // sent after it. Behind a joining keyframe still on its way too: asked
-        // for now, the next one goes right behind it, as late as it may be.
-        return !delivered && (subscriber.joined || subscriber.joining.has_value()) &&
-               !(last_keyframe && *last_keyframe > number);
-    }
-
     const uint16_t slot;  ///< in the tags of its frames
     std::mutex mutex;     ///< guards everything below
     StreamDescription description;
-    std::vector<Subscriber> subscribers;
+    /// Its subscribers, those its frames go to through a relay among them.
+    Fanout fanout;
     std::optional<FrameNumber> last_number;
-    std::optional<FrameNumber> last_keyframe;
     std::optional<Timestamp> last_keyframe_sent;
     std::optional<Timestamp> last_keyframe_asked;
     /// A keyframe was needed within min_keyframe_interval of the last one; tick()
@@ -173,10 +277,24 @@ struct MediaSession::OutgoingStream {
     std::optional<RateController> rate;  ///< for a rate-controlled stream
     OutgoingStreamStats stats;
 
-    Subscriber* subscriber_of(const PeerId& peer) {
-        const auto it = std::ranges::find_if(
-            subscribers, [&](const Subscriber& subscriber) { return subscriber.peer->id == peer; });
-        return it == subscribers.end() ? nullptr : &*it;
+    Copy* subscriber_of(const PeerId& peer) { return fanout.find(peer); }
+
+    /// The subscriber its frames go to straight from here, as `peer`.
+    Copy* direct_subscriber_of(const PeerId& peer) {
+        Copy* copy = fanout.find(peer);
+        return copy && copy->direct() ? copy : nullptr;
+    }
+
+    /// The most bitrate it may take, as a relay is told; 0 without rate control.
+    uint32_t most() const noexcept { return rate ? rate->limits().max : 0; }
+
+    /// What `relay` is to pass on, all of it.
+    Buffer forward_message(const PeerState& relay) const {
+        wire::Forward forward{description.id, most(), {}};
+        for (const Copy& copy : fanout.copies) {
+            if (copy.relay.get() == &relay) forward.viewers.push_back(copy.peer->id);
+        }
+        return wire::encode_control(forward);
     }
 
     /// Counts a change rate control made and passes it on.
@@ -185,9 +303,10 @@ struct MediaSession::OutgoingStream {
         return bitrate;
     }
 
-    /// Rate control hears a sample of `subscriber`'s path, of which a copy may
-    /// take at most `uplink` where the uplink they all go through is known.
-    std::optional<uint32_t> follow(Subscriber& subscriber, PathSignal path,
+    /// Rate control hears a sample of `subscriber`'s path — from here, or as
+    /// its relay told — of which a copy may take at most `uplink` where the
+    /// uplink they all go through is known.
+    std::optional<uint32_t> follow(Copy& subscriber, PathSignal path,
                                    std::optional<uint64_t> uplink, Timestamp now) {
         if (uplink) path.capacity = std::min(path.capacity.value_or(*uplink), *uplink);
         subscriber.capacity = path.capacity;
@@ -197,7 +316,7 @@ struct MediaSession::OutgoingStream {
         }
         // Raised no further than the narrowest path is known to carry.
         std::optional<uint64_t> capacity;
-        for (const Subscriber& other : subscribers) {
+        for (const Copy& other : fanout.copies) {
             if (other.capacity)
                 capacity = std::min(capacity.value_or(*other.capacity), *other.capacity);
         }
@@ -207,7 +326,7 @@ struct MediaSession::OutgoingStream {
     /// Nobody watches any more: the next viewer starts afresh. Neither a cut
     /// nor a raise: no path asked for it.
     std::optional<uint32_t> restart_if_unwatched() {
-        if (!rate || !subscribers.empty()) return std::nullopt;
+        if (!rate || !fanout.copies.empty()) return std::nullopt;
         return rate->restart();
     }
 };
@@ -220,11 +339,21 @@ struct MediaSession::IncomingStream {
     /// a time and in order whichever thread made them ready. Always taken
     /// before `mutex`, never while holding it.
     std::mutex delivery;
+    /// Its slot in the tags of the frames this node passes on; 0 until it
+    /// first does. Set under the session's mutex_.
+    std::atomic<uint16_t> relay_slot{0};
     std::mutex mutex;  ///< guards everything below
     StreamDescription description;
     bool subscribed = false;
     FrameTracker tracker;
     uint64_t bytes = 0;
+
+    /// This node passes the stream on to the viewers its sender handed it
+    /// (Forward): the copies of `relayed`, none while it passes it on to nobody.
+    Fanout relayed;
+    /// The most the stream may take, as its sender said; 0: not rate-controlled.
+    uint32_t relayed_most = 0;
+    std::optional<Timestamp> keyframe_asked;  ///< of the sender, for those it passes it on to
 };
 
 size_t MediaSession::StreamKeyHash::operator()(const StreamKey& key) const noexcept {
@@ -283,6 +412,18 @@ std::shared_ptr<MediaSession::PeerState> MediaSession::find_peer(const PeerId& p
     return it == peers_.end() ? nullptr : it->second;
 }
 
+std::vector<std::pair<StreamId, std::shared_ptr<MediaSession::OutgoingStream>>>
+MediaSession::outgoing_streams() const {
+    std::shared_lock lock(mutex_);
+    return {outgoing_.begin(), outgoing_.end()};
+}
+
+uint16_t MediaSession::take_slot() {
+    const uint16_t slot = next_slot_;
+    if (++next_slot_ == 0) next_slot_ = 1;
+    return slot;
+}
+
 std::vector<PeerId> MediaSession::connected_peers() const {
     std::shared_lock lock(mutex_);
     std::vector<PeerId> peers;
@@ -313,8 +454,7 @@ Result<void> MediaSession::add_stream(const StreamDescription& description,
         std::unique_lock lock(mutex_);
         if (outgoing_.contains(description.id)) return fail(Errc::InvalidArgument);
         outgoing_.emplace(description.id,
-                          std::make_shared<OutgoingStream>(description, bitrate, next_slot_));
-        if (++next_slot_ == 0) next_slot_ = 1;
+                          std::make_shared<OutgoingStream>(description, bitrate, take_slot()));
         // Taken under the same lock as the insertion: a peer connecting
         // concurrently is either listed here or sees the stream itself.
         for (const auto& [id, state] : peers_) peers.push_back(id);
@@ -355,7 +495,9 @@ Result<void> MediaSession::send_frame(StreamId stream_id, FrameInfo info, Mutabl
     if (!stream) return fail(Errc::InvalidArgument);
     info.stream = stream_id;
     if (!wire::is_encodable(info)) return fail(Errc::InvalidArgument);
-    if (wire::frame_header_size(info) + payload.size() > network_.max_live_message()) {
+    // With room for a relay to pass it on.
+    if (wire::frame_header_size(info) + payload.size() + wire::kRelayedFrameOverhead >
+        network_.max_live_message()) {
         return fail(Errc::InvalidArgument);
     }
 
@@ -371,52 +513,16 @@ Result<void> MediaSession::send_frame(StreamId stream_id, FrameInfo info, Mutabl
         if (info.keyframe) {
             s.stats.keyframes += 1;
             s.last_keyframe_sent = now;
-            s.last_keyframe = info.number;
             s.keyframe_wanted = false;
         }
-
+        // What became of a frame that stands alone changes nothing.
+        const uint64_t tag = s.stands_alone() ? 0 : live_tag(s.slot, info.number);
         // Encoded on first use: once for every subscriber, never when none can use it.
-        std::optional<Buffer> message;
-
-        for (OutgoingStream::Subscriber& subscriber : s.subscribers) {
-            const bool useful = info.keyframe || !subscriber.awaiting_keyframe;
-            if (subscriber.peer->blocked.load(std::memory_order_acquire)) {
-                // Everything after this frame may reference it, so the subscriber
-                // can only pick up again at a keyframe. Not asked for yet: it could
-                // not be sent either, and keyframes are the last thing a full
-                // queue needs. The first frame after it drains asks.
-                if (useful) {
-                    subscriber.awaiting_keyframe = true;
-                    subscriber.backpressured = true;
-                    s.stats.backpressure_drops += 1;
-                } else {
-                    s.stats.awaiting_keyframe += 1;
-                }
-                continue;
-            }
-            if (!useful) {
-                s.stats.awaiting_keyframe += 1;
-                ask = ask_keyframe(s, now) || ask;
-                continue;
-            }
-
-            if (!message) {
-                Result<Buffer> encoded = wire::encode_frame(info, std::move(payload));
-                if (!encoded) return fail(encoded.error());
-                message = std::move(*encoded);
-            }
-            const Duration lifetime = s.lifetime_for(subscriber, info, now);
-            subscriber.awaiting_keyframe = false;
-            s.stats.messages += 1;
-            s.stats.bytes += message->size();
-            // What became of a frame that stands alone changes nothing.
-            const uint64_t tag = s.stands_alone() ? 0 : live_tag(s.slot, info.number);
-            if (!network_.send_live(subscriber.peer->id, *message, lifetime, tag,
-                                    s.rank_of(info))) {
-                subscriber.peer->blocked.store(true, std::memory_order_release);
-                subscriber.backpressured = true;
-            }
-        }
+        const Result<bool> want_keyframe =
+            s.fanout.send(network_, info, s.description.kind(), s.description.lifetime, tag, now,
+                          [&] { return wire::encode_frame(info, std::move(payload)); });
+        if (!want_keyframe) return fail(want_keyframe.error());
+        ask = *want_keyframe && ask_keyframe(s, now);
     }
     if (ask) notify(handlers_.keyframe_needed, stream_id);
     return {};
@@ -444,17 +550,29 @@ std::optional<uint64_t> MediaSession::uplink_capacity() const {
 
 MediaSession::Copies MediaSession::copies() const {
     std::vector<std::shared_ptr<OutgoingStream>> streams;
+    std::vector<std::shared_ptr<IncomingStream>> relayed;
     {
         std::shared_lock lock(mutex_);
         for (const auto& [id, stream] : outgoing_) streams.push_back(stream);
+        for (const auto& [key, stream] : incoming_) {
+            if (stream->relay_slot.load(std::memory_order_relaxed) != 0) relayed.push_back(stream);
+        }
     }
     Copies copies;
+    const auto add = [&](const Fanout& fanout, double most) {
+        for (const Copy& copy : fanout.copies) {
+            if (!copy.direct()) continue;  // through another's uplink
+            copies.weight += most;
+            copies.paths[copy.peer->id] += most;
+        }
+    };
     for (const auto& stream : streams) {
         std::lock_guard lock(stream->mutex);
-        if (!stream->rate) continue;
-        const double max = stream->rate->limits().max;
-        copies.weight += max * double(stream->subscribers.size());
-        for (const auto& subscriber : stream->subscribers) copies.paths[subscriber.peer->id] += max;
+        if (stream->rate) add(stream->fanout, stream->rate->limits().max);
+    }
+    for (const auto& stream : relayed) {
+        std::lock_guard lock(stream->mutex);
+        add(stream->relayed, stream->relayed_most);
     }
     return copies;
 }
@@ -469,7 +587,14 @@ std::optional<OutgoingStreamStats> MediaSession::outgoing_stats(StreamId stream_
     if (!stream) return std::nullopt;
     std::lock_guard lock(stream->mutex);
     OutgoingStreamStats stats = stream->stats;
-    stats.subscribers = stream->subscribers.size();
+    const Fanout& fanout = stream->fanout;
+    stats.subscribers = fanout.copies.size();
+    stats.relayed = static_cast<size_t>(
+        std::ranges::count_if(fanout.copies, [](const Copy& copy) { return !copy.direct(); }));
+    stats.messages = fanout.messages;
+    stats.bytes = fanout.bytes;
+    stats.awaiting_keyframe = fanout.awaiting_keyframe;
+    stats.backpressure_drops = fanout.held_back;
     if (stream->rate) stats.bitrate = stream->rate->target();
     return stats;
 }
@@ -497,6 +622,7 @@ void MediaSession::unsubscribe(const PeerId& peer, StreamId stream_id) {
         if (!stream->subscribed) return;
         stream->subscribed = false;
         stream->tracker.reset(clock_.now());  // let go of frames held for it
+        stream->relayed.copies.clear();       // its sender hands them on, hearing of it
     }
     network_.send_reliable(peer, wire::encode_control(wire::Unsubscribe{stream_id}));
 }
@@ -517,7 +643,16 @@ std::optional<IncomingStreamStats> MediaSession::incoming_stats(const PeerId& pe
     const std::shared_ptr<IncomingStream> stream = find_incoming(peer, stream_id);
     if (!stream) return std::nullopt;
     std::lock_guard lock(stream->mutex);
-    return IncomingStreamStats{stream->subscribed, stream->bytes, stream->tracker.stats()};
+    const Fanout& relayed = stream->relayed;
+    return IncomingStreamStats{
+        .subscribed = stream->subscribed,
+        .bytes = stream->bytes,
+        .frames = stream->tracker.stats(),
+        .relaying_to = relayed.copies.size(),
+        .relayed_messages = relayed.messages,
+        .relayed_bytes = relayed.bytes,
+        .relay_held_back = relayed.held_back,
+    };
 }
 
 std::vector<OfferedStream> MediaSession::offered() const {
@@ -565,6 +700,19 @@ void MediaSession::on_peer_rerouted(const PeerId& peer) {
         const bool subscribed = stream->subscribed;
         lock.unlock();
         if (subscribed) network_.send_reliable(peer, wire::encode_control(wire::Subscribe{id}));
+    }
+    // What the peer passes on of this node's streams.
+    if (const std::shared_ptr<PeerState> relay = find_peer(peer)) {
+        for (const auto& [id, stream] : outgoing_streams()) {
+            std::unique_lock lock(stream->mutex);
+            const auto& copies = stream->fanout.copies;
+            if (std::ranges::none_of(copies, [&](const Copy& c) { return c.relay == relay; })) {
+                continue;
+            }
+            const Buffer forward = stream->forward_message(*relay);
+            lock.unlock();
+            network_.send_reliable(peer, forward);
+        }
     }
     // What this node needs of the peer's share, and the delay the peer's
     // viewers play this node's at.
@@ -625,6 +773,7 @@ void MediaSession::on_presence(const PeerId& peer, Presence presence) {
 
 void MediaSession::on_peer_disconnected(const PeerId& peer) {
     std::vector<std::pair<StreamId, std::shared_ptr<OutgoingStream>>> streams;
+    std::vector<std::shared_ptr<IncomingStream>> relayed;
     std::vector<StreamId> withdrawn;
     {
         std::unique_lock lock(mutex_);
@@ -635,10 +784,18 @@ void MediaSession::on_peer_disconnected(const PeerId& peer) {
                 withdrawn.push_back(it->first.stream);
                 it = incoming_.erase(it);
             } else {
+                if (it->second->relay_slot.load(std::memory_order_relaxed) != 0)
+                    relayed.push_back(it->second);
                 ++it;
             }
         }
         for (const auto& [id, stream] : outgoing_) streams.emplace_back(id, stream);
+    }
+    // Nothing more to pass on to it; its sender hands it on, hearing of it.
+    for (const auto& stream : relayed) {
+        std::lock_guard lock(stream->mutex);
+        std::erase_if(stream->relayed.copies,
+                      [&](const Copy& copy) { return copy.peer->id == peer; });
     }
     {
         std::lock_guard lock(uplink_mutex_);
@@ -649,17 +806,7 @@ void MediaSession::on_peer_disconnected(const PeerId& peer) {
         std::lock_guard lock(viewers_mutex_);
         if (viewers_.need(peer, std::nullopt, clock_.now())) tell_delay(viewers_.viewers());
     }
-    for (const auto& [id, stream] : streams) {
-        std::optional<uint32_t> bitrate;
-        {
-            std::lock_guard lock(stream->mutex);
-            const size_t erased = std::erase_if(stream->subscribers, [&](const auto& subscriber) {
-                return subscriber.peer->id == peer;
-            });
-            if (erased > 0) bitrate = stream->restart_if_unwatched();
-        }
-        if (bitrate) notify(handlers_.bitrate_changed, id, *bitrate);
-    }
+    for (const auto& [id, stream] : streams) drop_subscriber(id, *stream, peer);
     for (StreamId stream : withdrawn) notify(handlers_.stream_withdrawn, peer, stream);
 }
 
@@ -674,12 +821,17 @@ void MediaSession::on_peer_path(const PeerId& peer, const PathStats& sample) {
     const Timestamp now = clock_.now();
     std::shared_ptr<PeerState> state;
     std::vector<std::pair<StreamId, std::shared_ptr<OutgoingStream>>> streams;
+    std::vector<std::pair<StreamKey, std::shared_ptr<IncomingStream>>> relayed;
     {
         std::shared_lock lock(mutex_);
         const auto it = peers_.find(peer);
         if (it == peers_.end()) return;
         state = it->second;
         for (const auto& [id, stream] : outgoing_) streams.emplace_back(id, stream);
+        for (const auto& [key, stream] : incoming_) {
+            if (stream->relay_slot.load(std::memory_order_relaxed) != 0)
+                relayed.emplace_back(key, stream);
+        }
     }
     state->rtt_us.store(sample.srtt_us, std::memory_order_relaxed);
     PathSignal signal;
@@ -688,20 +840,30 @@ void MediaSession::on_peer_path(const PeerId& peer, const PathStats& sample) {
         signal = state->path.update(sample, now);
     }
 
-    // The rate-controlled streams the peer watches share its path, each in
-    // proportion to the most it may take.
+    // The rate-controlled streams sent to the peer share its path, each in
+    // proportion to the most it may take: this node's own, and those it
+    // passes on.
     double most = 0;
     bool overused = false;
     std::erase_if(streams, [&](const auto& entry) {
         std::lock_guard lock(entry.second->mutex);
         OutgoingStream& s = *entry.second;
-        const OutgoingStream::Subscriber* subscriber = s.rate ? s.subscriber_of(peer) : nullptr;
+        const Copy* subscriber = s.rate ? s.direct_subscriber_of(peer) : nullptr;
         if (!subscriber) return true;
         most += s.rate->limits().max;
         overused = overused || subscriber->backpressured || s.rate->overused(signal);
         return false;
     });
-    if (streams.empty()) return;
+    std::erase_if(relayed, [&](const auto& entry) {
+        std::lock_guard lock(entry.second->mutex);
+        IncomingStream& s = *entry.second;
+        const Copy* copy = s.relayed_most > 0 ? s.relayed.find(peer) : nullptr;
+        if (!copy) return true;
+        most += s.relayed_most;
+        overused = overused || copy->backpressured || overuses(signal, s.description.lifetime);
+        return false;
+    });
+    if (streams.empty() && relayed.empty()) return;
 
     // And every path that carries copies goes through this node's uplink.
     const Copies all = copies();
@@ -721,7 +883,7 @@ void MediaSession::on_peer_path(const PeerId& peer, const PathStats& sample) {
             std::lock_guard lock(stream->mutex);
             OutgoingStream& s = *stream;
             // Gone since, or unsubscribed: the others' parts stay as they were.
-            OutgoingStream::Subscriber* subscriber = s.rate ? s.subscriber_of(peer) : nullptr;
+            Copy* subscriber = s.rate ? s.direct_subscriber_of(peer) : nullptr;
             if (!subscriber) continue;
             const double max = s.rate->limits().max;
             std::optional<uint64_t> part;
@@ -730,6 +892,24 @@ void MediaSession::on_peer_path(const PeerId& peer, const PathStats& sample) {
         }
         if (bitrate) notify(handlers_.bitrate_changed, id, *bitrate);
     }
+    // What this node passes on is rate-controlled where it is sent from: its
+    // sender hears what the path says, of the stream's part of it.
+    for (const auto& [key, stream] : relayed) {
+        wire::RelayedPath report{key.stream, peer, {}, false};
+        {
+            std::lock_guard lock(stream->mutex);
+            IncomingStream& s = *stream;
+            Copy* copy = s.relayed.find(peer);
+            if (!copy) continue;
+            report.signal = share_of(signal, s.relayed_most / most);
+            report.backpressured = std::exchange(copy->backpressured, false);
+            if (per_most) {
+                const auto part = static_cast<uint64_t>(*per_most * s.relayed_most);
+                report.signal.capacity = std::min(report.signal.capacity.value_or(part), part);
+            }
+        }
+        network_.send_reliable(key.peer, wire::encode_control(report));
+    }
 }
 
 void MediaSession::on_live_outcome(const PeerId& peer, uint64_t tag, bool delivered) {
@@ -737,36 +917,65 @@ void MediaSession::on_live_outcome(const PeerId& peer, uint64_t tag, bool delive
     const FrameNumber number = (tag & kNumberMask) - 1;
     StreamId id = 0;
     std::shared_ptr<OutgoingStream> stream;
+    std::shared_ptr<IncomingStream> relayed;
+    PeerId origin;
     {
         std::shared_lock lock(mutex_);
         const auto it = std::ranges::find_if(
             outgoing_, [&](const auto& entry) { return entry.second->slot == slot; });
-        if (it == outgoing_.end()) return;  // removed since
-        id = it->first;
-        stream = it->second;
+        if (it != outgoing_.end()) {
+            id = it->first;
+            stream = it->second;
+        } else {
+            const auto passed = std::ranges::find_if(incoming_, [&](const auto& entry) {
+                return entry.second->relay_slot.load(std::memory_order_relaxed) == slot;
+            });
+            if (passed == incoming_.end()) return;  // gone since
+            origin = passed->first.peer;
+            id = passed->first.stream;
+            relayed = passed->second;
+        }
+    }
+    if (relayed) {
+        std::lock_guard lock(relayed->mutex);
+        Copy* copy = relayed->relayed.find(peer);
+        if (copy && relayed->relayed.settle(*copy, number, delivered)) {
+            ask_keyframe_for_relayed(origin, id, *relayed, clock_.now());
+        }
+        return;
     }
 
     bool ask = false;
     {
         std::lock_guard lock(stream->mutex);
         OutgoingStream& s = *stream;
-        OutgoingStream::Subscriber* subscriber = s.subscriber_of(peer);
+        Copy* subscriber = s.subscriber_of(peer);
         if (!subscriber) return;
         // Sooner than the receiver could say: it would ask only once a frame
         // after it arrived, a round trip later.
-        ask = s.settle(*subscriber, number, delivered) && ask_keyframe(s, clock_.now());
+        ask = s.fanout.settle(*subscriber, number, delivered) && ask_keyframe(s, clock_.now());
     }
     if (ask) notify(handlers_.keyframe_needed, id);
 }
 
-void MediaSession::on_message(const PeerId& peer, std::span<const uint8_t> message) {
+void MediaSession::on_message(const PeerId& peer, std::span<const uint8_t> message,
+                              std::optional<Timestamp> deadline) {
     const Result<wire::MessageKind> kind = wire::peek_kind(message);
     if (!kind) {
         rejected_.fetch_add(1, std::memory_order_relaxed);
         return;
     }
     if (*kind == wire::MessageKind::Frame) {
-        on_frame(peer, message);
+        on_frame(peer, peer, message, deadline);
+        return;
+    }
+    if (*kind == wire::MessageKind::RelayedFrame) {
+        const Result<wire::RelayedFrame> relayed = wire::read_relayed_frame(message);
+        if (!relayed) {
+            rejected_.fetch_add(1, std::memory_order_relaxed);
+            return;
+        }
+        on_frame(relayed->origin, peer, relayed->frame, deadline);
         return;
     }
 
@@ -798,6 +1007,10 @@ void MediaSession::on_message(const PeerId& peer, std::span<const uint8_t> messa
                 on_playout_need(peer, m.latency);
             } else if constexpr (std::is_same_v<Message, wire::PlayoutDelay>) {
                 on_playout_delay(peer, m.delay);
+            } else if constexpr (std::is_same_v<Message, wire::Forward>) {
+                on_forward(peer, m);
+            } else if constexpr (std::is_same_v<Message, wire::RelayedPath>) {
+                on_relayed_path(peer, m);
             } else {
                 static_assert(std::is_same_v<Message, wire::KeyframeRequest>);
                 on_keyframe_request(peer, m.stream);
@@ -806,25 +1019,64 @@ void MediaSession::on_message(const PeerId& peer, std::span<const uint8_t> messa
         std::move(*control));
 }
 
-void MediaSession::on_frame(const PeerId& peer, std::span<const uint8_t> message) {
+void MediaSession::on_frame(const PeerId& origin, const PeerId& from,
+                            std::span<const uint8_t> message, std::optional<Timestamp> deadline) {
     const Result<wire::FrameHeader> header = wire::read_frame_header(message);
     if (!header) {
         rejected_.fetch_add(1, std::memory_order_relaxed);
         return;
     }
-    const std::shared_ptr<IncomingStream> stream = find_incoming(peer, header->info.stream);
+    const std::shared_ptr<IncomingStream> stream = find_incoming(origin, header->info.stream);
     if (!stream) return;  // withdrawn while the frame was in flight
 
+    // Without a deadline from the network (TCP), a frame passed on gets its
+    // lifetime again, from when it is reckoned to have left the node it came
+    // from.
+    const bool relays = stream->relay_slot.load(std::memory_order_relaxed) != 0;
+    const std::shared_ptr<PeerState> sender = relays && !deadline ? find_peer(from) : nullptr;
     const Timestamp now = clock_.now();
     std::lock_guard delivery(stream->delivery);
     {
         std::lock_guard lock(stream->mutex);
         if (!stream->subscribed) return;
         stream->bytes += message.size();
+        if (!stream->relayed.copies.empty()) {
+            Duration left = deadline ? *deadline - now : stream->description.lifetime;
+            if (sender) left -= sender->rtt() / 2;
+            pass_on(origin, *stream, header->info, message, left, now);
+        }
         const Buffer copy = Buffer::copy_of(message);
         stream->tracker.push(EncodedFrame{header->info, copy.slice(header->size)}, now);
     }
-    deliver_ready(peer, header->info.stream, *stream, now);
+    deliver_ready(origin, header->info.stream, *stream, now);
+}
+
+void MediaSession::pass_on(const PeerId& origin, IncomingStream& stream, const FrameInfo& info,
+                           std::span<const uint8_t> message, Duration left, Timestamp now) {
+    Fanout& relayed = stream.relayed;
+    const MediaKind kind = stream.description.kind();
+    bool want_keyframe = false;
+    if (left <= Duration::zero()) {
+        want_keyframe = relayed.miss(info, kind != MediaKind::Video);
+    } else {
+        const uint64_t tag =
+            kind == MediaKind::Video
+                ? live_tag(stream.relay_slot.load(std::memory_order_relaxed), info.number)
+                : 0;
+        want_keyframe = *relayed.send(
+            network_, info, kind, left, tag, now,
+            [&]() -> Result<Buffer> { return wire::encode_relayed_frame(origin, message); });
+    }
+    if (want_keyframe) ask_keyframe_for_relayed(origin, info.stream, stream, now);
+}
+
+void MediaSession::ask_keyframe_for_relayed(const PeerId& origin, StreamId id,
+                                            IncomingStream& stream, Timestamp now) {
+    if (stream.keyframe_asked && now - *stream.keyframe_asked < config_.min_keyframe_interval) {
+        return;  // the next frame that needs one asks again
+    }
+    stream.keyframe_asked = now;
+    network_.send_reliable(origin, wire::encode_control(wire::KeyframeRequest{id}));
 }
 
 // Hand on every frame the tracker has ready, then ask for a keyframe if the
@@ -887,11 +1139,8 @@ void MediaSession::on_subscribe(const PeerId& peer, StreamId stream_id) {
     bool ask = false;
     {
         std::lock_guard lock(stream->mutex);
-        const bool known = std::ranges::any_of(stream->subscribers, [&](const auto& subscriber) {
-            return subscriber.peer->id == peer;
-        });
-        if (known) return;
-        stream->subscribers.emplace_back(std::move(state));
+        if (stream->subscriber_of(peer)) return;
+        stream->fanout.copies.emplace_back(std::move(state));
     }
     // One more copy through an uplink known to be full: down to fit before
     // its keyframe is made, which would otherwise be the one to overfill it.
@@ -948,7 +1197,7 @@ void MediaSession::limit_to_uplink(double per_most) {
         {
             std::lock_guard lock(stream->mutex);
             OutgoingStream& s = *stream;
-            if (!s.rate || s.subscribers.empty()) continue;
+            if (!s.rate || s.fanout.copies.empty()) continue;
             const uint32_t before = s.rate->target();
             bitrate = s.count(s.rate->limit(static_cast<uint64_t>(per_most * s.rate->limits().max)),
                               before);
@@ -958,17 +1207,37 @@ void MediaSession::limit_to_uplink(double per_most) {
 }
 
 void MediaSession::on_unsubscribe(const PeerId& peer, StreamId stream_id) {
-    const std::shared_ptr<OutgoingStream> stream = find_outgoing(stream_id);
-    if (!stream) return;
+    if (const std::shared_ptr<OutgoingStream> stream = find_outgoing(stream_id))
+        drop_subscriber(stream_id, *stream, peer);
+}
+
+void MediaSession::drop_subscriber(StreamId id, OutgoingStream& stream, const PeerId& peer) {
+    std::optional<std::pair<PeerId, Buffer>> told;
+    bool ask = false;
     std::optional<uint32_t> bitrate;
     {
-        std::lock_guard lock(stream->mutex);
-        const size_t erased = std::erase_if(stream->subscribers, [&](const auto& subscriber) {
-            return subscriber.peer->id == peer;
-        });
-        if (erased > 0) bitrate = stream->restart_if_unwatched();
+        std::lock_guard lock(stream.mutex);
+        OutgoingStream& s = stream;
+        const Copy* copy = s.subscriber_of(peer);
+        if (!copy) return;
+        const std::shared_ptr<PeerState> gone = copy->peer;
+        const std::shared_ptr<PeerState> relay = copy->relay;
+        std::erase_if(s.fanout.copies, [&](const Copy& c) { return c.peer == gone; });
+        // Those it passed the stream on to get it from here again.
+        bool orphaned = false;
+        for (Copy& c : s.fanout.copies) {
+            if (c.relay != gone) continue;
+            c.relay.reset();
+            c.moved();
+            orphaned = true;
+        }
+        ask = orphaned && !s.stands_alone() && ask_keyframe(s, clock_.now());
+        if (relay) told.emplace(relay->id, s.forward_message(*relay));
+        bitrate = s.restart_if_unwatched();
     }
-    if (bitrate) notify(handlers_.bitrate_changed, stream_id, *bitrate);
+    if (told) network_.send_reliable(told->first, told->second);
+    if (ask) notify(handlers_.keyframe_needed, id);
+    if (bitrate) notify(handlers_.bitrate_changed, id, *bitrate);
 }
 
 void MediaSession::on_keyframe_request(const PeerId& peer, StreamId stream_id) {
@@ -980,7 +1249,9 @@ void MediaSession::on_keyframe_request(const PeerId& peer, StreamId stream_id) {
     {
         std::lock_guard lock(stream->mutex);
         OutgoingStream& s = *stream;
-        OutgoingStream::Subscriber* subscriber = s.subscriber_of(peer);
+        // From a subscriber, whichever way its frames go, or from a relay for
+        // one it passes them on to.
+        Copy* subscriber = s.subscriber_of(peer);
         if (!subscriber) return;
         s.stats.keyframe_requests += 1;
         if (s.stands_alone()) return;  // every frame is a keyframe
@@ -996,6 +1267,92 @@ void MediaSession::on_keyframe_request(const PeerId& peer, StreamId stream_id) {
         ask = ask_keyframe(s, now);
     }
     if (ask) notify(handlers_.keyframe_needed, stream_id);
+}
+
+// ── Relaying ────────────────────────────────────────────────────────────────
+
+Result<void> MediaSession::relay_through(StreamId stream_id, const PeerId& viewer,
+                                         std::optional<PeerId> relay) {
+    const std::shared_ptr<OutgoingStream> stream = find_outgoing(stream_id);
+    if (!stream) return fail(Errc::InvalidArgument);
+    std::vector<std::pair<PeerId, Buffer>> told;
+    bool ask = false;
+    {
+        std::lock_guard lock(stream->mutex);
+        OutgoingStream& s = *stream;
+        Copy* copy = s.subscriber_of(viewer);
+        if (!copy) return fail(Errc::InvalidArgument);
+        std::shared_ptr<PeerState> through;
+        if (relay) {
+            const Copy* by = s.subscriber_of(*relay);
+            if (!by || *relay == viewer) return fail(Errc::InvalidArgument);
+            // No loop: the relay's own frames may not come through the viewer.
+            for (const Copy* up = by; up && up->relay; up = s.subscriber_of(up->relay->id)) {
+                if (up->relay->id == viewer) return fail(Errc::InvalidArgument);
+            }
+            through = by->peer;
+        }
+        if (copy->relay == through) return {};
+        const std::shared_ptr<PeerState> was = std::exchange(copy->relay, through);
+        copy->moved();
+        if (!through) ask = !s.stands_alone() && ask_keyframe(s, clock_.now());
+        if (was) told.emplace_back(was->id, s.forward_message(*was));
+        if (through) told.emplace_back(through->id, s.forward_message(*through));
+    }
+    for (const auto& [peer, message] : told) network_.send_reliable(peer, message);
+    if (ask) notify(handlers_.keyframe_needed, stream_id);
+    return {};
+}
+
+void MediaSession::on_forward(const PeerId& sender, const wire::Forward& forward) {
+    const std::shared_ptr<IncomingStream> stream = find_incoming(sender, forward.stream);
+    if (!stream) return;  // withdrawn while it was on its way
+    // Only to the viewers this node is connected to.
+    std::vector<std::shared_ptr<PeerState>> viewers;
+    for (const PeerId& viewer : forward.viewers) {
+        if (viewer == sender) continue;
+        if (std::shared_ptr<PeerState> state = find_peer(viewer))
+            viewers.push_back(std::move(state));
+    }
+    if (!viewers.empty() && stream->relay_slot.load(std::memory_order_relaxed) == 0) {
+        std::unique_lock lock(mutex_);
+        if (stream->relay_slot.load(std::memory_order_relaxed) == 0)
+            stream->relay_slot.store(take_slot(), std::memory_order_relaxed);
+    }
+
+    std::lock_guard lock(stream->mutex);
+    Fanout& relayed = stream->relayed;
+    if (!stream->subscribed) {
+        // Its sender hands them on as it hears this node no longer watches.
+        relayed.copies.clear();
+        return;
+    }
+    stream->relayed_most = forward.most;
+    // Those it already passes the stream on to go on as they were.
+    std::vector<Copy> copies;
+    for (std::shared_ptr<PeerState>& viewer : viewers) {
+        const auto listed = [&](const Copy& copy) { return copy.peer == viewer; };
+        if (std::ranges::any_of(copies, listed)) continue;
+        const Copy* had = relayed.find(viewer->id);
+        copies.push_back(had ? *had : Copy(std::move(viewer)));
+    }
+    relayed.copies = std::move(copies);
+}
+
+void MediaSession::on_relayed_path(const PeerId& relay, const wire::RelayedPath& report) {
+    const std::shared_ptr<OutgoingStream> stream = find_outgoing(report.stream);
+    if (!stream) return;
+    std::optional<uint32_t> bitrate;
+    {
+        std::lock_guard lock(stream->mutex);
+        OutgoingStream& s = *stream;
+        Copy* copy = s.rate ? s.subscriber_of(report.viewer) : nullptr;
+        // From the relay its frames go through, while they do.
+        if (!copy || !copy->relay || copy->relay->id != relay) return;
+        copy->backpressured = copy->backpressured || report.backpressured;
+        bitrate = s.follow(*copy, report.signal, std::nullopt, clock_.now());
+    }
+    if (bitrate) notify(handlers_.bitrate_changed, report.stream, *bitrate);
 }
 
 // ── Playing in step ─────────────────────────────────────────────────────────

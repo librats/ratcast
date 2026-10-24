@@ -9,7 +9,9 @@ bool SharedUplink::update(const PeerId& peer, const PathSignal& signal, bool ove
     if (capacity_ && now - found_at_ > kMemory) capacity_.reset();
     if (signal.since > kStall) stalled_at_ = now;
 
-    Path& path = paths_.try_emplace(peer, Path{.first_seen = now}).first->second;
+    const auto [it, added] = paths_.try_emplace(peer);
+    Path& path = it->second;
+    if (added) path.first_seen = now;
     const bool rising = signal.queue_rise > kRise && path.rise > kRise;
     path.updated_at = now;
     path.carried = signal.carried.value_or(0);

@@ -35,6 +35,9 @@ enum class MessageKind : uint8_t {
     ClockEcho = 9,        ///< this, as your probe came
     PlayoutNeed = 10,     ///< what I need to play your share, capture to played
     PlayoutDelay = 11,    ///< what all your viewers play mine at
+    Forward = 12,         ///< pass my stream's frames on to these viewers
+    RelayedPath = 13,     ///< the path to a viewer I pass your frames on to
+    RelayedFrame = 14,    ///< a frame of another's stream, passed on (relay_codec.h)
 };
 
 constexpr uint8_t message_prefix(MessageKind kind) noexcept {
@@ -59,7 +62,10 @@ inline Result<MessageKind> read_prefix(Reader& in) noexcept {
         case MessageKind::ClockProbe:
         case MessageKind::ClockEcho:
         case MessageKind::PlayoutNeed:
-        case MessageKind::PlayoutDelay: return kind;
+        case MessageKind::PlayoutDelay:
+        case MessageKind::Forward:
+        case MessageKind::RelayedPath:
+        case MessageKind::RelayedFrame: return kind;
     }
     return fail(Errc::UnknownKind);
 }

@@ -192,3 +192,79 @@ TEST(MediaService, StreamsFramesBetweenTwoNodes) {
     ASSERT_TRUE(wait_for([&] { return sender->session().outgoing_stats(1)->subscribers == 0; }));
     sender_node.stop();
 }
+
+// Three nodes, as a room: the sender hands one viewer to the other, which
+// passes the frames on over its own link to it.
+TEST(MediaService, ARelayPassesFramesOnToAViewer) {
+    StreamDescription sound;
+    sound.id = 2;
+    sound.codec = Codec::Opus;
+    sound.format = AudioFormat{48'000, 1};
+    sound.lifetime = 500ms;
+    sound.label = "sound";
+
+    librats::Node sender_node(config(true));
+    auto* sender = sender_node.add_subsystem(std::make_unique<MediaService>(SessionHandlers{}));
+    ASSERT_TRUE(sender->session().add_stream(sound));
+
+    // Each viewer watches what the sender offers.
+    const auto viewer_of = [&](librats::Node& node, MediaService*& service, Received& received) {
+        service = node.add_subsystem(std::make_unique<MediaService>(SessionHandlers{
+            .stream_announced =
+                [&](const PeerId& peer, const StreamDescription& d) {
+                    if (peer == sender_node.local_id()) {
+                        EXPECT_TRUE(service->session().subscribe(peer, d.id));
+                    }
+                },
+            .frame_received =
+                [&](const PeerId& peer, EncodedFrame frame) {
+                    EXPECT_EQ(peer, sender_node.local_id()) << "whose it is, whoever passed it on";
+                    std::lock_guard lock(received.mutex);
+                    received.frames.push_back(frame.info.number);
+                },
+        }));
+    };
+    librats::Node relay_node(config(true));
+    librats::Node viewer_node(config(false));
+    MediaService* relay = nullptr;
+    MediaService* viewer = nullptr;
+    Received relayed, viewed;
+    viewer_of(relay_node, relay, relayed);
+    viewer_of(viewer_node, viewer, viewed);
+
+    ASSERT_TRUE(sender_node.start());
+    ASSERT_TRUE(relay_node.start());
+    ASSERT_TRUE(viewer_node.start());
+    relay_node.connect("127.0.0.1", sender_node.listen_port());
+    viewer_node.connect("127.0.0.1", sender_node.listen_port());
+    viewer_node.connect("127.0.0.1", relay_node.listen_port());
+    ASSERT_TRUE(wait_for([&] {
+        return sender->session().outgoing_stats(2)->subscribers == 2 &&
+               relay_node.peer_count() == 2;
+    }));
+    ASSERT_TRUE(sender->session().relay_through(2, viewer_node.local_id(), relay_node.local_id()));
+    ASSERT_TRUE(wait_for([&] {
+        return relay->session().incoming_stats(sender_node.local_id(), 2)->relaying_to == 1;
+    }));
+
+    const uint64_t sent_before = sender->session().outgoing_stats(2)->messages;
+    for (FrameNumber n = 0; n < 50; ++n) {
+        FrameInfo info;
+        info.number = n;
+        info.keyframe = true;
+        info.capture_time = SteadyClock::instance().now();
+        MutableBuffer payload = allocate_frame_payload(200);
+        payload.append(200);
+        ASSERT_TRUE(sender->session().send_frame(2, info, std::move(payload)));
+        std::this_thread::sleep_for(2ms);
+    }
+    ASSERT_TRUE(wait_for([&] { return viewed.count() >= 45; }))
+        << viewed.count() << " frames reached the viewer";
+    EXPECT_EQ(sender->session().outgoing_stats(2)->messages - sent_before, 50u)
+        << "one copy, to the relay";
+    EXPECT_GE(relay->session().incoming_stats(sender_node.local_id(), 2)->relayed_messages, 45u);
+
+    viewer_node.stop();
+    relay_node.stop();
+    sender_node.stop();
+}

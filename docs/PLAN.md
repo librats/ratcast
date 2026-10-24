@@ -730,11 +730,43 @@ moment, and the sharer's voice heard as quickly as anyone's.
   3%), the common delay 156 ms. Left: a delay that rises lifts every viewer's pictures at once
   (a hold, which a stall of the VM's made a stall); and it is held within the stream's
   lifetime, past which a viewer much quicker than the slowest stays ahead.
-- **5.3 Forwarding tree**: viewers with spare uplink re-forward without transcoding, taking the
-  copies off the sender's. librats: **needs** L5 (absolute deadlines: a frame's time left goes
-  with it, so latency does not add up per hop). Who gets the stream through whom, from each
-  member's uplink (5.1's budget) and paths; a relay that leaves hands its viewers on. *Done
-  when* a room of four on a sender's uplink that carries one copy plays at every viewer.
+- **5.3 Forwarding tree** — in progress: viewers with spare uplink re-forward without
+  transcoding, taking the copies off the sender's. librats: **needs** L5 (absolute deadlines: a
+  frame's time left goes with it, so latency does not add up per hop). Who gets the stream through
+  whom, from each member's uplink (5.1's budget) and paths; a relay that leaves hands its viewers
+  on. *Done when* a room of four on a sender's uplink that carries one copy plays at every viewer.
+  The sender stays the one every viewer subscribes to and asks for keyframes (a room is a mesh:
+  each member is connected to each); only the frames go through the tree. In steps:
+  1. L5 ✅ (below).
+  2. Relaying ✅: a viewer the sender names a relay forwards the frames it receives of a share to
+     the viewers handed to it, as they came, each with the time it has left; it keeps each of
+     them as the sender keeps a subscriber (from a keyframe on, held back while its queue is
+     full, a joining one's first keyframe given longer), asks the sender for the keyframes they
+     need, and tells it what their paths say, so the encoder fits the narrowest path of the tree.
+     Sound stays direct: small, and what pictures are held to (the tree's to choose, step 3).
+     Done so: the sender keeps each subscriber as a copy sent from it or through a relay;
+     `relay_through()` hands one to another subscriber (never into a loop), and the relay is told
+     everyone it passes the stream on to (`Forward`, said again when its link lost a race). It
+     passes each frame on as it comes, before its own tracker puts it in order (`RelayedFrame`:
+     whose it is, then the frame message as its sender wrote it, 33 bytes more), with what is
+     left of librats' deadline — over TCP, its lifetime again less half the round trip it came
+     over — and keeps its viewers as the sender keeps subscribers, the same code (`Fanout`): from
+     a keyframe, held back while a queue is full, a joining keyframe given longer, a frame given
+     up on or too late a keyframe asked of the sender, once a `min_keyframe_interval`. Each path
+     sample of a viewer it passes on to goes back as `RelayedPath` — the stream's part of that
+     path, and of the relay's uplink once known — which the sender's rate control follows as it
+     does a path of its own; the relay's uplink counts those copies, the sender's no longer. A
+     relay that stops watching or goes away leaves its viewers to the sender, from a keyframe.
+     Tested over the in-memory network (`RelayTest`: from a keyframe on, the time left, a frame
+     lost past the relay, the viewer's path in rate control, the relay's uplink, leaving, a
+     chain) and on three librats nodes. Left: a viewer the relay is not connected to gets
+     nothing, and nobody says so; a relayed viewer still asks the sender for keyframes while its
+     first is on its way from the relay.
+  3. The tree: the sender hands viewers to relays once its uplink is found full with the copies
+     short of what one alone would get — to the viewer whose uplink is known to have room, and
+     the nearest; a relay whose uplink fills hands some back. A relay that leaves hands its
+     viewers on; one lost sends them back to the sender.
+  4. Measured: a room of four, the sharer's uplink one copy wide (`--member-paths`).
 - **5.4 Simulcast**: one weak path no longer pulls everyone down — the share in two layers (the
   full one and ~720p), each viewer receiving the one its path carries. SVC later where an
   encoder has it. Costs a second encode: on the software codecs, measured first.
@@ -1132,20 +1164,20 @@ and the list is in priority order:
 | | L18 | What was said on a link that lost a cross-connect race | needed | 10.2 | ✅ |
 | | L19 | Peer exchange that closes a small mesh | needed | 10.2 | ✅ |
 | | L20 | A send ceiling for a peer | needed | 5.1 | ✅ |
+| | L5 | Absolute deadlines when forwarding | needed | 5.3 | ✅ |
 | 1 | L2 (a) | A live flow's start: the initial window | needed | 1.2 (long paths) | put off; eased by (b) |
-| 2 | L5 | Absolute deadlines when forwarding | needed | stage 5 (tree) | |
-| 3 | L15 | Fewer system calls per reactor turn | improves | 3.2 (CPU) | |
-| 4 | L16 | ProbeRTT that does not starve a live flow | improves | 3.2 (`reorder`) | |
-| 5 | L8 | `send_many` with a shared buffer | improves | stage 5 (SFU) | |
-| 6 | L11 | One copy fewer on the send path | improves | with L8 | |
-| 7 | L6 | FEC across messages | optional | 2.1 | if Opus FEC + RED fall short |
-| 8 | L9 | Path MTU discovery | optional | 3.4, 4K | |
-| 9 | L10 | A clock-sync service | not needed | stage 5 (playout) | libratcast does it on its media lane (5.2) |
-| 10 | L7 | A delay-sensitive realtime mode | optional | — | mostly done with L2 (c) |
-| 11 | L12 | Live outcomes and ranks in the C ABI | optional | other bindings | when one needs them |
-| 12 | L13 | Fewer ACKs for live data | optional | feedback on a narrow uplink | tried: needs receive timestamps |
-| 13 | L14 | A faster ChaCha20-Poly1305 | optional | — | ~0.5% of a core at 8 Mbit/s |
-| 14 | L17 | A finer timer on Windows | optional | 4.3 | tried: no gain measured |
+| 2 | L15 | Fewer system calls per reactor turn | improves | 3.2 (CPU) | |
+| 3 | L16 | ProbeRTT that does not starve a live flow | improves | 3.2 (`reorder`) | |
+| 4 | L8 | `send_many` with a shared buffer | improves | stage 5 (SFU) | |
+| 5 | L11 | One copy fewer on the send path | improves | with L8 | |
+| 6 | L6 | FEC across messages | optional | 2.1 | if Opus FEC + RED fall short |
+| 7 | L9 | Path MTU discovery | optional | 3.4, 4K | |
+| 8 | L10 | A clock-sync service | not needed | stage 5 (playout) | libratcast does it on its media lane (5.2) |
+| 9 | L7 | A delay-sensitive realtime mode | optional | — | mostly done with L2 (c) |
+| 10 | L12 | Live outcomes and ranks in the C ABI | optional | other bindings | when one needs them |
+| 11 | L13 | Fewer ACKs for live data | optional | feedback on a narrow uplink | tried: needs receive timestamps |
+| 12 | L14 | A faster ChaCha20-Poly1305 | optional | — | ~0.5% of a core at 8 Mbit/s |
+| 13 | L17 | A finer timer on Windows | optional | 4.3 | tried: no gain measured |
 
 Where it stands after L1, L2 (c) and L3: the steady state holds — one-way delay + ~18 ms on a
 clean path, 59–60 fps under 1–5% loss, bursts, jitter and reordering, and BBR's estimate follows
@@ -1332,8 +1364,13 @@ sound 0, keyframes 1, other frames 2 (`LiveRank`). Before it, EDF alone sent sou
 keyframe behind the whole keyframe whenever the sound's deadline was the later — the same
 lifetime, or longer as `cinema` will give it.
 
-**L5 — Absolute deadlines when forwarding,** so latency does not accumulate per hop. *Needed by
-stage 5's tree.*
+**L5 — Absolute deadlines when forwarding,** so latency does not accumulate per hop. ✅ *Needed by
+5.3.* A received live message's deadline, on the receiver's clock: `PeerNetwork::on_with_deadline`
+registers a handler that is told it (`Frame::deadline`). Over UDP the LIVE frame already said how
+long the message had left as each packet left; the receiver takes its first piece's arrival, less
+`one_way()` (half the smoothed round trip, what the sender judges by), plus that. A relay sends on
+with what is left. The epoch for a reliable message, and over TCP or a byte-stream relay, whose
+framing does not carry it (a relay on one of those falls back to a lifetime of its own).
 
 **L8 — `send_many` with a shared refcounted buffer** for fan-out. *Improves stage 5's SFU.*
 

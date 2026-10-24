@@ -144,4 +144,29 @@ Result<EncodedFrame> decode_frame(const Buffer& message) {
     return EncodedFrame{header->info, message.slice(header->size)};
 }
 
+Buffer encode_relayed_frame(const PeerId& origin, std::span<const uint8_t> frame) {
+    const size_t size = kRelayedFrameOverhead + frame.size();
+    MutableBuffer buffer = MutableBuffer::allocate(size);
+    Writer out(std::span(buffer.append(size), size));
+    out.u8(message_prefix(MessageKind::RelayedFrame));
+    out.bytes(origin.bytes());
+    out.bytes(frame);
+    return std::move(buffer).freeze();
+}
+
+Result<RelayedFrame> read_relayed_frame(std::span<const uint8_t> message) {
+    Reader in(message);
+    const Result<MessageKind> kind = read_prefix(in);
+    if (!kind) return fail(kind.error());
+    if (*kind != MessageKind::RelayedFrame) return fail(Errc::UnknownKind);
+    const std::span<const uint8_t> origin = in.bytes(PeerId::kSize);
+    if (!in.ok()) return fail(in.error());
+    const std::span<const uint8_t> frame = message.subspan(in.position());
+    const Result<MessageKind> inner = peek_kind(frame);
+    if (!inner) return fail(inner.error());
+    if (*inner != MessageKind::Frame) return fail(Errc::UnknownKind);
+    return RelayedFrame{*PeerId::from_bytes(librats::ByteView(origin.data(), origin.size())),
+                        frame};
+}
+
 }  // namespace ratcast::wire

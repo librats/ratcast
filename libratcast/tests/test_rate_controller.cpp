@@ -167,8 +167,12 @@ TEST(PathMonitor, SaysWhatAPathCarriedOverTheLastSecond) {
         // 4 Mbit/s for a second, then nothing acknowledged for half a second.
         if (i <= 10) s.bytes_delivered += 50'000;
         const PathSignal signal = monitor.update(s, Timestamp{1s} + i * 100ms);
-        if (i == 10) EXPECT_EQ(signal.carried, 4'000'000u);
-        if (i == 15) EXPECT_EQ(signal.carried, 2'000'000u);  // over the last second
+        if (i == 10) {
+            EXPECT_EQ(signal.carried, 4'000'000u);
+        }
+        if (i == 15) {
+            EXPECT_EQ(signal.carried, 2'000'000u);  // over the last second
+        }
     }
 }
 

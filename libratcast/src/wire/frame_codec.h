@@ -31,6 +31,13 @@
  * Every frame has exactly one encoding. A decoder refuses what no encoder
  * writes — reserved bits, non-minimal varints, an all-zero layers byte — so
  * re-encoding a decoded frame gives back the bytes it came from.
+ *
+ * A relay passes a frame of another node's stream on as it came, behind whose
+ * stream it is:
+ *
+ *   u8      prefix      wire version | MessageKind::RelayedFrame
+ *   32      origin      the id of the stream's sender
+ *   …       frame       the frame message, as its sender wrote it
  */
 
 #include <cstddef>
@@ -38,6 +45,7 @@
 
 #include "ratcast/core/buffer.h"
 #include "ratcast/core/result.h"
+#include "ratcast/session/media_network.h"
 #include "ratcast/stream/frame.h"
 #include "wire/bytes.h"
 
@@ -76,5 +84,20 @@ Result<FrameHeader> read_frame_header(std::span<const uint8_t> message);
 /// The frame in `message`, whose payload is a slice of `message` (no copy).
 /// Expects the whole message, prefix included.
 Result<EncodedFrame> decode_frame(const Buffer& message);
+
+/// What passing a frame on adds to it.
+inline constexpr size_t kRelayedFrameOverhead = 1 + PeerId::kSize;
+
+/// The message that passes `frame`, a frame message of `origin`'s, on.
+Buffer encode_relayed_frame(const PeerId& origin, std::span<const uint8_t> frame);
+
+struct RelayedFrame {
+    PeerId origin;
+    std::span<const uint8_t> frame;  ///< the frame message, in place
+};
+
+/// The frame passed on in `message`. Fails with UnknownKind unless it carries
+/// a frame message (whose own header is read later), Truncated if it is short.
+Result<RelayedFrame> read_relayed_frame(std::span<const uint8_t> message);
 
 }  // namespace ratcast::wire

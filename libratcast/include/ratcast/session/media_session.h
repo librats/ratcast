@@ -52,6 +52,18 @@
  * bitrate to aim at through `bitrate_changed` (see RateController). With
  * several subscribers the stream goes at the pace of the slowest.
  *
+ * A subscriber's frames may go through another subscriber instead, a relay
+ * (relay_through()), taking their copy off the sender's uplink: the relay is
+ * told whom to pass the stream on to (Forward), and passes each frame on as
+ * it came, behind whose it is, with the time it has left — librats' deadline
+ * of it as it arrived, not the stream's lifetime again — keeping each viewer
+ * as a sender keeps a subscriber. Everything else stays between the sender
+ * and each viewer: subscribing, keyframe requests, playing in step. The
+ * relay asks the sender for the keyframes its viewers need and tells it what
+ * their paths say (RelayedPath), so that rate control follows them too. A
+ * relay that stops watching or goes away leaves its viewers to the sender,
+ * which sends them the stream itself again from a keyframe.
+ *
  * Threads: every method may be called from any thread. Network events arrive
  * on the network's threads, tick() on a timer's, send_frame() on an
  * encoder's, the rest on the application's. Handlers run on whichever of those
@@ -88,6 +100,11 @@
 #include "ratcast/stream/stream_description.h"
 
 namespace ratcast {
+
+namespace wire {
+struct Forward;
+struct RelayedPath;
+}  // namespace wire
 
 struct SessionConfig {
     /// Least time between two keyframe requests a receiver sends for one
@@ -133,12 +150,18 @@ struct OutgoingStreamStats {
     uint32_t bitrate = 0;             ///< what rate control aims at now; 0 without it
     uint64_t bitrate_cuts = 0;        ///< times rate control lowered the bitrate
     uint64_t bitrate_raises = 0;      ///< and raised it
+    size_t relayed = 0;               ///< of the subscribers, those a relay passes it on to
 };
 
 struct IncomingStreamStats {
     bool subscribed = false;
     uint64_t bytes = 0;  ///< frame message bytes received while subscribed
     FrameTracker::Stats frames;
+    /// Passing it on, as a relay (MediaSession::relay_through()).
+    size_t relaying_to = 0;         ///< viewers it is passed on to now
+    uint64_t relayed_messages = 0;  ///< frame messages passed on
+    uint64_t relayed_bytes = 0;     ///< bytes of those messages
+    uint64_t relay_held_back = 0;   ///< not passed on: a full queue, or too late
 };
 
 /// A stream a peer offers.
@@ -190,6 +213,13 @@ public:
     /// What this node's uplink is known to carry for media, bits per second
     /// (shared_uplink.h); nullopt until the copies are found to fill it.
     std::optional<uint64_t> uplink_capacity() const;
+
+    /// The frames of `stream` to `viewer` go through `relay`, another of its
+    /// subscribers, which passes them on; nullopt: straight to it again, from
+    /// its next keyframe. Fails with InvalidArgument for a stream that is not
+    /// this node's, a viewer or a relay that does not subscribe to it, or a
+    /// relay whose own frames come through the viewer.
+    Result<void> relay_through(StreamId stream, const PeerId& viewer, std::optional<PeerId> relay);
 
     // ── Streams peers send ──────────────────────────────────────────────────
 
@@ -249,7 +279,10 @@ public:
     /// What became of a live message to `peer`, sent under `tag`
     /// (MediaNetwork::send_live): delivered, or given up on.
     void on_live_outcome(const PeerId& peer, uint64_t tag, bool delivered);
-    void on_message(const PeerId& peer, std::span<const uint8_t> message);
+    /// A message from `peer`; a live one with its `deadline` where the network
+    /// says (librats' on_with_deadline), what a frame passed on is given.
+    void on_message(const PeerId& peer, std::span<const uint8_t> message,
+                    std::optional<Timestamp> deadline = std::nullopt);
 
     /// Time-based work: give up gaps that waited long enough, repeat keyframe
     /// requests, ask for keyframes that were held back, probe the clocks of
@@ -261,6 +294,8 @@ public:
 
 private:
     struct PeerState;
+    struct Copy;
+    struct Fanout;
     struct OutgoingStream;
     struct IncomingStream;
 
@@ -279,8 +314,25 @@ private:
     /// None for a peer not connected.
     std::shared_ptr<PeerState> find_peer(const PeerId& peer) const;
     std::vector<PeerId> connected_peers() const;
+    std::vector<std::pair<StreamId, std::shared_ptr<OutgoingStream>>> outgoing_streams() const;
+    /// The next slot in the tags of live messages; under mutex_, held uniquely.
+    uint16_t take_slot();
 
-    void on_frame(const PeerId& peer, std::span<const uint8_t> message);
+    /// A frame of `origin`'s stream, from `from`: the origin itself, or a
+    /// relay passing it on.
+    void on_frame(const PeerId& origin, const PeerId& from, std::span<const uint8_t> message,
+                  std::optional<Timestamp> deadline);
+    /// Pass a frame of `origin`'s on to the viewers this node relays `stream`
+    /// to, with `left` to go; under the stream's mutex.
+    void pass_on(const PeerId& origin, IncomingStream& stream, const FrameInfo& info,
+                 std::span<const uint8_t> message, Duration left, Timestamp now);
+    /// Ask `origin` for a keyframe of its stream `id` for those this node
+    /// passes it on to, at most once a min_keyframe_interval; under the
+    /// stream's mutex.
+    void ask_keyframe_for_relayed(const PeerId& origin, StreamId id, IncomingStream& stream,
+                                  Timestamp now);
+    void on_forward(const PeerId& sender, const wire::Forward& forward);
+    void on_relayed_path(const PeerId& relay, const wire::RelayedPath& report);
     /// Announce every stream offered to `peer`, and say who this node is.
     void announce_all(const PeerId& peer);
     void on_presence(const PeerId& peer, Presence presence);
@@ -288,6 +340,9 @@ private:
     void on_withdraw(const PeerId& peer, StreamId stream);
     void on_subscribe(const PeerId& peer, StreamId stream);
     void on_unsubscribe(const PeerId& peer, StreamId stream);
+    /// `peer` no longer receives `stream`: those it passed it on to get it
+    /// from here again, and its relay is told.
+    void drop_subscriber(StreamId id, OutgoingStream& stream, const PeerId& peer);
     void on_keyframe_request(const PeerId& peer, StreamId stream);
     void on_clock_echo(const PeerId& peer, Timestamp sent, Timestamp at);
     void on_playout_need(const PeerId& peer, std::optional<Duration> latency);

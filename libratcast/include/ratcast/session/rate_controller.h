@@ -126,6 +126,11 @@ struct PathSignal {
 /// carries and delivered; the rest is the path's, the same for every stream.
 RATCAST_EXPORT PathSignal share_of(const PathSignal& path, double share) noexcept;
 
+/// Whether `signal` reports a path that a stream of `lifetime` overuses: live
+/// messages expired, or a queue in front of it longer than a quarter of the
+/// lifetime — unless the transport is still finding the path.
+RATCAST_EXPORT bool overuses(const PathSignal& signal, Duration lifetime) noexcept;
+
 /// Turns one peer's path samples into signals: the counters in a sample run
 /// from the connection's start, a signal is about the time since the last.
 class RATCAST_EXPORT PathMonitor {
@@ -153,8 +158,8 @@ public:
     uint32_t target() const noexcept { return target_; }
     const BitrateLimits& limits() const noexcept { return limits_; }
 
-    /// Whether `signal` reports a path this stream overuses.
-    bool overused(const PathSignal& signal) const noexcept;
+    /// Whether `signal` reports a path this stream overuses (overuses()).
+    bool overused(const PathSignal& signal) const noexcept { return overuses(signal, lifetime_); }
 
     /// A path is overused (see overused(), or a subscriber's queue was full);
     /// `path` is its latest signal. Returns the new target if it changed.

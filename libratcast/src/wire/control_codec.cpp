@@ -101,6 +101,44 @@ void write(Out& out, const PlayoutDelay& delay) {
     write_playout(out, MessageKind::PlayoutDelay, delay.delay);
 }
 
+PeerId read_peer(Reader& in) {
+    const std::span<const uint8_t> bytes = in.bytes(PeerId::kSize);
+    if (!in.ok()) return PeerId{};
+    return *PeerId::from_bytes(librats::ByteView(bytes.data(), bytes.size()));
+}
+
+template <typename Out>
+void write(Out& out, const Forward& forward) {
+    out.u8(message_prefix(MessageKind::Forward));
+    out.varint(forward.stream);
+    out.varint(forward.most);
+    out.varint(forward.viewers.size());
+    for (const PeerId& viewer : forward.viewers) out.bytes(viewer.bytes());
+}
+
+enum RelayedPathFlags : uint8_t {
+    kStarting = 1,
+    kExpired = 2,
+    kBackpressured = 4,
+    kCapacity = 8,
+    kDelivered = 16,
+};
+
+template <typename Out>
+void write(Out& out, const RelayedPath& path) {
+    const PathSignal& s = path.signal;
+    out.u8(message_prefix(MessageKind::RelayedPath));
+    out.varint(path.stream);
+    out.bytes(path.viewer.bytes());
+    out.u8(static_cast<uint8_t>((s.starting ? kStarting : 0) | (s.expired ? kExpired : 0) |
+                                (path.backpressured ? kBackpressured : 0) |
+                                (s.capacity ? kCapacity : 0) | (s.delivered ? kDelivered : 0)));
+    out.varint(static_cast<uint64_t>(s.queue_delay.count()));
+    out.varint(static_cast<uint64_t>(s.rtt.count()));
+    if (s.capacity) out.varint(*s.capacity);
+    if (s.delivered) out.varint(*s.delivered);
+}
+
 template <typename Out, typename Message>
 void write(Out& out, const Message& message) {
     constexpr MessageKind kind = [] {
@@ -169,6 +207,43 @@ Result<ControlMessage> read_announce(Reader& in) {
     return ControlMessage{Announce{std::move(d)}};
 }
 
+Result<ControlMessage> read_forward(Reader& in) {
+    Forward forward;
+    forward.stream = read_u32(in);
+    forward.most = read_u32(in);
+    const uint64_t count = in.varint();
+    if (count > kMaxForwarded) in.fail(Errc::Malformed);
+    for (uint64_t i = 0; i < count && in.ok(); ++i) forward.viewers.push_back(read_peer(in));
+    if (!in.ok()) return fail(in.error());
+    return ControlMessage{std::move(forward)};
+}
+
+Duration read_duration(Reader& in) {
+    const uint64_t us = in.varint();
+    if (us > static_cast<uint64_t>(std::numeric_limits<Duration::rep>::max())) {
+        in.fail(Errc::Malformed);
+    }
+    return Duration{static_cast<Duration::rep>(us)};
+}
+
+Result<ControlMessage> read_relayed_path(Reader& in) {
+    RelayedPath path;
+    path.stream = read_u32(in);
+    path.viewer = read_peer(in);
+    const uint8_t flags = in.u8();
+    if (flags >= kDelivered * 2) in.fail(Errc::Malformed);
+    PathSignal& s = path.signal;
+    s.starting = flags & kStarting;
+    s.expired = flags & kExpired;
+    path.backpressured = flags & kBackpressured;
+    s.queue_delay = read_duration(in);
+    s.rtt = read_duration(in);
+    if (flags & kCapacity) s.capacity = in.varint();
+    if (flags & kDelivered) s.delivered = in.varint();
+    if (!in.ok()) return fail(in.error());
+    return ControlMessage{path};
+}
+
 Result<ControlMessage> read_presence(Reader& in) {
     Presence p;
     const uint64_t name_size = in.varint();
@@ -234,6 +309,11 @@ Buffer encode_control(const ControlMessage& message) {
                 assert(!m.latency || (*m.latency >= Duration::zero() && *m.latency <= kMaxPlayout));
             } else if constexpr (std::is_same_v<std::decay_t<decltype(m)>, PlayoutDelay>) {
                 assert(!m.delay || (*m.delay >= Duration::zero() && *m.delay <= kMaxPlayout));
+            } else if constexpr (std::is_same_v<std::decay_t<decltype(m)>, Forward>) {
+                assert(m.viewers.size() <= kMaxForwarded);
+            } else if constexpr (std::is_same_v<std::decay_t<decltype(m)>, RelayedPath>) {
+                assert(m.signal.queue_delay >= Duration::zero() &&
+                       m.signal.rtt >= Duration::zero());
             }
             Sizer sizer;
             write(sizer, m);
@@ -262,7 +342,10 @@ Result<ControlMessage> decode_control(std::span<const uint8_t> message) {
         case MessageKind::ClockEcho: return read_clock_echo(in);
         case MessageKind::PlayoutNeed: return read_playout_message<PlayoutNeed>(in);
         case MessageKind::PlayoutDelay: return read_playout_message<PlayoutDelay>(in);
-        case MessageKind::Frame: break;
+        case MessageKind::Forward: return read_forward(in);
+        case MessageKind::RelayedPath: return read_relayed_path(in);
+        case MessageKind::Frame:
+        case MessageKind::RelayedFrame: break;
     }
     return fail(Errc::UnknownKind);  // not a control message
 }

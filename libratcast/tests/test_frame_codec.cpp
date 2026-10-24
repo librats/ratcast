@@ -282,3 +282,33 @@ TEST(FrameCodec, ArbitraryBytesDecodeToCanonicalFramesOrFail) {
     }
     EXPECT_GT(decoded, 1000u);  // the near misses must exercise the success path too
 }
+
+TEST(FrameCodec, PassesAFrameOnBehindWhoseItIs) {
+    std::array<uint8_t, 32> key{};
+    key.fill(9);
+    const PeerId origin = PeerId::from_public_key(key.data(), key.size());
+    FrameInfo info;
+    info.stream = 2;
+    info.number = 41;
+    info.keyframe = true;
+    const auto bytes = payload_bytes(100);
+    const Buffer frame = *encode_frame(info, payload_of(bytes));
+
+    const Buffer relayed = encode_relayed_frame(origin, frame.bytes());
+    EXPECT_EQ(relayed.size(), frame.size() + kRelayedFrameOverhead);
+    EXPECT_EQ(*peek_kind(relayed.bytes()), MessageKind::RelayedFrame);
+    const Result<RelayedFrame> got = read_relayed_frame(relayed.bytes());
+    ASSERT_TRUE(got);
+    EXPECT_EQ(got->origin, origin);
+    EXPECT_TRUE(std::ranges::equal(got->frame, frame.bytes()));
+    EXPECT_EQ(read_frame_header(got->frame)->info.number, 41u);
+
+    // Cut short, or carrying anything but a frame.
+    const auto all = relayed.bytes();
+    EXPECT_EQ(read_relayed_frame(all.first(kRelayedFrameOverhead - 1)).error(), Errc::Truncated);
+    EXPECT_EQ(read_relayed_frame(all.first(kRelayedFrameOverhead)).error(), Errc::Truncated);
+    std::vector<uint8_t> other(all.begin(), all.end());
+    other[kRelayedFrameOverhead] = message_prefix(MessageKind::KeyframeRequest);
+    EXPECT_EQ(read_relayed_frame(other).error(), Errc::UnknownKind);
+    EXPECT_EQ(read_relayed_frame(frame.bytes()).error(), Errc::UnknownKind) << "not passed on";
+}

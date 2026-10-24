@@ -36,6 +36,8 @@ struct Message {
     Buffer bytes;
     bool live = false;
     uint64_t tag = 0;  ///< a live message's, for its outcome
+    /// A live message's: when it is due, as librats tells a receiver.
+    std::optional<Timestamp> deadline = std::nullopt;
 };
 
 /// The number of the frame a live message carries.
@@ -76,7 +78,7 @@ public:
         }
         const bool lost = m.live && lose && lose(m);
         if (!m.live) ++delivered[*wire::peek_kind(m.bytes.bytes())];
-        if (!lost) sessions.at(m.to)->on_message(m.from, m.bytes.bytes());
+        if (!lost) sessions.at(m.to)->on_message(m.from, m.bytes.bytes(), m.deadline);
         if (m.live && m.tag != 0) sessions.at(m.from)->on_live_outcome(m.to, m.tag, !lost);
     }
 
@@ -110,7 +112,8 @@ public:
 
 class Endpoint final : public MediaNetwork {
 public:
-    Endpoint(Hub& hub, PeerId self) : hub_(hub), self_(std::move(self)) {}
+    Endpoint(Hub& hub, Clock& clock, PeerId self)
+        : hub_(hub), clock_(clock), self_(std::move(self)) {}
 
     void send_reliable(const PeerId& peer, const Buffer& message) override {
         hub_.queue.push_back({self_, peer, message, false});
@@ -121,7 +124,7 @@ public:
         lifetimes.push_back(lifetime);
         tags.push_back(tag);
         ranks.push_back(rank);
-        hub_.queue.push_back({self_, peer, message, true, tag});
+        hub_.queue.push_back({self_, peer, message, true, tag, clock_.now() + lifetime});
         return !full_.contains(peer);
     }
     bool writable(const PeerId& peer) const override { return !full_.contains(peer); }
@@ -152,6 +155,7 @@ public:
 
 private:
     Hub& hub_;
+    Clock& clock_;
     PeerId self_;
     std::set<PeerId> full_;
 };
@@ -159,7 +163,9 @@ private:
 /// One participant: a session, its network endpoint and what its handlers saw.
 struct Party {
     Party(Hub& hub, Clock& clock, uint8_t seed, SessionConfig config = {})
-        : id(make_peer(seed)), endpoint(hub, id), session(endpoint, clock, handlers(), config) {
+        : id(make_peer(seed)),
+          endpoint(hub, clock, id),
+          session(endpoint, clock, handlers(), config) {
         hub.sessions[id] = &session;
     }
 
@@ -1170,4 +1176,259 @@ TEST_F(InStepTest, NeedAndDelayAreSaidAgainWhenALinkLostARace) {
     EXPECT_EQ(hub.delivered[wire::MessageKind::PlayoutNeed], needs + 1);
     EXPECT_EQ(hub.delivered[wire::MessageKind::PlayoutDelay], delays + 1);
     EXPECT_EQ(playout(near)->delay, 150ms + CommonDelay::kMargin);
+}
+
+// ── Relaying ────────────────────────────────────────────────────────────────
+
+namespace {
+
+/// A sender, a viewer of its screen that relays it, and one it passes it on
+/// to, all connected to each other as a room is; both watch the screen.
+class RelayTest : public ::testing::Test {
+protected:
+    RelayTest() {
+        connect(sender, relay);
+        connect(sender, viewer);
+        connect(relay, viewer);
+        EXPECT_TRUE(sender.session.add_stream(screen(2), kBitrate));
+        EXPECT_TRUE(sender.session.add_stream(mic()));
+        hub.deliver_all();
+        watch(relay);
+        watch(viewer);
+    }
+
+    void connect(Party& a, Party& b) {
+        a.session.on_peer_connected(b.id);
+        b.session.on_peer_connected(a.id);
+    }
+
+    void watch(Party& who, StreamId stream = 2) {
+        ASSERT_TRUE(who.session.subscribe(sender.id, stream));
+        hub.deliver_all();
+    }
+
+    Result<void> send(FrameNumber number, bool keyframe, StreamId stream = 2) {
+        FrameInfo info;
+        info.number = number;
+        info.keyframe = keyframe;
+        info.capture_time = clock.now();
+        if (!keyframe && number > 0) info.references = {number - 1};
+        return sender.session.send_frame(stream, info, payload_for(number));
+    }
+
+    /// Live messages from `from` to `to` on their way now.
+    size_t live(const Party& from, const Party& to) const {
+        return static_cast<size_t>(std::ranges::count_if(hub.queue, [&](const Message& m) {
+            return m.live && m.from == from.id && m.to == to.id;
+        }));
+    }
+
+    ManualClock clock{Timestamp{100s}};
+    Hub hub;
+    Party sender{hub, clock, 1};
+    Party relay{hub, clock, 2};
+    Party viewer{hub, clock, 3};
+};
+
+}  // namespace
+
+TEST_F(RelayTest, AViewersFramesGoThroughItsRelayFromAKeyframeOn) {
+    ASSERT_TRUE(send(0, true));
+    hub.deliver_all();
+    EXPECT_EQ(viewer.frames, Frames{0});
+
+    ASSERT_TRUE(sender.session.relay_through(2, viewer.id, relay.id));
+    hub.deliver_all();
+    EXPECT_EQ(hub.delivered[wire::MessageKind::Forward], 1);
+    EXPECT_EQ(sender.session.outgoing_stats(2)->relayed, 1u);
+
+    // The relay passes the stream on from its next keyframe, which it asks
+    // the sender for.
+    clock.advance(300ms);
+    const int asked = sender.keyframes_needed;
+    ASSERT_TRUE(send(1, false));
+    EXPECT_EQ(live(sender, viewer), 0u);
+    EXPECT_EQ(live(sender, relay), 1u);
+    hub.deliver_all();
+    EXPECT_EQ(sender.keyframes_needed, asked + 1);
+
+    ASSERT_TRUE(send(2, true));
+    ASSERT_TRUE(send(3, false));
+    EXPECT_EQ(live(sender, viewer), 0u) << "not a copy through the sender's uplink";
+    hub.deliver_queued();  // to the relay
+    ASSERT_EQ(live(relay, viewer), 2u);
+    for (const Message& m : hub.queue) {
+        EXPECT_EQ(*wire::peek_kind(m.bytes.bytes()), wire::MessageKind::RelayedFrame);
+    }
+    hub.deliver_all();
+    EXPECT_EQ(viewer.frames, (Frames{0, 2, 3}));
+    EXPECT_EQ(relay.frames, (Frames{0, 1, 2, 3}));
+
+    const IncomingStreamStats stats = *relay.session.incoming_stats(sender.id, 2);
+    EXPECT_EQ(stats.relaying_to, 1u);
+    EXPECT_EQ(stats.relayed_messages, 2u);
+    EXPECT_GT(stats.relayed_bytes, 0u);
+}
+
+TEST_F(RelayTest, AFramePassedOnHasWhatIsLeftOfItsTime) {
+    watch(relay, 3);
+    watch(viewer, 3);
+    ASSERT_TRUE(sender.session.relay_through(3, viewer.id, relay.id));
+    hub.deliver_all();
+
+    // The sound's lifetime is 100 ms; it reached the relay in 40.
+    ASSERT_TRUE(send(0, true, 3));
+    clock.advance(40ms);
+    hub.deliver_all();
+    ASSERT_EQ(relay.endpoint.lifetimes.size(), 1u);
+    EXPECT_EQ(relay.endpoint.lifetimes.back(), 60ms);
+    EXPECT_EQ(viewer.frames, Frames{0});
+
+    // One that came too late for the viewer goes no further.
+    ASSERT_TRUE(send(1, true, 3));
+    clock.advance(120ms);
+    hub.deliver_all();
+    EXPECT_EQ(relay.endpoint.lifetimes.size(), 1u);
+    EXPECT_EQ(relay.frames, (Frames{0, 1}));
+    EXPECT_EQ(relay.session.incoming_stats(sender.id, 3)->relay_held_back, 0u)
+        << "a frame of sound costs only itself";
+
+    // Where the network does not say (TCP): its lifetime again, less half the
+    // round trip it came over.
+    relay.session.on_peer_path(sender.id, path());  // a 50 ms round trip
+    ASSERT_TRUE(send(2, true, 3));
+    Message m = std::move(hub.queue.back());
+    hub.queue.pop_back();
+    relay.session.on_message(m.from, m.bytes.bytes(), std::nullopt);
+    EXPECT_EQ(relay.endpoint.lifetimes.back(), 75ms);
+}
+
+TEST_F(RelayTest, AFrameLostOnItsWayFromTheRelayIsAKeyframeNeeded) {
+    ASSERT_TRUE(sender.session.relay_through(2, viewer.id, relay.id));
+    hub.deliver_all();
+    ASSERT_TRUE(send(0, true));
+    ASSERT_TRUE(send(1, false));
+    hub.deliver_all();
+    EXPECT_EQ(viewer.frames, (Frames{0, 1}));
+
+    clock.advance(300ms);
+    const int asked = sender.keyframes_needed;
+    hub.lose = [&](const Message& m) { return m.from == relay.id; };
+    ASSERT_TRUE(send(2, false));
+    hub.deliver_all();
+    EXPECT_EQ(sender.keyframes_needed, asked + 1) << "asked by the relay as the network said";
+    EXPECT_EQ(relay.frames, (Frames{0, 1, 2}));
+}
+
+TEST_F(RelayTest, RateControlHearsAViewersPathFromItsRelay) {
+    ASSERT_TRUE(sender.session.relay_through(2, viewer.id, relay.id));
+    hub.deliver_all();
+    relay.session.on_peer_path(viewer.id, path());
+    clock.advance(100ms);
+    relay.session.on_peer_path(viewer.id, path(1));  // a frame expired
+    hub.deliver_all();
+    EXPECT_EQ(hub.delivered[wire::MessageKind::RelayedPath], 2);
+    EXPECT_EQ(sender.bitrates, Bitrates{1'700'000});
+
+    // Not from the sender's own path to the viewer: no copy of it goes there.
+    clock.advance(2s);
+    sender.session.on_peer_path(viewer.id, path(1));
+    clock.advance(100ms);
+    sender.session.on_peer_path(viewer.id, path(5));
+    EXPECT_EQ(sender.bitrates, Bitrates{1'700'000});
+}
+
+TEST_F(RelayTest, ARelaysUplinkCarriesWhatItPassesOn) {
+    Party other(hub, clock, 4);
+    connect(sender, other);
+    connect(relay, other);
+    hub.deliver_all();
+    watch(other);
+    ASSERT_TRUE(sender.session.relay_through(2, viewer.id, relay.id));
+    ASSERT_TRUE(sender.session.relay_through(2, other.id, relay.id));
+    hub.deliver_all();
+    EXPECT_EQ(relay.session.incoming_stats(sender.id, 2)->relaying_to, 2u);
+
+    // Both its paths lose frames at once with 3 Mbit/s through each.
+    for (Party* to : {&viewer, &other}) relay.session.on_peer_path(to->id, carried(0));
+    clock.advance(100ms);
+    for (Party* to : {&viewer, &other}) relay.session.on_peer_path(to->id, carried(37'500, 1));
+    EXPECT_EQ(relay.session.uplink_capacity(), 6'000'000u);
+    using Ceilings = std::map<PeerId, uint64_t>;
+    EXPECT_EQ(relay.endpoint.ceilings, (Ceilings{{viewer.id, 3'000'000}, {other.id, 3'000'000}}));
+    EXPECT_FALSE(sender.session.uplink_capacity()) << "not the sender's";
+}
+
+TEST_F(RelayTest, ARelayThatStopsWatchingLeavesItsViewersToTheSender) {
+    ASSERT_TRUE(sender.session.relay_through(2, viewer.id, relay.id));
+    hub.deliver_all();
+    clock.advance(300ms);
+    const int asked = sender.keyframes_needed;
+    relay.session.unsubscribe(sender.id, 2);
+    hub.deliver_all();
+    EXPECT_EQ(sender.keyframes_needed, asked + 1);
+    EXPECT_EQ(sender.session.outgoing_stats(2)->relayed, 0u);
+    ASSERT_TRUE(send(0, true));
+    EXPECT_EQ(live(sender, viewer), 1u);
+    hub.deliver_all();
+    EXPECT_EQ(viewer.frames, Frames{0});
+}
+
+TEST_F(RelayTest, ARelayThatGoesAwayLeavesItsViewersToTheSender) {
+    ASSERT_TRUE(sender.session.relay_through(2, viewer.id, relay.id));
+    hub.deliver_all();
+    sender.session.on_peer_disconnected(relay.id);
+    viewer.session.on_peer_disconnected(relay.id);
+    ASSERT_TRUE(send(0, true));
+    EXPECT_EQ(live(sender, viewer), 1u);
+    EXPECT_EQ(sender.session.outgoing_stats(2)->subscribers, 1u);
+}
+
+TEST_F(RelayTest, AViewerThatStopsWatchingIsPassedNothingMore) {
+    ASSERT_TRUE(sender.session.relay_through(2, viewer.id, relay.id));
+    hub.deliver_all();
+    viewer.session.unsubscribe(sender.id, 2);
+    hub.deliver_all();
+    EXPECT_EQ(hub.delivered[wire::MessageKind::Forward], 2) << "to nobody now";
+    EXPECT_EQ(relay.session.incoming_stats(sender.id, 2)->relaying_to, 0u);
+    ASSERT_TRUE(send(0, true));
+    hub.deliver_all();
+    EXPECT_TRUE(relay.endpoint.lifetimes.empty());
+}
+
+TEST_F(RelayTest, ChainsOfRelaysPassItOnAtEachHop) {
+    Party last(hub, clock, 4);
+    for (Party* p : {&sender, &relay, &viewer}) connect(*p, last);
+    hub.deliver_all();
+    watch(last);
+    ASSERT_TRUE(sender.session.relay_through(2, viewer.id, relay.id));
+    ASSERT_TRUE(sender.session.relay_through(2, last.id, viewer.id));
+    hub.deliver_all();
+    for (FrameNumber n = 0; n < 3; ++n) ASSERT_TRUE(send(n, n == 0));
+    hub.deliver_all();
+    EXPECT_EQ(last.frames, (Frames{0, 1, 2}));
+    EXPECT_EQ(live(sender, last), 0u);
+}
+
+TEST_F(RelayTest, RefusesARelayItCannotUse) {
+    Party stranger(hub, clock, 4);
+    connect(sender, stranger);
+    hub.deliver_all();
+    EXPECT_FALSE(sender.session.relay_through(9, viewer.id, relay.id)) << "no such stream";
+    EXPECT_FALSE(sender.session.relay_through(2, viewer.id, stranger.id)) << "does not watch";
+    EXPECT_FALSE(sender.session.relay_through(2, stranger.id, relay.id)) << "does not watch";
+    EXPECT_FALSE(sender.session.relay_through(2, viewer.id, viewer.id));
+    ASSERT_TRUE(sender.session.relay_through(2, viewer.id, relay.id));
+    EXPECT_FALSE(sender.session.relay_through(2, relay.id, viewer.id)) << "a loop";
+    EXPECT_TRUE(sender.session.relay_through(2, viewer.id, std::nullopt));
+    EXPECT_TRUE(sender.session.relay_through(2, relay.id, viewer.id));
+}
+
+TEST_F(RelayTest, WhatARelayPassesOnIsSaidAgainWhenALinkLostARace) {
+    ASSERT_TRUE(sender.session.relay_through(2, viewer.id, relay.id));
+    hub.deliver_all();
+    sender.session.on_peer_rerouted(relay.id);
+    hub.deliver_all();
+    EXPECT_EQ(hub.delivered[wire::MessageKind::Forward], 2);
+    EXPECT_EQ(relay.session.incoming_stats(sender.id, 2)->relaying_to, 1u);
 }

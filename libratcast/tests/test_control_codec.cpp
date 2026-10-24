@@ -197,4 +197,69 @@ TEST(ControlCodec, RefusesAPlayoutPastItsMost) {
 
 TEST(ControlCodec, AFrameIsNotAControlMessage) {
     EXPECT_EQ(decode_error({message_prefix(MessageKind::Frame), 0, 0, 0, 0}), Errc::UnknownKind);
+    EXPECT_EQ(decode_error({message_prefix(MessageKind::RelayedFrame), 0}), Errc::UnknownKind);
+}
+
+PeerId peer(uint8_t seed) {
+    std::array<uint8_t, 32> key{};
+    key.fill(seed);
+    return PeerId::from_public_key(key.data(), key.size());
+}
+
+TEST(ControlCodec, RoundTripsForward) {
+    const Forward forward = round_trip(Forward{70000, 8'000'000, {peer(1), peer(2)}});
+    EXPECT_EQ(forward.stream, 70000u);
+    EXPECT_EQ(forward.most, 8'000'000u);
+    EXPECT_EQ(forward.viewers, (std::vector{peer(1), peer(2)}));
+    EXPECT_TRUE(round_trip(Forward{7, 0, {}}).viewers.empty()) << "to nobody";
+}
+
+TEST(ControlCodec, RoundTripsRelayedPath) {
+    RelayedPath path{7, peer(3), {}, true};
+    path.signal.expired = true;
+    path.signal.queue_delay = 12ms;
+    path.signal.rtt = 48ms;
+    path.signal.capacity = 3'000'000;
+    RelayedPath got = round_trip(path);
+    EXPECT_EQ(got.stream, 7u);
+    EXPECT_EQ(got.viewer, peer(3));
+    EXPECT_TRUE(got.backpressured);
+    EXPECT_FALSE(got.signal.starting);
+    EXPECT_TRUE(got.signal.expired);
+    EXPECT_EQ(got.signal.queue_delay, 12ms);
+    EXPECT_EQ(got.signal.rtt, 48ms);
+    EXPECT_EQ(got.signal.capacity, 3'000'000u);
+    EXPECT_EQ(got.signal.delivered, std::nullopt);
+
+    path = RelayedPath{7, peer(3), {}, false};
+    path.signal.starting = true;
+    path.signal.delivered = 900'000;
+    got = round_trip(path);
+    EXPECT_TRUE(got.signal.starting);
+    EXPECT_FALSE(got.backpressured);
+    EXPECT_EQ(got.signal.capacity, std::nullopt);
+    EXPECT_EQ(got.signal.delivered, 900'000u);
+}
+
+TEST(ControlCodec, EveryCutOfAForwardOrARelayedPathIsTruncated) {
+    RelayedPath path{7, peer(3), {}, false};
+    path.signal.capacity = 3'000'000;
+    path.signal.delivered = 2'000'000;
+    for (const ControlMessage& message :
+         {ControlMessage{Forward{7, 8'000'000, {peer(1), peer(2)}}}, ControlMessage{path}}) {
+        const auto bytes = bytes_of(encode_control(message));
+        for (size_t cut = 0; cut < bytes.size(); ++cut) {
+            EXPECT_EQ(decode_error({bytes.begin(), bytes.begin() + static_cast<ptrdiff_t>(cut)}),
+                      Errc::Truncated)
+                << "kind " << int(bytes[0]) << ", cut at " << cut;
+        }
+    }
+}
+
+TEST(ControlCodec, RefusesAForwardToTooManyOrAPathWithFlagsItDoesNotKnow) {
+    EXPECT_EQ(decode_error({message_prefix(MessageKind::Forward), 7, 0, kMaxForwarded + 1}),
+              Errc::Malformed);
+    auto bytes = bytes_of(encode_control(RelayedPath{7, peer(3), {}, false}));
+    bytes[2 + PeerId::kSize] = 32;  // the flags, past the last known
+    EXPECT_EQ(decode_error(bytes), Errc::Malformed);
 }

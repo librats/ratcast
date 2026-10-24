@@ -28,10 +28,15 @@ MediaService::~MediaService() { stop(); }
 
 void MediaService::attach(librats::NodeContext& ctx) {
     librats::PeerNetwork& network = ctx.network;
-    network.on(librats::MessageType::Media,
-               [this](const librats::Peer& peer, librats::ByteView bytes) {
-                   session_.on_message(peer.id(), std::span(bytes.data(), bytes.size()));
-               });
+    network.on_with_deadline(
+        librats::MessageType::Media,
+        [this](const librats::Peer& peer, librats::ByteView bytes, librats::Deadline deadline) {
+            std::optional<Timestamp> due;
+            if (librats::is_live(deadline)) {
+                due = std::chrono::time_point_cast<Duration>(deadline);
+            }
+            session_.on_message(peer.id(), std::span(bytes.data(), bytes.size()), due);
+        });
     network.on_peer_connected(
         [this](const librats::Peer& peer) { session_.on_peer_connected(peer.id()); });
     network.on_peer_rerouted(

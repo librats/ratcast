@@ -50,6 +50,10 @@ PathSignal share_of(const PathSignal& path, double share) noexcept {
     return shared;
 }
 
+bool overuses(const PathSignal& signal, Duration lifetime) noexcept {
+    return !signal.starting && (signal.expired || signal.queue_delay > lifetime / 4);
+}
+
 // ── PathMonitor ─────────────────────────────────────────────────────────────
 
 PathSignal PathMonitor::update(const PathStats& sample, Timestamp now) {
@@ -114,10 +118,6 @@ PathSignal PathMonitor::update(const PathStats& sample, Timestamp now) {
 
 RateController::RateController(BitrateLimits limits, Duration lifetime) noexcept
     : limits_(limits), lifetime_(lifetime), target_(limits.start) {}
-
-bool RateController::overused(const PathSignal& signal) const noexcept {
-    return !signal.starting && (signal.expired || signal.queue_delay > lifetime_ / 4);
-}
 
 std::optional<uint32_t> RateController::on_overuse(Timestamp now, const PathSignal& path) noexcept {
     // Frames sent before the last cut are still on their way, and may yet
