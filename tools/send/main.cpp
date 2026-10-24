@@ -373,8 +373,13 @@ int main(int argc, char** argv) {
     // Whichever ends first ends the run.
     std::atomic<bool> ended{false};
     std::atomic<bool> failed{false};
+    // The pattern is captured on the time of day, as the tone is: what the
+    // viewers measure their clocks against to play it in step.
     Result<std::unique_ptr<Call>> started =
-        Call::start({.port = o.port, .data_dir = o.data_dir, .discoverable = o.announce},
+        Call::start({.port = o.port,
+                     .data_dir = o.data_dir,
+                     .discoverable = o.announce,
+                     .capture_clock = o.source == "pattern" ? &WallClock::instance() : nullptr},
                     {.source_ended = [&](StreamId, Result<void> outcome) {
                         failed = !outcome;
                         ended = true;

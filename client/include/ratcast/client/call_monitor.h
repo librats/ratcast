@@ -171,6 +171,8 @@ struct CallReport {
     std::optional<ReceivedFeedReport> feed;
     LatencyHistogram apart;  ///< sound and pictures, either way
     Verdict in_step;         ///< of how far apart
+    /// What the watched's viewers all play at, from capture, if in step.
+    std::optional<Duration> together;
     std::vector<PathReport> paths;
     Verdict verdict;  ///< the worst of the parts
 };

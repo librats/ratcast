@@ -127,11 +127,13 @@ void AudioPlayer::pull(std::span<float> out, Timestamp play_time) {
         const Duration offset = audio_duration(filled, format.sample_rate);
         JitterBuffer::Next next;
         Duration buffered{};
+        Duration wanted{};
         {
             std::lock_guard lock(mutex_);
             if (sync_) jitter_.set_min_delay(sync_->sound_floor());
             next = jitter_.next(now + offset);
             buffered = jitter_.delay();
+            wanted = jitter_.wanted();
         }
         if (next.kind == JitterBuffer::Next::Kind::Wait) {
             std::fill(out.begin() + static_cast<ptrdiff_t>(filled * format.channels), out.end(),
@@ -140,7 +142,7 @@ void AudioPlayer::pull(std::span<float> out, Timestamp play_time) {
         }
         pending_ = render(next);
         pending_played_ = 0;
-        if (sync_) sync_->sound_played(next.capture_time, play_time + offset, buffered);
+        if (sync_) sync_->sound_played(next.capture_time, play_time + offset, buffered, wanted);
         if (next.kind == JitterBuffer::Next::Kind::Frame && observer_) {
             observer_(next.capture_time, play_time + offset);
         }

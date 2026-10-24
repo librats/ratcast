@@ -14,6 +14,10 @@
 namespace ratcast {
 namespace {
 
+/// How often what this side needs of the watched's share is looked at, and
+/// what its viewers all play at followed.
+constexpr Duration kTogetherEvery = std::chrono::milliseconds(100);
+
 /// The DHT key a discoverable call is found under: its own peer id, where it
 /// and whoever looks for it meet.
 std::string discovery_key(const PeerId& peer) { return "ratcast/stream/" + peer.to_hex(); }
@@ -120,7 +124,8 @@ Call::Call(CallConfig config, CallHandlers handlers)
       node_(node_config(config_)),
       sync_(SteadyClock::instance(), config_.playback.sync) {
     if (config_.playback.sound) mixer_.emplace(*config_.playback.sound);
-    media_ = node_.add_subsystem(std::make_unique<MediaService>(session_handlers()));
+    media_ = node_.add_subsystem(std::make_unique<MediaService>(
+        session_handlers(), SessionConfig{.capture_clock = config_.capture_clock}));
     // One key to meet under: the peer dialed, or this call's own.
     const PeerId* dialed = dialed_peer(config_);
     if (dialed || config_.discoverable) {
@@ -439,7 +444,10 @@ void Call::watch(std::optional<PeerId> peer) {
     }
     video.reset();
     sound.reset();
-    for (const auto& [from, description] : ended) notify(handlers_.ended, from, description);
+    for (const auto& [from, description] : ended) {
+        notify(handlers_.ended, from, description);
+        leave_together(from);
+    }
     if (!ended.empty()) sync_.forget();
     play_watched();
 }
@@ -501,6 +509,7 @@ void Call::withdrawn(const PeerId& peer, StreamId stream) {
     replaced.reset();
     if (ended) notify(handlers_.ended, peer, *ended);
     if (watched) {
+        leave_together(peer);
         sync_.forget();  // for whoever's next
         play_watched();
     }
@@ -511,8 +520,10 @@ void Call::received(const PeerId& peer, EncodedFrame frame) {
     const StreamId stream = frame.info.stream;
     if (plays(video_, peer, stream)) {
         video_.player->push(std::move(frame));
+        keep_together(peer);
     } else if (plays(sound_, peer, stream)) {
         sound_.player->push(std::move(frame));
+        keep_together(peer);
     } else if (plays(feed_, peer, stream)) {
         feed_.player->push(std::move(frame));
     } else if (const auto it = members_.find(peer); it != members_.end()) {
@@ -523,6 +534,20 @@ void Call::received(const PeerId& peer, EncodedFrame frame) {
             member.camera.player->push(std::move(frame));
         }
     }
+}
+
+void Call::keep_together(const PeerId& peer) {
+    if (!config_.playback.together) return;
+    const Timestamp now = SteadyClock::instance().now();
+    if (now - together_at_ < kTogetherEvery) return;
+    together_at_ = now;
+    MediaSession& media = session();
+    if (const std::optional<Duration> need = sync_.need()) media.set_playout_need(peer, *need);
+    sync_.play_together(media.common_playout(peer));
+}
+
+void Call::leave_together(const PeerId& peer) {
+    if (config_.playback.together) session().set_playout_need(peer, std::nullopt);
 }
 
 std::optional<ReceivedVideoStats> Call::video_stats() const {

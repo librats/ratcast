@@ -54,20 +54,30 @@ public:
     /// release().
     std::function<bool(const Message&)> hold;
     std::deque<Message> held;
+    /// Control messages delivered, by kind.
+    std::map<wire::MessageKind, int> delivered;
 
     /// Deliver everything queued, including what deliveries queue in turn.
     void deliver_all() {
-        while (!queue.empty()) {
-            Message m = std::move(queue.front());
-            queue.pop_front();
-            if (m.live && hold && hold(m)) {
-                held.push_back(std::move(m));
-                continue;
-            }
-            const bool lost = m.live && lose && lose(m);
-            if (!lost) sessions.at(m.to)->on_message(m.from, m.bytes.bytes());
-            if (m.live && m.tag != 0) sessions.at(m.from)->on_live_outcome(m.to, m.tag, !lost);
+        while (!queue.empty()) deliver_front();
+    }
+
+    /// Deliver what is queued now; what deliveries queue in turn waits.
+    void deliver_queued() {
+        for (size_t n = queue.size(); n > 0; --n) deliver_front();
+    }
+
+    void deliver_front() {
+        Message m = std::move(queue.front());
+        queue.pop_front();
+        if (m.live && hold && hold(m)) {
+            held.push_back(std::move(m));
+            return;
         }
+        const bool lost = m.live && lose && lose(m);
+        if (!m.live) ++delivered[*wire::peek_kind(m.bytes.bytes())];
+        if (!lost) sessions.at(m.to)->on_message(m.from, m.bytes.bytes());
+        if (m.live && m.tag != 0) sessions.at(m.from)->on_live_outcome(m.to, m.tag, !lost);
     }
 
     /// Deliver what was held, and stop holding.
@@ -148,10 +158,8 @@ private:
 
 /// One participant: a session, its network endpoint and what its handlers saw.
 struct Party {
-    Party(Hub& hub, Clock& clock, uint8_t seed)
-        : id(make_peer(seed)),
-          endpoint(hub, id),
-          session(endpoint, clock, handlers(), SessionConfig{}) {
+    Party(Hub& hub, Clock& clock, uint8_t seed, SessionConfig config = {})
+        : id(make_peer(seed)), endpoint(hub, id), session(endpoint, clock, handlers(), config) {
         hub.sessions[id] = &session;
     }
 
@@ -1004,4 +1012,162 @@ TEST_F(MediaSessionTest, HandlersMayCallBackIntoTheSession) {
     hub.deliver_all();
     EXPECT_EQ(receiver.frames, Frames{0});
     EXPECT_EQ(sender.session.outgoing_stats(1)->subscribers, 0u);
+}
+
+// ── Playing in step ─────────────────────────────────────────────────────────
+
+namespace {
+
+/// Another host's clock: `base`'s, `ahead` of it.
+class OffsetClock final : public Clock {
+public:
+    OffsetClock(const Clock& base, Duration ahead) : base_(base), ahead_(ahead) {}
+    Timestamp now() const noexcept override { return base_.now() + ahead_; }
+
+private:
+    const Clock& base_;
+    const Duration ahead_;
+};
+
+/// The sender's frames are captured on a clock an hour ahead of its session's.
+constexpr Duration kCaptureAhead = 1h;
+/// The viewers' clocks, against the sender's session's: no two hosts agree.
+constexpr Duration kNearAhead = 1000s;
+constexpr Duration kFarAhead = -7s;
+/// How far each is from the sender, one way.
+constexpr Duration kNearWay = 10ms;
+constexpr Duration kFarWay = 50ms;
+
+/// A sender and two viewers, each on a clock of its own.
+class InStepTest : public ::testing::Test {
+protected:
+    InStepTest() {
+        for (Party* viewer : {&near, &far}) {
+            viewer->session.on_peer_connected(sender.id);
+            sender.session.on_peer_connected(viewer->id);
+        }
+        hub.deliver_all();
+    }
+
+    /// `viewer` needs `latency` from a capture to playing it, as the sender's
+    /// capture clock sees it: so much more on its own clock. Its probe goes,
+    /// is answered, and what it needs told, `one_way` each hop.
+    void need(Party& viewer, Duration latency) {
+        viewer.session.set_playout_need(sender.id, latency + ahead(viewer));
+        for (int hop = 0; hop < 3; ++hop) {
+            clock.advance(&viewer == &near ? kNearWay : kFarWay);
+            hub.deliver_queued();
+        }
+        hub.deliver_all();  // the delay, if it changed: when it comes does not matter
+    }
+
+    /// The viewer's clock less the sender's capture clock.
+    Duration ahead(const Party& viewer) const {
+        return (&viewer == &near ? kNearAhead : kFarAhead) - kCaptureAhead;
+    }
+
+    std::optional<CommonPlayout> playout(const Party& viewer) const {
+        return viewer.session.common_playout(sender.id);
+    }
+
+    /// Let `d` pass, a tick every 10 ms.
+    void advance(Duration d) {
+        for (Duration passed{}; passed < d; passed += 10ms) {
+            clock.advance(10ms);
+            for (Party* party : {&sender, &near, &far}) party->session.tick();
+            hub.deliver_all();
+        }
+    }
+
+    ManualClock clock{Timestamp{100s}};
+    OffsetClock capture{clock, kCaptureAhead};
+    OffsetClock near_clock{clock, kNearAhead};
+    OffsetClock far_clock{clock, kFarAhead};
+    Hub hub;
+    Party sender{hub, clock, 1, SessionConfig{.capture_clock = &capture}};
+    Party near{hub, near_clock, 2};
+    Party far{hub, far_clock, 3};
+};
+
+}  // namespace
+
+TEST_F(InStepTest, ViewersPlayAShareAtTheMostAnyOfThemNeeds) {
+    need(near, 60ms);
+    need(far, 150ms);
+    const Duration delay = 150ms + CommonDelay::kMargin;
+    ASSERT_TRUE(playout(near));
+    ASSERT_TRUE(playout(far));
+    EXPECT_EQ(playout(near)->delay, delay);
+    EXPECT_EQ(playout(far)->delay, delay);
+    // Each on its own clock — the same moment.
+    EXPECT_EQ(playout(near)->offset, delay + ahead(near));
+    EXPECT_EQ(playout(far)->offset, delay + ahead(far));
+}
+
+TEST_F(InStepTest, AViewerAloneKeepsItsOwnTime) {
+    need(near, 60ms);
+    EXPECT_FALSE(playout(near));
+    EXPECT_EQ(hub.delivered[wire::MessageKind::PlayoutDelay], 0);
+}
+
+TEST_F(InStepTest, AViewerThatStopsOrLeavesNoLongerCounts) {
+    need(near, 60ms);
+    need(far, 150ms);
+    far.session.set_playout_need(sender.id, std::nullopt);
+    hub.deliver_all();
+    EXPECT_FALSE(playout(near)) << "alone again";
+
+    need(far, 150ms);
+    ASSERT_TRUE(playout(near));
+    sender.session.on_peer_disconnected(far.id);
+    hub.deliver_all();
+    EXPECT_FALSE(playout(near));
+}
+
+TEST_F(InStepTest, ANeedIsToldAsItChanges) {
+    need(near, 60ms);
+    need(far, 150ms);
+    const int told = hub.delivered[wire::MessageKind::PlayoutNeed];
+    far.session.set_playout_need(sender.id, 153ms + ahead(far));
+    hub.deliver_all();
+    EXPECT_EQ(hub.delivered[wire::MessageKind::PlayoutNeed], told) << "no news";
+
+    far.session.set_playout_need(sender.id, 300ms + ahead(far));
+    hub.deliver_all();
+    EXPECT_EQ(hub.delivered[wire::MessageKind::PlayoutNeed], told + 1);
+    EXPECT_EQ(playout(near)->delay, 300ms + CommonDelay::kMargin) << "up at once";
+
+    // Down only once it stayed down.
+    far.session.set_playout_need(sender.id, 150ms + ahead(far));
+    hub.deliver_all();
+    advance(CommonDelay::kLowerAfter - 100ms);
+    EXPECT_EQ(playout(near)->delay, 300ms + CommonDelay::kMargin);
+    advance(200ms);
+    EXPECT_EQ(playout(near)->delay, 150ms + CommonDelay::kMargin);
+}
+
+TEST_F(InStepTest, AClockIsProbedOftenAtFirstThenEverySecondUntilNoLongerPlayed) {
+    near.session.set_playout_need(sender.id, 60ms + ahead(near));
+    advance(1s);
+    EXPECT_EQ(hub.delivered[wire::MessageKind::ClockProbe], 5);
+    advance(2s);
+    EXPECT_EQ(hub.delivered[wire::MessageKind::ClockProbe], 7);
+    EXPECT_EQ(hub.delivered[wire::MessageKind::ClockEcho], 7);
+
+    near.session.set_playout_need(sender.id, std::nullopt);
+    advance(3s);
+    EXPECT_EQ(hub.delivered[wire::MessageKind::ClockProbe], 7);
+}
+
+TEST_F(InStepTest, NeedAndDelayAreSaidAgainWhenALinkLostARace) {
+    need(near, 60ms);
+    need(far, 150ms);
+    const int needs = hub.delivered[wire::MessageKind::PlayoutNeed];
+    const int delays = hub.delivered[wire::MessageKind::PlayoutDelay];
+    near.session.on_peer_rerouted(sender.id);
+    sender.session.on_peer_rerouted(near.id);
+    hub.deliver_all();
+    EXPECT_EQ(hub.delivered[wire::MessageKind::PlayoutNeed], needs + 1);
+    EXPECT_EQ(hub.delivered[wire::MessageKind::PlayoutDelay], delays + 1);
+    EXPECT_EQ(playout(near)->delay, 150ms + CommonDelay::kMargin);
 }

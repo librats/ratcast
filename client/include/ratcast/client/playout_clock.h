@@ -23,6 +23,13 @@
  * each other. A side that has said nothing for a second (the sound stopped,
  * the pictures stand still) no longer counts.
  *
+ * Played in step with the sender's other viewers (play_together(),
+ * common_delay.h), both go to the offset they all play at — the sound's floor
+ * raised to it, the pictures held to it where there is no sound to follow.
+ * What they all play at is made of what each needs for itself (need()): the
+ * sound's jitter buffer's own aim and the pictures' own, never what either
+ * plays at, which the others' needs raised.
+ *
  * It also measures what it is for: how far apart, as they are played, are the
  * pictures from the sound captured with them — also when it is told not to
  * keep them in step, which is how to see what it does. Thread-safe.
@@ -34,6 +41,7 @@
 
 #include "ratcast/client/playback_meter.h"
 #include "ratcast/core/time.h"
+#include "ratcast/session/media_session.h"
 
 namespace ratcast {
 
@@ -41,6 +49,9 @@ struct PlayoutClockStats {
     std::optional<Duration> sound;     ///< capture to heard, now
     std::optional<Duration> pictures;  ///< what the pictures need, capture to shown
     Duration floor{};                  ///< asked of the sound's jitter buffer
+    std::optional<Duration> need;      ///< what this side needs, capture to played
+    /// What the sender's viewers all play at, from capture on its clock.
+    std::optional<Duration> together;
     /// For each picture shown while there was sound: how far from the sound
     /// captured with it, either way.
     LatencyHistogram apart;
@@ -59,10 +70,12 @@ public:
 
     /// Sound captured at `capture` is heard at `play_time`, of which
     /// `buffered` is the jitter buffer's delay: what the floor can change.
-    void sound_played(Timestamp capture, Timestamp play_time, Duration buffered);
+    /// `wanted` is what it would be without one (JitterBuffer::wanted()).
+    void sound_played(Timestamp capture, Timestamp play_time, Duration buffered, Duration wanted);
 
     /// The least delay for the sound's jitter buffer, so that the sound is not
-    /// ahead of the pictures; zero when they need no longer than it.
+    /// ahead of the pictures, nor of the others playing in step; zero when
+    /// they need no longer than it.
     Duration sound_floor() const;
 
     // ── The video player's side ─────────────────────────────────────────────
@@ -79,18 +92,29 @@ public:
     /// A picture captured at `capture` is shown now.
     void picture_shown(Timestamp capture);
 
+    // ── In step with the sender's other viewers ─────────────────────────────
+
+    /// What this side needs from capture to played, sound and pictures, for
+    /// itself; none while neither said anything for a second.
+    std::optional<Duration> need() const;
+
+    /// Play at what the sender's viewers all play at, from now on; none: in
+    /// this side's own time.
+    void play_together(std::optional<CommonPlayout> common);
+
     /// Another sender from now on: what the last one's sound and pictures
-    /// needed no longer counts, as if each had been quiet for a second. What
-    /// was measured stays.
+    /// needed no longer counts, as if each had been quiet for a second, nor
+    /// what its viewers played at. What was measured stays.
     void forget();
 
     PlayoutClockStats stats() const;
 
 private:
     struct Sound {
-        Duration heard{};  ///< capture to heard
-        Duration rest{};   ///< of which not the jitter buffer's
-        Timestamp at{};    ///< when said
+        Duration heard{};   ///< capture to heard
+        Duration rest{};    ///< of which not the jitter buffer's
+        Duration wanted{};  ///< what the jitter buffer would keep with no floor
+        Timestamp at{};     ///< when said
     };
     struct Pictures {
         Duration need{};
@@ -98,12 +122,17 @@ private:
     };
     std::optional<Sound> sound(Timestamp now) const noexcept;
     std::optional<Duration> pictures(Timestamp now) const noexcept;
+    Duration floor(const std::optional<Sound>& heard,
+                   std::optional<Duration> pictures) const noexcept;
+    static std::optional<Duration> need(const std::optional<Sound>& heard,
+                                        std::optional<Duration> pictures) noexcept;
 
     Clock& clock_;
     const bool in_step_;
     mutable std::mutex mutex_;
     std::optional<Sound> sound_;
     std::optional<Pictures> pictures_;
+    std::optional<CommonPlayout> together_;
     LatencyHistogram apart_;
     int64_t apart_sum_us_ = 0;  ///< signed
 };

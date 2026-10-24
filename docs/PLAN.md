@@ -707,12 +707,29 @@ moment, and the sharer's voice heard as quickly as anyone's.
   heard at 97 ms and the others at 93 (seconds 20–60; before, 155 and 117). Left: the one
   overflow before the uplink is known, as the third viewer joins, which raises every voice's
   buffer for the ten seconds it remembers lateness.
-- **5.2 Synchronised playout**: every viewer sees a frame at the same moment, so a room reacts
+- **5.2 Synchronised playout** ✅: every viewer sees a frame at the same moment, so a room reacts
   to a film together. Each viewer's clock against the sender's over librats' round trips (L10
   not needed), its latency told to the sender, and a common playout delay — the slowest
   viewer's and a margin — told back; `PlayoutClock` plays to it. *Done when* viewers on
   different paths (`local`, `rtt-100`, `loss-2` in one room) show the same frame within a few
   tens of milliseconds.
+  Done so: a viewer probes the sharer's clock on the media lane (`ClockProbe` / `ClockEcho`,
+  reliable, ahead of the frames), stamped on the clock the sharer's frames are captured on
+  (`SessionConfig::capture_clock`: the tools' stamped pattern and tone are on the time of day),
+  and takes the round trip that took least of the last ten seconds (`PeerClock`). It tells the
+  sharer what it needs from capture to playing, on the sharer's clock, as that moves by 5 ms or
+  more (`PlayoutNeed`): the more of its sound's and its pictures' own needs —
+  `JitterBuffer::wanted()`, the pictures' schedule and decoding — never what they play at, so
+  the needs do not chase each other. The sharer tells all who said the most of them and 10 ms
+  (`CommonDelay`, `PlayoutDelay`), up at once and down once every need stayed lower for five
+  seconds; one viewer alone has nobody to be in step with and no delay. The viewers'
+  `PlayoutClock`s play to it (`Call` every 100 ms: `set_playout_need()`, `common_playout()`):
+  the sound's floor raised to it, the pictures held to the sound, or to it where there is no
+  sound. `docs/bench.md`, "Playing in step (5.2)": the three viewers' picture latency 18.9 /
+  81.9 / 104.4 ms each in its own time, 122.9 for all three in step (within the histogram's
+  3%), the common delay 156 ms. Left: a delay that rises lifts every viewer's pictures at once
+  (a hold, which a stall of the VM's made a stall); and it is held within the stream's
+  lifetime, past which a viewer much quicker than the slowest stays ahead.
 - **5.3 Forwarding tree**: viewers with spare uplink re-forward without transcoding, taking the
   copies off the sender's. librats: **needs** L5 (absolute deadlines: a frame's time left goes
   with it, so latency does not add up per hop). Who gets the stream through whom, from each
@@ -1123,7 +1140,7 @@ and the list is in priority order:
 | 6 | L11 | One copy fewer on the send path | improves | with L8 | |
 | 7 | L6 | FEC across messages | optional | 2.1 | if Opus FEC + RED fall short |
 | 8 | L9 | Path MTU discovery | optional | 3.4, 4K | |
-| 9 | L10 | A clock-sync service | optional | stage 5 (playout) | libratcast can do it over ping |
+| 9 | L10 | A clock-sync service | not needed | stage 5 (playout) | libratcast does it on its media lane (5.2) |
 | 10 | L7 | A delay-sensitive realtime mode | optional | — | mostly done with L2 (c) |
 | 11 | L12 | Live outcomes and ranks in the C ABI | optional | other bindings | when one needs them |
 | 12 | L13 | Fewer ACKs for live data | optional | feedback on a narrow uplink | tried: needs receive timestamps |
@@ -1329,8 +1346,10 @@ decides).
 
 **L9 — Path MTU discovery** above the fixed 1220-byte packets.
 
-**L10 — A clock-sync service** (stage 5's synchronized playout; libratcast can do it over librats
-ping instead).
+**L10 — A clock-sync service** (stage 5's synchronized playout). *Not needed*: 5.2 measures a
+viewer's clock against the sharer's capture clock with probes of its own on the media lane
+(`PeerClock`), which librats' ping could not — it stamps the node's clock, not the one the
+frames are captured on.
 
 **L7 — A delay-sensitive realtime mode** for BBR (or a GCC-style controller). *Optional.* What
 it was for — a window that holds a keyframe on a path whose round trips swing by several times

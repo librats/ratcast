@@ -26,6 +26,14 @@ constexpr int kJoinRoundTrips = 4;
 /// The round trip taken before the path's first sample.
 constexpr Duration kUnknownRtt = 100ms;
 
+/// The clock of a peer played in step is probed this often, after
+/// kQuickProbes quicker ones, for a first measure soon.
+constexpr Duration kProbeEvery = 1s;
+constexpr Duration kQuickProbeEvery = 200ms;
+constexpr int kQuickProbes = 5;
+/// A need that moved less than this since it was told is no news.
+constexpr Duration kNeedNews = 5ms;
+
 /// A frame's tag in the network's outcomes: its stream's slot, above its number.
 constexpr int kSlotShift = 48;
 constexpr uint64_t kNumberMask = (uint64_t{1} << kSlotShift) - 1;
@@ -56,6 +64,18 @@ struct MediaSession::PeerState {
         const uint32_t us = rtt_us.load(std::memory_order_relaxed);
         return us == 0 ? kUnknownRtt : Duration{us};
     }
+
+    /// This node plays the peer's share in step (set_playout_need()).
+    struct InStep {
+        Duration need{};                ///< capture to played, this node's clock
+        std::optional<Duration> told;   ///< the latency told the peer, its clock
+        std::optional<Duration> delay;  ///< what the peer says its viewers play at
+        PeerClock clock;
+        Timestamp next_probe{};
+        int probes = 0;
+    };
+    std::mutex in_step_mutex;  ///< guards `in_step`
+    std::optional<InStep> in_step;
 };
 
 struct MediaSession::OutgoingStream {
@@ -222,7 +242,11 @@ void notify(const Handler& handler, Args&&... args) {
 
 MediaSession::MediaSession(MediaNetwork& network, Clock& clock, SessionHandlers handlers,
                            SessionConfig config)
-    : network_(network), clock_(clock), handlers_(std::move(handlers)), config_(config) {}
+    : network_(network),
+      clock_(clock),
+      handlers_(std::move(handlers)),
+      config_(config),
+      capture_clock_(config.capture_clock ? *config.capture_clock : clock) {}
 
 MediaSession::~MediaSession() = default;
 
@@ -251,6 +275,12 @@ std::shared_ptr<MediaSession::PeerState> MediaSession::peer_state(const PeerId& 
     auto& state = peers_[peer];
     if (!state) state = std::make_shared<PeerState>(peer);
     return state;
+}
+
+std::shared_ptr<MediaSession::PeerState> MediaSession::find_peer(const PeerId& peer) const {
+    std::shared_lock lock(mutex_);
+    const auto it = peers_.find(peer);
+    return it == peers_.end() ? nullptr : it->second;
 }
 
 std::vector<PeerId> MediaSession::connected_peers() const {
@@ -536,6 +566,17 @@ void MediaSession::on_peer_rerouted(const PeerId& peer) {
         lock.unlock();
         if (subscribed) network_.send_reliable(peer, wire::encode_control(wire::Subscribe{id}));
     }
+    // What this node needs of the peer's share, and the delay the peer's
+    // viewers play this node's at.
+    if (const std::shared_ptr<PeerState> state = find_peer(peer)) {
+        std::lock_guard lock(state->in_step_mutex);
+        if (state->in_step) {
+            state->in_step->told.reset();
+            tell_need(*state);
+        }
+    }
+    std::lock_guard lock(viewers_mutex_);
+    if (viewers_.plays(peer) && viewers_.delay()) tell_delay({peer});
 }
 
 void MediaSession::announce_all(const PeerId& peer) {
@@ -603,6 +644,10 @@ void MediaSession::on_peer_disconnected(const PeerId& peer) {
         std::lock_guard lock(uplink_mutex_);
         uplink_.forget(peer);
         ceilings_.erase(peer);  // the network forgot it too
+    }
+    {
+        std::lock_guard lock(viewers_mutex_);
+        if (viewers_.need(peer, std::nullopt, clock_.now())) tell_delay(viewers_.viewers());
     }
     for (const auto& [id, stream] : streams) {
         std::optional<uint32_t> bitrate;
@@ -743,6 +788,16 @@ void MediaSession::on_message(const PeerId& peer, std::span<const uint8_t> messa
                 on_unsubscribe(peer, m.stream);
             } else if constexpr (std::is_same_v<Message, wire::PresenceUpdate>) {
                 on_presence(peer, std::move(m.presence));
+            } else if constexpr (std::is_same_v<Message, wire::ClockProbe>) {
+                // At once, on the clock the frames are captured on.
+                network_.send_reliable(
+                    peer, wire::encode_control(wire::ClockEcho{m.sent, capture_clock_.now()}));
+            } else if constexpr (std::is_same_v<Message, wire::ClockEcho>) {
+                on_clock_echo(peer, m.sent, m.at);
+            } else if constexpr (std::is_same_v<Message, wire::PlayoutNeed>) {
+                on_playout_need(peer, m.latency);
+            } else if constexpr (std::is_same_v<Message, wire::PlayoutDelay>) {
+                on_playout_delay(peer, m.delay);
             } else {
                 static_assert(std::is_same_v<Message, wire::KeyframeRequest>);
                 on_keyframe_request(peer, m.stream);
@@ -943,6 +998,94 @@ void MediaSession::on_keyframe_request(const PeerId& peer, StreamId stream_id) {
     if (ask) notify(handlers_.keyframe_needed, stream_id);
 }
 
+// ── Playing in step ─────────────────────────────────────────────────────────
+
+void MediaSession::set_playout_need(const PeerId& peer, std::optional<Duration> need) {
+    const std::shared_ptr<PeerState> state = find_peer(peer);
+    if (!state) return;
+    const Timestamp now = clock_.now();
+    std::lock_guard lock(state->in_step_mutex);
+    if (!need) {
+        if (state->in_step && state->in_step->told) {
+            network_.send_reliable(peer, wire::encode_control(wire::PlayoutNeed{}));
+        }
+        state->in_step.reset();
+        return;
+    }
+    const bool starting = !state->in_step;
+    if (starting) state->in_step.emplace();
+    state->in_step->need = *need;
+    if (starting) {
+        probe_clock(*state, now);
+    } else {
+        tell_need(*state);
+    }
+}
+
+std::optional<CommonPlayout> MediaSession::common_playout(const PeerId& peer) const {
+    const std::shared_ptr<PeerState> state = find_peer(peer);
+    if (!state) return std::nullopt;
+    std::lock_guard lock(state->in_step_mutex);
+    if (!state->in_step || !state->in_step->delay) return std::nullopt;
+    const std::optional<Duration> offset = state->in_step->clock.offset();
+    if (!offset) return std::nullopt;
+    const Duration delay = *state->in_step->delay;
+    return CommonPlayout{delay, delay + *offset};
+}
+
+void MediaSession::probe_clock(PeerState& state, Timestamp now) {
+    PeerState::InStep& in_step = *state.in_step;
+    network_.send_reliable(state.id, wire::encode_control(wire::ClockProbe{now}));
+    ++in_step.probes;
+    in_step.next_probe = now + (in_step.probes < kQuickProbes ? kQuickProbeEvery : kProbeEvery);
+}
+
+void MediaSession::on_clock_echo(const PeerId& peer, Timestamp sent, Timestamp at) {
+    const Timestamp now = clock_.now();
+    const std::shared_ptr<PeerState> state = find_peer(peer);
+    if (!state) return;
+    std::lock_guard lock(state->in_step_mutex);
+    if (!state->in_step) return;  // no longer played in step
+    state->in_step->clock.add(sent, at, now);
+    tell_need(*state);
+}
+
+// What this node needs, on the peer's clock, once it is known: as it was
+// set, or moved by more than kNeedNews since it was told.
+void MediaSession::tell_need(PeerState& state) {
+    PeerState::InStep& in_step = *state.in_step;
+    const std::optional<Duration> offset = in_step.clock.offset();
+    if (!offset) return;
+    const Duration latency =
+        std::clamp(in_step.need - *offset, Duration::zero(), wire::kMaxPlayout);
+    if (in_step.told && std::chrono::abs(latency - *in_step.told) < kNeedNews) return;
+    in_step.told = latency;
+    network_.send_reliable(state.id, wire::encode_control(wire::PlayoutNeed{latency}));
+}
+
+void MediaSession::on_playout_need(const PeerId& peer, std::optional<Duration> latency) {
+    if (!find_peer(peer)) return;  // gone while it was on its way
+    std::lock_guard lock(viewers_mutex_);
+    const bool joined = latency && !viewers_.plays(peer);
+    if (viewers_.need(peer, latency, clock_.now())) {
+        tell_delay(viewers_.viewers());
+    } else if (joined && viewers_.delay()) {
+        tell_delay({peer});
+    }
+}
+
+void MediaSession::tell_delay(const std::vector<PeerId>& viewers) {
+    const Buffer message = wire::encode_control(wire::PlayoutDelay{viewers_.delay()});
+    for (const PeerId& viewer : viewers) network_.send_reliable(viewer, message);
+}
+
+void MediaSession::on_playout_delay(const PeerId& peer, std::optional<Duration> delay) {
+    const std::shared_ptr<PeerState> state = find_peer(peer);
+    if (!state) return;
+    std::lock_guard lock(state->in_step_mutex);
+    if (state->in_step) state->in_step->delay = delay;
+}
+
 // ── Timer ───────────────────────────────────────────────────────────────────
 
 void MediaSession::tick() {
@@ -951,13 +1094,25 @@ void MediaSession::tick() {
     std::vector<std::pair<StreamId, std::shared_ptr<OutgoingStream>>> outgoing;
     std::vector<std::pair<StreamKey, std::shared_ptr<IncomingStream>>> incoming;
     std::vector<std::shared_ptr<PeerState>> blocked;
+    std::vector<std::shared_ptr<PeerState>> peers;
     {
         std::shared_lock lock(mutex_);
         for (const auto& [id, stream] : outgoing_) outgoing.emplace_back(id, stream);
         for (const auto& [key, stream] : incoming_) incoming.emplace_back(key, stream);
+        peers.reserve(peers_.size());
         for (const auto& [id, state] : peers_) {
             if (state->blocked.load(std::memory_order_acquire)) blocked.push_back(state);
+            peers.push_back(state);
         }
+    }
+
+    for (const auto& state : peers) {
+        std::lock_guard lock(state->in_step_mutex);
+        if (state->in_step && now >= state->in_step->next_probe) probe_clock(*state, now);
+    }
+    {
+        std::lock_guard lock(viewers_mutex_);
+        if (viewers_.update(now)) tell_delay(viewers_.viewers());
     }
 
     // A queue filled only by sends the network had not taken up yet never

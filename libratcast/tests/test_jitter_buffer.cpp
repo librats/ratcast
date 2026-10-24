@@ -282,6 +282,7 @@ TEST(JitterBufferTest, AFloorIsReachedThroughSoundAndLeftWhenItGoes) {
     sim.floors = {{2s, 80ms}, {6s, 0ms}};
     sim.run(4s, 1000);
     EXPECT_EQ(sim.buffer().target(), 80ms);
+    EXPECT_LE(sim.buffer().wanted(), kFrame + 4ms) << "what the path asks for";
     EXPECT_GE(sim.buffer().delay(), 80ms - kFrame);
     EXPECT_LE(sim.buffer().delay(), 80ms + 10ms);
     // A second's wait, then a frame made up every 100 ms: from ~25 ms to 60+.
@@ -303,6 +304,7 @@ TEST(JitterBufferTest, AFloorOutlivesAReset) {
     JitterBuffer buffer({});
     buffer.set_min_delay(70ms);
     EXPECT_EQ(buffer.target(), 70ms);
+    EXPECT_EQ(buffer.wanted(), JitterBuffer::Config{}.min_delay);
     buffer.reset();
     EXPECT_EQ(buffer.target(), 70ms);
     buffer.set_min_delay(1s);

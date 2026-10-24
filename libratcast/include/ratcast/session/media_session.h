@@ -40,6 +40,13 @@
  * deafened) to every peer as it connects and whenever that changes, and keeps
  * what each peer said of itself.
  *
+ * A share may be played in step by all who watch it, each frame shown
+ * everywhere at once (set_playout_need()): each viewer measures its clock
+ * against the sender's — probes the sender answers at once, stamped on the
+ * clock its frames are captured on (peer_clock.h) — and tells it what it
+ * needs from capture to played; the sender tells them all the delay they
+ * play at, the most any of them needs and a margin (common_delay.h).
+ *
  * A stream added with BitrateLimits is rate-controlled: the session follows
  * the paths to its subscribers (on_peer_path) and tells the encoder the
  * bitrate to aim at through `bitrate_changed` (see RateController). With
@@ -70,7 +77,9 @@
 #include "ratcast/core/result.h"
 #include "ratcast/core/time.h"
 #include "ratcast/export.h"
+#include "ratcast/session/common_delay.h"
 #include "ratcast/session/media_network.h"
+#include "ratcast/session/peer_clock.h"
 #include "ratcast/session/presence.h"
 #include "ratcast/session/rate_controller.h"
 #include "ratcast/session/shared_uplink.h"
@@ -89,6 +98,10 @@ struct SessionConfig {
     Duration min_keyframe_interval = std::chrono::milliseconds(200);
     /// Frames a receiver holds per stream while waiting for a gap to fill.
     size_t max_pending_frames = 128;
+    /// The clock this node's frames are captured on: what its viewers measure
+    /// their clocks against, to play its share in step (common_delay.h). Null:
+    /// the session's own. Must outlive the session.
+    Clock* capture_clock = nullptr;
 };
 
 struct SessionHandlers {
@@ -133,6 +146,12 @@ struct OfferedStream {
     PeerId peer;
     StreamDescription description;
     friend bool operator==(const OfferedStream&, const OfferedStream&) = default;
+};
+
+/// When a sender's viewers all play its share, as this node sees it.
+struct CommonPlayout {
+    Duration delay{};   ///< from capture to played, the sender's clock: as it says
+    Duration offset{};  ///< the same from a capture time on the sender's clock to this one
 };
 
 class RATCAST_EXPORT MediaSession {
@@ -201,6 +220,20 @@ public:
     /// and id.
     std::vector<OfferedStream> offered() const;
 
+    // ── Playing in step ─────────────────────────────────────────────────────
+
+    /// This node plays `peer`'s share in step with the peer's other viewers,
+    /// and needs `need` from a frame's capture (the peer's clock) to playing
+    /// it (this one's): its clock is measured against the peer's, and what it
+    /// needs told, as it changes. nullopt: it no longer plays in step. Nothing
+    /// for a peer that is not connected.
+    void set_playout_need(const PeerId& peer, std::optional<Duration> need);
+
+    /// When `peer`'s viewers all play its share (common_delay.h); none until
+    /// this node's clock is measured against the peer's and the peer said, or
+    /// while it says each is to play in its own time.
+    std::optional<CommonPlayout> common_playout(const PeerId& peer) const;
+
     // ── Driven by the network and a timer ───────────────────────────────────
 
     void on_peer_connected(const PeerId& peer);
@@ -219,7 +252,8 @@ public:
     void on_message(const PeerId& peer, std::span<const uint8_t> message);
 
     /// Time-based work: give up gaps that waited long enough, repeat keyframe
-    /// requests, ask for keyframes that were held back. Call every 10 ms or so.
+    /// requests, ask for keyframes that were held back, probe the clocks of
+    /// peers played in step. Call every 10 ms or so.
     void tick();
 
     /// Messages refused as malformed or of an unknown kind, from any peer.
@@ -242,6 +276,8 @@ private:
     std::shared_ptr<OutgoingStream> find_outgoing(StreamId stream) const;
     std::shared_ptr<IncomingStream> find_incoming(const PeerId& peer, StreamId stream) const;
     std::shared_ptr<PeerState> peer_state(const PeerId& peer);
+    /// None for a peer not connected.
+    std::shared_ptr<PeerState> find_peer(const PeerId& peer) const;
     std::vector<PeerId> connected_peers() const;
 
     void on_frame(const PeerId& peer, std::span<const uint8_t> message);
@@ -253,6 +289,16 @@ private:
     void on_subscribe(const PeerId& peer, StreamId stream);
     void on_unsubscribe(const PeerId& peer, StreamId stream);
     void on_keyframe_request(const PeerId& peer, StreamId stream);
+    void on_clock_echo(const PeerId& peer, Timestamp sent, Timestamp at);
+    void on_playout_need(const PeerId& peer, std::optional<Duration> latency);
+    void on_playout_delay(const PeerId& peer, std::optional<Duration> delay);
+
+    /// Probe the clock of a peer played in step, and tell it what this node
+    /// needs once it can; under the peer's in_step_mutex.
+    void probe_clock(PeerState& state, Timestamp now);
+    void tell_need(PeerState& state);
+    /// The delay to `viewers`; under viewers_mutex_.
+    void tell_delay(const std::vector<PeerId>& viewers);
 
     /// The copies of the rate-controlled streams: each weighed by the most
     /// its stream may take, all of them and by the peer they go to.
@@ -302,6 +348,11 @@ private:
     SharedUplink uplink_;
     /// The ceilings the network was told, by peer (pace_to_uplink).
     std::unordered_map<PeerId, uint64_t, PeerId::Hash> ceilings_;
+
+    Clock& capture_clock_;
+    std::mutex viewers_mutex_;  ///< guards viewers_; taken holding no other lock
+    /// This node's viewers that play its share in step.
+    CommonDelay viewers_;
 
     std::atomic<uint64_t> rejected_{0};
 };

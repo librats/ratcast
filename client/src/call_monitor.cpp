@@ -527,6 +527,7 @@ CallReport compare(const CallSnapshot& earlier, const CallSnapshot& now) {
         report.verdict.at_least(report.feed->verdict, "feed");
     }
     report.apart = now.sync.apart.since(earlier.sync.apart);
+    report.together = now.sync.together;
     if (report.apart.percentile(0.95) > kApartFair) {
         report.in_step.at_least(Quality::Fair, "sound and pictures apart");
         report.verdict.at_least(report.in_step, "in step");
@@ -563,6 +564,9 @@ std::vector<std::string> report_lines(const CallReport& report) {
         lines.push_back(format("%-15s %4.1f ms apart (p95 %4.1f, max %4.1f)", "in step",
                                ms(report.apart.percentile(0.5)), ms(report.apart.percentile(0.95)),
                                ms(report.apart.max())));
+    }
+    if (report.together) {
+        lines.push_back(format("%-15s every viewer at %3.0f ms", "together", ms(*report.together)));
     }
     for (const PathReport& p : report.paths) {
         lines.push_back(format(
@@ -609,8 +613,12 @@ std::vector<ReportSection> report_sections(const CallReport& report) {
                                     static_cast<unsigned long long>(feed->late))},
               {"Buffer", milliseconds(feed->buffer)}}});
     }
-    if (report.apart.count() > 0) {
-        sections.push_back({"In step", report.in_step, {{"Apart", spread(report.apart)}}});
+    if (report.apart.count() > 0 || report.together) {
+        ReportSection in_step{"In step", report.in_step, {}};
+        if (report.apart.count() > 0) in_step.rows.emplace_back("Apart", spread(report.apart));
+        if (report.together)
+            in_step.rows.emplace_back("Every viewer at", milliseconds(*report.together));
+        sections.push_back(std::move(in_step));
     }
     for (const PathReport& path : report.paths) sections.push_back(path_section(path));
     return sections;

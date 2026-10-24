@@ -31,6 +31,10 @@ enum class MessageKind : uint8_t {
     Unsubscribe = 5,      ///< stop sending them
     KeyframeRequest = 6,  ///< I cannot decode until the next keyframe
     Presence = 7,         ///< who I am, and whether I am muted or deafened
+    ClockProbe = 8,       ///< what is your clock? (playout in step)
+    ClockEcho = 9,        ///< this, as your probe came
+    PlayoutNeed = 10,     ///< what I need to play your share, capture to played
+    PlayoutDelay = 11,    ///< what all your viewers play mine at
 };
 
 constexpr uint8_t message_prefix(MessageKind kind) noexcept {
@@ -51,7 +55,11 @@ inline Result<MessageKind> read_prefix(Reader& in) noexcept {
         case MessageKind::Subscribe:
         case MessageKind::Unsubscribe:
         case MessageKind::KeyframeRequest:
-        case MessageKind::Presence: return kind;
+        case MessageKind::Presence:
+        case MessageKind::ClockProbe:
+        case MessageKind::ClockEcho:
+        case MessageKind::PlayoutNeed:
+        case MessageKind::PlayoutDelay: return kind;
     }
     return fail(Errc::UnknownKind);
 }

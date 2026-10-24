@@ -158,6 +158,43 @@ TEST(ControlCodec, RefusesANameThatIsNoName) {
               Errc::Malformed);
 }
 
+TEST(ControlCodec, RoundTripsClocks) {
+    const ClockProbe probe = round_trip(ClockProbe{Timestamp{1'234'567'890'123us}});
+    EXPECT_EQ(probe.sent, Timestamp{1'234'567'890'123us});
+    // A clock before its epoch: the bits come back as they went.
+    const ClockEcho echo = round_trip(ClockEcho{Timestamp{-5s}, Timestamp{1'700'000'000s}});
+    EXPECT_EQ(echo.sent, Timestamp{-5s});
+    EXPECT_EQ(echo.at, Timestamp{1'700'000'000s});
+}
+
+TEST(ControlCodec, RoundTripsPlayout) {
+    EXPECT_EQ(round_trip(PlayoutNeed{180ms}).latency, 180ms);
+    EXPECT_EQ(round_trip(PlayoutNeed{}).latency, std::nullopt);
+    EXPECT_EQ(round_trip(PlayoutDelay{kMaxPlayout}).delay, kMaxPlayout);
+    EXPECT_EQ(round_trip(PlayoutDelay{0us}).delay, 0us);
+    EXPECT_EQ(round_trip(PlayoutDelay{}).delay, std::nullopt);
+}
+
+TEST(ControlCodec, EveryCutOfAClockOrAPlayoutIsTruncated) {
+    for (const ControlMessage& message :
+         {ControlMessage{ClockEcho{Timestamp{100s}, Timestamp{200s}}},
+          ControlMessage{PlayoutNeed{180ms}}, ControlMessage{PlayoutDelay{2s}}}) {
+        const auto bytes = bytes_of(encode_control(message));
+        for (size_t cut = 0; cut < bytes.size(); ++cut) {
+            EXPECT_EQ(decode_error({bytes.begin(), bytes.begin() + static_cast<ptrdiff_t>(cut)}),
+                      Errc::Truncated)
+                << "kind " << int(bytes[0]) << ", cut at " << cut;
+        }
+    }
+}
+
+TEST(ControlCodec, RefusesAPlayoutPastItsMost) {
+    auto bytes = bytes_of(encode_control(PlayoutDelay{kMaxPlayout}));
+    ++bytes.back();  // the varint's highest seven bits, last
+    EXPECT_EQ(decode_error(bytes), Errc::Malformed);
+    EXPECT_EQ(decode_error({message_prefix(MessageKind::PlayoutNeed), 2, 0}), Errc::Malformed);
+}
+
 TEST(ControlCodec, AFrameIsNotAControlMessage) {
     EXPECT_EQ(decode_error({message_prefix(MessageKind::Frame), 0, 0, 0, 0}), Errc::UnknownKind);
 }

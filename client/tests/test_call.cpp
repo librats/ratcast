@@ -545,6 +545,41 @@ TEST_F(CallTest, PlaysTheScreenOfWhomItWatchesAndReceivesNoOther) {
     EXPECT_TRUE(host->sound_stats()) << "the first's sound goes on";
 }
 
+TEST_F(CallTest, TheViewersOfAShareAllPlayItAtOnce) {
+    VideoEncoderConfig probe;
+    probe.width = 160;
+    probe.height = 120;
+    if (!open_video_encoder(probe)) GTEST_SKIP() << "no AV1 encoder here";
+
+    Side host;
+    host.start(config());
+    host.publish_pattern(160, 120);
+    host.publish_tone();
+    Side ann;
+    ann.start(config(RatsUrl{host.address()}));
+    Side bob;
+    bob.start(config(RatsUrl{host.address()}));
+
+    // Each measures its clock against the host's and says what it needs; the
+    // host tells both the most of it.
+    const auto together = [](Side& viewer) { return viewer->sync_stats().together; };
+    ASSERT_TRUE(wait_for([&] {
+        return together(ann) && together(bob) && together(ann) == together(bob);
+    })) << ::testing::PrintToString(ann.events());
+    for (Side* viewer : {&ann, &bob}) {
+        const PlayoutClockStats sync = (*viewer)->sync_stats();
+        ASSERT_TRUE(sync.need);
+        EXPECT_GE(*sync.together, *sync.need - 5ms) << "covers what each needs, give or take "
+                                                       "a clock measured over loopback";
+    }
+
+    // One leaves: nobody to be in step with.
+    bob.hang_up();
+    EXPECT_TRUE(wait_for([&] { return !together(ann); }));
+    const size_t pictures = ann.pictures();
+    EXPECT_TRUE(wait_for([&] { return ann.pictures() >= pictures + 10; })) << "and plays on";
+}
+
 TEST_F(CallTest, WithNothingChosenTheNextOfferedPlaysWhenTheScreenEnds) {
     VideoEncoderConfig probe;
     probe.width = 160;

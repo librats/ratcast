@@ -30,7 +30,10 @@ constexpr Duration kDropEvery = 100ms;
 }  // namespace
 
 JitterBuffer::JitterBuffer(Config config)
-    : config_(config), fastest_(config.memory), target_(config.min_delay) {
+    : config_(config),
+      fastest_(config.memory),
+      target_(config.min_delay),
+      wanted_(config.min_delay) {
     assert(config.min_delay <= config.max_delay && config.max_frames > 0);
     frames_.reserve(config.max_frames + 1);
 }
@@ -117,9 +120,9 @@ void JitterBuffer::update_target() {
         within += lateness_[bucket];
         if (within >= config_.in_time * total) break;
     }
-    target_ =
-        std::clamp(std::max(kBucket * static_cast<int64_t>(bucket + 1) + frame_duration_, floor_),
-                   config_.min_delay, config_.max_delay);
+    wanted_ = std::clamp(kBucket * static_cast<int64_t>(bucket + 1) + frame_duration_,
+                         config_.min_delay, config_.max_delay);
+    target_ = std::clamp(std::max(wanted_, floor_), config_.min_delay, config_.max_delay);
 }
 
 JitterBuffer::Next JitterBuffer::next(Timestamp now) {

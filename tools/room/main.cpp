@@ -43,6 +43,7 @@ constexpr const char* kUsage = R"(usage: ratcast-room [rats://HOST:PORT | rats:/
   --name NAME          who this member says it is (default: member)
   --silent             no voice; by default a tone, stamped as the pattern is
   --share              share the test pattern as a screen, as the app shares one
+  --apart              play the share as soon as it can be, not when the others do
   --size WxH           the pattern's size (default 1280x720)
   --codec av1|h265|h264   default: av1
   --bitrate KBPS       the most the share's rate control goes up to (default 4000)
@@ -64,6 +65,7 @@ struct Options {
     std::string name = "member";
     bool voice = true;
     bool share = false;
+    bool together = true;
     uint32_t width = 1280;
     uint32_t height = 720;
     VideoEncoderConfig encoder;
@@ -88,6 +90,7 @@ std::optional<Options> parse(int argc, char** argv) {
     }
     o.voice = !args.flag("silent");
     o.share = args.flag("share");
+    o.together = !args.flag("apart");
     if (const auto size = args.text("size")) {
         if (const auto parsed = parse_size(*size)) {
             std::tie(o.width, o.height) = *parsed;
@@ -163,8 +166,12 @@ public:
             print_latency(pictures.latency);
             std::printf("\n");
         }
-        // The last word on each voice, for a summary after it left.
+        // The last word on each voice, for a summary after it left, and on
+        // when the share's viewers all played it.
         for (auto& [peer, stats] : call_.voice_stats()) last_voices_[peer] = std::move(stats);
+        if (const std::optional<Duration> together = call_.sync_stats().together) {
+            together_ = together;
+        }
         std::fflush(stdout);
     }
 
@@ -215,6 +222,7 @@ private:
                     double(pictures.pictures) / seconds,
                     static_cast<unsigned long long>(pictures.stalls), ms(pictures.stalled));
         print_percentiles("latency", pictures.latency);
+        if (together_) std::printf(" together_ms=%.0f", ms(*together_));
     }
 
     /// What this member's streams carried, before they went to each peer.
@@ -251,6 +259,7 @@ private:
     CpuMeter cpu_;
     const std::chrono::steady_clock::time_point started_ = std::chrono::steady_clock::now();
     std::map<PeerId, AudioPlayerStats> last_voices_;
+    std::optional<Duration> together_;
     unsigned seconds_ = 1;
 };
 
@@ -278,6 +287,7 @@ int main(int argc, char** argv) {
             [&](const PeerId& peer, Timestamp capture_time, Timestamp play_time) {
                 voices.heard(peer, stamped_latency(capture_time, play_time));
             },
+        .together = o.together,
     };
     const CallHandlers handlers{
         .joined = [](const PeerId& peer) { std::printf("joined: %s\n", peer.short_hex().c_str()); },
@@ -297,10 +307,12 @@ int main(int argc, char** argv) {
 
     voices.start();
     pictures.start();
+    // The tone and the pattern are captured on the time of day.
     Result<std::unique_ptr<Call>> started = Call::start({.port = o.port,
                                                          .data_dir = o.data_dir,
                                                          .dial = o.room,
                                                          .mesh = true,
+                                                         .capture_clock = &WallClock::instance(),
                                                          .playback = playback},
                                                         handlers);
     if (!started) {

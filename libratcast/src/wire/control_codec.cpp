@@ -62,6 +62,45 @@ void write(Out& out, const PresenceUpdate& update) {
     out.u8(static_cast<uint8_t>((p.muted ? kMuted : 0) | (p.deafened ? kDeafened : 0)));
 }
 
+// Times go as the bits of their microseconds: a probe's comes back as it went.
+uint64_t bits_of(Timestamp time) noexcept {
+    return static_cast<uint64_t>(time.time_since_epoch().count());
+}
+
+Timestamp time_of(uint64_t bits) noexcept {
+    return Timestamp{Duration{static_cast<Duration::rep>(bits)}};
+}
+
+template <typename Out>
+void write(Out& out, const ClockProbe& probe) {
+    out.u8(message_prefix(MessageKind::ClockProbe));
+    out.varint(bits_of(probe.sent));
+}
+
+template <typename Out>
+void write(Out& out, const ClockEcho& echo) {
+    out.u8(message_prefix(MessageKind::ClockEcho));
+    out.varint(bits_of(echo.sent));
+    out.varint(bits_of(echo.at));
+}
+
+template <typename Out>
+void write_playout(Out& out, MessageKind kind, std::optional<Duration> value) {
+    out.u8(message_prefix(kind));
+    out.u8(value ? 1 : 0);
+    if (value) out.varint(static_cast<uint64_t>(value->count()));
+}
+
+template <typename Out>
+void write(Out& out, const PlayoutNeed& need) {
+    write_playout(out, MessageKind::PlayoutNeed, need.latency);
+}
+
+template <typename Out>
+void write(Out& out, const PlayoutDelay& delay) {
+    write_playout(out, MessageKind::PlayoutDelay, delay.delay);
+}
+
 template <typename Out, typename Message>
 void write(Out& out, const Message& message) {
     constexpr MessageKind kind = [] {
@@ -144,6 +183,36 @@ Result<ControlMessage> read_presence(Reader& in) {
     return ControlMessage{PresenceUpdate{std::move(p)}};
 }
 
+Result<ControlMessage> read_clock_probe(Reader& in) {
+    const ClockProbe probe{time_of(in.varint())};
+    if (!in.ok()) return fail(in.error());
+    return ControlMessage{probe};
+}
+
+Result<ControlMessage> read_clock_echo(Reader& in) {
+    ClockEcho echo;
+    echo.sent = time_of(in.varint());
+    echo.at = time_of(in.varint());
+    if (!in.ok()) return fail(in.error());
+    return ControlMessage{echo};
+}
+
+std::optional<Duration> read_playout(Reader& in) {
+    const uint8_t given = in.u8();
+    if (given > 1) in.fail(Errc::Malformed);
+    if (given != 1) return std::nullopt;
+    const uint64_t us = in.varint();
+    if (us > static_cast<uint64_t>(kMaxPlayout.count())) in.fail(Errc::Malformed);
+    return Duration{static_cast<Duration::rep>(us)};
+}
+
+template <typename Message>
+Result<ControlMessage> read_playout_message(Reader& in) {
+    const std::optional<Duration> value = read_playout(in);
+    if (!in.ok()) return fail(in.error());
+    return ControlMessage{Message{value}};
+}
+
 template <typename Message>
 Result<ControlMessage> read_stream_message(Reader& in) {
     Message message;
@@ -161,6 +230,10 @@ Buffer encode_control(const ControlMessage& message) {
                 assert(is_valid(m.description));
             } else if constexpr (std::is_same_v<std::decay_t<decltype(m)>, PresenceUpdate>) {
                 assert(is_valid(m.presence));
+            } else if constexpr (std::is_same_v<std::decay_t<decltype(m)>, PlayoutNeed>) {
+                assert(!m.latency || (*m.latency >= Duration::zero() && *m.latency <= kMaxPlayout));
+            } else if constexpr (std::is_same_v<std::decay_t<decltype(m)>, PlayoutDelay>) {
+                assert(!m.delay || (*m.delay >= Duration::zero() && *m.delay <= kMaxPlayout));
             }
             Sizer sizer;
             write(sizer, m);
@@ -185,6 +258,10 @@ Result<ControlMessage> decode_control(std::span<const uint8_t> message) {
         case MessageKind::Unsubscribe: return read_stream_message<Unsubscribe>(in);
         case MessageKind::KeyframeRequest: return read_stream_message<KeyframeRequest>(in);
         case MessageKind::Presence: return read_presence(in);
+        case MessageKind::ClockProbe: return read_clock_probe(in);
+        case MessageKind::ClockEcho: return read_clock_echo(in);
+        case MessageKind::PlayoutNeed: return read_playout_message<PlayoutNeed>(in);
+        case MessageKind::PlayoutDelay: return read_playout_message<PlayoutDelay>(in);
         case MessageKind::Frame: break;
     }
     return fail(Errc::UnknownKind);  // not a control message

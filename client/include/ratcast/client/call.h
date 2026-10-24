@@ -20,7 +20,8 @@
  * mixed into the one output (AudioMixer). The pictures and the sound are
  * those of the peer chosen with watch() — or, until then, of the first to
  * offer either, the peer dialed if it was dialed by peer id — and play in step
- * (PlayoutClock), the sound mixed with the voices. When they end, the next
+ * (PlayoutClock), the sound mixed with the voices, and in step with the
+ * sender's other viewers: each frame everywhere at once. When they end, the next
  * the watched offers play. A feed is the first offered, by the peer dialed if
  * it was dialed by peer id; when it ends, the next announced. Only what plays
  * is received: a screen nobody here watches costs nothing.
@@ -100,6 +101,10 @@ struct CallPlayback {
     /// Pictures and sound of one sender in step; apart, each keeps its own
     /// time (their distance is measured all the same).
     bool sync = true;
+    /// The pictures and sound watched played when the sender's other viewers
+    /// play them, each frame at the same moment everywhere
+    /// (MediaSession::set_playout_need()); apart, as soon as this side can.
+    bool together = true;
     /// Where a feed is written out; must outlive the call.
     TsOutput* feed = nullptr;
     DataPlayerConfig feed_config = {};
@@ -129,6 +134,11 @@ struct CallConfig {
     /// A room: meet everyone the peers met (see above). Listens whatever
     /// `listen` says.
     bool mesh = false;
+    /// The clock this side's sources capture on, if not the steady clock (the
+    /// tools' stamped sources: the time of day). The other side measures its
+    /// clock against it to play what this side shares in step. Must outlive
+    /// the call.
+    Clock* capture_clock = nullptr;
     CallPlayback playback = {};
 };
 
@@ -289,6 +299,11 @@ private:
     std::optional<ReceivedVideoStats> stats_of(const Playing<VideoPlayer>& slot) const;
     template <typename Handler, typename... Args>
     void notify(const Handler& handler, const Args&... args) const;
+    /// Under playing_: what this side needs of `peer`'s share told now and
+    /// then, and what its viewers all play at followed.
+    void keep_together(const PeerId& peer);
+    /// `peer`'s share is played in step no more.
+    void leave_together(const PeerId& peer);
 
     const CallConfig config_;
     const CallHandlers handlers_;
@@ -303,7 +318,8 @@ private:
     PlayoutClock sync_;
     std::optional<AudioMixer> mixer_;  ///< over playback.sound, if any
     mutable std::mutex playing_;
-    bool chosen_ = false;  ///< watch() was called: watched_ is whom
+    bool chosen_ = false;      ///< watch() was called: watched_ is whom
+    Timestamp together_at_{};  ///< when keep_together() last told
     std::optional<PeerId> watched_;
     Playing<VideoPlayer> video_;  ///< the watched's, as is sound_
     Playing<AudioPlayer> sound_;

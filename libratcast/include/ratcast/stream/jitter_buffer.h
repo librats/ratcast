@@ -120,6 +120,9 @@ public:
     /// The delay aimed at, beyond the base transit.
     Duration target() const noexcept { return target_; }
 
+    /// The delay it would aim at with no floor: what the path asks for.
+    Duration wanted() const noexcept { return wanted_; }
+
     /// The delay being played at, beyond the base transit, as of the last
     /// next(); zero before playing starts.
     Duration delay() const noexcept { return delay_; }
@@ -151,6 +154,7 @@ private:
     std::array<double, kBuckets> lateness_{};
     std::optional<Timestamp> last_arrival_;
     Duration target_;
+    Duration wanted_;  ///< the target but for the floor
     Duration floor_{};
 
     Duration frame_duration_ = std::chrono::milliseconds(20);  ///< until learnt

@@ -43,6 +43,13 @@ how the share played to the others, and what each member sent.
     bench/netem.py --room 4 local loss-2 cap-6
     bench/netem.py --room 3 --share --size 1280x720 --bitrate 3000 --fps 30 rtt-100
 
+With --member-paths each member from the second on has an access path of its
+own as well: its downlink that scenario's forward direction, its uplink the
+backward one, in place of the run's. With --share the table then says how late
+each viewer showed the pictures, and how far apart the viewers were.
+
+    bench/netem.py --room 4 --share --member-paths local,rtt-100,loss-2 local
+
 With --netsim the same scenarios run through ratcast-netsim instead: a proxy
 on loopback whose two directions follow netem's rules in user space, with no
 namespaces, no tc, no root, on any OS. The viewer dials the proxy, which
@@ -208,13 +215,22 @@ def make_room_network(members):
                               macs[j], "dev", "eth0", "nud", "permanent"))
 
 
-def shape_uplinks(members, options):
-    """Each member's uplink shaped by `options` (netem's), or left alone."""
-    for i in range(members):
-        sh(*in_member(i, "tc", "qdisc", "del", "dev", "eth0", "root"), check=False)
+def shape_uplinks(members, options, member_paths=()):
+    """Each member's uplink shaped by `options` (netem's), or left alone; a
+    member with a path of its own (member_paths[i - 1]), both ways by that."""
+    def shape(command, device, options):
+        sh(*command("tc", "qdisc", "del", "dev", device, "root"), check=False)
         if options:
-            sh(*in_member(i, "tc", "qdisc", "add", "dev", "eth0", "root", "netem",
-                          *options.split()))
+            sh(*command("tc", "qdisc", "add", "dev", device, "root", "netem", *options.split()))
+
+    def here(*command):
+        return list(command)
+
+    for i in range(members):
+        own = member_paths[i - 1] if 0 < i <= len(member_paths) else None
+        # The bridge's side of the member's veth: what comes down to it.
+        shape(here, f"r{i}", own.forward if own else "")
+        shape(lambda *command: in_member(i, *command), "eth0", own.backward if own else options)
 
 
 def uplink_bytes(index):
@@ -466,8 +482,8 @@ def run_room(scenario, args, log_dir, index):
     leaving together: each member's summary, with what it sent (Mbit/s)."""
     stem = log_dir / f"{scenario.name}.{index}"
     members = args.room
-    shape_uplinks(members, scenario.forward)
-    changes = [threading.Timer(at, shape_uplinks, (members, options))
+    shape_uplinks(members, scenario.forward, args.member_paths)
+    changes = [threading.Timer(at, shape_uplinks, (members, options, args.member_paths))
                for at, options in scenario.changes]
     logs = [open(f"{stem}.m{i}.log", "w+") for i in range(members)]
     processes = []
@@ -537,6 +553,9 @@ def room_run(summaries):
         "first_picture_ms": worst("first_picture_ms", viewers),
         "fps": worst("fps", viewers, min),
         "picture_p95": worst("latency_p95_ms", viewers),
+        # Each viewer's, in order: how far apart they showed the pictures.
+        "picture_p50s": [s.get("latency_p50_ms") for s in viewers],
+        "together": summaries[1].get("together_ms") if viewers else None,
         "stalls": sum(values("stalls", viewers)) if values("stalls", viewers) else None,
         "uplink_first": summaries[0].get("uplink_mbps"),
         "uplink_others": worst("uplink_mbps", viewers),
@@ -575,7 +594,42 @@ def room_table(results, args):
             + (f"| {m('first_picture_ms')} | {m('fps')} | {m('picture_p95', 1)} | {m('stalls')} "
                if args.share else "")
             + f"| {m('uplink_first', 2)} / {m('uplink_others', 2)} | {m('cpu')} |")
+    if args.share:
+        rows += share_in_step_table(results, args)
     return "\n".join(rows)
+
+
+def share_in_step_table(results, args):
+    """How late each viewer showed the pictures (their p50), and how far
+    apart the viewers were: the latest's less the earliest's."""
+    viewers = args.room - 1
+    paths = [p.name for p in args.member_paths] + [None] * viewers
+    rows = [
+        "",
+        "Pictures, viewer by viewer"
+        + (f" (their paths: {', '.join(p or 'the run' for p in paths[:viewers])})"
+           if args.member_paths else "")
+        + ": latency p50, ms; apart: the latest less the earliest; every viewer at: the delay "
+        "the sharer said they all play at, from capture.",
+        "",
+        "| scenario | " + " | ".join(f"m{i + 1}" for i in range(viewers))
+        + " | apart, ms | every viewer at, ms |",
+        "|---|" + "---:|" * (viewers + 2),
+    ]
+    for scenario, runs in results:
+        def middle(values, digits=1):
+            found = [v for v in values if v is not None]
+            return cell(statistics.median(found) if found else None, digits)
+
+        def apart(run):
+            found = [v for v in run["picture_p50s"] if v is not None]
+            return max(found) - min(found) if len(found) > 1 else None
+
+        rows.append(
+            f"| {scenario.name} | "
+            + " | ".join(middle(r["picture_p50s"][i] for r in runs) for i in range(viewers))
+            + f" | {middle(apart(r) for r in runs)} | {middle((r['together'] for r in runs), 0)} |")
+    return rows
 
 
 def median(runs, side, key):
@@ -709,6 +763,8 @@ def main():
                         help="measure a room of N members instead (2 to 8)")
     parser.add_argument("--share", action="store_true",
                         help="with --room: the first member shares the pattern")
+    parser.add_argument("--member-paths", default="", metavar="S1,S2,...",
+                        help="with --room: the second member's own path, the third's, ...")
     args = parser.parse_args()
 
     if args.list:
@@ -727,6 +783,16 @@ def main():
         parser.error("--room runs over netem's namespaces: no --netsim, no --feed")
     if args.share and not args.room:
         parser.error("--share is --room's")
+    by_name = {s.name: s for s in SCENARIOS}
+    member_paths = [p for p in args.member_paths.split(",") if p]
+    if member_paths and not args.room:
+        parser.error("--member-paths is --room's")
+    if set(member_paths) - by_name.keys():
+        parser.error(f"--member-paths: no such scenario: "
+                     f"{', '.join(sorted(set(member_paths) - by_name.keys()))}")
+    if len(member_paths) > max(args.room - 1, 0):
+        parser.error("--member-paths: one for each member after the first, at most")
+    args.member_paths = [by_name[p] for p in member_paths]
     transports = args.transport.split(",")
     if not set(transports) <= set(TRANSPORTS):
         parser.error(f"--transport: of {', '.join(TRANSPORTS)}, please")

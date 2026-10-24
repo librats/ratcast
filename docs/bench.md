@@ -1351,3 +1351,37 @@ second's mean): before 155 and 117 ms, with the budget alone 136 and 89, with al
   stalls 7 (1405) → 9 (2245), cuts 4 → 6 — it probes past the ceiling, as it was meant to,
   and on `cap-drop` that is the path's 20 Mbit/s found again after its narrow five seconds:
   before, two runs of three stayed at 3.1–3.4 Mbit/s to the end; now they climb back to 7–8.
+
+## Playing in step (5.2)
+
+A share's viewers each played it as soon as they could: on paths of different lengths a film
+was seen at as many moments as there were viewers. Now each viewer measures its clock against
+the clock the sharer's frames are captured on — probes on the media lane, answered at once, the
+round trip that took least of the last ten seconds (`PeerClock`) — and tells the sharer what it
+needs from capture to playing, on the sharer's clock: the more of its sound's and its pictures'
+own needs, never what they play at. The sharer tells them all the most of it and 10 ms
+(`CommonDelay`): up at once, down only once every need has stayed lower for five seconds. The
+viewers' `PlayoutClock`s play to it — the sound's floor raised to it, the pictures held to the
+sound, or to it where there is no sound. ratcast 9628ea6 + 5.2, librats d4558e7.
+
+Four in a room on `local`, the first sharing; the three viewers each on a path of its own —
+`bench/netem.py --room 4 --share --size 1280x720 --fps 30 --bitrate 3000 --duration 30 --repeat 3
+--member-paths local,rtt-100,loss-2 local`, each viewer apart (`--send-arg=--apart`) and in step:
+
+| viewers | picture latency p50, ms: `local` / `rtt-100` / `loss-2` | apart, ms | every viewer at, ms | picture latency p95, ms | stalls (all viewers) | voice latency p50, ms: the worst member's |
+|---|---:|---:|---:|---:|---:|---:|
+| each in its own time | 18.9 / 81.9 / 104.4 | 84.4 | – | 108.5 | 1 | 108.5 |
+| in step | 122.9 / 122.9 / 122.9 | 0.0 | 156 | 159.7 | 7 | 135.2 |
+
+- **The viewers show a frame together**: their medians fall in one bucket of the latency
+  histogram (3%, 4 ms here), where they were 85 ms apart. What it costs is the slowest viewer's
+  latency and the margin for all: the one on `local` shows the share 100 ms later than it could.
+- **The stalls are the VM's**, which stops now and then for 100 ms or more: every member's
+  voice breaks at the same moment then, the sharer's included, and so do the pictures. In step,
+  each such moment also raises the slowest viewer's need, which raises everyone's delay (126 →
+  156 ms in one run, at the 29th second, kept for the rest of it) and holds every viewer's
+  pictures once more for it. The voices are not held to the share; their latency moves with the
+  VM between runs (the worst member's p50 108–143 ms in both).
+- The delay is held within a stream's lifetime: a viewer holds pictures and sound no longer than
+  that past its own time, and one whose own path is that much quicker than the slowest's stays
+  ahead of the others by the rest.

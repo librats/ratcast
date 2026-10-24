@@ -1,6 +1,7 @@
 ratcast_add_test(libratcast_tests
     SOURCES
         test_buffer.cpp
+        test_common_delay.cpp
         test_capi.cpp
         test_control_codec.cpp
         test_frame_codec.cpp
@@ -11,6 +12,7 @@ ratcast_add_test(libratcast_tests
         test_jitter_buffer.cpp
         test_media_service.cpp
         test_media_session.cpp
+        test_peer_clock.cpp
         test_presence.cpp
         test_rate_controller.cpp
         test_shared_uplink.cpp
