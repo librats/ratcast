@@ -121,7 +121,7 @@ inline constexpr size_t kMaxForwarded = 64;
 /// to one of the viewers it passes it to, as the stream's part of it
 /// (share_of()). Of the signal, what a sender's rate control reads: starting,
 /// expired, the queue delay, the round trip and its rise (the queue beyond),
-/// capacity and delivered.
+/// capacity, delivered and carried.
 struct RelayedPath {
     StreamId stream = 0;
     PeerId viewer;

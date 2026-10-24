@@ -25,10 +25,16 @@
  *     does overfill the path ends Startup within a few round trips; a full
  *     queue counts throughout.
  *   - It remembers where a full path (below) filled up, climbs back quickly
- *     to 85% of that and carefully on, +8% a step, ramping again only once it
- *     is well past that point with no trouble: the path has grown. A cut with
- *     the path not known to be full — frames expired on a path that loses
- *     packets — leaves no such mark.
+ *     to 85% of that and carefully on, +8% a step, ramping again only once
+ *     the paths carried well past that point: the path has grown. Its own
+ *     target is no sign of that: an encoder sends what the picture needs,
+ *     often far less, and would fill the path at once as the picture came to
+ *     need more. A path that fills up
+ *     where it did before is probed past it less and less often, the steps
+ *     twice as far apart after each such cut, up to eight seconds; one that
+ *     narrowed or grew, every second again. A cut with the path not known to
+ *     be full — frames expired on a path that loses packets — leaves no such
+ *     mark.
  *   - It never climbs above what a path is known to carry, with 10% to spare.
  *     A path is known only from an estimate taken while the sender kept it
  *     busy, two samples running (a keyframe keeps it busy for a moment), and
@@ -115,15 +121,18 @@ struct PathSignal {
     /// idle path delivers what it is given.
     std::optional<uint64_t> delivered;
     /// What the path delivered for media over the last second or so, busy or
-    /// not: its part of an uplink it shares with others (shared_uplink.h). A
-    /// second, so that a moment's stall of the acknowledgements — a full
-    /// queue's losses — does not read as an uplink that carries little.
-    /// nullopt for the first sample, which has nothing to count from.
+    /// not: at least what it carries — a path grown past where it filled up,
+    /// to rate control — and its part of an uplink it shares with others
+    /// (shared_uplink.h). A second, so that a moment's stall of the
+    /// acknowledgements — a full queue's losses — does not read as an uplink
+    /// that carries little. nullopt for the first sample, which has nothing to
+    /// count from.
     std::optional<uint64_t> carried;
 };
 
 /// `path` as one of the streams sharing it sees it: `share` (0–1] of what it
-/// carries and delivered; the rest is the path's, the same for every stream.
+/// carries, delivered and carried; the rest is the path's, the same for every
+/// stream.
 RATCAST_EXPORT PathSignal share_of(const PathSignal& path, double share) noexcept;
 
 /// Whether `signal` reports a path that a stream of `lifetime` overuses: live
@@ -166,8 +175,10 @@ public:
     std::optional<uint32_t> on_overuse(Timestamp now, const PathSignal& path) noexcept;
 
     /// A path reported no overuse. `capacity` is the least any path of the
-    /// stream is known to carry. Returns the new target if it changed.
-    std::optional<uint32_t> on_clear(Timestamp now, std::optional<uint64_t> capacity) noexcept;
+    /// stream is known to carry, `carried` the least any of them carried over
+    /// the last second. Returns the new target if it changed.
+    std::optional<uint32_t> on_clear(Timestamp now, std::optional<uint64_t> capacity,
+                                     std::optional<uint64_t> carried) noexcept;
 
     /// Each copy of the stream is known to have at most `capacity` (its part
     /// of an uplink found full, or of one that takes another copy): the target
@@ -185,9 +196,11 @@ private:
     const BitrateLimits limits_;
     const Duration lifetime_;
     uint32_t target_;
-    /// The rate at which a full path last filled up; forgotten once well past
-    /// it.
+    /// The rate at which a full path last filled up; forgotten once the paths
+    /// carried well past it.
     std::optional<double> ceiling_;
+    /// How far apart the steps past it are.
+    Duration probe_every_;
     std::optional<Timestamp> last_cut_;
     std::optional<Timestamp> last_raise_;
 };

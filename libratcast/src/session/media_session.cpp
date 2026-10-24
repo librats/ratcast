@@ -129,8 +129,10 @@ struct MediaSession::Copy {
     /// A frame was held back for it since its path's last sample: its queue
     /// was full, which rate control takes for overuse.
     bool backpressured = false;
-    /// What its path is known to carry, as of the last sample.
+    /// What its path is known to carry, and carried over the last second, as
+    /// of the last sample.
     std::optional<uint64_t> capacity;
+    std::optional<uint64_t> carried;
 
     /// A keyframe of the stream is known to have reached it.
     bool joined = false;
@@ -160,6 +162,7 @@ struct MediaSession::Copy {
         awaiting_keyframe = true;
         backpressured = false;
         capacity.reset();
+        carried.reset();
         joined = false;
         joining.reset();
         relayed_rtt.reset();
@@ -444,17 +447,23 @@ struct MediaSession::OutgoingStream {
                                    std::optional<uint64_t> uplink, Timestamp now) {
         if (uplink) path.capacity = std::min(path.capacity.value_or(*uplink), *uplink);
         subscriber.capacity = path.capacity;
+        subscriber.carried = path.carried;
         const uint32_t before = rate->target();
         if (std::exchange(subscriber.backpressured, false) || rate->overused(path)) {
             return count(rate->on_overuse(now, path), before);
         }
-        // Raised no further than the narrowest path is known to carry.
+        // Raised no further than the narrowest path is known to carry; past
+        // where one filled up, by more than a step once it carried more.
+        const auto least = [](std::optional<uint64_t> a, std::optional<uint64_t> b) {
+            return a && b ? std::min(a, b) : a ? a : b;
+        };
         std::optional<uint64_t> capacity;
+        std::optional<uint64_t> carried;
         for (const Copy& other : fanout.copies) {
-            if (other.capacity)
-                capacity = std::min(capacity.value_or(*other.capacity), *other.capacity);
+            capacity = least(capacity, other.capacity);
+            carried = least(carried, other.carried);
         }
-        return count(rate->on_clear(now, capacity), before);
+        return count(rate->on_clear(now, capacity, carried), before);
     }
 
     /// Nobody watches any more: the next viewer starts afresh. Neither a cut

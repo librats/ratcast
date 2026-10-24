@@ -819,6 +819,29 @@ PathStats carried(uint64_t bytes, uint64_t expired = 0) {
     return s;
 }
 
+TEST_F(MediaSessionTest, RateControlRampsPastWhereThePathFilledUpOnlyOnceItCarriedWellPast) {
+    add_rated_stream();
+    subscribe(receiver, 2);
+    sender.session.on_peer_path(receiver.id, busy_path(0));
+    clock.advance(100ms);
+    sender.session.on_peer_path(receiver.id, busy_path(25'000, 1));  // full at 2 Mbit/s
+
+    // The encoder sends 1 Mbit/s of it: carefully on, +8% a step.
+    uint64_t bytes = 25'000;
+    for (int second = 0; second < 5; ++second) {
+        clock.advance(1s);
+        bytes += 125'000;
+        sender.session.on_peer_path(receiver.id, carried(bytes));
+    }
+    EXPECT_EQ(sender.bitrates, (Bitrates{1'700'000, 1'836'000, 1'982'880, 2'141'510, 2'312'831}));
+
+    // 2.4 Mbit/s got through: the path has grown.
+    clock.advance(1s);
+    bytes += 300'000;
+    sender.session.on_peer_path(receiver.id, carried(bytes));
+    EXPECT_EQ(sender.bitrates.back(), 3'469'247u);
+}
+
 TEST_F(MediaSessionTest, CopiesThroughAFullUplinkShareIt) {
     Party other(hub, clock, 3);
     connect(sender, other);

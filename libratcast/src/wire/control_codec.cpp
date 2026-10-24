@@ -122,6 +122,7 @@ enum RelayedPathFlags : uint8_t {
     kBackpressured = 4,
     kCapacity = 8,
     kDelivered = 16,
+    kCarried = 32,
 };
 
 template <typename Out>
@@ -132,12 +133,14 @@ void write(Out& out, const RelayedPath& path) {
     out.bytes(path.viewer.bytes());
     out.u8(static_cast<uint8_t>((s.starting ? kStarting : 0) | (s.expired ? kExpired : 0) |
                                 (path.backpressured ? kBackpressured : 0) |
-                                (s.capacity ? kCapacity : 0) | (s.delivered ? kDelivered : 0)));
+                                (s.capacity ? kCapacity : 0) | (s.delivered ? kDelivered : 0) |
+                                (s.carried ? kCarried : 0)));
     out.varint(static_cast<uint64_t>(s.queue_delay.count()));
     out.varint(static_cast<uint64_t>(s.rtt.count()));
     out.varint(static_cast<uint64_t>(s.queue_rise.count()));
     if (s.capacity) out.varint(*s.capacity);
     if (s.delivered) out.varint(*s.delivered);
+    if (s.carried) out.varint(*s.carried);
 }
 
 template <typename Out>
@@ -246,7 +249,7 @@ Result<ControlMessage> read_relayed_path(Reader& in) {
     path.stream = read_u32(in);
     path.viewer = read_peer(in);
     const uint8_t flags = in.u8();
-    if (flags >= kDelivered * 2) in.fail(Errc::Malformed);
+    if (flags >= kCarried * 2) in.fail(Errc::Malformed);
     PathSignal& s = path.signal;
     s.starting = flags & kStarting;
     s.expired = flags & kExpired;
@@ -256,6 +259,7 @@ Result<ControlMessage> read_relayed_path(Reader& in) {
     s.queue_rise = read_duration(in);
     if (flags & kCapacity) s.capacity = in.varint();
     if (flags & kDelivered) s.delivered = in.varint();
+    if (flags & kCarried) s.carried = in.varint();
     if (!in.ok()) return fail(in.error());
     return ControlMessage{path};
 }

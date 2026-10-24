@@ -232,15 +232,18 @@ TEST(ControlCodec, RoundTripsRelayedPath) {
     EXPECT_EQ(got.signal.queue_rise, 9ms);
     EXPECT_EQ(got.signal.capacity, 3'000'000u);
     EXPECT_EQ(got.signal.delivered, std::nullopt);
+    EXPECT_EQ(got.signal.carried, std::nullopt);
 
     path = RelayedPath{7, peer(3), {}, false};
     path.signal.starting = true;
     path.signal.delivered = 900'000;
+    path.signal.carried = 1'100'000;
     got = round_trip(path);
     EXPECT_TRUE(got.signal.starting);
     EXPECT_FALSE(got.backpressured);
     EXPECT_EQ(got.signal.capacity, std::nullopt);
     EXPECT_EQ(got.signal.delivered, 900'000u);
+    EXPECT_EQ(got.signal.carried, 1'100'000u);
 }
 
 TEST(ControlCodec, RoundTripsCannotReach) {
@@ -259,6 +262,7 @@ TEST(ControlCodec, EveryCutOfARelayMessageIsTruncated) {
     RelayedPath path{7, peer(3), {}, false};
     path.signal.capacity = 3'000'000;
     path.signal.delivered = 2'000'000;
+    path.signal.carried = 2'500'000;
     for (const ControlMessage& message :
          {ControlMessage{Forward{7, 8'000'000, {peer(1), peer(2)}}}, ControlMessage{path},
           ControlMessage{Uplink{6'000'000}}, ControlMessage{CannotReach{7, peer(4)}}}) {
@@ -275,6 +279,6 @@ TEST(ControlCodec, RefusesAForwardToTooManyOrAPathWithFlagsItDoesNotKnow) {
     EXPECT_EQ(decode_error({message_prefix(MessageKind::Forward), 7, 0, kMaxForwarded + 1}),
               Errc::Malformed);
     auto bytes = bytes_of(encode_control(RelayedPath{7, peer(3), {}, false}));
-    bytes[2 + PeerId::kSize] = 32;  // the flags, past the last known
+    bytes[2 + PeerId::kSize] = 64;  // the flags, past the last known
     EXPECT_EQ(decode_error(bytes), Errc::Malformed);
 }

@@ -23,9 +23,10 @@ PathStats sample(uint64_t bandwidth_bps, bool app_limited = true) {
 class RateControllerTest : public ::testing::Test {
 protected:
     /// A clear sample `after` the last one; the target it leaves.
-    uint32_t clear(Duration after, std::optional<uint64_t> capacity = std::nullopt) {
+    uint32_t clear(Duration after, std::optional<uint64_t> capacity = std::nullopt,
+                   std::optional<uint64_t> carried = std::nullopt) {
         now += after;
-        rate.on_clear(now, capacity);
+        rate.on_clear(now, capacity, carried);
         return rate.target();
     }
 
@@ -230,7 +231,7 @@ TEST_F(RateControllerTest, RampsUpFromTheStartASecondAStep) {
     EXPECT_EQ(clear(1s), 4'500'000u);
     EXPECT_EQ(clear(1s), 6'750'000u);
     EXPECT_EQ(clear(1s), 8'000'000u);  // the top
-    EXPECT_EQ(rate.on_clear(now + 1s, std::nullopt), std::nullopt);
+    EXPECT_EQ(rate.on_clear(now + 1s, std::nullopt, std::nullopt), std::nullopt);
 }
 
 TEST_F(RateControllerTest, ClimbsNoHigherThanABusyPathCarries) {
@@ -259,15 +260,40 @@ TEST_F(RateControllerTest, CutsNoMoreThanHalfAtOnce) {
     EXPECT_EQ(overuse(0s, 100'000), 850'000u);  // 85% of half the target
 }
 
-TEST_F(RateControllerTest, ProbesCarefullyTowardsWhereThePathFilledUpThenRampsPastIt) {
+TEST_F(RateControllerTest, ProbesCarefullyPastWhereThePathFilledUpThenRampsOnceItCarriedWellPast) {
     clear(0s);
     EXPECT_EQ(overuse(0s, 2'000'000), 1'700'000u);  // a full path: ceiling 2 Mbit/s
     EXPECT_EQ(clear(1900ms), 1'700'000u);           // held for two seconds after a cut
     EXPECT_EQ(clear(100ms), 1'836'000u);            // +8%
     EXPECT_EQ(clear(1s), 1'982'880u);
     EXPECT_EQ(clear(1s), 2'141'510u);
-    EXPECT_EQ(clear(1s), 2'312'831u);  // 15% past the ceiling with no trouble
-    EXPECT_EQ(clear(1s), 3'469'247u);  // so the path has grown: ramping again
+    // 15% past it, the encoder sending less: nothing says the path grew.
+    EXPECT_EQ(clear(1s, std::nullopt, 1'700'000), 2'312'831u);
+    EXPECT_EQ(clear(1s, std::nullopt, 2'200'000), 2'497'857u);
+    EXPECT_EQ(clear(1s, std::nullopt, 2'400'000), 3'746'786u);  // it carried well past: grown
+}
+
+TEST_F(RateControllerTest, ProbesPastACeilingFoundAgainLessAndLessOften) {
+    clear(0s);
+    for (const Duration every : {1s, 2s, 4s, 8s, 8s}) {
+        EXPECT_EQ(overuse(0s, 2'000'000), 1'700'000u);  // filled up at 2 Mbit/s
+        EXPECT_EQ(clear(std::max(every, Duration{2s})), 1'836'000u) << every;
+        EXPECT_EQ(clear(every - 1ms), 1'836'000u) << every;
+        EXPECT_EQ(clear(1ms), 1'982'880u) << every;
+        EXPECT_EQ(clear(every), 2'141'510u) << every;
+    }
+}
+
+TEST_F(RateControllerTest, ProbesANarrowerPathEverySecondAgain) {
+    clear(0s);
+    overuse(0s, 2'000'000);
+    clear(2s);
+    clear(1s);
+    clear(1s);
+    EXPECT_EQ(overuse(0s, 2'000'000), 1'700'000u);  // again: steps two seconds apart
+    EXPECT_EQ(overuse(1s, 1'000'000), 850'000u);    // narrower
+    EXPECT_EQ(clear(2s), 918'000u);
+    EXPECT_EQ(clear(1s), 991'440u);
 }
 
 TEST_F(RateControllerTest, ClimbsBackQuicklyToBelowTheCeiling) {

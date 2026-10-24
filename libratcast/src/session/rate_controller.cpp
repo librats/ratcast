@@ -22,11 +22,14 @@ constexpr double kHeadroom = 0.9;
 /// A step up with no ceiling to approach, and one towards a ceiling.
 constexpr double kRampGain = 1.5;
 constexpr double kProbeGain = 1.08;
-/// Past the ceiling by this much with no trouble, the path has grown.
+/// Carried past the ceiling by this much, the path has grown.
 constexpr double kPastCeiling = 1.15;
 /// A raise smaller than this is not worth a keyframe.
 constexpr double kMinRaise = 1.05;
 constexpr Duration kRaiseInterval = std::chrono::seconds(1);
+/// The steps past a ceiling found again where it was are this far apart at
+/// most.
+constexpr Duration kProbeEveryMost = std::chrono::seconds(8);
 /// What a path carried is measured over this much.
 constexpr Duration kCarriedOver = std::chrono::seconds(1);
 /// A round trip's rise is over the least of this much.
@@ -47,6 +50,7 @@ PathSignal share_of(const PathSignal& path, double share) noexcept {
     PathSignal shared = path;
     shared.capacity = part(path.capacity);
     shared.delivered = part(path.delivered);
+    shared.carried = part(path.carried);
     return shared;
 }
 
@@ -117,7 +121,7 @@ PathSignal PathMonitor::update(const PathStats& sample, Timestamp now) {
 // ── RateController ──────────────────────────────────────────────────────────
 
 RateController::RateController(BitrateLimits limits, Duration lifetime) noexcept
-    : limits_(limits), lifetime_(lifetime), target_(limits.start) {}
+    : limits_(limits), lifetime_(lifetime), target_(limits.start), probe_every_(kRaiseInterval) {}
 
 std::optional<uint32_t> RateController::on_overuse(Timestamp now, const PathSignal& path) noexcept {
     // Frames sent before the last cut are still on their way, and may yet
@@ -130,14 +134,19 @@ std::optional<uint32_t> RateController::on_overuse(Timestamp now, const PathSign
     if (path.capacity) carries = std::min(carries.value_or(*path.capacity), *path.capacity);
     double from = target_;
     if (carries) {
+        // Filled up again where it did before: probing past that finds
+        // nothing new, only more cuts. Narrower: as new as any.
+        probe_every_ = ceiling_ && double(*carries) >= *ceiling_ * kBackoff
+                           ? std::min(probe_every_ * 2, kProbeEveryMost)
+                           : kRaiseInterval;
         from = std::clamp(double(*carries), target_* kMaxCut, from);
         ceiling_ = from;
     }
     return set_target(from * kBackoff);
 }
 
-std::optional<uint32_t> RateController::on_clear(Timestamp now,
-                                                 std::optional<uint64_t> capacity) noexcept {
+std::optional<uint32_t> RateController::on_clear(Timestamp now, std::optional<uint64_t> capacity,
+                                                 std::optional<uint64_t> carried) noexcept {
     if (!last_raise_) {
         // The first word from a path: the start has yet to prove itself.
         last_raise_ = now;
@@ -146,13 +155,22 @@ std::optional<uint32_t> RateController::on_clear(Timestamp now,
     if (now - *last_raise_ < kRaiseInterval) return std::nullopt;
     if (last_cut_ && now - *last_cut_ < kHoldAfterCut) return std::nullopt;
 
-    if (ceiling_ && target_ > *ceiling_ * kPastCeiling) ceiling_.reset();
+    if (ceiling_ && carried && *carried > *ceiling_ * kPastCeiling) {
+        ceiling_.reset();  // the path has grown
+        probe_every_ = kRaiseInterval;
+    }
     double next = target_ * kRampGain;
     if (ceiling_) {
         // Quickly back to where a cut at the ceiling leaves it, carefully on
         // from there — and from short of it by less than a raise is worth.
         const double below = *ceiling_ * kBackoff;
-        next = target_ * kMinRaise < below ? std::min(next, below) : target_ * kProbeGain;
+        if (target_ * kMinRaise < below) {
+            next = std::min(next, below);
+        } else {
+            const Timestamp stepped = std::max(*last_raise_, last_cut_.value_or(*last_raise_));
+            if (now - stepped < probe_every_) return std::nullopt;
+            next = target_ * kProbeGain;
+        }
     }
     if (capacity) next = std::min(next, double(*capacity) * kHeadroom);
     if (next < target_ * kMinRaise) return std::nullopt;
@@ -168,6 +186,7 @@ std::optional<uint32_t> RateController::limit(uint64_t capacity) noexcept {
 
 std::optional<uint32_t> RateController::restart() noexcept {
     ceiling_.reset();
+    probe_every_ = kRaiseInterval;
     last_cut_.reset();
     last_raise_.reset();
     return set_target(limits_.start);

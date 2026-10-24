@@ -794,11 +794,12 @@ moment, and the sharer's voice heard as quickly as anyone's.
      trip now) — and a relay found too far is passed over as one not connected (`CannotReach`).
      With the viewers on `rtt-100`, `local`, `loss-2`: m0 → {m1, m2 → m3}, every viewer at 58–59
      fps, 15 stalls where all from the sharer had 58.
-     Left: the one copy left from the sharer saws with its rate control — up to the stream's
-     most while the encoder sends 4–5.5 of it, cut where frames expire, every 7 s, the sharer's
-     voice breaking each time (24 stalls a minute, where the copy held to the uplink had 9): a
-     single path through a narrow uplink, the tree's or a call's, rate control's (1.1) to settle;
-     an uplink found full while the copies start is found narrower than it is (4.06 and 4.6 of 6)
+     The one copy left from the sharer sawed with its rate control — up to the stream's most
+     while the encoder sends 4–5.5 of it, cut where frames expire, every 7 s: settled in rate
+     control (1.1), a path taken for grown only once it carried well past where it filled up,
+     and the steps past a ceiling found again where it was twice as far apart each time, up to
+     8 s — half the cuts and raises (`docs/bench.md`, "Probing past a ceiling").
+     Left: an uplink found full while the copies start is found narrower than it is (4.06 and 4.6 of 6)
      and held for a minute; a relayed viewer still asks the sender for keyframes while its first
      is on its way from the relay; "nearest" is the sender's round trip, not the relay's to the
      viewer.

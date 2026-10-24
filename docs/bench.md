@@ -1444,3 +1444,51 @@ rtt-100,local,loss-2`). One run each:
 - **Left**: an uplink found full while the copies start is found narrower than it is (4.06 and
   4.6 of 6 here) and the copies held to it for a minute; with two or more paths it is found
   again after that.
+
+## Probing past a ceiling (1.1, after 5.3)
+
+The one copy left from the sharer, through the tree on `cap-6`, sawed: up to the stream's most,
+cut where frames expired, every 7 s. Two faults of rate control's, a single path's anywhere.
+After a cut at a full path's ceiling it probed on, +8% a second, and took a target 15% past the
+ceiling with no trouble for a path grown — but an encoder sends what the picture needs (SVT-AV1
+on the pattern: 70–80% of its target), so the path was never tried at that target: it ramped ×1.5
+to the most, and the encoder filled the path at once as the picture came to need more. And it
+probed every second whatever it had found: past the same 5.85 Mbit/s, cut, back, past it
+again. Now a path is taken for grown only once it carried well past the ceiling (`carried`,
+over the last second, the relays telling it in `RelayedPath`), and a ceiling found again where
+it was — what the path carried at the cut no less than 85% of it — has the steps past it twice
+as far apart each time, up to 8 s; one narrower, or grown, every second again. ratcast d8a6a2c +
+this, librats fd21fa1.
+
+Four in a room, the sharer's uplink one copy wide (`bench/netem.py --room 4 --share
+--member-paths local,local,local cap-6 --duration 60`), the two builds in turn, two runs each:
+
+| build | cuts / raises / keyframes, a minute | share: fps | latency p95, ms | stalls (by viewer) | sent, Mbit/s: sharer / the relay |
+|---|---:|---:|---:|---:|---:|
+| before | 9 / 41 / 58 | 58 | 151.6 | 17 (7, 5, 5) | 4.66 / 8.87 |
+| before | 9 / 41 / 58 | 58 | 147.5 | 34 (12, 11, 11) | 4.39 / 8.30 |
+| after | 5 / 20 / 31 | 59 | 135.2 | 20 (9, 6, 5) | 4.73 / 8.99 |
+| after | 6 / 21 / 33 | 59 | 124.9 | 16 (6, 5, 5) | 4.61 / 8.77 |
+
+- **Half the cuts, half the raises**: the steps past 5.85 Mbit/s come 2, then 4, then 8 s apart,
+  four of them from a cut to the next (4.75 → 6.5, the encoder sending 4–5.5): at 8 s apart, a
+  cut every half a minute or so where it was every 7 s. More of the path used, not less:
+  4.6–4.7 Mbit/s sent where it was 4.4–4.7.
+- **Each raise costs a keyframe here** (SVT-AV1 changes its bitrate only by opening anew): a gap
+  of 65–100 ms between two pictures at the viewers, not a stall. A frame is lost only at a cut;
+  with half the raises, half those gaps too.
+- **Stalls are the VM's as much as rate control's**: the same build gives 17 and 34. The
+  voice breaks (0–25 a run) come with the whole machine stopping for 300–450 ms, every
+  voice at once; the sound goes ahead of the pictures in the sender's queue (librats L4).
+- **One to one** (`--repeat 3`, medians, before → after): `local` 58 → 59 fps, stalls 2 (500
+  ms) → 0; `jitter` 0 → 1 (154); `loss-2` 1 (101) → 1 (117); `cap-6` 58 → 59 fps, 4.0 (2 cuts)
+  → 4.1 (2), stalls 2 (213) → 1 (114); `cap-drop` 56 → 54 fps, 3.3 (4) → 3.3 (3), stalls 10
+  (1605) → 8 (1704). The same within the VM's noise: 15 s holds one or two cuts, before the
+  steps are far apart; on `cap-drop` the path that narrowed is probed every second again.
+- **Tried and left out**: no step past a ceiling further than one past what the paths carried
+  — a target held just past the 5.85 with no cut for 40 s — but a ceiling found too low (a cut
+  while the machine stalled: 3.85) then held for good, the encoder sending too little ever to
+  carry past it. A cut on the round trip rising (as `SharedUplink`'s): it never rose, as librats
+  paces each path to its estimate and the queue is the sender's own, 30–75 ms, the network's
+  empty. And steps past the ceiling only while the encoder sends 80% of its target: SVT-AV1 sits
+  at about that, and nothing changed.
