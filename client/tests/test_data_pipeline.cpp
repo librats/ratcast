@@ -319,12 +319,15 @@ TEST_F(DataPipelineTest, AFrameIsPlayedOutByItsFirstPacket) {
     input_.read(packets(9, 3));  // the frame is full now
     const Timestamp full = SteadyClock::instance().now();
     ASSERT_TRUE(eventually([&] { return output_.bytes().size() == 12 * kTsPacketSize; }));
-    // Out the latency after its first packet came in, as the feed went: what
-    // waited for the rest is not late — unless a slow machine's sleep had it
-    // full only after that, when it goes at once.
+    // Out the latency after its first packet came in, as the feed went: with
+    // the fastest, whose first packet came at the same time, as what waited
+    // for the rest is not late — unless a slow machine's sleep had it full
+    // only after that, when it goes at once. The fastest's own time is the
+    // loopback's and the machine's: a stall in it moves both.
+    const Timestamp fastest = *output_.written_at(0);
     const Timestamp written = *output_.written_at(6 * kTsPacketSize);
-    EXPECT_GE(written - first, 49ms);
-    EXPECT_LE(written - std::max(first + 50ms, full), 10ms + kWakeSlack);
+    EXPECT_GE(fastest - first, 49ms);
+    EXPECT_LE(written - std::max(fastest, full), 10ms + kWakeSlack);
 }
 
 TEST_F(DataPipelineTest, WhatIsHeldGoesWhenPublishingStops) {
