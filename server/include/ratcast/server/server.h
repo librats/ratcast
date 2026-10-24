@@ -16,6 +16,12 @@
  * connection, forwarded as they come — it reads nothing). Calls that never
  * reach it work as before: it only makes more of them connect.
  *
+ * And it forwards, an SFU (SessionConfig::forwarder): a sharer whose uplink
+ * is short of a copy for each viewer hands it viewers before any member, and
+ * sends it one copy, which it passes on to them all; so too every viewer
+ * whose connection it carries anyway. It watches nothing, decodes nothing,
+ * keeps no frame.
+ *
  * Threads: every method may be called from any thread.
  */
 
@@ -36,6 +42,8 @@ class Rendezvous;
 }  // namespace librats
 
 namespace ratcast {
+
+class MediaService;
 
 struct ServerConfig {
     /// The port calls dial, UDP and TCP; 0: any.
@@ -62,7 +70,10 @@ struct ServerStats {
     size_t registrations = 0;  ///< of rooms' keys, every peer's
     size_t relayed = 0;        ///< connections carried now
     uint64_t relayed_bytes = 0;
-    uint64_t punches = 0;  ///< rendezvous messages carried for punches
+    uint64_t punches = 0;          ///< rendezvous messages carried for punches
+    size_t forwarded = 0;          ///< streams forwarded now
+    size_t forwarded_to = 0;       ///< viewers they are passed on to
+    uint64_t forwarded_bytes = 0;  ///< passed on so far, of the streams forwarded now
 };
 
 class Server {
@@ -81,7 +92,8 @@ private:
     explicit Server(const ServerConfig& config);
 
     std::unique_ptr<librats::Node> node_;
-    librats::Rendezvous* rendezvous_ = nullptr;  ///< the node's
+    MediaService* media_ = nullptr;  ///< the node's
+    librats::Rendezvous* rendezvous_ = nullptr;
     librats::HolePunch* punch_ = nullptr;
     librats::Relay* relay_ = nullptr;
 };

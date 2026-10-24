@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <span>
 #include <utility>
+#include <vector>
 
 #include "librats/core/types.h"
 #include "librats/peer/peer.h"
@@ -114,6 +115,14 @@ void MediaService::set_send_ceiling(const PeerId& peer, uint64_t bits_per_second
     if (librats::PeerNetwork* network = network_.load(std::memory_order_acquire)) {
         network->set_send_ceiling(peer, bits_per_second);
     }
+}
+
+bool MediaService::relayed(const PeerId& peer) const {
+    const librats::PeerNetwork* network = network_.load(std::memory_order_acquire);
+    if (!network) return false;
+    const std::vector<librats::PeerInfo> peers = network->peers();
+    const auto info = std::ranges::find(peers, peer, &librats::PeerInfo::id);
+    return info != peers.end() && info->transport == librats::TransportKind::Relay;
 }
 
 }  // namespace ratcast

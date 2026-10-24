@@ -65,6 +65,11 @@ public:
     /// (shared_uplink.h). Forgotten when the peer disconnects. Default: not
     /// offered, the network's sends are not paced.
     virtual void set_send_ceiling(const PeerId& /*peer*/, uint64_t /*bits_per_second*/) {}
+
+    /// Whether what goes to `peer` is carried by a third node — a server
+    /// relaying the connection, no straight path between them (librats'
+    /// TransportKind::Relay). Default: never.
+    virtual bool relayed(const PeerId& /*peer*/) const { return false; }
 };
 
 }  // namespace ratcast

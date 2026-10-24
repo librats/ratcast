@@ -110,10 +110,13 @@ int main(int argc, char** argv) {
         if (stats_every == 0 || std::chrono::steady_clock::now() < next) continue;
         next += std::chrono::seconds(stats_every);
         const ratcast::ServerStats stats = server->stats();
-        std::printf("peers %zu, registered %zu, relaying %zu (%.1f MB so far), punches %llu\n",
-                    stats.peers, stats.registrations, stats.relayed,
-                    static_cast<double>(stats.relayed_bytes) / 1e6,
-                    static_cast<unsigned long long>(stats.punches));
+        std::printf(
+            "peers %zu, registered %zu, relaying %zu (%.1f MB so far), punches %llu, "
+            "forwarding %zu to %zu (%.1f MB)\n",
+            stats.peers, stats.registrations, stats.relayed,
+            static_cast<double>(stats.relayed_bytes) / 1e6,
+            static_cast<unsigned long long>(stats.punches), stats.forwarded, stats.forwarded_to,
+            static_cast<double>(stats.forwarded_bytes) / 1e6);
         std::fflush(stdout);
     }
     return 0;

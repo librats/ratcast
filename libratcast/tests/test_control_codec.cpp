@@ -258,6 +258,14 @@ TEST(ControlCodec, RoundTripsUplink) {
     EXPECT_EQ(decode_error({message_prefix(MessageKind::Uplink), 2}), Errc::Malformed);
 }
 
+TEST(ControlCodec, RoundTripsForwarder) {
+    const auto bytes = bytes_of(encode_control(Forwarder{}));
+    EXPECT_EQ(bytes, std::vector<uint8_t>{message_prefix(MessageKind::Forwarder)});
+    const Result<ControlMessage> decoded = decode_control(bytes);
+    ASSERT_TRUE(decoded);
+    EXPECT_TRUE(std::holds_alternative<Forwarder>(*decoded));
+}
+
 TEST(ControlCodec, EveryCutOfARelayMessageIsTruncated) {
     RelayedPath path{7, peer(3), {}, false};
     path.signal.capacity = 3'000'000;

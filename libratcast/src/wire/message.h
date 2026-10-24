@@ -40,6 +40,7 @@ enum class MessageKind : uint8_t {
     RelayedFrame = 14,    ///< a frame of another's stream, passed on (frame_codec.h)
     Uplink = 15,          ///< my uplink was found full, carrying this; or is no longer known to be
     CannotReach = 16,     ///< I am not connected to this viewer you would have me pass on to
+    Forwarder = 17,       ///< I watch nothing and pass on what I am handed: a server
 };
 
 constexpr uint8_t message_prefix(MessageKind kind) noexcept {
@@ -69,7 +70,8 @@ inline Result<MessageKind> read_prefix(Reader& in) noexcept {
         case MessageKind::RelayedPath:
         case MessageKind::RelayedFrame:
         case MessageKind::Uplink:
-        case MessageKind::CannotReach: return kind;
+        case MessageKind::CannotReach:
+        case MessageKind::Forwarder: return kind;
     }
     return fail(Errc::UnknownKind);
 }

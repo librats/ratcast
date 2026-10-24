@@ -157,6 +157,11 @@ void write(Out& out, const CannotReach& cannot) {
     out.bytes(cannot.viewer.bytes());
 }
 
+template <typename Out>
+void write(Out& out, const Forwarder&) {
+    out.u8(message_prefix(MessageKind::Forwarder));
+}
+
 template <typename Out, typename Message>
 void write(Out& out, const Message& message) {
     constexpr MessageKind kind = [] {
@@ -383,6 +388,7 @@ Result<ControlMessage> decode_control(std::span<const uint8_t> message) {
         case MessageKind::RelayedPath: return read_relayed_path(in);
         case MessageKind::Uplink: return read_uplink(in);
         case MessageKind::CannotReach: return read_cannot_reach(in);
+        case MessageKind::Forwarder: return ControlMessage{Forwarder{}};
         case MessageKind::Frame:
         case MessageKind::RelayedFrame: break;
     }

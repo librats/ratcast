@@ -34,6 +34,7 @@
  *                     [varint capacity (bit/s)], [varint delivered (bit/s)]
  *   Uplink            prefix, u8 1 + varint capacity (bit/s), or u8 0: not known
  *   CannotReach       prefix, varint stream, the viewer's 32-byte id
+ *   Forwarder         prefix
  *
  * A later version may append fields to any of them: a receiver reads the
  * fields it knows and ignores whatever follows.
@@ -144,9 +145,15 @@ struct CannotReach {
     PeerId viewer;
 };
 
-using ControlMessage = std::variant<Announce, Withdraw, Subscribe, Unsubscribe, KeyframeRequest,
-                                    PresenceUpdate, ClockProbe, ClockEcho, PlayoutNeed,
-                                    PlayoutDelay, Forward, RelayedPath, Uplink, CannotReach>;
+/// A node's word to every peer as it connects: it watches nothing, and passes
+/// on what a sender hands it (Forward) — a server, a relay always there to hand
+/// viewers to.
+struct Forwarder {};
+
+using ControlMessage =
+    std::variant<Announce, Withdraw, Subscribe, Unsubscribe, KeyframeRequest, PresenceUpdate,
+                 ClockProbe, ClockEcho, PlayoutNeed, PlayoutDelay, Forward, RelayedPath, Uplink,
+                 CannotReach, Forwarder>;
 
 /// The message for `message`. Precondition: an Announce carries a description,
 /// a PresenceUpdate a presence, for which is_valid() holds; a PlayoutNeed or a

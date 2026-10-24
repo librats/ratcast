@@ -818,8 +818,20 @@ quickly as anyone's.
      `RATCAST_DEFAULT_SERVER`; the tools' `--server`), or from a member that names one; a
      server is no member (`Call::servers()`), a path through it says so (`Call::relayed()`,
      the monitor's "relayed"). `CallConfig::dht` false meets at servers alone.
-  2. The SFU: the server takes a share once and passes it to the viewers its sender hands it
-     — the 5.3 tree, a relay that is no viewer and always has room. Then sound for big rooms.
+  2. The SFU ✅: the server's session is a forwarder (`SessionConfig::forwarder`, wire
+     `Forwarder` said on connect) — the 5.3 tree's relay that is no viewer: a sender whose
+     uplink is short hands it viewers before any member, making it a subscriber once two or
+     more copies go from here (one alone gains nothing) and dropping it as it is left none;
+     the forwarder subscribes as it is handed viewers, lets go as it is left none, keeps no
+     frame and asks for no keyframe of its own. Viewers whose connection the server carries
+     anyway (`MediaNetwork::relayed()`, librats' `TransportKind::Relay`) go through it
+     whatever the uplink: one copy for all of them where each took one through the same
+     server. Tested in virtual time (`ForwarderTest`) and on librats nodes (`Server`);
+     measured behind NATs (`bench/nat.py --viewers 3`, `docs/bench.md`): three viewers
+     behind symmetric NATs, the sender sends 2.2 Mbit/s where it sent 6.5; three behind cone
+     NATs with the sender's uplink 5 Mbit/s wide, each gets 2.8 Mbit/s where it got 0.7–0.9.
+     Left: sound for big rooms (top speakers, forwarded once); `Forward` names 64 viewers at
+     most.
   3. SFrame E2EE, the room key from the owner: the server forwards what it cannot read.
 - **5.4 Simulcast** (put off until a measurement asks for it): one weak path no longer pulls
   everyone down — the share in two layers (the full one and ~720p), each viewer receiving the

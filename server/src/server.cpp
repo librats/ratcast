@@ -1,5 +1,7 @@
 #include "ratcast/server/server.h"
 
+#include "ratcast/session/media_service.h"
+
 #include "librats/node/node.h"
 #include "librats/subsystems/hole_punch.h"
 #include "librats/subsystems/relay.h"
@@ -30,6 +32,8 @@ Result<std::unique_ptr<Server>> Server::start(ServerConfig config) {
 
 Server::Server(const ServerConfig& config)
     : node_(std::make_unique<librats::Node>(node_config(config))) {
+    media_ = node_->add_subsystem(
+        std::make_unique<MediaService>(SessionHandlers{}, SessionConfig{.forwarder = true}));
     librats::Rendezvous::Config meeting;
     meeting.serve = true;
     rendezvous_ = node_->add_subsystem(std::make_unique<librats::Rendezvous>(meeting));
@@ -54,13 +58,23 @@ const PeerId& Server::id() const noexcept { return node_->local_id(); }
 uint16_t Server::port() const noexcept { return node_->listen_port(); }
 
 ServerStats Server::stats() const {
-    return ServerStats{
+    ServerStats stats{
         .peers = node_->peer_count(),
         .registrations = rendezvous_->registrations(),
         .relayed = relay_->carried_circuits(),
         .relayed_bytes = relay_->carried_bytes(),
         .punches = punch_->relayed(),
     };
+    const MediaSession& session = media_->session();
+    for (const OfferedStream& offered : session.offered()) {
+        const std::optional<IncomingStreamStats> stream =
+            session.incoming_stats(offered.peer, offered.description.id);
+        if (!stream || !stream->subscribed) continue;
+        stats.forwarded += 1;
+        stats.forwarded_to += stream->relaying_to;
+        stats.forwarded_bytes += stream->relayed_bytes;
+    }
+    return stats;
 }
 
 }  // namespace ratcast

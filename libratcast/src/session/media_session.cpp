@@ -79,6 +79,10 @@ struct MediaSession::PeerState {
     /// The peer said its uplink was found full (wire::Uplink): no relay to hand
     /// more viewers to.
     std::atomic<bool> uplink_full{false};
+    /// The peer said it watches nothing and passes on what it is handed
+    /// (wire::Forwarder): a server, the relay to hand viewers to first.
+    std::atomic<bool> forwarder{false};
+    bool is_forwarder() const noexcept { return forwarder.load(std::memory_order_relaxed); }
 
     Duration rtt() const noexcept {
         const uint32_t us = rtt_us.load(std::memory_order_relaxed);
@@ -349,13 +353,21 @@ struct MediaSession::OutgoingStream {
             fanout.copies, [&](const Copy& copy) { return copy.relay.get() == &relay; }));
     }
 
-    /// The last subscriber to come that passes it on to nobody, of those that
-    /// `relay` passes it on to (null: sent to from here).
+    /// The last viewer to come that passes it on to nobody, of those that
+    /// `relay` passes it on to (null: sent to from here). A forwarder is no
+    /// viewer.
     Copy* last_leaf(const PeerState* relay) {
         for (auto it = fanout.copies.rbegin(); it != fanout.copies.rend(); ++it) {
-            if (it->relay.get() == relay && passed_on_by(*it->peer) == 0) return &*it;
+            if (it->relay.get() == relay && !it->peer->is_forwarder() &&
+                passed_on_by(*it->peer) == 0)
+                return &*it;
         }
         return nullptr;
+    }
+
+    /// Copies sent to from here.
+    size_t direct_copies() const {
+        return static_cast<size_t>(std::ranges::count_if(fanout.copies, &Copy::direct));
     }
 
     /// The least the round trip between two subscribers can be: the
@@ -380,53 +392,98 @@ struct MediaSession::OutgoingStream {
         return total + c->peer->least_rtt() / 2;
     }
 
-    /// The subscriber best placed to pass it on to `viewer`, which passes it
-    /// on to nobody: one connected to it whose uplink is not known to be full,
+    /// Whether `relay` may pass it on to `viewer` at all: not known to be full
+    /// nor unable to, as far as is known.
+    static bool may_pass_on(const Copy& viewer, const PeerState& relay) {
+        return relay.id != viewer.peer->id && !relay.uplink_full.load(std::memory_order_relaxed) &&
+               std::ranges::find(viewer.not_through, relay.id) == viewer.not_through.end();
+    }
+
+    /// The relay best placed to pass it on to `viewer`, which passes it on to
+    /// nobody: one connected to it whose uplink is not known to be full,
     /// through which its frames may arrive in time (in_time(), the round trip
-    /// between them at least the difference of theirs from here) — the fewest
-    /// hops from here, then passing it on to the fewest, then the nearest
-    /// (the round trip from here: what is known of where it is). None.
-    Copy* relay_for(const Copy& viewer) {
-        Copy* best = nullptr;
-        std::tuple<size_t, size_t, Duration> best_by{};
-        for (Copy& copy : fanout.copies) {
-            if (&copy == &viewer || copy.peer->uplink_full.load(std::memory_order_relaxed) ||
-                std::ranges::find(viewer.not_through, copy.peer->id) != viewer.not_through.end()) {
+    /// between them at least the difference of theirs from here). A forwarder
+    /// first — one sent to already, else one of `forwarders` made a
+    /// subscriber now, if `new_forwarder` — then the subscriber the fewest hops
+    /// from here, passing it on to the fewest, the nearest (the round trip from
+    /// here: what is known of where it is); with `forwarders_only`, a
+    /// forwarder or none.
+    std::shared_ptr<PeerState> relay_for(const Copy& viewer, const Forwarders& forwarders,
+                                         bool new_forwarder, bool forwarders_only = false) {
+        const Copy* best = nullptr;
+        std::tuple<bool, size_t, size_t, Duration> best_by{};
+        for (const Copy& copy : fanout.copies) {
+            if (!may_pass_on(viewer, *copy.peer) ||
+                (forwarders_only && !copy.peer->is_forwarder()) ||
+                !in_time(reach(copy), between(viewer, copy), description.lifetime)) {
                 continue;
             }
-            if (!in_time(reach(copy), between(viewer, copy), description.lifetime)) continue;
-            const std::tuple by{hops(copy), passed_on_by(*copy.peer), copy.peer->rtt()};
+            const std::tuple by{!copy.peer->is_forwarder(), hops(copy), passed_on_by(*copy.peer),
+                                copy.peer->rtt()};
             if (!best || by < best_by) {
                 best = &copy;
                 best_by = by;
             }
         }
-        return best;
+        if (best && best->peer->is_forwarder()) return best->peer;
+        if (new_forwarder) {
+            for (const std::shared_ptr<PeerState>& forwarder : forwarders) {
+                const Duration apart =
+                    std::chrono::abs(viewer.peer->least_rtt() - forwarder->least_rtt());
+                if (subscriber_of(forwarder->id) || !may_pass_on(viewer, *forwarder) ||
+                    !in_time(forwarder->least_rtt() / 2, apart, description.lifetime)) {
+                    continue;
+                }
+                // Sent to from now on, from the next keyframe, as a subscriber.
+                fanout.copies.emplace_back(forwarder);
+                return forwarder;
+            }
+        }
+        return best && !forwarders_only ? best->peer : nullptr;
     }
 
     /// `viewer`'s frames go through `relay` from now on (null: from here);
     /// the relays it leaves and joins are told, in `told`. Returns whether it
     /// is sent to from here again, and so needs a keyframe.
+    /// Every copy may be gone or moved in the vector by then: a forwarder
+    /// left passing it on to nobody is dropped.
     bool move(Copy& viewer, std::shared_ptr<PeerState> relay,
               std::vector<std::pair<PeerId, Buffer>>& told) {
         if (viewer.relay == relay) return false;
         const std::shared_ptr<PeerState> was = std::exchange(viewer.relay, std::move(relay));
         viewer.moved();
+        const bool direct = viewer.direct();
         if (was) told.emplace_back(was->id, forward_message(*was));
         if (viewer.relay) told.emplace_back(viewer.relay->id, forward_message(*viewer.relay));
-        return !viewer.relay;
+        drop_idle_forwarders();
+        return direct;
     }
 
-    /// Takes one copy off this node's uplink: the last subscriber to come of
-    /// those sent to from here and passing it on to nobody goes through the
-    /// one best placed (relay_for()). Returns whether there was one to move
-    /// and one to take it.
-    bool hand_off(std::vector<std::pair<PeerId, Buffer>>& told) {
-        Copy* viewer = last_leaf(nullptr);
-        Copy* relay = viewer ? relay_for(*viewer) : nullptr;
-        if (!relay) return false;
-        move(*viewer, relay->peer, told);
-        return true;
+    /// A forwarder passing it on to nobody is no longer sent to: it was told
+    /// so (an empty Forward), and lets go of the stream.
+    void drop_idle_forwarders() {
+        std::erase_if(fanout.copies, [&](const Copy& copy) {
+            return copy.peer->is_forwarder() && passed_on_by(*copy.peer) == 0;
+        });
+    }
+
+    /// Takes a copy off this node's uplink: the last viewer to come of those
+    /// sent to from here and passing it on to nobody goes through the relay
+    /// best placed (relay_for()) — a forwarder not yet sent to only where
+    /// another copy is sent from here, which it then takes off too. Returns
+    /// the copies taken off: 1, or 0 for a forwarder made a subscriber; none
+    /// where there was no viewer to move or no relay to take it.
+    std::optional<int> hand_off(const Forwarders& forwarders,
+                                std::vector<std::pair<PeerId, Buffer>>& told) {
+        const Copy* viewer = last_leaf(nullptr);
+        if (!viewer) return std::nullopt;
+        const PeerId id = viewer->peer->id;
+        const size_t before = fanout.copies.size();
+        std::shared_ptr<PeerState> relay = relay_for(*viewer, forwarders, direct_copies() >= 2);
+        if (!relay) return std::nullopt;
+        const int taken = fanout.copies.size() > before ? 0 : 1;
+        move(*subscriber_of(id), std::move(relay), told);  // the vector may have grown
+        return taken;
     }
 
     /// What `relay` is to pass on, all of it.
@@ -569,6 +626,15 @@ uint16_t MediaSession::take_slot() {
     const uint16_t slot = next_slot_;
     if (++next_slot_ == 0) next_slot_ = 1;
     return slot;
+}
+
+MediaSession::Forwarders MediaSession::forwarders() const {
+    std::shared_lock lock(mutex_);
+    Forwarders forwarders;
+    for (const auto& [id, state] : peers_) {
+        if (state->is_forwarder()) forwarders.push_back(state);
+    }
+    return forwarders;
 }
 
 std::vector<PeerId> MediaSession::connected_peers() const {
@@ -735,7 +801,8 @@ std::optional<OutgoingStreamStats> MediaSession::outgoing_stats(StreamId stream_
     std::lock_guard lock(stream->mutex);
     OutgoingStreamStats stats = stream->stats;
     const Fanout& fanout = stream->fanout;
-    stats.subscribers = fanout.copies.size();
+    stats.subscribers = static_cast<size_t>(std::ranges::count_if(
+        fanout.copies, [](const Copy& copy) { return !copy.peer->is_forwarder(); }));
     stats.relayed = static_cast<size_t>(
         std::ranges::count_if(fanout.copies, [](const Copy& copy) { return !copy.direct(); }));
     stats.messages = fanout.messages;
@@ -890,6 +957,7 @@ void MediaSession::announce_all(const PeerId& peer) {
     if (const std::optional<uint64_t> uplink = uplink_capacity()) {
         network_.send_reliable(peer, wire::encode_control(wire::Uplink{uplink}));
     }
+    if (config_.forwarder) network_.send_reliable(peer, wire::encode_control(wire::Forwarder{}));
     std::lock_guard lock(presence_mutex_);
     if (presence_) {
         network_.send_reliable(peer, wire::encode_control(wire::PresenceUpdate{*presence_}));
@@ -1177,6 +1245,8 @@ void MediaSession::on_message(const PeerId& peer, std::span<const uint8_t> messa
                 on_uplink(peer, m.capacity);
             } else if constexpr (std::is_same_v<Message, wire::CannotReach>) {
                 on_cannot_reach(peer, m);
+            } else if constexpr (std::is_same_v<Message, wire::Forwarder>) {
+                on_forwarder(peer);
             } else {
                 static_assert(std::is_same_v<Message, wire::KeyframeRequest>);
                 on_keyframe_request(peer, m.stream);
@@ -1211,6 +1281,7 @@ void MediaSession::on_frame(const PeerId& origin, const PeerId& from,
             if (sender) left -= sender->rtt() / 2;
             pass_on(origin, *stream, header->info, message, left, now);
         }
+        if (config_.forwarder) return;  // passed on, and that is all
         const Buffer copy = Buffer::copy_of(message);
         stream->tracker.push(EncodedFrame{header->info, copy.slice(header->size)}, now);
     }
@@ -1401,6 +1472,7 @@ void MediaSession::drop_subscriber(StreamId id, OutgoingStream& stream, const Pe
         }
         ask = orphaned && !s.stands_alone() && ask_keyframe(s, clock_.now());
         if (relay) told.emplace(relay->id, s.forward_message(*relay));
+        s.drop_idle_forwarders();
         bitrate = s.restart_if_unwatched();
     }
     if (told) network_.send_reliable(told->first, told->second);
@@ -1472,18 +1544,44 @@ Result<void> MediaSession::relay_through(StreamId stream_id, const PeerId& viewe
 
 void MediaSession::arrange(OutgoingStream& stream) {
     if (!config_.relays) return;
-    const std::optional<uint64_t> uplink = uplink_capacity();
-    if (!uplink) return;
-    double weight = copies().weight;
+    const Forwarders forwarders = this->forwarders();
     std::vector<std::pair<PeerId, Buffer>> told;
-    {
+    if (!forwarders.empty()) {
+        // Carried by a server anyway: through its forwarder, one copy for all
+        // of them where each would take one through the same server. Asked of
+        // the network outside the stream's lock.
+        std::vector<PeerId> carried;
+        {
+            std::lock_guard lock(stream.mutex);
+            if (!stream.relayable()) return;
+            for (const Copy& copy : stream.fanout.copies) {
+                if (copy.direct() && !copy.peer->is_forwarder()) carried.push_back(copy.peer->id);
+            }
+        }
+        std::erase_if(carried, [&](const PeerId& peer) { return !network_.relayed(peer); });
         std::lock_guard lock(stream.mutex);
         OutgoingStream& s = stream;
-        if (!s.relayable()) return;
-        const double most = s.rate->limits().max;
-        while (weight > 0 && double(*uplink) * SharedUplink::kCopies / weight < kShort &&
-               s.hand_off(told)) {
-            weight -= most;
+        for (const PeerId& peer : carried) {
+            const Copy* viewer = s.direct_subscriber_of(peer);
+            if (!viewer || s.passed_on_by(*viewer->peer) != 0) continue;
+            if (std::shared_ptr<PeerState> forwarder =
+                    s.relay_for(*viewer, forwarders, /*new_forwarder=*/true,
+                                /*forwarders_only=*/true)) {
+                s.move(*s.subscriber_of(peer), std::move(forwarder), told);
+            }
+        }
+    }
+    if (const std::optional<uint64_t> uplink = uplink_capacity()) {
+        double weight = copies().weight;
+        std::lock_guard lock(stream.mutex);
+        OutgoingStream& s = stream;
+        if (s.relayable()) {
+            const double most = s.rate->limits().max;
+            while (weight > 0 && double(*uplink) * SharedUplink::kCopies / weight < kShort) {
+                const std::optional<int> taken = s.hand_off(forwarders, told);
+                if (!taken) break;
+                weight -= most * *taken;
+            }
         }
     }
     for (const auto& [peer, message] : told) network_.send_reliable(peer, message);
@@ -1502,6 +1600,7 @@ void MediaSession::relieve(const PeerId& relay) {
     if (!config_.relays) return;
     const std::shared_ptr<PeerState> state = find_peer(relay);
     if (!state) return;
+    const Forwarders forwarders = this->forwarders();
     for (const auto& [id, stream] : outgoing_streams()) {
         const std::optional<uint64_t> uplink = uplink_capacity();
         const double weight = copies().weight;
@@ -1519,12 +1618,13 @@ void MediaSession::relieve(const PeerId& relay) {
             const bool room =
                 !uplink || double(*uplink) * SharedUplink::kCopies / (weight + most) >= kShort;
             std::shared_ptr<PeerState> to;
+            const PeerId moved = viewer->peer->id;
             if (!room) {
-                Copy* other = s.relay_for(*viewer);
-                if (!other) continue;
-                to = other->peer;
+                to = s.relay_for(*viewer, forwarders, /*new_forwarder=*/true);
+                if (!to) continue;
             }
-            ask = s.move(*viewer, std::move(to), told) && ask_keyframe(s, clock_.now());
+            ask = s.move(*s.subscriber_of(moved), std::move(to), told) &&
+                  ask_keyframe(s, clock_.now());
         }
         for (const auto& [peer, message] : told) network_.send_reliable(peer, message);
         if (ask) notify(handlers_.keyframe_needed, id);
@@ -1563,8 +1663,21 @@ void MediaSession::on_forward(const PeerId& sender, const wire::Forward& forward
             stream->relay_slot.store(take_slot(), std::memory_order_relaxed);
     }
 
-    std::lock_guard lock(stream->mutex);
+    std::unique_lock lock(stream->mutex);
     Fanout& relayed = stream->relayed;
+    if (config_.forwarder && viewers.empty() != !stream->subscribed) {
+        // A forwarder takes a stream as it is handed viewers of it — its
+        // sender sends it the frames already — and lets go as it is left
+        // none, which its sender knows.
+        stream->subscribed = !viewers.empty();
+        stream->tracker.reset(clock_.now());
+        if (!stream->subscribed) {
+            relayed.copies.clear();
+            lock.unlock();
+            network_.send_reliable(sender, wire::encode_control(wire::Unsubscribe{forward.stream}));
+            return;
+        }
+    }
     if (!stream->subscribed) {
         // Its sender hands them on as it hears this node no longer watches.
         relayed.copies.clear();
@@ -1580,6 +1693,12 @@ void MediaSession::on_forward(const PeerId& sender, const wire::Forward& forward
         copies.push_back(had ? *had : Copy(std::move(viewer)));
     }
     relayed.copies = std::move(copies);
+}
+
+void MediaSession::on_forwarder(const PeerId& peer) {
+    const std::shared_ptr<PeerState> state = find_peer(peer);
+    if (!state || state->forwarder.exchange(true)) return;
+    arrange_all();  // one more relay, always with room
 }
 
 void MediaSession::on_cannot_reach(const PeerId& relay, const wire::CannotReach& cannot) {
@@ -1759,7 +1878,7 @@ void MediaSession::tick() {
         std::lock_guard delivery(stream->delivery);
         {
             std::lock_guard lock(stream->mutex);
-            if (!stream->subscribed) continue;
+            if (!stream->subscribed || config_.forwarder) continue;
             stream->tracker.update(now);
         }
         deliver_ready(key.peer, key.stream, *stream, now);

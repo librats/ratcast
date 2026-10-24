@@ -1529,3 +1529,34 @@ routers do); a `symmetric` one maps anew for each destination (`masquerade rando
   sender's machine stalling (its pattern source made 15 frames in one second), not the path.
 - Before the hand-off went to a relay first, it went to a punch through the server, which gave
   up after three rounds of six seconds: the first picture at 21.9 s.
+
+## The server forwards (5.6 step 2)
+
+`bench/nat.py --viewers 3`: three viewers, each behind a NAT of its own, one sender, the
+server between them; 1280x720, 30 fps, 3 Mbit/s at most, 12–15 s watched. "Sender's uplink" is
+what left the sender's host over the run; `--send-arg=--no-relay` has the sender send every
+copy itself.
+
+Viewers behind symmetric NATs: the server carries their connections anyway, and now forwards
+the share to them, whatever the sender's uplink.
+
+| | first picture, ms (worst) | fps (least) | stalls | sender's uplink, Mbit/s | the server forwards to | it relays, MB |
+|---|---|---|---|---|---|---|
+| forwarded | 3498 | 30.3 | 0 | 2.2 | 3 | 0.0 |
+| every copy from the sender | 3485 | 30.4 | 0 | 6.5 | 0 | 9.5 |
+
+Viewers behind cone NATs, connected straight, the sender's way out 5 Mbit/s wide: found short
+of three copies, it hands them to the server. Two runs each.
+
+| | fps (least) | Mbit/s each (least) | stalls (all three) | sender's uplink, Mbit/s | the server forwards to |
+|---|---|---|---|---|---|
+| forwarded | 30.2 | 2.81 | 4 | 3.2 | 3 |
+| forwarded | 30.1 | 2.82 | 4 | 3.3 | 3 |
+| every copy from the sender | 29.5 | 0.71 | 12 | 2.4 | 0 |
+| every copy from the sender | 29.8 | 0.93 | 4 | 3.0 | 0 |
+
+- Forwarded, the sender sends one copy and each viewer gets the whole stream; from the sender,
+  three copies share 5 Mbit/s, under a third of the stream each.
+- Forwarded, the stalls are in the first two seconds, while the uplink is found full and the
+  viewers handed over, each from a keyframe (14 fps, then 35 catching up), and one short gap
+  near the seventh, at every viewer at once: the sender's side.

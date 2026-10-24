@@ -76,6 +76,18 @@
  * goes another way. Sound is not relayed: small, and what pictures are held
  * to.
  *
+ * A server may be a relay too, one that watches nothing — an SFU
+ * (SessionConfig::forwarder). It says so as each peer connects (Forwarder);
+ * a sender then hands it a viewer before any other relay, and is sent to by
+ * nobody's uplink but its own: made a subscriber as it is handed its first
+ * viewer — once two or more are sent to from here, or one gains nothing — and
+ * dropped as it is left none. What a viewer whose connection the server
+ * carries anyway (MediaNetwork::relayed()) watches goes through it whether or
+ * not the uplink is short: one copy for all of them, where each would take one
+ * through the same server. The forwarder subscribes to a stream as it is
+ * handed viewers of it and lets go as it is left none, and keeps no frame of
+ * it: it passes them on and that is all.
+ *
  * Threads: every method may be called from any thread. Network events arrive
  * on the network's threads, tick() on a timer's, send_frame() on an
  * encoder's, the rest on the application's. Handlers run on whichever of those
@@ -136,6 +148,9 @@ struct SessionConfig {
     /// pass the frames on — while the copies through its uplink are short
     /// (the tree: MediaSession::relay_through()). False: every copy from here.
     bool relays = true;
+    /// Watch nothing and pass on what senders hand this node: a server, an
+    /// SFU (see above). Says so to every peer; plays and keeps no frame.
+    bool forwarder = false;
 };
 
 struct SessionHandlers {
@@ -315,6 +330,7 @@ private:
     struct Fanout;
     struct OutgoingStream;
     struct IncomingStream;
+    using Forwarders = std::vector<std::shared_ptr<PeerState>>;
 
     struct StreamKey {
         PeerId peer;
@@ -331,6 +347,8 @@ private:
     /// None for a peer not connected.
     std::shared_ptr<PeerState> find_peer(const PeerId& peer) const;
     std::vector<PeerId> connected_peers() const;
+    /// The peers that said they are forwarders (wire::Forwarder).
+    Forwarders forwarders() const;
     std::vector<std::pair<StreamId, std::shared_ptr<OutgoingStream>>> outgoing_streams() const;
     /// The next slot in the tags of live messages; under mutex_, held uniquely.
     uint16_t take_slot();
@@ -348,9 +366,10 @@ private:
     /// stream's mutex.
     void ask_keyframe_for_relayed(const PeerId& origin, StreamId id, IncomingStream& stream,
                                   Timestamp now);
-    /// While the copies through this node's uplink are short, take them off
-    /// it: viewers of `stream` handed to relays (OutgoingStream::hand_off()).
-    /// Takes the streams' locks.
+    /// Viewers of `stream` the server carries anyway go through its
+    /// forwarder; and while the copies through this node's uplink are short,
+    /// they are taken off it: viewers handed to relays
+    /// (OutgoingStream::hand_off()). Takes the streams' locks.
     void arrange(OutgoingStream& stream);
     void arrange_all();
     /// `relay`'s uplink was found full: one viewer of each stream it passes
@@ -359,6 +378,8 @@ private:
     void tell_uplink(std::optional<uint64_t> capacity);
     void on_uplink(const PeerId& peer, std::optional<uint64_t> capacity);
     void on_forward(const PeerId& sender, const wire::Forward& forward);
+    /// `peer` passes on what it is handed: a relay for every stream here.
+    void on_forwarder(const PeerId& peer);
     void on_relayed_path(const PeerId& relay, const wire::RelayedPath& report);
     void on_cannot_reach(const PeerId& relay, const wire::CannotReach& cannot);
     /// Announce every stream offered to `peer`, and say who this node is.

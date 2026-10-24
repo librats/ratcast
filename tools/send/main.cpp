@@ -78,6 +78,7 @@ Network:
   --server HOST[:PORT] and at a ratcast-server, met there through NATs (with
                        --announce; port 7700 by default)
   --no-dht             at the server alone, not through the DHT
+  --no-relay           send every copy from here: no viewer passes it on, nor a server
   --data-dir DIR       keep the peer id, and the screen choice, across runs
   --verbose            library logs
 )";
@@ -101,6 +102,7 @@ struct Options {
     bool announce = false;
     std::vector<librats::HostEndpoint> servers;
     bool dht = true;
+    bool relays = true;
     std::string data_dir;
     bool verbose = false;
 };
@@ -164,6 +166,7 @@ std::optional<Options> parse(int argc, char** argv) {
         }
     }
     o.dht = !args.flag("no-dht");
+    o.relays = !args.flag("no-relay");
     o.data_dir = args.text("data-dir").value_or("");
     o.verbose = args.flag("verbose");
 
@@ -395,7 +398,8 @@ int main(int argc, char** argv) {
                      .discoverable = o.announce,
                      .servers = o.servers,
                      .dht = o.dht,
-                     .capture_clock = o.source == "pattern" ? &WallClock::instance() : nullptr},
+                     .capture_clock = o.source == "pattern" ? &WallClock::instance() : nullptr,
+                     .relays = o.relays},
                     {.source_ended = [&](StreamId, Result<void> outcome) {
                         failed = !outcome;
                         ended = true;

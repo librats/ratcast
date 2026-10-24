@@ -1,10 +1,12 @@
 #include <gtest/gtest.h>
 
+#include <atomic>
 #include <chrono>
 #include <memory>
 #include <thread>
 
 #include "ratcast/server/server.h"
+#include "ratcast/session/media_service.h"
 
 #include "librats/node/node.h"
 #include "librats/subsystems/hole_punch.h"
@@ -100,6 +102,83 @@ TEST(Server, CarriesAConnectionBetweenTwoItHolds) {
     EXPECT_TRUE(wait_for([&] { return server->stats().relayed_bytes > 0; }));
     b->stop();
     a->stop();
+}
+
+/// A call's node with a media session, relayed by the server where asked.
+struct MediaNode {
+    explicit MediaNode(SessionHandlers handlers = {}) {
+        librats::NodeConfig config;
+        config.bind_address = "127.0.0.1";
+        config.protocol = kProtocol;
+        node = std::make_unique<librats::Node>(config);
+        media = node->add_subsystem(std::make_unique<MediaService>(std::move(handlers)));
+        // No HolePunch: a connection the server carries stays so.
+        relay = node->add_subsystem(std::make_unique<librats::Relay>());
+    }
+    ~MediaNode() { node->stop(); }
+
+    std::unique_ptr<librats::Node> node;
+    MediaService* media = nullptr;
+    librats::Relay* relay = nullptr;
+};
+
+// Viewers whose connections the server carries get the share through its
+// forwarder: one copy from the sender for all of them.
+TEST(Server, ForwardsAShareToTheViewersItCarries) {
+    const auto server = start_server();
+    ASSERT_TRUE(server);
+    std::atomic<int> pictures{0};
+    MediaNode sender;
+    MediaNode a({.frame_received = [&](const PeerId&, EncodedFrame) { ++pictures; }});
+    MediaNode b({.frame_received = [&](const PeerId&, EncodedFrame) { ++pictures; }});
+    for (MediaNode* n : {&sender, &a, &b}) {
+        ASSERT_TRUE(n->node->start());
+        n->node->connect("127.0.0.1", server->port());
+    }
+    ASSERT_TRUE(wait_for([&] { return server->stats().peers == 3; }));
+    const PeerId& from = sender.node->local_id();
+    for (MediaNode* viewer : {&a, &b}) {
+        ASSERT_TRUE(wait_for([&] { return viewer->relay->serves(server->id()); }));
+        ASSERT_TRUE(viewer->relay->connect_via_relay(from));
+        ASSERT_TRUE(wait_for([&] { return transport_to(*viewer->node, from).has_value(); }));
+        ASSERT_EQ(transport_to(*viewer->node, from), librats::TransportKind::Relay);
+    }
+
+    StreamDescription screen;
+    screen.id = 1;
+    screen.codec = Codec::AV1;
+    screen.format = VideoFormat{640, 360, 30, 1};
+    screen.lifetime = std::chrono::milliseconds(200);
+    screen.label = "screen";
+    MediaSession& sending = sender.media->session();
+    ASSERT_TRUE(sending.add_stream(screen, BitrateLimits{250'000, 1'000'000, 2'000'000}));
+    for (MediaNode* viewer : {&a, &b}) {
+        MediaSession& session = viewer->media->session();
+        ASSERT_TRUE(wait_for([&] { return !session.offered().empty(); }));
+        ASSERT_TRUE(session.subscribe(from, 1));
+    }
+    ASSERT_TRUE(wait_for([&] { return sending.outgoing_stats(1)->relayed == 2; }));
+
+    for (FrameNumber n = 0; pictures < 20 && n < 300; ++n) {
+        FrameInfo info;
+        info.number = n;
+        info.keyframe = n % 30 == 0;
+        if (!info.keyframe) info.references = {n - 1};
+        info.capture_time = SteadyClock::instance().now();
+        MutableBuffer payload = allocate_frame_payload(2000);
+        payload.append(2000);
+        ASSERT_TRUE(sending.send_frame(1, info, std::move(payload)));
+        std::this_thread::sleep_for(std::chrono::milliseconds(33));
+    }
+    EXPECT_GE(pictures.load(), 20);
+    const OutgoingStreamStats sent = *sending.outgoing_stats(1);
+    EXPECT_EQ(sent.subscribers, 2u);
+    // One copy a frame, to the server.
+    EXPECT_LE(sent.messages, sent.frames);
+    const ServerStats stats = server->stats();
+    EXPECT_EQ(stats.forwarded, 1u);
+    EXPECT_EQ(stats.forwarded_to, 2u);
+    EXPECT_GT(stats.forwarded_bytes, 0u);
 }
 
 TEST(Server, APortTakenIsUnavailable) {

@@ -130,6 +130,7 @@ public:
     }
     bool writable(const PeerId& peer) const override { return !full_.contains(peer); }
     size_t max_live_message() const override { return 64 * 1024; }
+    bool relayed(const PeerId& peer) const override { return carried.contains(peer); }
     void set_send_ceiling(const PeerId& peer, uint64_t bits_per_second) override {
         if (bits_per_second == 0) {
             ceilings.erase(peer);
@@ -140,6 +141,8 @@ public:
 
     /// The send ceilings set, by peer.
     std::map<PeerId, uint64_t> ceilings;
+    /// The peers a server carries the connection to (MediaNetwork::relayed()).
+    std::set<PeerId> carried;
     /// What each live message was given, in the order they were sent.
     std::vector<Duration> lifetimes;
     std::vector<uint64_t> tags;
@@ -1703,4 +1706,161 @@ TEST_F(TreeTest, ASenderWithoutRelaysSendsEveryCopy) {
     }
     ASSERT_EQ(lone.session.uplink_capacity(), 4'000'000u);
     EXPECT_EQ(lone.session.outgoing_stats(2)->relayed, 0u);
+}
+
+// ── A forwarder (SFU) ───────────────────────────────────────────────────────
+
+namespace {
+
+/// A sender, three viewers and a server that forwards, connected to them all;
+/// the viewers are strangers to each other.
+class ForwarderTest : public ::testing::Test {
+protected:
+    ForwarderTest() {
+        for (Party* p : {&server, &a, &b, &c}) connect(sender, *p);
+        for (Party* p : {&a, &b, &c}) connect(server, *p);
+        EXPECT_TRUE(sender.session.add_stream(screen(2), kBitrate));
+        EXPECT_TRUE(sender.session.add_stream(mic()));
+        hub.deliver_all();
+    }
+
+    static void connect(Party& x, Party& y) {
+        x.session.on_peer_connected(y.id);
+        y.session.on_peer_connected(x.id);
+    }
+
+    void watch(std::initializer_list<Party*> viewers) {
+        for (Party* viewer : viewers) {
+            for (StreamId stream : {2, 3})
+                EXPECT_TRUE(viewer->session.subscribe(sender.id, stream));
+            hub.deliver_all();
+        }
+    }
+
+    /// The paths to the three carry 2 Mbit/s each for a second, then lose
+    /// frames at once: the sender's uplink is full at 6.
+    void fill_uplink() {
+        for (int sample = 0; sample <= 11; ++sample) {
+            bytes_ += 25'000;
+            for (Party* to : {&a, &b, &c})
+                sender.session.on_peer_path(to->id, carried(bytes_, sample == 11 ? 1 : 0));
+            if (sample < 11) clock.advance(100ms);
+        }
+        ASSERT_EQ(sender.session.uplink_capacity(), 6'000'000u);
+        hub.deliver_all();
+    }
+
+    Result<void> send(FrameNumber number, bool keyframe) {
+        FrameInfo info;
+        info.number = number;
+        info.keyframe = keyframe;
+        info.capture_time = clock.now();
+        if (!keyframe && number > 0) info.references = {number - 1};
+        return sender.session.send_frame(2, info, payload_for(number));
+    }
+
+    size_t relaying_to(const Party& relay) const {
+        const auto stats = relay.session.incoming_stats(sender.id, 2);
+        return stats ? stats->relaying_to : 0;
+    }
+    bool server_watches() const {
+        const auto stats = server.session.incoming_stats(sender.id, 2);
+        return stats && stats->subscribed;
+    }
+
+    uint64_t bytes_ = 0;
+    ManualClock clock{Timestamp{100s}};
+    Hub hub;
+    Party sender{hub, clock, 1};
+    Party server{hub, clock, 9, SessionConfig{.forwarder = true}};
+    Party a{hub, clock, 2};
+    Party b{hub, clock, 3};
+    Party c{hub, clock, 4};
+};
+
+}  // namespace
+
+TEST_F(ForwarderTest, AShortUplinkHandsEveryViewerToTheForwarder) {
+    watch({&a, &b, &c});
+    fill_uplink();
+    const OutgoingStreamStats stats = *sender.session.outgoing_stats(2);
+    EXPECT_EQ(stats.subscribers, 3u) << "the forwarder is no viewer";
+    EXPECT_EQ(stats.relayed, 3u);
+    EXPECT_EQ(relaying_to(server), 3u);
+    EXPECT_TRUE(server_watches());
+    // Sound stays direct.
+    EXPECT_EQ(sender.session.outgoing_stats(3)->relayed, 0u);
+}
+
+TEST_F(ForwarderTest, ItPassesFramesOnFromAKeyframeAndKeepsNone) {
+    watch({&a, &b, &c});
+    fill_uplink();
+    const size_t messages = sender.session.outgoing_stats(2)->messages;
+    for (FrameNumber n = 0; n < 4; ++n) {
+        ASSERT_TRUE(send(n, n == 0));
+        hub.deliver_all();
+    }
+    EXPECT_EQ(sender.session.outgoing_stats(2)->messages, messages + 4) << "one copy a frame";
+    for (Party* viewer : {&a, &b, &c}) EXPECT_EQ(viewer->frames, (Frames{0, 1, 2, 3}));
+    EXPECT_TRUE(server.frames.empty());
+    EXPECT_EQ(server.session.incoming_stats(sender.id, 2)->relayed_messages, 12u);
+    // Nor does it ask for keyframes of its own as time passes.
+    const size_t requests = sender.session.outgoing_stats(2)->keyframe_requests;
+    for (int i = 0; i < 50; ++i) {
+        clock.advance(20ms);
+        server.session.tick();
+        hub.deliver_all();
+    }
+    EXPECT_EQ(sender.session.outgoing_stats(2)->keyframe_requests, requests);
+}
+
+TEST_F(ForwarderTest, ViewersTheServerCarriesAnywayGoThroughItsForwarder) {
+    sender.endpoint.carried = {a.id, b.id};
+    watch({&a, &b, &c});
+    EXPECT_FALSE(sender.session.uplink_capacity());
+    EXPECT_EQ(sender.session.outgoing_stats(2)->relayed, 2u);
+    EXPECT_EQ(relaying_to(server), 2u) << "a and b, not c";
+}
+
+TEST_F(ForwarderTest, AForwarderLeftWithNobodyIsLetGo) {
+    watch({&a, &b, &c});
+    fill_uplink();
+    ASSERT_TRUE(server_watches());
+    for (Party* viewer : {&a, &b, &c}) {
+        viewer->session.unsubscribe(sender.id, 2);
+        hub.deliver_all();
+    }
+    EXPECT_EQ(sender.session.outgoing_stats(2)->subscribers, 0u);
+    EXPECT_FALSE(server_watches());
+    const size_t messages = sender.session.outgoing_stats(2)->messages;
+    ASSERT_TRUE(send(0, true));
+    EXPECT_EQ(sender.session.outgoing_stats(2)->messages, messages) << "sent to nobody";
+}
+
+TEST_F(ForwarderTest, AViewerTheForwarderCannotReachGoesAnotherWay) {
+    server.session.on_peer_disconnected(c.id);
+    c.session.on_peer_disconnected(server.id);
+    watch({&a, &b, &c});
+    fill_uplink();
+    EXPECT_GE(hub.delivered[wire::MessageKind::CannotReach], 1);
+    EXPECT_EQ(relaying_to(server), 2u) << "a and b";
+    // c through a or b, which are not connected to it either: back from the sender.
+    EXPECT_EQ(sender.session.outgoing_stats(2)->relayed, 2u);
+}
+
+TEST_F(ForwarderTest, AServerThatLeavesHandsItsViewersBack) {
+    watch({&a, &b, &c});
+    fill_uplink();
+    ASSERT_EQ(relaying_to(server), 3u);
+    sender.session.on_peer_disconnected(server.id);
+    for (Party* viewer : {&a, &b, &c}) viewer->session.on_peer_disconnected(server.id);
+    hub.deliver_all();
+    // From the sender again — the viewers, strangers to each other, cannot
+    // pass it on — from a keyframe.
+    EXPECT_EQ(sender.session.outgoing_stats(2)->subscribers, 3u);
+    for (FrameNumber n = 0; n < 2; ++n) {
+        ASSERT_TRUE(send(n, n == 0));
+        hub.deliver_all();
+    }
+    for (Party* viewer : {&a, &b, &c}) EXPECT_EQ(viewer->frames, (Frames{0, 1}));
 }
