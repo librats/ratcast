@@ -158,7 +158,7 @@ final place and shape: stage 0 is a walking skeleton, not a throwaway prototype.
 | **2. Sound** ✅ | audio, A/V sync; latency profiles put off to stages 5 and 6 | L4 ✅ |
 | **3. Standalone library** ✅ | MPEG-TS in and out, `rats://` URLs, a benchmark against librist and SRT, C API | — |
 | **4. Platforms** — in part | GPU paths and hardware codecs; Windows ✅ (its GPU path too) and macOS capture; netsim ✅ | — |
-| **5. Watch together** — in progress | one-to-many: a sender's budget, synchronised playout, forwarding tree, simulcast, cinema, SFU and E2EE | L5 |
+| **5. Watch together** — in progress | one-to-many: a sender's budget, synchronised playout, forwarding tree, cinema, SFU and E2EE; simulcast put off | L5 |
 | **6. App** ✅ | Qt app MVP, one to one: invites, voice with AEC / NS, screen / window / app-audio share, camera; on Linux first, the other OSes as stage 4 reaches them | — |
 | **7. Conferences** | active speaker, last-N, grid, moderation, text chat | — |
 | **8. Beyond** | Android, cinema mode, HDR, polish | — |
@@ -672,8 +672,9 @@ The main use case: one person streams, many watch. The app (6) and the room (10)
 mesh: whoever shares sends a copy to each viewer, over the path straight to them, and the one
 encoder follows the narrowest of those paths. That holds for a few on a wide uplink. *Done
 when* a share reaches every viewer of a room on an uplink that carries one copy or two, each
-viewer at the quality its own path allows, all of them seeing the same picture at the same
-moment, and the sharer's voice heard as quickly as anyone's.
+viewer at the quality its own path allows (but for one far narrower than the others: 5.4, put
+off), all of them seeing the same picture at the same moment, and the sharer's voice heard as
+quickly as anyone's.
 
 - **5.1 A sender's budget across its paths** ✅: the copies to all viewers fit the uplink they
   share. Each viewer's rate controller sees its own path, not the uplink, so a sharer to
@@ -803,14 +804,20 @@ moment, and the sharer's voice heard as quickly as anyone's.
      and held for a minute; a relayed viewer still asks the sender for keyframes while its first
      is on its way from the relay; "nearest" is the sender's round trip, not the relay's to the
      viewer.
-- **5.4 Simulcast**: one weak path no longer pulls everyone down — the share in two layers (the
-  full one and ~720p), each viewer receiving the one its path carries. SVC later where an
-  encoder has it. Costs a second encode: on the software codecs, measured first.
 - **5.5 The `cinema` latency profile** (from 2.3): seconds of buffer for retransmission to
   repair anything, held as encoded frames (decoded 1080p is ~3 MB a picture), lip sync over it.
 - **5.6 SFU and E2EE**: the `server` node for big rooms and hard NATs (librats: **better with**
   L8, L11); SFrame E2EE once a relay that is not a member carries the frames, room key from the
   owner over Noise (MLS later). Viewers relaying in 5.3 are members, entitled to the share.
+- **5.4 Simulcast** (put off until a measurement asks for it): one weak path no longer pulls
+  everyone down — the share in two layers (the full one and ~720p), each viewer receiving the
+  one its path carries. SVC later where an encoder has it. Put off because the narrow path is
+  mostly the sharer's uplink (5.1, 5.3), not a viewer's downlink, a loss does not lower the rate,
+  rooms are a few, and a second encode on the software codecs costs most where the sharer's CPU
+  is busiest (a game). First measured: a room with one viewer far narrower than the others
+  (`--member-paths`, one `cap-3`). Cheaper ways if that asks for one: the rate set by the others
+  when one path is far below them, the narrow viewer getting what fits; temporal layers from the
+  one encoder. Comes with 5.6 at the latest, where rooms get big.
 
 ### Stage 6 — App ✅
 
