@@ -16,6 +16,7 @@
 #include <set>
 #include <vector>
 
+#include "wire/control_codec.h"
 #include "wire/frame_codec.h"
 #include "wire/message.h"
 
@@ -284,7 +285,9 @@ protected:
 
     ManualClock clock{Timestamp{100s}};
     Hub hub;
-    Party sender{hub, clock, 1};
+    /// Every copy from the sender: its viewers here are not connected to each
+    /// other, and the tree is TreeTest's.
+    Party sender{hub, clock, 1, SessionConfig{.relays = false}};
     Party receiver{hub, clock, 2};
 };
 
@@ -1431,4 +1434,250 @@ TEST_F(RelayTest, WhatARelayPassesOnIsSaidAgainWhenALinkLostARace) {
     hub.deliver_all();
     EXPECT_EQ(hub.delivered[wire::MessageKind::Forward], 2);
     EXPECT_EQ(relay.session.incoming_stats(sender.id, 2)->relaying_to, 1u);
+}
+
+// ── The tree ────────────────────────────────────────────────────────────────
+
+namespace {
+
+/// A sender and three viewers of its screen and its sound, all connected to
+/// each other as a room is.
+class TreeTest : public ::testing::Test {
+protected:
+    TreeTest() {
+        for (size_t i = 0; i < parties.size(); ++i) {
+            for (size_t j = i + 1; j < parties.size(); ++j) connect(*parties[i], *parties[j]);
+        }
+        EXPECT_TRUE(sender.session.add_stream(screen(2), kBitrate));
+        EXPECT_TRUE(sender.session.add_stream(mic()));
+        hub.deliver_all();
+        for (Party* viewer : {&a, &b, &c}) {
+            for (StreamId stream : {2, 3})
+                EXPECT_TRUE(viewer->session.subscribe(sender.id, stream));
+            hub.deliver_all();
+        }
+    }
+
+    static void connect(Party& x, Party& y) {
+        x.session.on_peer_connected(y.id);
+        y.session.on_peer_connected(x.id);
+    }
+
+    /// The paths to the three carry `bits` each for a second, every one of
+    /// them having its say, then lose frames at once: the sender's uplink is
+    /// full at three times that.
+    void fill_uplink(uint64_t bits = 2'000'000) {
+        for (int sample = 0; sample <= 11; ++sample) {
+            bytes_ += bits / 80;
+            for (Party* to : {&a, &b, &c}) {
+                PathStats s = carried(bytes_, sample == 11 ? 1 : 0);
+                if (const auto it = rtts.find(to); it != rtts.end()) s.srtt_us = it->second;
+                sender.session.on_peer_path(to->id, s);
+            }
+            if (sample < 11) clock.advance(100ms);
+        }
+        ASSERT_EQ(sender.session.uplink_capacity(), 3 * bits);
+        hub.deliver_all();
+    }
+
+    uint64_t bytes_ = 0;
+    /// The sender's round trip to those not 50 ms from it, µs.
+    std::unordered_map<const Party*, uint32_t> rtts;
+
+    size_t relaying_to(const Party& relay, StreamId stream = 2) const {
+        return relay.session.incoming_stats(sender.id, stream)->relaying_to;
+    }
+
+    ManualClock clock{Timestamp{100s}};
+    Hub hub;
+    Party sender{hub, clock, 1};
+    Party a{hub, clock, 2};
+    Party b{hub, clock, 3};
+    Party c{hub, clock, 4};
+    std::array<Party*, 4> parties{&sender, &a, &b, &c};
+};
+
+}  // namespace
+
+TEST_F(TreeTest, AShortUplinkHandsViewersToRelaysUntilItCarriesOneCopy) {
+    fill_uplink();
+    // The last to come first, to the first: the fewest hops, then the fewest
+    // passed on to.
+    EXPECT_EQ(sender.session.outgoing_stats(2)->relayed, 2u);
+    EXPECT_EQ(relaying_to(a), 2u);
+    EXPECT_EQ(relaying_to(b), 0u);
+    EXPECT_EQ(relaying_to(c), 0u);
+    // Its peers hear of its uplink, to choose by.
+    EXPECT_EQ(hub.delivered[wire::MessageKind::Uplink], 3);
+}
+
+TEST_F(TreeTest, TheOneCopyLeftClimbsPastItsPartOfTheUplink) {
+    fill_uplink();
+    ASSERT_EQ(sender.session.outgoing_stats(2)->relayed, 2u);
+    // Found full while the copies were starting, the uplink is known narrower
+    // than it is; the one path left from here follows its own rate control.
+    const auto part = static_cast<uint32_t>(3 * 2'000'000 * SharedUplink::kCopies);
+    for (int sample = 0; sample < 400; ++sample) {
+        clock.advance(100ms);
+        bytes_ += 100'000;
+        sender.session.on_peer_path(a.id, carried(bytes_));
+    }
+    EXPECT_TRUE(sender.session.uplink_capacity());
+    EXPECT_GT(sender.session.outgoing_stats(2)->bitrate, part);
+}
+
+TEST_F(TreeTest, ARelayTooFarForFramesToArriveInTimeIsPassedOver) {
+    // Through a, 120 ms from here, a frame would take 60 ms and at least
+    // 1.5 × 70 for a repair: more than three quarters of the 150 ms it lives.
+    rtts[&a] = 120'000;
+    fill_uplink();
+    EXPECT_EQ(relaying_to(a), 0u);
+    EXPECT_EQ(relaying_to(b), 1u) << "c; a, through b or c, would be as late";
+    EXPECT_EQ(sender.session.outgoing_stats(2)->relayed, 1u);
+}
+
+TEST_F(TreeTest, AViewerItsRelayIsTooFarFromGoesAnotherWay) {
+    fill_uplink();
+    ASSERT_EQ(relaying_to(a), 2u);
+    // a is 100 ms from c: 25 ms to a, then 150 for a repair, is too late.
+    PathStats far = path();
+    far.srtt_us = 100'000;
+    a.session.on_peer_path(c.id, far);
+    hub.deliver_all();
+    EXPECT_EQ(relaying_to(a), 1u);
+    EXPECT_EQ(relaying_to(b), 1u) << "c, through b";
+    EXPECT_EQ(sender.session.outgoing_stats(2)->relayed, 2u);
+}
+
+TEST_F(TreeTest, AQueueOnTheWayDoesNotMakeARelayTooFar) {
+    fill_uplink();
+    ASSERT_EQ(relaying_to(a), 2u);
+    // A queue in the sender's uplink, 200 ms of it: rate control's to empty,
+    // the path to a no longer for it.
+    clock.advance(100ms);
+    bytes_ += 25'000;
+    PathStats queued = carried(bytes_);
+    queued.srtt_us = 250'000;
+    sender.session.on_peer_path(a.id, queued);
+    a.session.on_peer_path(c.id, path());
+    hub.deliver_all();
+    EXPECT_EQ(relaying_to(a), 2u);
+}
+
+TEST_F(TreeTest, SoundStaysDirect) {
+    fill_uplink();
+    EXPECT_EQ(sender.session.outgoing_stats(3)->relayed, 0u);
+    EXPECT_EQ(relaying_to(a, 3), 0u);
+}
+
+TEST_F(TreeTest, AnUplinkWithRoomForEveryCopyHandsNobodyOn) {
+    fill_uplink(20'000'000);  // 17 Mbit/s for each copy, of the 8 its stream may take
+    EXPECT_EQ(sender.session.outgoing_stats(2)->relayed, 0u);
+}
+
+TEST_F(TreeTest, ANewViewerThroughAShortUplinkGoesStraightToARelay) {
+    fill_uplink();
+    Party d(hub, clock, 5);
+    for (Party* p : parties) connect(*p, d);
+    hub.deliver_all();
+    ASSERT_TRUE(d.session.subscribe(sender.id, 2));
+    hub.deliver_all();
+    EXPECT_EQ(sender.session.outgoing_stats(2)->relayed, 3u);
+    EXPECT_EQ(relaying_to(a), 3u);
+    const size_t messages = sender.session.outgoing_stats(2)->messages;
+    FrameInfo key;
+    key.keyframe = true;
+    key.capture_time = clock.now();
+    ASSERT_TRUE(sender.session.send_frame(2, key, payload_for(0)));
+    EXPECT_EQ(sender.session.outgoing_stats(2)->messages, messages + 1) << "to the relay alone";
+}
+
+TEST_F(TreeTest, ARelayWhoseUplinkFillsHandsAViewerOn) {
+    fill_uplink();
+    // The relay's own uplink was found full: of the two it passes the screen
+    // on to, the last goes to another viewer, the sender's having no room.
+    sender.session.on_message(a.id, wire::encode_control(wire::Uplink{3'000'000}).bytes());
+    hub.deliver_all();
+    EXPECT_EQ(relaying_to(a), 1u);
+    EXPECT_EQ(relaying_to(b), 1u);
+    EXPECT_EQ(sender.session.outgoing_stats(2)->relayed, 2u);
+
+    // Its uplink no longer known to be full, it is a relay as any other again.
+    sender.session.on_message(a.id, wire::encode_control(wire::Uplink{}).bytes());
+    Party d(hub, clock, 5);
+    for (Party* p : parties) connect(*p, d);
+    hub.deliver_all();
+    ASSERT_TRUE(d.session.subscribe(sender.id, 2));
+    hub.deliver_all();
+    EXPECT_EQ(relaying_to(a), 2u);
+}
+
+TEST_F(TreeTest, AFullRelaysViewerComesBackWhereTheSendersUplinkIsNotShort) {
+    fill_uplink();
+    // A minute on, the sender's uplink is not known to be short any more.
+    clock.advance(SharedUplink::kMemory + 1s);
+    sender.session.on_peer_path(a.id, carried(bytes_));
+    ASSERT_FALSE(sender.session.uplink_capacity());
+
+    const int asked = sender.keyframes_needed;
+    sender.session.on_message(a.id, wire::encode_control(wire::Uplink{3'000'000}).bytes());
+    hub.deliver_all();
+    EXPECT_EQ(sender.session.outgoing_stats(2)->relayed, 1u);
+    EXPECT_EQ(relaying_to(a), 1u);
+    EXPECT_EQ(sender.keyframes_needed, asked + 1) << "sent to from here again";
+}
+
+TEST_F(TreeTest, ARelayThatLeavesHasItsViewersHandedOn) {
+    fill_uplink();
+    ASSERT_EQ(relaying_to(a), 2u);
+    a.session.unsubscribe(sender.id, 2);
+    hub.deliver_all();
+    // The two left go one through the other, not both through the uplink.
+    EXPECT_EQ(sender.session.outgoing_stats(2)->subscribers, 2u);
+    EXPECT_EQ(sender.session.outgoing_stats(2)->relayed, 1u);
+    EXPECT_EQ(relaying_to(b), 1u);
+
+    // And one that goes away likewise: the last is sent to from here.
+    sender.session.on_peer_disconnected(b.id);
+    c.session.on_peer_disconnected(b.id);
+    EXPECT_EQ(sender.session.outgoing_stats(2)->relayed, 0u);
+}
+
+TEST_F(TreeTest, TheUplinkForgottenIsToldToo) {
+    fill_uplink();
+    clock.advance(SharedUplink::kMemory + 1s);
+    sender.session.on_peer_path(a.id, carried(bytes_));
+    EXPECT_FALSE(sender.session.uplink_capacity());
+    hub.deliver_all();
+    EXPECT_EQ(hub.delivered[wire::MessageKind::Uplink], 6);
+}
+
+TEST_F(TreeTest, AViewerItsRelayIsNotConnectedToGoesThroughAnother) {
+    // c is not connected to a, which the sender would hand it to first.
+    a.session.on_peer_disconnected(c.id);
+    c.session.on_peer_disconnected(a.id);
+    fill_uplink();
+    // Said to each Forward naming it that was on its way: the later ones are
+    // no news to the sender.
+    EXPECT_GE(hub.delivered[wire::MessageKind::CannotReach], 1);
+    EXPECT_EQ(sender.session.outgoing_stats(2)->relayed, 2u);
+    EXPECT_EQ(relaying_to(a), 1u);
+    EXPECT_EQ(relaying_to(b), 1u) << "c, through b";
+}
+
+TEST_F(TreeTest, ASenderWithoutRelaysSendsEveryCopy) {
+    Party lone(hub, clock, 5, SessionConfig{.relays = false});
+    for (Party* p : {&a, &b}) connect(lone, *p);
+    ASSERT_TRUE(lone.session.add_stream(screen(2), kBitrate));
+    hub.deliver_all();
+    for (Party* p : {&a, &b}) ASSERT_TRUE(p->session.subscribe(lone.id, 2));
+    hub.deliver_all();
+    uint64_t bytes = 0;
+    for (int sample = 0; sample <= 11; ++sample) {
+        bytes += 25'000;
+        for (Party* to : {&a, &b}) lone.session.on_peer_path(to->id, carried(bytes, sample == 11));
+        if (sample < 11) clock.advance(100ms);
+    }
+    ASSERT_EQ(lone.session.uplink_capacity(), 4'000'000u);
+    EXPECT_EQ(lone.session.outgoing_stats(2)->relayed, 0u);
 }

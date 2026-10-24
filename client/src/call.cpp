@@ -125,7 +125,8 @@ Call::Call(CallConfig config, CallHandlers handlers)
       sync_(SteadyClock::instance(), config_.playback.sync) {
     if (config_.playback.sound) mixer_.emplace(*config_.playback.sound);
     media_ = node_.add_subsystem(std::make_unique<MediaService>(
-        session_handlers(), SessionConfig{.capture_clock = config_.capture_clock}));
+        session_handlers(),
+        SessionConfig{.capture_clock = config_.capture_clock, .relays = config_.relays}));
     // One key to meet under: the peer dialed, or this call's own.
     const PeerId* dialed = dialed_peer(config_);
     if (dialed || config_.discoverable) {

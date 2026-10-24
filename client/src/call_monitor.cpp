@@ -175,6 +175,7 @@ SentStreamReport sent_stream(const SentStreamStats& now, const SentStreamStats* 
     sent.stream = now.stream;
     sent.label = now.label;
     sent.viewers = now.session.subscribers;
+    sent.relayed = now.session.relayed;
     return sent;
 }
 
@@ -203,6 +204,9 @@ ReceivedVideoReport received_video(const ReceivedVideoStats& now, const Received
     video.dropped =
         (frames.undecodable - frames_before.undecodable) + (player.dropped - before.player.dropped);
     video.buffer = player.delay;
+    video.passed_on_to = now.stream.relaying_to;
+    video.passed_on_bitrate =
+        interval.bits_per_second(now.stream.relayed_bytes - before.stream.relayed_bytes);
 
     Verdict& verdict = video.verdict;
     if (video.lost > 0) verdict.at_least(Quality::Poor, "frames lost");
@@ -322,16 +326,28 @@ std::string format(const char* pattern, Args... args) {
     return line;
 }
 
+/// "3", or "3 (2 relayed)".
+std::string viewers(const SentStreamReport& s) {
+    return s.relayed == 0 ? std::to_string(s.viewers)
+                          : format("%zu (%zu relayed)", s.viewers, s.relayed);
+}
+
+/// "  passing on to 2 at 4.2 Mbit/s", or nothing.
+std::string passing_on(const ReceivedVideoReport& v) {
+    if (v.passed_on_to == 0) return {};
+    return format("  passing on to %zu at %s", v.passed_on_to, rate(v.passed_on_bitrate).c_str());
+}
+
 std::string sent_line(const SentStreamReport& s) {
     const auto count = [](uint64_t n) { return static_cast<unsigned long long>(n); };
     switch (s.kind) {
         case MediaKind::Video:
             return format(
                 "sent %-10s %s %s%s  %3.0f fps (source %3.0f)  %s (aim %s)  encode %5.2f ms"
-                "  viewers %zu  skipped %llu  keyframes %llu  dropped %llu  %s",
+                "  viewers %s  skipped %llu  keyframes %llu  dropped %llu  %s",
                 s.label.c_str(), size(s.width, s.height).c_str(), s.encoder.c_str(),
                 s.gpu_input ? " (GPU)" : "", s.fps, s.source_fps, rate(s.bitrate).c_str(),
-                rate(s.target).c_str(), ms(s.encode_time), s.viewers, count(s.skipped),
+                rate(s.target).c_str(), ms(s.encode_time), viewers(s).c_str(), count(s.skipped),
                 count(s.keyframes), count(s.dropped), quality(s.verdict).c_str());
         case MediaKind::Audio:
             return format(
@@ -352,12 +368,12 @@ std::string video_line(const char* name, const ReceivedVideoReport& v) {
     const LatencyHistogram& frame = v.pace.intervals();
     return format(
         "%-15s %s %s  %3.0f fps  %s  decode %5.2f ms  frame %5.1f ms (p95 %5.1f, max %5.1f,"
-        " jitter %4.1f)  buffer %3.0f ms  lost %llu  late %llu  dropped %llu  %s",
+        " jitter %4.1f)  buffer %3.0f ms  lost %llu  late %llu  dropped %llu%s  %s",
         name, size(v.width, v.height).c_str(), v.decoder.c_str(), v.fps, rate(v.bitrate).c_str(),
         ms(v.decode_time), ms(frame.percentile(0.5)), ms(frame.percentile(0.95)), ms(frame.max()),
         ms(v.pace.jitter()), ms(v.buffer), static_cast<unsigned long long>(v.lost),
         static_cast<unsigned long long>(v.late), static_cast<unsigned long long>(v.dropped),
-        quality(v.verdict).c_str());
+        passing_on(v).c_str(), quality(v.verdict).c_str());
 }
 
 std::string sound_line(const char* name, const ReceivedSoundReport& s) {
@@ -410,22 +426,27 @@ ReportSection sent_section(const SentStreamReport& s) {
                     {"Skipped", std::to_string(s.skipped) + " bytes"}};
             break;
     }
-    rows.emplace_back("Viewers", std::to_string(s.viewers));
+    rows.emplace_back("Viewers", viewers(s));
     return section;
 }
 
 ReportSection video_section(std::string title, const ReceivedVideoReport& v) {
-    return {std::move(title),
-            v.verdict,
-            {{"Size", size(v.width, v.height)},
-             {"Decoder", v.decoder},
-             {"Frame rate", format("%.0f fps", v.fps)},
-             {"Bitrate", rate(v.bitrate)},
-             {"Decode", milliseconds(v.decode_time)},
-             {"Frame time", spread(v.pace.intervals())},
-             {"Frame jitter", milliseconds(v.pace.jitter())},
-             {"Buffer", milliseconds(v.buffer)},
-             {"Lost, late, dropped", counts(v.lost, v.late, v.dropped)}}};
+    ReportSection section{std::move(title),
+                          v.verdict,
+                          {{"Size", size(v.width, v.height)},
+                           {"Decoder", v.decoder},
+                           {"Frame rate", format("%.0f fps", v.fps)},
+                           {"Bitrate", rate(v.bitrate)},
+                           {"Decode", milliseconds(v.decode_time)},
+                           {"Frame time", spread(v.pace.intervals())},
+                           {"Frame jitter", milliseconds(v.pace.jitter())},
+                           {"Buffer", milliseconds(v.buffer)},
+                           {"Lost, late, dropped", counts(v.lost, v.late, v.dropped)}}};
+    if (v.passed_on_to > 0) {
+        section.rows.emplace_back("Passing on to", format("%zu viewers at %s", v.passed_on_to,
+                                                          rate(v.passed_on_bitrate).c_str()));
+    }
+    return section;
 }
 
 ReportSection sound_section(std::string title, const ReceivedSoundReport& s) {

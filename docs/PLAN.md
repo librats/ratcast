@@ -730,7 +730,7 @@ moment, and the sharer's voice heard as quickly as anyone's.
   3%), the common delay 156 ms. Left: a delay that rises lifts every viewer's pictures at once
   (a hold, which a stall of the VM's made a stall); and it is held within the stream's
   lifetime, past which a viewer much quicker than the slowest stays ahead.
-- **5.3 Forwarding tree** — in progress: viewers with spare uplink re-forward without
+- **5.3 Forwarding tree** ✅: viewers with spare uplink re-forward without
   transcoding, taking the copies off the sender's. librats: **needs** L5 (absolute deadlines: a
   frame's time left goes with it, so latency does not add up per hop). Who gets the stream through
   whom, from each member's uplink (5.1's budget) and paths; a relay that leaves hands its viewers
@@ -760,13 +760,48 @@ moment, and the sharer's voice heard as quickly as anyone's.
      Tested over the in-memory network (`RelayTest`: from a keyframe on, the time left, a frame
      lost past the relay, the viewer's path in rate control, the relay's uplink, leaving, a
      chain) and on three librats nodes. Left: a viewer the relay is not connected to gets
-     nothing, and nobody says so; a relayed viewer still asks the sender for keyframes while its
-     first is on its way from the relay.
-  3. The tree: the sender hands viewers to relays once its uplink is found full with the copies
-     short of what one alone would get — to the viewer whose uplink is known to have room, and
-     the nearest; a relay whose uplink fills hands some back. A relay that leaves hands its
+     nothing, and nobody says so (step 3: `CannotReach`); a relayed viewer still asks the sender
+     for keyframes while its first is on its way from the relay.
+  3. The tree ✅: the sender hands viewers to relays once its uplink is found full with the
+     copies short of what one alone would get — to the viewer whose uplink is known to have room,
+     and the nearest; a relay whose uplink fills hands some back. A relay that leaves hands its
      viewers on; one lost sends them back to the sender.
-  4. Measured: a room of four, the sharer's uplink one copy wide (`--member-paths`).
+     Done so, in the session, as events come (`SessionConfig::relays`, on by default;
+     `ratcast-room --no-relay`): when the sender's uplink is found full, a viewer joins or a
+     relay leaves, while each copy of a picture stream gets less than ¾ of its most, the last
+     viewer to come that passes nothing on goes through the subscriber the fewest hops from the
+     sender, passing on to the fewest, then the nearest (the sender's round trip to it: all it
+     knows of where it is) — until no copy is short or one is left. Sound is not relayed. Every
+     node tells its peers when its uplink is found full and when that is forgotten (`Uplink`);
+     a full relay is chosen no more and hands its last viewer back to the sender if its uplink
+     has room for one more copy, else on to another relay. A relay not connected to a viewer
+     handed to it says so (`CannotReach`) and is not tried for it again. The monitor shows the
+     tree: "viewers 3 (2 relayed)", "passing on to 2 at …"; `ratcast-room`'s summary
+     `relayed`, `passed_on_to`, `passed_on_mbps`. A 20-second room of four on `cap-6` (the
+     sharer's uplink one copy wide, the others free): m0 → m1 → {m2, m3} from the 3rd second,
+     m1 passing on 4.6 Mbit/s, every viewer at 59 fps.
+  4. Measured ✅: a room of four, the sharer's uplink one copy wide (`--member-paths`).
+     Done so: `docs/bench.md`, "Forwarding tree (5.3)". All copies from the sharer, 0.8–1
+     Mbit/s each, 55 fps and 71 stalls a minute; through the tree 58–59 fps. Two things the
+     measuring found, fixed: the one copy left from the sharer was held to its part of an uplink
+     found while the copies were starting (3.34 Mbit/s of 6, a minute) — one path alone is its
+     own, left to its rate control (`Copies::per_most()`, no pacing ceiling either); and a relay
+     was chosen with no word of time, the far one (100 ms from the others) handed both, which
+     on `loss-2` saw 2 fps. Now a relay is taken only if a frame through it arrives with a
+     repair on its last hop within ¾ of its lifetime (`in_time()`), by the least round trips of
+     the last ten seconds — before the hand-off the sharer's own (between two viewers, at least
+     their difference), after it the relay's word (`RelayedPath` carries the rise of its round
+     trip now) — and a relay found too far is passed over as one not connected (`CannotReach`).
+     With the viewers on `rtt-100`, `local`, `loss-2`: m0 → {m1, m2 → m3}, every viewer at 58–59
+     fps, 15 stalls where all from the sharer had 58.
+     Left: the one copy left from the sharer saws with its rate control — up to the stream's
+     most while the encoder sends 4–5.5 of it, cut where frames expire, every 7 s, the sharer's
+     voice breaking each time (24 stalls a minute, where the copy held to the uplink had 9): a
+     single path through a narrow uplink, the tree's or a call's, rate control's (1.1) to settle;
+     an uplink found full while the copies start is found narrower than it is (4.06 and 4.6 of 6)
+     and held for a minute; a relayed viewer still asks the sender for keyframes while its first
+     is on its way from the relay; "nearest" is the sender's round trip, not the relay's to the
+     viewer.
 - **5.4 Simulcast**: one weak path no longer pulls everyone down — the share in two layers (the
   full one and ~720p), each viewer receiving the one its path carries. SVC later where an
   encoder has it. Costs a second encode: on the software codecs, measured first.

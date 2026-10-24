@@ -259,6 +259,34 @@ TEST(CallMonitor, ALineAPartAndTheCallLast) {
     EXPECT_NE(lines[3].find("good"), std::string::npos) << lines[3];
 }
 
+TEST(CallMonitor, TheTreeIsShownWhereThereIsOne) {
+    Snapshots s;
+    s.earlier.sent = {screen(0, 0, 0)};
+    s.now.sent = {screen(60, 60, 500'000)};
+    s.now.sent[0].session.subscribers = 3;
+    s.now.sent[0].session.relayed = 2;
+    s.earlier.video = pictures(0, Timestamp{} + 10s, 33ms);
+    s.now.video = pictures(30, Timestamp{} + 10s, 33ms);
+    s.now.video->stream.relaying_to = 2;
+    s.now.video->stream.relayed_bytes = 1'000'000;
+
+    const CallReport report = compare(s.earlier, s.now);
+    EXPECT_EQ(report.sent.front().relayed, 2u);
+    ASSERT_TRUE(report.video);
+    EXPECT_EQ(report.video->passed_on_to, 2u);
+    EXPECT_DOUBLE_EQ(report.video->passed_on_bitrate, 8'000'000);
+    const std::vector<std::string> lines = report_lines(report);
+    EXPECT_NE(lines[0].find("viewers 3 (2 relayed)"), std::string::npos) << lines[0];
+    EXPECT_NE(lines[1].find("passing on to 2 at 8.00 Mbit/s"), std::string::npos) << lines[1];
+
+    // And not where there is none.
+    s.now.sent[0].session.relayed = 0;
+    s.now.video->stream.relaying_to = 0;
+    const std::vector<std::string> plain = report_lines(compare(s.earlier, s.now));
+    EXPECT_NE(plain[0].find("viewers 3  "), std::string::npos) << plain[0];
+    EXPECT_EQ(plain[1].find("passing on"), std::string::npos) << plain[1];
+}
+
 TEST(CallMonitor, TheTextIsTheLinesUnderTheSecond) {
     Snapshots s;
     s.now.sound = sound(50, {});

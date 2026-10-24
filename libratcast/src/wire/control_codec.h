@@ -32,6 +32,8 @@
  *                     3 a capacity follows, 4 a delivered follows),
  *                     varint queue delay (µs), varint round trip (µs),
  *                     [varint capacity (bit/s)], [varint delivered (bit/s)]
+ *   Uplink            prefix, u8 1 + varint capacity (bit/s), or u8 0: not known
+ *   CannotReach       prefix, varint stream, the viewer's 32-byte id
  *
  * A later version may append fields to any of them: a receiver reads the
  * fields it knows and ignores whatever follows.
@@ -118,7 +120,8 @@ inline constexpr size_t kMaxForwarded = 64;
 /// A relay's word to the sender of a stream it passes on: a sample of the path
 /// to one of the viewers it passes it to, as the stream's part of it
 /// (share_of()). Of the signal, what a sender's rate control reads: starting,
-/// expired, the queue delay, the round trip, capacity and delivered.
+/// expired, the queue delay, the round trip and its rise (the queue beyond),
+/// capacity and delivered.
 struct RelayedPath {
     StreamId stream = 0;
     PeerId viewer;
@@ -127,9 +130,23 @@ struct RelayedPath {
     bool backpressured = false;
 };
 
-using ControlMessage =
-    std::variant<Announce, Withdraw, Subscribe, Unsubscribe, KeyframeRequest, PresenceUpdate,
-                 ClockProbe, ClockEcho, PlayoutNeed, PlayoutDelay, Forward, RelayedPath>;
+/// A node's word to every peer: its uplink was found full, carrying
+/// `capacity` for media (shared_uplink.h); none: it is not known to be full
+/// any more. What a sender choosing relays goes by.
+struct Uplink {
+    std::optional<uint64_t> capacity;
+};
+
+/// A relay's word to a sender: it is not connected to a viewer a Forward named,
+/// and passes it nothing.
+struct CannotReach {
+    StreamId stream = 0;
+    PeerId viewer;
+};
+
+using ControlMessage = std::variant<Announce, Withdraw, Subscribe, Unsubscribe, KeyframeRequest,
+                                    PresenceUpdate, ClockProbe, ClockEcho, PlayoutNeed,
+                                    PlayoutDelay, Forward, RelayedPath, Uplink, CannotReach>;
 
 /// The message for `message`. Precondition: an Announce carries a description,
 /// a PresenceUpdate a presence, for which is_valid() holds; a PlayoutNeed or a

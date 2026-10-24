@@ -21,6 +21,8 @@
  * uplink carries, and the copies of rate-controlled streams share 85% of it —
  * the rest is for what else goes through it: voices, headers, repairs, and room
  * for a queue to empty — each in proportion to the most its stream may take.
+ * While one path alone carries copies (a tree's sender, the rest passed on by
+ * relays) they have no part to share: its rate control follows it.
  *
  * One path alone is that path's own, and tells nothing of the uplink. Nor do
  * they all, for a second after a sample that came late: this node was not

@@ -64,6 +64,18 @@
  * relay that stops watching or goes away leaves its viewers to the sender,
  * which sends them the stream itself again from a keyframe.
  *
+ * The session builds the tree itself (SessionConfig::relays), as events come:
+ * while the copies of its pictures through its uplink are short — found full,
+ * each getting less than three quarters of its stream's most — it hands the
+ * last viewer to come that passes nothing on to another, the fewest hops from
+ * here, passing on to the fewest, the nearest; until no copy is short or one
+ * is left. So too as a viewer joins, and as a relay leaves. Every node tells
+ * its peers when its own uplink is found full (Uplink): a relay that is hands
+ * a viewer back, to here where there is room or to another relay. One not
+ * connected to a viewer handed to it says so (CannotReach), and the viewer
+ * goes another way. Sound is not relayed: small, and what pictures are held
+ * to.
+ *
  * Threads: every method may be called from any thread. Network events arrive
  * on the network's threads, tick() on a timer's, send_frame() on an
  * encoder's, the rest on the application's. Handlers run on whichever of those
@@ -102,6 +114,7 @@
 namespace ratcast {
 
 namespace wire {
+struct CannotReach;
 struct Forward;
 struct RelayedPath;
 }  // namespace wire
@@ -119,6 +132,10 @@ struct SessionConfig {
     /// their clocks against, to play its share in step (common_delay.h). Null:
     /// the session's own. Must outlive the session.
     Clock* capture_clock = nullptr;
+    /// Hand viewers of this node's pictures to relays — other viewers, which
+    /// pass the frames on — while the copies through its uplink are short
+    /// (the tree: MediaSession::relay_through()). False: every copy from here.
+    bool relays = true;
 };
 
 struct SessionHandlers {
@@ -331,8 +348,19 @@ private:
     /// stream's mutex.
     void ask_keyframe_for_relayed(const PeerId& origin, StreamId id, IncomingStream& stream,
                                   Timestamp now);
+    /// While the copies through this node's uplink are short, take them off
+    /// it: viewers of `stream` handed to relays (OutgoingStream::hand_off()).
+    /// Takes the streams' locks.
+    void arrange(OutgoingStream& stream);
+    void arrange_all();
+    /// `relay`'s uplink was found full: one viewer of each stream it passes
+    /// on goes back to this node, or to another relay.
+    void relieve(const PeerId& relay);
+    void tell_uplink(std::optional<uint64_t> capacity);
+    void on_uplink(const PeerId& peer, std::optional<uint64_t> capacity);
     void on_forward(const PeerId& sender, const wire::Forward& forward);
     void on_relayed_path(const PeerId& relay, const wire::RelayedPath& report);
+    void on_cannot_reach(const PeerId& relay, const wire::CannotReach& cannot);
     /// Announce every stream offered to `peer`, and say who this node is.
     void announce_all(const PeerId& peer);
     void on_presence(const PeerId& peer, Presence presence);
@@ -362,7 +390,10 @@ private:
         std::unordered_map<PeerId, double, PeerId::Hash> paths;
 
         /// A copy's part of an uplink that carries `uplink`, by bit per second
-        /// of its stream's most; nullopt while the uplink is not known.
+        /// of its stream's most; nullopt while the uplink is not known, or
+        /// while one path alone carries copies: its own rate control follows
+        /// it, as it would any path (a tree's sender, which went on knowing
+        /// its uplink when it found it narrower than it is, then climbs past).
         std::optional<double> per_most(std::optional<uint64_t> uplink) const;
     };
     /// Takes the streams' locks: never call it holding one.
@@ -373,7 +404,7 @@ private:
     void limit_to_uplink(double per_most);
     /// Each path with copies sent no faster than its part of an uplink that
     /// carries `uplink` (its copies' weight in all of them), so that bursts to
-    /// all at once fit it too; no ceiling where the uplink is not known.
+    /// all at once fit it too; no ceiling where there is no part (per_most()).
     void pace_to_uplink(const Copies& all, std::optional<uint64_t> uplink);
 
     void deliver_ready(const PeerId& peer, StreamId id, IncomingStream& stream, Timestamp now);

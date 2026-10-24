@@ -37,7 +37,9 @@ enum class MessageKind : uint8_t {
     PlayoutDelay = 11,    ///< what all your viewers play mine at
     Forward = 12,         ///< pass my stream's frames on to these viewers
     RelayedPath = 13,     ///< the path to a viewer I pass your frames on to
-    RelayedFrame = 14,    ///< a frame of another's stream, passed on (relay_codec.h)
+    RelayedFrame = 14,    ///< a frame of another's stream, passed on (frame_codec.h)
+    Uplink = 15,          ///< my uplink was found full, carrying this; or is no longer known to be
+    CannotReach = 16,     ///< I am not connected to this viewer you would have me pass on to
 };
 
 constexpr uint8_t message_prefix(MessageKind kind) noexcept {
@@ -65,7 +67,9 @@ inline Result<MessageKind> read_prefix(Reader& in) noexcept {
         case MessageKind::PlayoutDelay:
         case MessageKind::Forward:
         case MessageKind::RelayedPath:
-        case MessageKind::RelayedFrame: return kind;
+        case MessageKind::RelayedFrame:
+        case MessageKind::Uplink:
+        case MessageKind::CannotReach: return kind;
     }
     return fail(Errc::UnknownKind);
 }

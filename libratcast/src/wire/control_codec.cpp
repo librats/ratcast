@@ -135,8 +135,23 @@ void write(Out& out, const RelayedPath& path) {
                                 (s.capacity ? kCapacity : 0) | (s.delivered ? kDelivered : 0)));
     out.varint(static_cast<uint64_t>(s.queue_delay.count()));
     out.varint(static_cast<uint64_t>(s.rtt.count()));
+    out.varint(static_cast<uint64_t>(s.queue_rise.count()));
     if (s.capacity) out.varint(*s.capacity);
     if (s.delivered) out.varint(*s.delivered);
+}
+
+template <typename Out>
+void write(Out& out, const Uplink& uplink) {
+    out.u8(message_prefix(MessageKind::Uplink));
+    out.u8(uplink.capacity ? 1 : 0);
+    if (uplink.capacity) out.varint(*uplink.capacity);
+}
+
+template <typename Out>
+void write(Out& out, const CannotReach& cannot) {
+    out.u8(message_prefix(MessageKind::CannotReach));
+    out.varint(cannot.stream);
+    out.bytes(cannot.viewer.bytes());
 }
 
 template <typename Out, typename Message>
@@ -238,10 +253,28 @@ Result<ControlMessage> read_relayed_path(Reader& in) {
     path.backpressured = flags & kBackpressured;
     s.queue_delay = read_duration(in);
     s.rtt = read_duration(in);
+    s.queue_rise = read_duration(in);
     if (flags & kCapacity) s.capacity = in.varint();
     if (flags & kDelivered) s.delivered = in.varint();
     if (!in.ok()) return fail(in.error());
     return ControlMessage{path};
+}
+
+Result<ControlMessage> read_uplink(Reader& in) {
+    Uplink uplink;
+    const uint8_t given = in.u8();
+    if (given > 1) in.fail(Errc::Malformed);
+    if (given == 1) uplink.capacity = in.varint();
+    if (!in.ok()) return fail(in.error());
+    return ControlMessage{uplink};
+}
+
+Result<ControlMessage> read_cannot_reach(Reader& in) {
+    CannotReach cannot;
+    cannot.stream = read_u32(in);
+    cannot.viewer = read_peer(in);
+    if (!in.ok()) return fail(in.error());
+    return ControlMessage{cannot};
 }
 
 Result<ControlMessage> read_presence(Reader& in) {
@@ -313,7 +346,7 @@ Buffer encode_control(const ControlMessage& message) {
                 assert(m.viewers.size() <= kMaxForwarded);
             } else if constexpr (std::is_same_v<std::decay_t<decltype(m)>, RelayedPath>) {
                 assert(m.signal.queue_delay >= Duration::zero() &&
-                       m.signal.rtt >= Duration::zero());
+                       m.signal.rtt >= Duration::zero() && m.signal.queue_rise >= Duration::zero());
             }
             Sizer sizer;
             write(sizer, m);
@@ -344,6 +377,8 @@ Result<ControlMessage> decode_control(std::span<const uint8_t> message) {
         case MessageKind::PlayoutDelay: return read_playout_message<PlayoutDelay>(in);
         case MessageKind::Forward: return read_forward(in);
         case MessageKind::RelayedPath: return read_relayed_path(in);
+        case MessageKind::Uplink: return read_uplink(in);
+        case MessageKind::CannotReach: return read_cannot_reach(in);
         case MessageKind::Frame:
         case MessageKind::RelayedFrame: break;
     }

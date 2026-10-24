@@ -107,6 +107,7 @@ struct SentStreamReport {
     uint64_t keyframes = 0;
     uint64_t dropped = 0;  ///< frames not sent to a viewer whose queue was full
     size_t viewers = 0;
+    size_t relayed = 0;  ///< of the viewers, those another viewer passes it on to
     Verdict verdict;
 };
 
@@ -118,11 +119,13 @@ struct ReceivedVideoReport {
     double fps = 0;      ///< pictures handed on
     double bitrate = 0;  ///< of the stream received
     Duration decode_time{};
-    FramePace pace;        ///< frame time and its jitter
-    uint64_t lost = 0;     ///< frames that never came
-    uint64_t late = 0;     ///< came after their time
-    uint64_t dropped = 0;  ///< came and were never shown: undecodable, or dropped to start again
-    Duration buffer{};     ///< pictures are held back for, past the fastest frames
+    FramePace pace;           ///< frame time and its jitter
+    uint64_t lost = 0;        ///< frames that never came
+    uint64_t late = 0;        ///< came after their time
+    uint64_t dropped = 0;     ///< came and were never shown: undecodable, or dropped to start again
+    Duration buffer{};        ///< pictures are held back for, past the fastest frames
+    size_t passed_on_to = 0;  ///< viewers this side passes the stream on to
+    double passed_on_bitrate = 0;  ///< what it passes on to them, all of it
     Verdict verdict;
 };
 

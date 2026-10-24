@@ -219,6 +219,7 @@ TEST(ControlCodec, RoundTripsRelayedPath) {
     path.signal.expired = true;
     path.signal.queue_delay = 12ms;
     path.signal.rtt = 48ms;
+    path.signal.queue_rise = 9ms;
     path.signal.capacity = 3'000'000;
     RelayedPath got = round_trip(path);
     EXPECT_EQ(got.stream, 7u);
@@ -228,6 +229,7 @@ TEST(ControlCodec, RoundTripsRelayedPath) {
     EXPECT_TRUE(got.signal.expired);
     EXPECT_EQ(got.signal.queue_delay, 12ms);
     EXPECT_EQ(got.signal.rtt, 48ms);
+    EXPECT_EQ(got.signal.queue_rise, 9ms);
     EXPECT_EQ(got.signal.capacity, 3'000'000u);
     EXPECT_EQ(got.signal.delivered, std::nullopt);
 
@@ -241,12 +243,25 @@ TEST(ControlCodec, RoundTripsRelayedPath) {
     EXPECT_EQ(got.signal.delivered, 900'000u);
 }
 
-TEST(ControlCodec, EveryCutOfAForwardOrARelayedPathIsTruncated) {
+TEST(ControlCodec, RoundTripsCannotReach) {
+    const CannotReach cannot = round_trip(CannotReach{7, peer(4)});
+    EXPECT_EQ(cannot.stream, 7u);
+    EXPECT_EQ(cannot.viewer, peer(4));
+}
+
+TEST(ControlCodec, RoundTripsUplink) {
+    EXPECT_EQ(round_trip(Uplink{6'000'000}).capacity, 6'000'000u);
+    EXPECT_EQ(round_trip(Uplink{}).capacity, std::nullopt);
+    EXPECT_EQ(decode_error({message_prefix(MessageKind::Uplink), 2}), Errc::Malformed);
+}
+
+TEST(ControlCodec, EveryCutOfARelayMessageIsTruncated) {
     RelayedPath path{7, peer(3), {}, false};
     path.signal.capacity = 3'000'000;
     path.signal.delivered = 2'000'000;
     for (const ControlMessage& message :
-         {ControlMessage{Forward{7, 8'000'000, {peer(1), peer(2)}}}, ControlMessage{path}}) {
+         {ControlMessage{Forward{7, 8'000'000, {peer(1), peer(2)}}}, ControlMessage{path},
+          ControlMessage{Uplink{6'000'000}}, ControlMessage{CannotReach{7, peer(4)}}}) {
         const auto bytes = bytes_of(encode_control(message));
         for (size_t cut = 0; cut < bytes.size(); ++cut) {
             EXPECT_EQ(decode_error({bytes.begin(), bytes.begin() + static_cast<ptrdiff_t>(cut)}),

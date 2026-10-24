@@ -1385,3 +1385,62 @@ Four in a room on `local`, the first sharing; the three viewers each on a path o
 - The delay is held within a stream's lifetime: a viewer holds pictures and sound no longer than
   that past its own time, and one whose own path is that much quicker than the slowest's stays
   ahead of the others by the rest.
+
+## Forwarding tree (5.3)
+
+A share's copies all leave through the sharer's uplink (5.1 keeps them to their part of it). Now,
+once that uplink is found short — each copy of a picture stream getting less than ¾ of its most
+— the sharer hands viewers to other viewers, which pass the frames on as they came, each with the
+time it has left (librats L5): the last viewer to come that passes nothing on goes through the
+subscriber the fewest hops away, passing on to the fewest, then the nearest, until no copy is
+short or one is left. Sound stays direct. A relay is taken only if a frame through it arrives in
+time with a repair on its last hop — what it takes to reach the relay, half the relay's round trip
+to the viewer and one more, within ¾ of the frame's lifetime — judged by the least round trips of
+the last ten seconds (a queue is rate control's to empty, not a longer path): before the hand-off
+by the sharer's own round trips (the one between two viewers at least their difference), after it
+by the relay's word (`RelayedPath`). ratcast 83e3379 + 5.3, librats fd21fa1.
+
+Four in a room, the first sharing 1080p60 (av1, 8 Mbit/s at most) through an uplink of 6 Mbit/s
+— one copy wide — the others' uplinks free: `bench/netem.py --room 4 --share --member-paths
+local,local,local cap-6 --duration 60`, all copies from the sharer (`--send-arg=--no-relay`) and
+through the tree; then the viewers each on a path of its own (`--member-paths
+rtt-100,local,loss-2`). One run each:
+
+| viewers' paths | copies | the tree | aim, Mbit/s | voice latency p50 / p95 / p99 / max, ms | breaks | lost / concealed, ms | share: fps | latency p95, ms | stalls (all viewers) | sent, Mbit/s: sharer / most of the others |
+|---|---|---|---|---:|---:|---:|---:|---:|---:|---:|
+| `local` ×3 | from the sharer | – | 0.75 – 1.0 | 63.5 / 129.0 / 217.1 / 890.7 | 28 | 514 / 11574 | 55 | 176.1 | 71 | 4.17 / 0.25 |
+| `local` ×3 | the tree, the copy held to the uplink first found | m0 → m1 → {m2, m3} | 3.34 | 63.5 / 131.1 / 131.1 / 160.7 | 1 | 8 / 245 | 59 | 106.5 | 9 | 3.16 / 5.91 |
+| `local` ×3 | the tree | m0 → m1 → {m2, m3} | 3.1 → 8, cut every 7 s | 63.5 / 127.0 / 143.4 / 266.8 | 25 | 144 / 3007 | 58 | 147.5 | 24 | 4.36 / 8.26 |
+| `rtt-100`, `local`, `loss-2` | from the sharer | – | 0.8 – 1.0 | 139.3 / 172.0 / 212.4 / 212.4 | 1 | 166 / 512 | 53 | 200.7 | 58 | 4.37 / 0.26 |
+| `rtt-100`, `local`, `loss-2` | the tree, no word of time | m0 → m1 → {m2, m3} | 4.9 – 7.9 | 143.4 / 188.4 / 208.6 / 208.6 | 0 | 177 / 402 | 2 | 385.0 | 204 | 5.04 / 5.73 |
+| `rtt-100`, `local`, `loss-2` | the tree | m0 → {m1, m2 → m3} | 1.95 | 131.1 / 172.0 / 229.4 / 238.0 | 16 | 301 / 3082 | 58 | 213.0 | 15 | 3.88 / 2.22 |
+
+- **Three copies through one copy's uplink do not play**: each gets 0.8–1 Mbit/s of a 1080p60
+  share, the frames lost to the overflows ask for keyframes, a keyframe a second, and every
+  viewer stalls (71 in a minute) — the sharer's voice with them (11.6 s made up).
+- **Through the tree every viewer plays at 58–59 fps**, the sharer sending one copy and the
+  first viewer passing two on, in step with each other (apart 0–2 ms). From the third second:
+  the third viewer's joining finds the uplink full, and the second and third go through the
+  first, the fewest hops away.
+- **The one copy left follows its own path.** The uplink was found full while the copies were
+  starting, at 4.06 Mbit/s of its 6; kept to its part of that, the one copy left from the sharer
+  stayed at 3.34 Mbit/s for the minute the uplink is remembered — and on from there, the uplink
+  forgotten (a single path never finds it again: 100 s with that rule, 59 fps, 31 stalls, from
+  the 63rd second the same as below). One path alone is its own, as `SharedUplink` says: it is
+  now left to its rate control at once, which takes it to 4.4 Mbit/s on average — and on past
+  the 6, the target climbing to the stream's most while the encoder sends 4–5.5 of it, cut where
+  frames expire, every 7 s, and every member hearing the sharer's voice break as it does: 24
+  stalls in a minute where the held copy had 9. That is a single path through a narrow uplink,
+  the tree's or a call's (1.1): left for rate control.
+- **A relay is chosen for the time it leaves.** With no word of time, the first viewer —
+  100 ms from the others, 75 from the sharer — was handed both the others, by the fewest hops:
+  its frames reached them 125–150 ms after capture of the 200 they live, with no time left to
+  repair the 2% that `loss-2` drops; keyframes were asked of the sharer four times a second and
+  the third viewer saw 2 fps. Now the sharer passes it over (its round trip less the others' is
+  too long for a repair) and hands the third viewer to the second, 25 ms from it: two copies
+  from the sharer, every viewer at 58–59 fps. Judged first by the smoothed round trips, the
+  sharer's own queue in a keyframe's burst (100 ms and more on `cap-6`) made that relay look too
+  far for good three seconds in; by the least round trips it stays.
+- **Left**: an uplink found full while the copies start is found narrower than it is (4.06 and
+  4.6 of 6 here) and the copies held to it for a minute; with two or more paths it is found
+  again after that.

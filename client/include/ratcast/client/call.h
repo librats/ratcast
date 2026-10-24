@@ -139,6 +139,9 @@ struct CallConfig {
     /// clock against it to play what this side shares in step. Must outlive
     /// the call.
     Clock* capture_clock = nullptr;
+    /// What this side shares goes through relays — viewers that pass it on —
+    /// while the copies through its uplink are short (SessionConfig::relays).
+    bool relays = true;
     CallPlayback playback = {};
 };
 

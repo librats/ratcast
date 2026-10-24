@@ -44,6 +44,8 @@ constexpr const char* kUsage = R"(usage: ratcast-room [rats://HOST:PORT | rats:/
   --silent             no voice; by default a tone, stamped as the pattern is
   --share              share the test pattern as a screen, as the app shares one
   --apart              play the share as soon as it can be, not when the others do
+  --no-relay           send every copy of what is shared from here, whatever the
+                       uplink carries; by default viewers pass it on to others
   --size WxH           the pattern's size (default 1280x720)
   --codec av1|h265|h264   default: av1
   --bitrate KBPS       the most the share's rate control goes up to (default 4000)
@@ -66,6 +68,7 @@ struct Options {
     bool voice = true;
     bool share = false;
     bool together = true;
+    bool relays = true;
     uint32_t width = 1280;
     uint32_t height = 720;
     VideoEncoderConfig encoder;
@@ -91,6 +94,7 @@ std::optional<Options> parse(int argc, char** argv) {
     o.voice = !args.flag("silent");
     o.share = args.flag("share");
     o.together = !args.flag("apart");
+    o.relays = !args.flag("no-relay");
     if (const auto size = args.text("size")) {
         if (const auto parsed = parse_size(*size)) {
             std::tie(o.width, o.height) = *parsed;
@@ -172,6 +176,16 @@ public:
         if (const std::optional<Duration> together = call_.sync_stats().together) {
             together_ = together;
         }
+        // And the tree: the most of this member's viewers ever relayed, and
+        // of the share's viewers it ever passed it on to.
+        for (const SentStreamStats& sent : call_.sent_stats()) {
+            if (std::holds_alternative<VideoPublisherStats>(sent.publisher))
+                relayed_ = std::max(relayed_, sent.session.relayed);
+        }
+        if (const std::optional<ReceivedVideoStats> share = call_.video_stats()) {
+            passed_on_to_ = std::max(passed_on_to_, share->stream.relaying_to);
+            passed_on_bytes_ = share->stream.relayed_bytes;
+        }
         std::fflush(stdout);
     }
 
@@ -223,6 +237,8 @@ private:
                     static_cast<unsigned long long>(pictures.stalls), ms(pictures.stalled));
         print_percentiles("latency", pictures.latency);
         if (together_) std::printf(" together_ms=%.0f", ms(*together_));
+        std::printf(" passed_on_to=%zu passed_on_mbps=%.2f", passed_on_to_,
+                    double(passed_on_bytes_) * 8 / 1e6 / seconds);
     }
 
     /// What this member's streams carried, before they went to each peer.
@@ -234,8 +250,8 @@ private:
             if (const auto* video = std::get_if<VideoPublisherStats>(&sent.publisher))
                 share += video->bytes;
         }
-        std::printf(" voice_kbps=%.1f share_mbps=%.2f", double(voice) * 8 / 1e3 / seconds,
-                    double(share) * 8 / 1e6 / seconds);
+        std::printf(" voice_kbps=%.1f share_mbps=%.2f relayed=%zu",
+                    double(voice) * 8 / 1e3 / seconds, double(share) * 8 / 1e6 / seconds, relayed_);
     }
 
     static void print_latency(const LatencyHistogram& latency) {
@@ -260,6 +276,9 @@ private:
     const std::chrono::steady_clock::time_point started_ = std::chrono::steady_clock::now();
     std::map<PeerId, AudioPlayerStats> last_voices_;
     std::optional<Duration> together_;
+    size_t relayed_ = 0;
+    size_t passed_on_to_ = 0;
+    uint64_t passed_on_bytes_ = 0;
     unsigned seconds_ = 1;
 };
 
@@ -313,6 +332,7 @@ int main(int argc, char** argv) {
                                                          .dial = o.room,
                                                          .mesh = true,
                                                          .capture_clock = &WallClock::instance(),
+                                                         .relays = o.relays,
                                                          .playback = playback},
                                                         handlers);
     if (!started) {
