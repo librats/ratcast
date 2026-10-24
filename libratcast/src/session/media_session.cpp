@@ -97,7 +97,7 @@ struct MediaSession::PeerState {
         // (Clang judges a nested class's member initialisers only then).
         InStep() {}
 
-        Duration need{};              ///< capture to played, this node's clock
+        Duration need{};                ///< capture to played, this node's clock
         std::optional<Duration> told;   ///< the latency told the peer, its clock
         std::optional<Duration> delay;  ///< what the peer says its viewers play at
         PeerClock clock;
