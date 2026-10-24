@@ -78,15 +78,25 @@
  *
  * A server may be a relay too, one that watches nothing — an SFU
  * (SessionConfig::forwarder). It says so as each peer connects (Forwarder);
- * a sender then hands it a viewer before any other relay, and is sent to by
- * nobody's uplink but its own: made a subscriber as it is handed its first
- * viewer — once two or more are sent to from here, or one gains nothing — and
- * dropped as it is left none. What a viewer whose connection the server
- * carries anyway (MediaNetwork::relayed()) watches goes through it whether or
- * not the uplink is short: one copy for all of them, where each would take one
- * through the same server. The forwarder subscribes to a stream as it is
- * handed viewers of it and lets go as it is left none, and keeps no frame of
- * it: it passes them on and that is all.
+ * a sender then hands it viewers before any other relay — as it first does,
+ * making it a subscriber, where two or more copies go from here (for one
+ * alone it would save nothing) — and drops it as it is left none. What a viewer whose connection
+ * the server carries anyway (MediaNetwork::relayed()) watches goes through it whether or not the
+ * uplink is short: one copy for all of them, where each would take one through the same server. The
+ * forwarder subscribes to a stream as it is handed viewers of it and lets go as it is left none,
+ * and keeps no frame of it: it passes them on and that is all.
+ *
+ * Every frame is sealed end to end (SessionConfig::seal; SFrame, RFC 9605,
+ * session/sframe.h): its payload encrypted under this sender's key, its
+ * header left to read for those passing it on but authenticated with it. The
+ * sender gives its key to each viewer itself as it subscribes (FrameKey), on
+ * the connection between the two, whose Noise is end to end even where a
+ * server carries it — to those entitled (SessionConfig::entitled), never to
+ * a forwarder — and takes a new one, told to those it gave the last, when one
+ * of them goes: what it sends from a second later that one cannot read. A
+ * viewer opens what it has the key for and drops the rest; a frame passed on
+ * by another it takes sealed or not at all, so that nobody in between may
+ * pass off frames of their own.
  *
  * Threads: every method may be called from any thread. Network events arrive
  * on the network's threads, tick() on a timer's, send_frame() on an
@@ -127,6 +137,7 @@ namespace ratcast {
 
 namespace wire {
 struct CannotReach;
+struct FrameHeader;
 struct Forward;
 struct RelayedPath;
 }  // namespace wire
@@ -151,6 +162,13 @@ struct SessionConfig {
     /// Watch nothing and pass on what senders hand this node: a server, an
     /// SFU (see above). Says so to every peer; plays and keeps no frame.
     bool forwarder = false;
+    /// Seal this node's frames end to end, and take a frame passed on by
+    /// another only sealed (see above). False: this node's go as they are.
+    bool seal = true;
+    /// Who may read this node's frames, given its key as they subscribe:
+    /// null, every subscriber but a forwarder. Asked on a network thread;
+    /// must not call back into the session.
+    std::function<bool(const PeerId& peer)> entitled = {};
 };
 
 struct SessionHandlers {
@@ -194,6 +212,11 @@ struct IncomingStreamStats {
     uint64_t relayed_messages = 0;  ///< frame messages passed on
     uint64_t relayed_bytes = 0;     ///< bytes of those messages
     uint64_t relay_held_back = 0;   ///< not passed on: a full queue, or too late
+    /// Frames sealed end to end, and opened.
+    uint64_t opened = 0;
+    /// Frames dropped unread: sealed under a key it was not given, or passed
+    /// on by another unsealed.
+    uint64_t unopened = 0;
 };
 
 /// A stream a peer offers.
@@ -330,6 +353,7 @@ private:
     struct Fanout;
     struct OutgoingStream;
     struct IncomingStream;
+    struct Sealing;
     using Forwarders = std::vector<std::shared_ptr<PeerState>>;
 
     struct StreamKey {
@@ -380,6 +404,18 @@ private:
     void on_forward(const PeerId& sender, const wire::Forward& forward);
     /// `peer` passes on what it is handed: a relay for every stream here.
     void on_forwarder(const PeerId& peer);
+    /// Give `peer` this node's key, if it may read its frames and has not
+    /// been given it — or, `again`, if it has: what went on a link that lost
+    /// a race.
+    void give_key(const PeerId& peer, bool again = false);
+    /// `peer`, given the key, went: a new one, told to the rest, sealed under
+    /// from a moment on.
+    void rekey_without(const PeerId& peer, Timestamp now);
+    /// The payload of a frame whose header is `header`, the start of
+    /// `message`, from `origin` through `from`, as it plays here: opened if
+    /// sealed; none where it may not be played (IncomingStreamStats::unopened).
+    std::optional<Buffer> open(const PeerId& origin, const PeerId& from,
+                               const wire::FrameHeader& header, std::span<const uint8_t> message);
     void on_relayed_path(const PeerId& relay, const wire::RelayedPath& report);
     void on_cannot_reach(const PeerId& relay, const wire::CannotReach& cannot);
     /// Announce every stream offered to `peer`, and say who this node is.
@@ -460,6 +496,10 @@ private:
     std::mutex viewers_mutex_;  ///< guards viewers_; taken holding no other lock
     /// This node's viewers that play its share in step.
     CommonDelay viewers_;
+
+    /// This node's keys, and those it was given; taken holding a stream's
+    /// lock or none, never with another of the session's.
+    std::unique_ptr<Sealing> sealing_;
 
     std::atomic<uint64_t> rejected_{0};
 };

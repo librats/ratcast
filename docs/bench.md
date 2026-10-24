@@ -81,6 +81,11 @@ CPU, per thread from `/proc` over 8 s at 1080p60, 8 Mbit/s (100% = one core):
 | publisher thread (session, sending) | 3.8% | | |
 | librats reactor | 0.8% | | |
 
+Sealing every frame end to end (5.6 step 3) costs `bench_session`'s 16 KiB delta frame ~30 µs
+to seal (send_frame: 66 ns unsealed, 30 µs sealed) and as much to open, ChaCha20-Poly1305 in
+librats' portable C at ~550 MB/s: an 8 Mbit/s share is 0.2% of a core each way, no allocation
+more per frame.
+
 The test pattern's drawing is the test source's own cost; screen capture converts a picture in
 ~1 ms (`bench_convert`), a camera's YUY2 one in 46 µs at 720p (it is all copies and means). librats moves 8 Mbit/s for under 1% of a core, so the second copy on its
 send path is not worth removing before fan-out needs it.

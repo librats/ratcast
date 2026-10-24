@@ -186,10 +186,20 @@ TEST(FrameCodec, RefusesAnUnknownKind) {
     EXPECT_EQ(decode_error(message), Errc::UnknownKind);
 }
 
-TEST(FrameCodec, RefusesReservedFlags) {
-    auto message = bytes_of(encode_ok(delta_frame(), payload_bytes(8)));
-    message[1] |= 1 << 3;
-    EXPECT_EQ(decode_error(message), Errc::Malformed);
+TEST(FrameCodec, ASealedPayloadIsSaidSoInTheHeaderItIsAuthenticatedBehind) {
+    const FrameInfo info = delta_frame();
+    const Result<Buffer> sealed = encode_frame(info, payload_of(payload_bytes(8)), /*sealed=*/true);
+    ASSERT_TRUE(sealed);
+    const auto message = bytes_of(*sealed);
+    EXPECT_EQ(message[1] & 1 << 3, 1 << 3);
+    const Result<FrameHeader> header = read_frame_header(message);
+    ASSERT_TRUE(header);
+    EXPECT_TRUE(header->sealed);
+    EXPECT_EQ(header->info, info);
+    std::vector<uint8_t> written(frame_header_size(info));
+    write_frame_header(info, true, written);
+    EXPECT_TRUE(std::equal(written.begin(), written.end(), message.begin()));
+    EXPECT_FALSE(read_frame_header(bytes_of(encode_ok(info, payload_bytes(8))))->sealed);
 }
 
 TEST(FrameCodec, RefusesMoreReferencesThanItHolds) {
@@ -277,8 +287,11 @@ TEST(FrameCodec, ArbitraryBytesDecodeToCanonicalFramesOrFail) {
 
         const bool had_extensions = (bytes[1] & (1 << 2)) != 0;
         if (had_extensions) continue;  // dropped on re-encoding, by design
-        const Buffer again = encode_ok(frame->info, frame->payload.bytes());
-        EXPECT_EQ(bytes_of(again), bytes);
+        const bool sealed = (bytes[1] & (1 << 3)) != 0;
+        const Result<Buffer> again =
+            encode_frame(frame->info, payload_of(frame->payload.bytes()), sealed);
+        ASSERT_TRUE(again);
+        EXPECT_EQ(bytes_of(*again), bytes);
     }
     EXPECT_GT(decoded, 1000u);  // the near misses must exercise the success path too
 }

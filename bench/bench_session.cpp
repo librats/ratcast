@@ -4,7 +4,7 @@
 //
 // The network here does nothing, so these are the session's own costs. A real
 // network copies each message once more (librats' Node::send), which is not
-// counted here.
+// counted here. Frames are sealed end to end (SFrame) unless a row says not.
 
 #include <array>
 #include <cstdio>
@@ -14,6 +14,7 @@
 #include "framework/alloc_track.h"
 #include "framework/bench.h"
 #include "ratcast/session/media_session.h"
+#include "session/sframe.h"
 #include "wire/control_codec.h"
 #include "wire/frame_codec.h"
 
@@ -53,7 +54,8 @@ StreamDescription screen() {
 
 /// A sender with `subscribers` subscribed peers, past their first keyframe.
 struct Sender {
-    explicit Sender(size_t subscribers) {
+    explicit Sender(size_t subscribers, bool seal = true)
+        : session{network, clock, SessionHandlers{}, SessionConfig{.seal = seal}} {
         (void)session.add_stream(screen());
         const Buffer subscribe = wire::encode_control(wire::Subscribe{1});
         for (uint32_t i = 0; i < subscribers; ++i) {
@@ -76,15 +78,17 @@ struct Sender {
 
     ManualClock clock;
     NullNetwork network;
-    MediaSession session{network, clock, SessionHandlers{}};
+    MediaSession session;
     FrameNumber next = 0;
 };
 
-/// A receiver subscribed to one stream of one peer.
+/// A receiver subscribed to one stream of one peer, which seals its frames
+/// or not.
 struct Receiver {
-    Receiver() {
+    explicit Receiver(bool sealed = true) : sealed(sealed) {
         session.on_peer_connected(peer);
         session.on_message(peer, wire::encode_control(wire::Announce{screen()}).bytes());
+        session.on_message(peer, wire::encode_control(wire::FrameKey{0, base}).bytes());
         (void)session.subscribe(peer, 1);
         receive(true);
     }
@@ -97,9 +101,19 @@ struct Receiver {
         if (!keyframe) info.references = {info.number - 1};
         MutableBuffer payload = allocate_frame_payload(kDeltaFrame);
         payload.append(kDeltaFrame);
-        const Buffer message = *wire::encode_frame(info, std::move(payload));
+        if (sealed) {
+            std::array<uint8_t, wire::kMaxFrameHeaderSize> header;
+            const std::span metadata(header.data(), wire::frame_header_size(info));
+            wire::write_frame_header(info, true, metadata);
+            payload = key.seal(info.number, metadata, payload.bytes());
+        }
+        const Buffer message = *wire::encode_frame(info, std::move(payload), sealed);
         session.on_message(peer, message.bytes());
     }
+
+    const bool sealed;
+    const sframe::BaseKey base = sframe::random_key();
+    const sframe::Key key{0, base};
 
     ManualClock clock;
     NullNetwork network;
@@ -123,11 +137,15 @@ int main() {
             auto sender = std::make_unique<Sender>(subscribers);
             b.run(std::to_string(subscribers) + " subscriber(s)", [&] { sender->send(); });
         }
+        auto plain = std::make_unique<Sender>(1, /*seal=*/false);
+        b.run("1 subscriber, not sealed", [&] { plain->send(); });
 
         b.group("receive: encode + on_message + hand on");
         b.items(1);
         Receiver receiver;
         b.run("1 stream", [&] { receiver.receive(); });
+        Receiver unsealed(/*sealed=*/false);
+        b.run("1 stream, not sealed", [&] { unsealed.receive(); });
     }
 
     constexpr int kFrames = 10'000;

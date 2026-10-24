@@ -127,9 +127,13 @@ Call::Call(CallConfig config, CallHandlers handlers)
       node_(node_config(config_)),
       sync_(SteadyClock::instance(), config_.playback.sync) {
     if (config_.playback.sound) mixer_.emplace(*config_.playback.sound);
+    // What it sends is sealed end to end, its key given to members alone: a
+    // server that carries or forwards it reads nothing.
     media_ = node_.add_subsystem(std::make_unique<MediaService>(
         session_handlers(),
-        SessionConfig{.capture_clock = config_.capture_clock, .relays = config_.relays}));
+        SessionConfig{.capture_clock = config_.capture_clock,
+                      .relays = config_.relays,
+                      .entitled = [this](const PeerId& peer) { return !is_server(peer); }}));
     // One key to meet under: the peer dialed, or this call's own — in the
     // DHT, where whoever is met dials the port the router forwards, if it
     // does (a NAT then needs no punch), and at servers, which tell each side

@@ -35,11 +35,14 @@
  *   Uplink            prefix, u8 1 + varint capacity (bit/s), or u8 0: not known
  *   CannotReach       prefix, varint stream, the viewer's 32-byte id
  *   Forwarder         prefix
+ *   FrameKey          prefix, varint KID, 32-byte base key
  *
  * A later version may append fields to any of them: a receiver reads the
  * fields it knows and ignores whatever follows.
  */
 
+#include <array>
+#include <cstdint>
 #include <optional>
 #include <span>
 #include <variant>
@@ -150,10 +153,19 @@ struct CannotReach {
 /// viewers to.
 struct Forwarder {};
 
+/// A sender's word to one of its viewers, and to nobody else: the base key its
+/// frames are sealed under from now on, or soon, as their SFrame headers name
+/// it by `kid` (session/sframe.h). Only ever on the connection between the
+/// two: its Noise keeps it from any node in between.
+struct FrameKey {
+    uint64_t kid = 0;
+    std::array<uint8_t, 32> key{};
+};
+
 using ControlMessage =
     std::variant<Announce, Withdraw, Subscribe, Unsubscribe, KeyframeRequest, PresenceUpdate,
                  ClockProbe, ClockEcho, PlayoutNeed, PlayoutDelay, Forward, RelayedPath, Uplink,
-                 CannotReach, Forwarder>;
+                 CannotReach, Forwarder, FrameKey>;
 
 /// The message for `message`. Precondition: an Announce carries a description,
 /// a PresenceUpdate a presence, for which is_valid() holds; a PlayoutNeed or a

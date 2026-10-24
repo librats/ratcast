@@ -171,6 +171,12 @@ TEST(Server, ForwardsAShareToTheViewersItCarries) {
         std::this_thread::sleep_for(std::chrono::milliseconds(33));
     }
     EXPECT_GE(pictures.load(), 20);
+    // Sealed end to end: the viewers opened what the server could not.
+    for (MediaNode* viewer : {&a, &b}) {
+        const auto stream = viewer->media->session().incoming_stats(from, 1);
+        EXPECT_GT(stream->opened, 0u);
+        EXPECT_EQ(stream->unopened, 0u);
+    }
     const OutgoingStreamStats sent = *sending.outgoing_stats(1);
     EXPECT_EQ(sent.subscribers, 2u);
     // One copy a frame, to the server.

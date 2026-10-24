@@ -1,5 +1,6 @@
 #include "wire/control_codec.h"
 
+#include <algorithm>
 #include <cassert>
 #include <limits>
 #include <string>
@@ -162,6 +163,13 @@ void write(Out& out, const Forwarder&) {
     out.u8(message_prefix(MessageKind::Forwarder));
 }
 
+template <typename Out>
+void write(Out& out, const FrameKey& key) {
+    out.u8(message_prefix(MessageKind::FrameKey));
+    out.varint(key.kid);
+    out.bytes(key.key);
+}
+
 template <typename Out, typename Message>
 void write(Out& out, const Message& message) {
     constexpr MessageKind kind = [] {
@@ -286,6 +294,15 @@ Result<ControlMessage> read_cannot_reach(Reader& in) {
     return ControlMessage{cannot};
 }
 
+Result<ControlMessage> read_frame_key(Reader& in) {
+    FrameKey key;
+    key.kid = in.varint();
+    const std::span<const uint8_t> bytes = in.bytes(key.key.size());
+    if (!in.ok()) return fail(in.error());
+    std::ranges::copy(bytes, key.key.begin());
+    return ControlMessage{key};
+}
+
 Result<ControlMessage> read_presence(Reader& in) {
     Presence p;
     const uint64_t name_size = in.varint();
@@ -389,6 +406,7 @@ Result<ControlMessage> decode_control(std::span<const uint8_t> message) {
         case MessageKind::Uplink: return read_uplink(in);
         case MessageKind::CannotReach: return read_cannot_reach(in);
         case MessageKind::Forwarder: return ControlMessage{Forwarder{}};
+        case MessageKind::FrameKey: return read_frame_key(in);
         case MessageKind::Frame:
         case MessageKind::RelayedFrame: break;
     }

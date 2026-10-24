@@ -128,6 +128,8 @@ struct ReceivedVideoReport {
     Duration buffer{};        ///< pictures are held back for, past the fastest frames
     size_t passed_on_to = 0;  ///< viewers this side passes the stream on to
     double passed_on_bitrate = 0;  ///< what it passes on to them, all of it
+    bool sealed = false;           ///< came sealed end to end, and opened
+    uint64_t unopened = 0;         ///< dropped unread: no key for them, or passed on unsealed
     Verdict verdict;
 };
 

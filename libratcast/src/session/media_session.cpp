@@ -1,15 +1,19 @@
 #include "ratcast/session/media_session.h"
 
 #include <algorithm>
+#include <array>
 #include <atomic>
 #include <cmath>
+#include <deque>
 #include <mutex>
 #include <tuple>
 #include <type_traits>
+#include <unordered_set>
 #include <utility>
 #include <variant>
 #include <vector>
 
+#include "session/sframe.h"
 #include "wire/control_codec.h"
 #include "wire/frame_codec.h"
 #include "wire/message.h"
@@ -47,6 +51,13 @@ constexpr double kShort = 0.75;
 bool in_time(Duration reach, Duration rtt, Duration lifetime) noexcept {
     return reach + rtt * 3 / 2 <= lifetime * 3 / 4;
 }
+
+/// A new key is sealed under this long after it was told: told reliably, it has
+/// a few round trips to arrive before the first frame sealed under it.
+constexpr Duration kRekeyAfter = 1s;
+/// Keys of a sender's a viewer keeps: the one sealed under, the one told
+/// next, and those before whose frames may still be on their way.
+constexpr size_t kKeysKept = 4;
 
 /// A frame's tag in the network's outcomes: its stream's slot, above its number.
 constexpr int kSlotShift = 48;
@@ -551,6 +562,8 @@ struct MediaSession::IncomingStream {
     bool subscribed = false;
     FrameTracker tracker;
     uint64_t bytes = 0;
+    uint64_t opened = 0;    ///< frames sealed, and opened
+    uint64_t unopened = 0;  ///< frames dropped unread
 
     /// This node passes the stream on to the viewers its sender handed it
     /// (Forward): the copies of `relayed`, none while it passes it on to nobody.
@@ -558,6 +571,73 @@ struct MediaSession::IncomingStream {
     /// The most the stream may take, as its sender said; 0: not rate-controlled.
     uint32_t relayed_most = 0;
     std::optional<Timestamp> keyframe_asked;  ///< of the sender, for those it passes it on to
+};
+
+struct MediaSession::Sealing {
+    std::mutex mutex;  ///< guards everything below
+
+    // This node's: the key it seals under, the one it is to from `from` on.
+    struct Told {
+        sframe::BaseKey base;
+        sframe::Key key;
+        Timestamp from{};
+    };
+    std::optional<Told> current;
+    std::optional<Told> next;
+    uint64_t next_kid = 0;
+    uint64_t ctr = 0;  ///< the next frame's, under the current key
+    /// The peers given the key, and so each new one.
+    std::unordered_set<PeerId, PeerId::Hash> keyed;
+
+    /// The keys peers gave this node, by peer, the newest last.
+    std::unordered_map<PeerId, std::deque<sframe::Key>, PeerId::Hash> given;
+
+    Told make(Timestamp from) {
+        const sframe::BaseKey base = sframe::random_key();
+        return Told{base, sframe::Key(next_kid++, base), from};
+    }
+
+    /// What tells a peer the keys: the one sealed under, and the next.
+    std::vector<Buffer> messages() const {
+        std::vector<Buffer> out;
+        for (const std::optional<Told>* told : {&current, &next}) {
+            if (*told) {
+                out.push_back(
+                    wire::encode_control(wire::FrameKey{(*told)->key.kid(), (*told)->base}));
+            }
+        }
+        return out;
+    }
+
+    /// The key to seal a frame under now, and its CTR.
+    std::pair<sframe::Key, uint64_t> take(Timestamp now) {
+        std::lock_guard lock(mutex);
+        if (next && now >= next->from) {
+            current = std::move(next);
+            next.reset();
+            ctr = 0;
+        }
+        return {current->key, ctr++};
+    }
+
+    void keep(const PeerId& peer, uint64_t kid, const sframe::BaseKey& base) {
+        std::lock_guard lock(mutex);
+        std::deque<sframe::Key>& keys = given[peer];
+        if (std::ranges::any_of(keys, [&](const sframe::Key& key) { return key.kid() == kid; }))
+            return;
+        keys.emplace_back(kid, base);
+        if (keys.size() > kKeysKept) keys.pop_front();
+    }
+
+    std::optional<sframe::Key> of(const PeerId& peer, uint64_t kid) {
+        std::lock_guard lock(mutex);
+        const auto keys = given.find(peer);
+        if (keys == given.end()) return std::nullopt;
+        for (const sframe::Key& key : keys->second) {
+            if (key.kid() == kid) return key;
+        }
+        return std::nullopt;
+    }
 };
 
 size_t MediaSession::StreamKeyHash::operator()(const StreamKey& key) const noexcept {
@@ -579,7 +659,10 @@ MediaSession::MediaSession(MediaNetwork& network, Clock& clock, SessionHandlers 
       clock_(clock),
       handlers_(std::move(handlers)),
       config_(config),
-      capture_clock_(config.capture_clock ? *config.capture_clock : clock) {}
+      capture_clock_(config.capture_clock ? *config.capture_clock : clock),
+      sealing_(std::make_unique<Sealing>()) {
+    if (config_.seal) sealing_->current = sealing_->make(clock_.now());
+}
 
 MediaSession::~MediaSession() = default;
 
@@ -708,8 +791,9 @@ Result<void> MediaSession::send_frame(StreamId stream_id, FrameInfo info, Mutabl
     if (!stream) return fail(Errc::InvalidArgument);
     info.stream = stream_id;
     if (!wire::is_encodable(info)) return fail(Errc::InvalidArgument);
-    // With room for a relay to pass it on.
-    if (wire::frame_header_size(info) + payload.size() + wire::kRelayedFrameOverhead >
+    // With room for a relay to pass it on, sealed.
+    if (wire::frame_header_size(info) + payload.size() + wire::kRelayedFrameOverhead +
+            (config_.seal ? sframe::kMaxOverhead : 0) >
         network_.max_live_message()) {
         return fail(Errc::InvalidArgument);
     }
@@ -730,10 +814,19 @@ Result<void> MediaSession::send_frame(StreamId stream_id, FrameInfo info, Mutabl
         }
         // What became of a frame that stands alone changes nothing.
         const uint64_t tag = s.stands_alone() ? 0 : live_tag(s.slot, info.number);
-        // Encoded on first use: once for every subscriber, never when none can use it.
-        const Result<bool> want_keyframe =
-            s.fanout.send(network_, info, s.description.kind(), s.description.lifetime, tag, now,
-                          [&] { return wire::encode_frame(info, std::move(payload)); });
+        // Encoded on first use — sealed behind its header, which is left to
+        // read — once for every subscriber, never when none can use it.
+        const Result<bool> want_keyframe = s.fanout.send(
+            network_, info, s.description.kind(), s.description.lifetime, tag, now,
+            [&]() -> Result<Buffer> {
+                if (!config_.seal) return wire::encode_frame(info, std::move(payload));
+                std::array<uint8_t, wire::kMaxFrameHeaderSize> header;
+                const std::span metadata(header.data(), wire::frame_header_size(info));
+                wire::write_frame_header(info, /*sealed=*/true, metadata);
+                const auto [key, ctr] = sealing_->take(now);
+                return wire::encode_frame(info, key.seal(ctr, metadata, payload.bytes()),
+                                          /*sealed=*/true);
+            });
         if (!want_keyframe) return fail(want_keyframe.error());
         ask = *want_keyframe && ask_keyframe(s, now);
     }
@@ -866,6 +959,8 @@ std::optional<IncomingStreamStats> MediaSession::incoming_stats(const PeerId& pe
         .relayed_messages = relayed.messages,
         .relayed_bytes = relayed.bytes,
         .relay_held_back = relayed.held_back,
+        .opened = stream->opened,
+        .unopened = stream->unopened,
     };
 }
 
@@ -901,6 +996,7 @@ void MediaSession::on_peer_connected(const PeerId& peer) {
 
 void MediaSession::on_peer_rerouted(const PeerId& peer) {
     announce_all(peer);
+    give_key(peer, /*again=*/true);
     std::vector<std::pair<StreamId, std::shared_ptr<IncomingStream>>> streams;
     {
         std::shared_lock lock(mutex_);
@@ -1020,6 +1116,7 @@ void MediaSession::on_peer_disconnected(const PeerId& peer) {
         uplink_.forget(peer);
         ceilings_.erase(peer);  // the network forgot it too
     }
+    rekey_without(peer, clock_.now());
     {
         std::lock_guard lock(viewers_mutex_);
         if (viewers_.need(peer, std::nullopt, clock_.now())) tell_delay(viewers_.viewers());
@@ -1247,6 +1344,9 @@ void MediaSession::on_message(const PeerId& peer, std::span<const uint8_t> messa
                 on_cannot_reach(peer, m);
             } else if constexpr (std::is_same_v<Message, wire::Forwarder>) {
                 on_forwarder(peer);
+            } else if constexpr (std::is_same_v<Message, wire::FrameKey>) {
+                // From the sender itself: never passed on.
+                if (find_peer(peer)) sealing_->keep(peer, m.kid, m.key);
             } else {
                 static_assert(std::is_same_v<Message, wire::KeyframeRequest>);
                 on_keyframe_request(peer, m.stream);
@@ -1282,8 +1382,13 @@ void MediaSession::on_frame(const PeerId& origin, const PeerId& from,
             pass_on(origin, *stream, header->info, message, left, now);
         }
         if (config_.forwarder) return;  // passed on, and that is all
-        const Buffer copy = Buffer::copy_of(message);
-        stream->tracker.push(EncodedFrame{header->info, copy.slice(header->size)}, now);
+        std::optional<Buffer> payload = open(origin, from, *header, message);
+        if (!payload) {
+            stream->unopened += 1;
+            return;
+        }
+        if (header->sealed) stream->opened += 1;
+        stream->tracker.push(EncodedFrame{header->info, std::move(*payload)}, now);
     }
     deliver_ready(origin, header->info.stream, *stream, now);
 }
@@ -1372,6 +1477,7 @@ void MediaSession::on_subscribe(const PeerId& peer, StreamId stream_id) {
     const std::shared_ptr<OutgoingStream> stream = find_outgoing(stream_id);
     if (!stream) return;  // withdrawn while the request was in flight
     std::shared_ptr<PeerState> state = peer_state(peer);
+    give_key(peer);  // before its first frame
 
     bool ask = false;
     {
@@ -1693,6 +1799,62 @@ void MediaSession::on_forward(const PeerId& sender, const wire::Forward& forward
         copies.push_back(had ? *had : Copy(std::move(viewer)));
     }
     relayed.copies = std::move(copies);
+}
+
+// ── Sealing ─────────────────────────────────────────────────────────────────
+
+void MediaSession::give_key(const PeerId& peer, bool again) {
+    if (!config_.seal) return;
+    if (!again) {
+        const std::shared_ptr<PeerState> state = find_peer(peer);
+        const bool entitled =
+            config_.entitled ? config_.entitled(peer) : !(state && state->is_forwarder());
+        if (!entitled) return;
+    }
+    std::vector<Buffer> messages;
+    {
+        std::lock_guard lock(sealing_->mutex);
+        const bool keyed =
+            again ? sealing_->keyed.contains(peer) : sealing_->keyed.insert(peer).second;
+        if (!keyed) return;
+        messages = sealing_->messages();
+    }
+    for (const Buffer& message : messages) network_.send_reliable(peer, message);
+}
+
+void MediaSession::rekey_without(const PeerId& peer, Timestamp now) {
+    std::vector<PeerId> keyed;
+    Buffer message;
+    {
+        std::lock_guard lock(sealing_->mutex);
+        sealing_->given.erase(peer);
+        if (sealing_->keyed.erase(peer) == 0) return;
+        // A next key it was told goes too: another in its place.
+        sealing_->next = sealing_->make(now + kRekeyAfter);
+        message =
+            wire::encode_control(wire::FrameKey{sealing_->next->key.kid(), sealing_->next->base});
+        keyed.assign(sealing_->keyed.begin(), sealing_->keyed.end());
+    }
+    for (const PeerId& other : keyed) network_.send_reliable(other, message);
+}
+
+std::optional<Buffer> MediaSession::open(const PeerId& origin, const PeerId& from,
+                                         const wire::FrameHeader& header,
+                                         std::span<const uint8_t> message) {
+    if (!header.sealed) {
+        // Its sender's own word, over a connection only it holds; passed on by
+        // another, anyone's.
+        if (config_.seal && from != origin) return std::nullopt;
+        return Buffer::copy_of(message).slice(header.size);
+    }
+    const std::span<const uint8_t> sealed = message.subspan(header.size);
+    const Result<sframe::ReadHeader> read = sframe::read_header(sealed);
+    if (!read) return std::nullopt;
+    const std::optional<sframe::Key> key = sealing_->of(origin, read->header.kid);
+    if (!key) return std::nullopt;
+    Result<Buffer> plain = key->open(*read, message.first(header.size), sealed);
+    if (!plain) return std::nullopt;
+    return std::move(*plain);
 }
 
 void MediaSession::on_forwarder(const PeerId& peer) {

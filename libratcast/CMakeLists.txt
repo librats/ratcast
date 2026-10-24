@@ -15,6 +15,7 @@ add_library(ratcast
     src/session/peer_clock.cpp
     src/session/presence.cpp
     src/session/rate_controller.cpp
+    src/session/sframe.cpp
     src/session/shared_uplink.cpp
     src/stream/delivery_buffer.cpp
     src/stream/delivery_thread.cpp

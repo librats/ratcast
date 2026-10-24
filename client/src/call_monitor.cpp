@@ -210,10 +210,13 @@ ReceivedVideoReport received_video(const ReceivedVideoStats& now, const Received
     video.passed_on_to = now.stream.relaying_to;
     video.passed_on_bitrate =
         interval.bits_per_second(now.stream.relayed_bytes - before.stream.relayed_bytes);
+    video.sealed = now.stream.opened > before.stream.opened;
+    video.unopened = now.stream.unopened - before.stream.unopened;
 
     Verdict& verdict = video.verdict;
     if (video.lost > 0) verdict.at_least(Quality::Poor, "frames lost");
     if (video.dropped > 0) verdict.at_least(Quality::Poor, "frames dropped");
+    if (video.unopened > 0) verdict.at_least(Quality::Poor, "frames it has no key for");
     if (player.decode_errors > before.player.decode_errors) {
         verdict.at_least(Quality::Poor, "frames failed to decode");
     }
@@ -374,12 +377,12 @@ std::string video_line(const char* name, const ReceivedVideoReport& v) {
     const LatencyHistogram& frame = v.pace.intervals();
     return format(
         "%-15s %s %s  %3.0f fps  %s  decode %5.2f ms  frame %5.1f ms (p95 %5.1f, max %5.1f,"
-        " jitter %4.1f)  buffer %3.0f ms  lost %llu  late %llu  dropped %llu%s  %s",
+        " jitter %4.1f)  buffer %3.0f ms  lost %llu  late %llu  dropped %llu%s%s  %s",
         name, size(v.width, v.height).c_str(), v.decoder.c_str(), v.fps, rate(v.bitrate).c_str(),
         ms(v.decode_time), ms(frame.percentile(0.5)), ms(frame.percentile(0.95)), ms(frame.max()),
         ms(v.pace.jitter()), ms(v.buffer), static_cast<unsigned long long>(v.lost),
         static_cast<unsigned long long>(v.late), static_cast<unsigned long long>(v.dropped),
-        passing_on(v).c_str(), quality(v.verdict).c_str());
+        passing_on(v).c_str(), v.sealed ? "  sealed" : "", quality(v.verdict).c_str());
 }
 
 std::string sound_line(const char* name, const ReceivedSoundReport& s) {
@@ -447,7 +450,8 @@ ReportSection video_section(std::string title, const ReceivedVideoReport& v) {
                            {"Frame time", spread(v.pace.intervals())},
                            {"Frame jitter", milliseconds(v.pace.jitter())},
                            {"Buffer", milliseconds(v.buffer)},
-                           {"Lost, late, dropped", counts(v.lost, v.late, v.dropped)}}};
+                           {"Lost, late, dropped", counts(v.lost, v.late, v.dropped)},
+                           {"End to end", v.sealed ? "sealed" : "not sealed"}}};
     if (v.passed_on_to > 0) {
         section.rows.emplace_back("Passing on to", format("%zu viewers at %s", v.passed_on_to,
                                                           rate(v.passed_on_bitrate).c_str()));

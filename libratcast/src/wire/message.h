@@ -41,6 +41,7 @@ enum class MessageKind : uint8_t {
     Uplink = 15,          ///< my uplink was found full, carrying this; or is no longer known to be
     CannotReach = 16,     ///< I am not connected to this viewer you would have me pass on to
     Forwarder = 17,       ///< I watch nothing and pass on what I am handed: a server
+    FrameKey = 18,        ///< the key my frames are sealed under (SFrame)
 };
 
 constexpr uint8_t message_prefix(MessageKind kind) noexcept {
@@ -71,7 +72,8 @@ inline Result<MessageKind> read_prefix(Reader& in) noexcept {
         case MessageKind::RelayedFrame:
         case MessageKind::Uplink:
         case MessageKind::CannotReach:
-        case MessageKind::Forwarder: return kind;
+        case MessageKind::Forwarder:
+        case MessageKind::FrameKey: return kind;
     }
     return fail(Errc::UnknownKind);
 }

@@ -35,7 +35,9 @@
  * sides learn where the other's NAT maps it, dial at once, and are carried
  * where no dial gets through (ratcast-server, librats' Rendezvous and Relay);
  * a room's members, however they joined, are carried by one they all reach.
- * A server is no member: never among peers(), nor joined.
+ * A server is no member: never among peers(), nor joined, nor given the key
+ * this side's frames are sealed under end to end — what it carries or
+ * forwards, it cannot read.
  *
  * A call may be a room (CallConfig::mesh): everyone with everyone, whoever
  * joins by whichever member's link. Each peer connected is asked whom it has,

@@ -141,6 +141,24 @@ TEST(CallMonitor, PicturesPlayedShowTheirFrameTime) {
     EXPECT_EQ(compare(s.earlier, s.now).verdict.reason, "pictures: frames lost");
 }
 
+TEST(CallMonitor, PicturesSealedEndToEndSaySoAndThoseWithNoKeyArePoor) {
+    Snapshots s;
+    const Timestamp start = Timestamp{} + 9s;
+    s.earlier.video = pictures(30, start, 33ms);
+    s.now.video = pictures(60, start, 33ms);
+    EXPECT_FALSE(compare(s.earlier, s.now).video->sealed);
+    s.now.video->stream.opened = 30;
+    CallReport report = compare(s.earlier, s.now);
+    EXPECT_TRUE(report.video->sealed);
+    EXPECT_NE(report_lines(report).front().find("sealed"), std::string::npos);
+    EXPECT_EQ(report.verdict.quality, Quality::Good);
+
+    s.now.video->stream.unopened = 2;
+    report = compare(s.earlier, s.now);
+    EXPECT_EQ(report.video->unopened, 2u);
+    EXPECT_EQ(report.verdict.reason, "pictures: frames it has no key for");
+}
+
 TEST(CallMonitor, APlayerThatStartedOverCountsFromZero) {
     Snapshots s;
     s.earlier.video = pictures(3000, Timestamp{}, 33ms);

@@ -266,6 +266,19 @@ TEST(ControlCodec, RoundTripsForwarder) {
     EXPECT_TRUE(std::holds_alternative<Forwarder>(*decoded));
 }
 
+TEST(ControlCodec, RoundTripsFrameKey) {
+    FrameKey key{300, {}};
+    for (size_t i = 0; i < key.key.size(); ++i) key.key[i] = static_cast<uint8_t>(i * 7);
+    const FrameKey got = round_trip(key);
+    EXPECT_EQ(got.kid, 300u);
+    EXPECT_EQ(got.key, key.key);
+    const auto bytes = bytes_of(encode_control(key));
+    for (size_t cut = 0; cut < bytes.size(); ++cut) {
+        EXPECT_EQ(decode_error({bytes.begin(), bytes.begin() + static_cast<ptrdiff_t>(cut)}),
+                  Errc::Truncated);
+    }
+}
+
 TEST(ControlCodec, EveryCutOfARelayMessageIsTruncated) {
     RelayedPath path{7, peer(3), {}, false};
     path.signal.capacity = 3'000'000;

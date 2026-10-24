@@ -12,7 +12,8 @@
  *   u8      flags       bit 0     keyframe
  *                       bit 1     a layers byte follows the capture time
  *                       bit 2     an extension block follows the references
- *                       bit 3     reserved, 0
+ *                       bit 3     the payload is sealed end to end (SFrame,
+ *                                 session/sframe.h), behind this header
  *                       bits 4-7  number of references, 0..FrameReferences::kCapacity
  *   varint  stream
  *   varint  frame number
@@ -66,15 +67,22 @@ bool is_encodable(const FrameInfo& info) noexcept;
 /// Precondition: is_encodable(info).
 size_t frame_header_size(const FrameInfo& info) noexcept;
 
-/// The frame message for `info` and `payload`. The header goes into the
-/// payload's headroom, so a payload from allocate_frame_payload() is sent
-/// without being copied; one with too little headroom is copied once.
-/// Fails with InvalidArgument unless is_encodable(info).
-Result<Buffer> encode_frame(const FrameInfo& info, MutableBuffer payload);
+/// The header of a frame for `info`, its payload `sealed` or not, into `out`:
+/// frame_header_size(info) bytes. What a sealed payload is authenticated
+/// behind. Precondition: is_encodable(info).
+void write_frame_header(const FrameInfo& info, bool sealed, std::span<uint8_t> out) noexcept;
+
+/// The frame message for `info` and `payload` (`sealed`, or as it is). The
+/// header goes into the payload's headroom, so a payload from
+/// allocate_frame_payload() is sent without being copied; one with too little
+/// headroom is copied once. Fails with InvalidArgument unless
+/// is_encodable(info).
+Result<Buffer> encode_frame(const FrameInfo& info, MutableBuffer payload, bool sealed = false);
 
 struct FrameHeader {
     FrameInfo info;
-    size_t size = 0;  ///< bytes of header; the payload starts here
+    size_t size = 0;      ///< bytes of header; the payload starts here
+    bool sealed = false;  ///< the payload is an SFrame ciphertext
 };
 
 /// The header of the frame message `message`, read in place: enough to decide

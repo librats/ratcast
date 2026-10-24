@@ -15,6 +15,7 @@ ratcast_add_test(libratcast_tests
         test_peer_clock.cpp
         test_presence.cpp
         test_rate_controller.cpp
+        test_sframe.cpp
         test_shared_uplink.cpp
         test_result.cpp
         test_stream_description.cpp

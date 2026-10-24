@@ -832,7 +832,21 @@ quickly as anyone's.
      NATs with the sender's uplink 5 Mbit/s wide, each gets 2.8 Mbit/s where it got 0.7–0.9.
      Left: sound for big rooms (top speakers, forwarded once); `Forward` names 64 viewers at
      most.
-  3. SFrame E2EE, the room key from the owner: the server forwards what it cannot read.
+  3. Sealed end to end ✅: every frame's payload sealed (`session/sframe.h`: SFrame, RFC
+     9605's header, key schedule and AAD, over librats' ChaCha20-Poly1305 under a suite of
+     the private-use range: no AES in librats, and no library added for it), the frame's
+     header left for those passing it on to read and authenticated with the payload. Not a
+     room key from an owner: a room has no owner once its maker leaves, and anyone may share —
+     each sender keys its own frames and gives the key (wire `FrameKey`) to each viewer as it
+     subscribes, on the connection between them (Noise, end to end even where a server
+     carries it), to those it may (`SessionConfig::entitled`; a Call never to a server; a
+     forwarder never); a new key when one it gave a key to goes, told to the rest and sealed
+     under a second later. A frame passed on by another comes sealed or not at all — a server
+     cannot pass off frames of its own. Tested: the header byte for byte, nothing altered
+     opens (`SFrame`), and in sessions (`SealingTest`, `ForwarderTest`: the viewers open, the
+     forwarder has no key). Sealing a 16 KiB frame takes ~30 µs (`bench_session`): 8 Mbit/s
+     is 0.2% of a core. Left: who is entitled is who a Call takes for a member — anyone with
+     the link, as before; MLS for rooms that want a membership of their own.
 - **5.4 Simulcast** (put off until a measurement asks for it): one weak path no longer pulls
   everyone down — the share in two layers (the full one and ~720p), each viewer receiving the
   one its path carries. SVC later where an encoder has it. Put off because the narrow path is

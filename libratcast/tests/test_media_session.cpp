@@ -1804,6 +1804,10 @@ TEST_F(ForwarderTest, ItPassesFramesOnFromAKeyframeAndKeepsNone) {
     for (Party* viewer : {&a, &b, &c}) EXPECT_EQ(viewer->frames, (Frames{0, 1, 2, 3}));
     EXPECT_TRUE(server.frames.empty());
     EXPECT_EQ(server.session.incoming_stats(sender.id, 2)->relayed_messages, 12u);
+    // Sealed end to end: the viewers have the key, the forwarder not.
+    EXPECT_EQ(hub.delivered[wire::MessageKind::FrameKey], 3);
+    for (Party* viewer : {&a, &b, &c})
+        EXPECT_EQ(viewer->session.incoming_stats(sender.id, 2)->opened, 4u);
     // Nor does it ask for keyframes of its own as time passes.
     const size_t requests = sender.session.outgoing_stats(2)->keyframe_requests;
     for (int i = 0; i < 50; ++i) {
@@ -1863,4 +1867,165 @@ TEST_F(ForwarderTest, AServerThatLeavesHandsItsViewersBack) {
         hub.deliver_all();
     }
     for (Party* viewer : {&a, &b, &c}) EXPECT_EQ(viewer->frames, (Frames{0, 1}));
+}
+
+// ── Sealed end to end ───────────────────────────────────────────────────────
+
+namespace {
+
+/// A sender, a viewer that may relay and one more, each connected to each.
+class SealingTest : public ::testing::Test {
+protected:
+    explicit SealingTest(SessionConfig sending = {}) : sender(hub, clock, 1, std::move(sending)) {
+        for (auto [x, y] : {std::pair{&sender, &relay}, {&sender, &viewer}, {&relay, &viewer}}) {
+            x->session.on_peer_connected(y->id);
+            y->session.on_peer_connected(x->id);
+        }
+        EXPECT_TRUE(sender.session.add_stream(screen(2), kBitrate));
+        hub.deliver_all();
+    }
+
+    void watch(Party& who) {
+        ASSERT_TRUE(who.session.subscribe(sender.id, 2));
+        hub.deliver_all();
+    }
+
+    /// Frame `number` of the screen, sent; its message to `to`, as it went.
+    std::vector<uint8_t> send(FrameNumber number, const Party& to) {
+        FrameInfo info;
+        info.number = number;
+        info.keyframe = number == 0;
+        if (number > 0) info.references = {number - 1};
+        info.capture_time = clock.now();
+        EXPECT_TRUE(sender.session.send_frame(2, info, payload_for(number)));
+        for (const Message& m : hub.queue) {
+            if (m.live && m.from == sender.id && m.to == to.id)
+                return {m.bytes.bytes().begin(), m.bytes.bytes().end()};
+        }
+        return {};
+    }
+
+    uint64_t unopened(const Party& who) const {
+        return who.session.incoming_stats(sender.id, 2)->unopened;
+    }
+
+    ManualClock clock{Timestamp{100s}};
+    Hub hub;
+    Party sender;
+    Party relay{hub, clock, 2};
+    Party viewer{hub, clock, 3};
+};
+
+std::vector<uint8_t> bytes_of(const Buffer& buffer) {
+    return {buffer.bytes().begin(), buffer.bytes().end()};
+}
+
+}  // namespace
+
+TEST_F(SealingTest, AViewerOpensWhatItsSenderSeals) {
+    watch(viewer);
+    EXPECT_EQ(hub.delivered[wire::MessageKind::FrameKey], 1) << "the key, as it subscribed";
+    const std::vector<uint8_t> sent = send(0, viewer);
+    const Result<wire::FrameHeader> header = wire::read_frame_header(sent);
+    ASSERT_TRUE(header);
+    EXPECT_TRUE(header->sealed);
+    const std::vector<uint8_t> plain = bytes_of(payload_for(0).freeze());
+    EXPECT_EQ(std::ranges::search(sent, plain).begin(), sent.end()) << "the picture, in the clear";
+    hub.deliver_all();
+    ASSERT_EQ(viewer.frames, Frames{0});
+    EXPECT_EQ(bytes_of(viewer.payloads.front()), plain);
+    EXPECT_EQ(viewer.session.incoming_stats(sender.id, 2)->opened, 1u);
+}
+
+TEST_F(SealingTest, AFramePassedOnUnsealedIsDropped) {
+    watch(viewer);
+    FrameInfo info;
+    info.stream = 2;
+    info.keyframe = true;
+    info.capture_time = clock.now();
+    const Buffer plain = *wire::encode_frame(info, payload_for(0));
+    // Passed on by another: anyone's word.
+    viewer.session.on_message(relay.id,
+                              wire::encode_relayed_frame(sender.id, plain.bytes()).bytes());
+    EXPECT_TRUE(viewer.frames.empty());
+    EXPECT_EQ(unopened(viewer), 1u);
+    // From its sender itself, over the connection only it holds: its own.
+    viewer.session.on_message(sender.id, plain.bytes());
+    EXPECT_EQ(viewer.frames, Frames{0});
+}
+
+TEST_F(SealingTest, AFrameAlteredOnTheWayIsDropped) {
+    watch(viewer);
+    std::vector<uint8_t> payload_altered = send(0, viewer);
+    hub.queue.clear();
+    payload_altered.back() ^= 1;
+    std::vector<uint8_t> header_altered = send(1, viewer);
+    hub.queue.clear();
+    header_altered[1] |= 1;  // made a keyframe
+    for (const auto& altered : {payload_altered, header_altered}) {
+        viewer.session.on_message(relay.id, wire::encode_relayed_frame(sender.id, altered).bytes());
+    }
+    EXPECT_TRUE(viewer.frames.empty());
+    EXPECT_EQ(unopened(viewer), 2u);
+}
+
+TEST_F(SealingTest, AViewerThatGoesCannotOpenWhatIsSentASecondLater) {
+    watch(relay);
+    watch(viewer);
+    sender.session.on_peer_disconnected(relay.id);
+    hub.deliver_all();
+    EXPECT_EQ(hub.delivered[wire::MessageKind::FrameKey], 3) << "a new one, to the one left";
+
+    // Sealed under the old key a moment longer: the one left has the new one
+    // on its way.
+    const std::vector<uint8_t> soon = send(0, viewer);
+    hub.deliver_all();
+    relay.session.on_message(sender.id, soon);
+    EXPECT_EQ(relay.frames, Frames{0});
+
+    clock.advance(1s);
+    const std::vector<uint8_t> later = send(1, viewer);
+    hub.deliver_all();
+    EXPECT_EQ(viewer.frames, (Frames{0, 1}));
+    relay.session.on_message(sender.id, later);
+    EXPECT_EQ(relay.frames, Frames{0});
+    EXPECT_EQ(unopened(relay), 1u);
+}
+
+namespace {
+
+/// A sender that keeps its key from the viewer.
+class SealingWithholdingTest : public SealingTest {
+protected:
+    SealingWithholdingTest()
+        : SealingTest(
+              SessionConfig{.entitled = [this](const PeerId& peer) { return peer != viewer.id; }}) {
+    }
+};
+
+/// A sender that seals nothing.
+class UnsealedTest : public SealingTest {
+protected:
+    UnsealedTest() : SealingTest(SessionConfig{.seal = false}) {}
+};
+
+}  // namespace
+
+TEST_F(SealingWithholdingTest, WhoMayReadIsTheApplicationsToSay) {
+    watch(relay);
+    watch(viewer);
+    EXPECT_EQ(hub.delivered[wire::MessageKind::FrameKey], 1);
+    send(0, viewer);
+    hub.deliver_all();
+    EXPECT_EQ(relay.frames, Frames{0});
+    EXPECT_TRUE(viewer.frames.empty());
+    EXPECT_EQ(unopened(viewer), 1u);
+}
+
+TEST_F(UnsealedTest, ASenderThatDoesNotSealSendsFramesAsTheyAre) {
+    watch(viewer);
+    EXPECT_EQ(hub.delivered[wire::MessageKind::FrameKey], 0);
+    EXPECT_FALSE(wire::read_frame_header(send(0, viewer))->sealed);
+    hub.deliver_all();
+    EXPECT_EQ(viewer.frames, Frames{0});
 }
