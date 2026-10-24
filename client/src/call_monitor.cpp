@@ -470,7 +470,8 @@ ReportSection sound_section(std::string title, const ReceivedSoundReport& s) {
 ReportSection path_section(const PathReport& p) {
     return {"Path to " + p.peer.short_hex(),
             p.verdict,
-            {{"Round trip", milliseconds(p.rtt)},
+            {{"Way", p.relayed ? "relayed by a server" : "straight"},
+             {"Round trip", milliseconds(p.rtt)},
              {"Bandwidth", (p.busy ? "" : ">= ") + rate(double(p.bandwidth))},
              {"Queue", milliseconds(p.queue)},
              {"Loss", format("%.1f%%", p.loss * 100)},
@@ -514,7 +515,9 @@ CallSnapshot snapshot(const Call& call, Timestamp now) {
     snapshot.sync = call.sync_stats();
     for (const PeerId& peer : call.peers()) {
         const std::optional<librats::PathStats> path = call.path(peer);
-        if (path && path->valid) snapshot.paths.emplace_back(peer, *path);
+        if (!path || !path->valid) continue;
+        snapshot.paths.emplace_back(peer, *path);
+        if (call.relayed(peer)) snapshot.relayed.push_back(peer);
     }
     return snapshot;
 }
@@ -564,6 +567,7 @@ CallReport compare(const CallSnapshot& earlier, const CallSnapshot& now) {
             std::ranges::find(earlier.paths, peer, &std::pair<PeerId, librats::PathStats>::first);
         report.paths.push_back(path_report(
             peer, path, before != earlier.paths.end() ? &before->second : nullptr, interval));
+        report.paths.back().relayed = std::ranges::find(now.relayed, peer) != now.relayed.end();
         report.verdict.at_least(report.paths.back().verdict, "path to " + peer.short_hex());
     }
     return report;
@@ -597,10 +601,10 @@ std::vector<std::string> report_lines(const CallReport& report) {
     }
     for (const PathReport& p : report.paths) {
         lines.push_back(format(
-            "path %-10s rtt %5.1f ms  bandwidth %s%s  queue %4.0f ms  loss %4.1f%%  expired %llu"
+            "path %-10s %srtt %5.1f ms  bandwidth %s%s  queue %4.0f ms  loss %4.1f%%  expired %llu"
             "  repair %s  %s",
             // Not kept busy, the estimate is what was used: a floor.
-            p.peer.short_hex().c_str(), ms(p.rtt),
+            p.peer.short_hex().c_str(), p.relayed ? "relayed  " : "", ms(p.rtt),
             p.busy ? "" : ">= ", rate(double(p.bandwidth)).c_str(), ms(p.queue), p.loss * 100,
             static_cast<unsigned long long>(p.expired), rate(p.repair).c_str(),
             quality(p.verdict).c_str()));

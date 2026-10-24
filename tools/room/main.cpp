@@ -52,6 +52,10 @@ constexpr const char* kUsage = R"(usage: ratcast-room [rats://HOST:PORT | rats:/
   --fps N              the pattern's frames a second (default 30)
   --port N             listen port (default 7700; 0 for any)
   --duration S         leave after S seconds
+  --server HOST[:PORT] meet at a ratcast-server too, through NATs: a room made with
+                       it is found there (and through the DHT) by its peer id, a room
+                       joined by peer id met there (port 7700 by default)
+  --no-dht             at the server alone, not through the DHT
   --data-dir DIR       keep the peer id across runs
   --verbose            library logs
 
@@ -74,6 +78,8 @@ struct Options {
     VideoEncoderConfig encoder;
     uint16_t port = 7700;
     uint32_t duration = 0;
+    std::vector<librats::HostEndpoint> servers;
+    bool dht = true;
     std::string data_dir;
     bool verbose = false;
 };
@@ -115,6 +121,15 @@ std::optional<Options> parse(int argc, char** argv) {
     o.encoder.frame_rate_num = args.number("fps", 1, 240).value_or(30);
     o.port = static_cast<uint16_t>(args.number("port", 0, 65535).value_or(7700));
     o.duration = args.number("duration", 1, 1'000'000).value_or(0);
+    if (const auto server = args.text("server")) {
+        if (std::optional<librats::HostEndpoint> parsed = parse_server(*server)) {
+            o.servers.push_back(std::move(*parsed));
+        } else {
+            std::cerr << "ratcast-room: --server wants HOST or HOST:PORT\n";
+            ok = false;
+        }
+    }
+    o.dht = !args.flag("no-dht");
     o.data_dir = args.text("data-dir").value_or("");
     o.verbose = args.flag("verbose");
     const std::vector<std::string> links = args.positional();
@@ -327,14 +342,19 @@ int main(int argc, char** argv) {
     voices.start();
     pictures.start();
     // The tone and the pattern are captured on the time of day.
-    Result<std::unique_ptr<Call>> started = Call::start({.port = o.port,
-                                                         .data_dir = o.data_dir,
-                                                         .dial = o.room,
-                                                         .mesh = true,
-                                                         .capture_clock = &WallClock::instance(),
-                                                         .relays = o.relays,
-                                                         .playback = playback},
-                                                        handlers);
+    Result<std::unique_ptr<Call>> started =
+        Call::start({.port = o.port,
+                     .data_dir = o.data_dir,
+                     // Made at a server: found by its id.
+                     .discoverable = !o.room && !o.servers.empty(),
+                     .dial = o.room,
+                     .servers = o.servers,
+                     .dht = o.dht,
+                     .mesh = true,
+                     .capture_clock = &WallClock::instance(),
+                     .relays = o.relays,
+                     .playback = playback},
+                    handlers);
     if (!started) {
         std::cerr << "ratcast-room: cannot listen on port " << o.port << "\n";
         return 1;

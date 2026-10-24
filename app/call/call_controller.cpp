@@ -98,6 +98,7 @@ struct CallController::Cameras {
 CallController::Environment CallController::Environment::system() {
     Environment environment;
     environment.name = user_name();
+    environment.server = QStringLiteral(RATCAST_DEFAULT_SERVER);
     environment.call.discoverable = true;
     environment.data_dir =
         QStandardPaths::writableLocation(QStandardPaths::AppDataLocation).toStdString();
@@ -129,6 +130,7 @@ CallController::CallController(QObject* parent)
     : QObject(parent),
       environment_(Environment::system()),
       name_(environment_.name),
+      server_(environment_.server),
       pictures_(std::make_shared<Pictures>()),
       preview_pictures_(std::make_shared<Pictures>()),
       cameras_(std::make_shared<Cameras>()) {
@@ -156,6 +158,7 @@ CallController::~CallController() {
 void CallController::setEnvironment(Environment environment) {
     environment_ = std::move(environment);
     setName(environment_.name);
+    setServer(environment_.server);
 }
 
 bool CallController::attach(QPointer<VideoView>& slot, Pictures& pictures, VideoView* view) {
@@ -181,10 +184,29 @@ void CallController::setCameraView(const QString& id, VideoView* view) {
 
 // ── In and out of a room ────────────────────────────────────────────────────
 
+void CallController::setServer(const QString& server) {
+    if (server == server_) return;
+    server_ = server;
+    Q_EMIT serverChanged();
+}
+
+bool CallController::meet_at_server(CallConfig& config) {
+    const std::string server = server_.trimmed().toStdString();
+    if (server.empty()) return true;
+    const std::optional<librats::HostEndpoint> parsed = parse_server(server);
+    if (!parsed) {
+        set_notice(tr("'%1' is no server: HOST or HOST:PORT, please.").arg(server_.trimmed()));
+        return false;
+    }
+    config.servers = {*parsed};
+    return true;
+}
+
 void CallController::create() {
     if (state_ != State::Idle) return;
     CallConfig config = environment_.call;
     config.data_dir = environment_.data_dir;
+    if (!meet_at_server(config)) return;
     start(std::move(config), State::InRoom);
 }
 
@@ -202,6 +224,7 @@ void CallController::join(const QString& link) {
     }
     config.discoverable = false;
     config.dial = *url;
+    if (!meet_at_server(config)) return;
     start(std::move(config), State::Joining);
 }
 

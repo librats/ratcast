@@ -26,6 +26,10 @@
 #include "ratcast/engine/tone_source.h"
 #include "ratcast/engine/virtual_output.h"
 
+#include "librats/subsystems/hole_punch.h"
+#include "librats/subsystems/relay.h"
+#include "librats/subsystems/rendezvous.h"
+
 using namespace ratcast;
 using namespace std::chrono_literals;
 
@@ -665,6 +669,86 @@ TEST_F(CallTest, InARoomEveryoneMeetsEveryoneWhoeverTheyJoinThrough) {
     bob.start(room(RatsUrl{carl.address()}), false, false);
     bob.publish_voice();
     EXPECT_TRUE(wait_for(all_met));
+}
+
+/// What a ratcast-server is to a call: a node it meets the others at, which
+/// carries what no punch gets through.
+class StandInServer {
+public:
+    StandInServer() : node_(node_config()) {
+        librats::Rendezvous::Config meeting;
+        meeting.serve = true;
+        node_.add_subsystem(std::make_unique<librats::Rendezvous>(meeting));
+        node_.add_subsystem(std::make_unique<librats::HolePunch>());
+        librats::Relay::Config relay;
+        relay.serve = true;
+        node_.add_subsystem(std::make_unique<librats::Relay>(relay));
+        EXPECT_TRUE(node_.start());
+    }
+    ~StandInServer() { node_.stop(); }
+
+    const PeerId& id() const { return node_.local_id(); }
+    librats::HostEndpoint address() const { return {"127.0.0.1", node_.listen_port()}; }
+
+private:
+    static librats::NodeConfig node_config() {
+        librats::NodeConfig node;
+        node.bind_address = "127.0.0.1";
+        node.protocol = config().protocol;
+        return node;
+    }
+
+    librats::Node node_;
+};
+
+/// A call met by peer id at `server`, and there alone.
+CallConfig at_server(const StandInServer& server, std::optional<RatsUrl> dial = std::nullopt) {
+    CallConfig config = ::config(std::move(dial));
+    config.discoverable = !config.dial;
+    config.dht = false;
+    config.servers = {server.address()};
+    return config;
+}
+
+TEST_F(CallTest, CallsMeetByPeerIdAtAServerWhichIsNoMember) {
+    StandInServer server;
+    Side host;
+    host.start(at_server(server), /*pictures=*/false, /*camera=*/false);
+    host.publish_voice();
+    Side guest;
+    guest.start(at_server(server, RatsUrl{host->id()}), false, false);
+
+    ASSERT_TRUE(wait_for([&] { return guest.heard_from(host->id()) > 0; }))
+        << ::testing::PrintToString(guest.events());
+    EXPECT_EQ(host->peers(), std::vector<PeerId>{guest->id()});
+    EXPECT_EQ(guest->peers(), std::vector<PeerId>{host->id()});
+    EXPECT_EQ(guest.told_times("joined"), 1u) << "the server was taken for a member";
+    EXPECT_EQ(host.told_times("joined"), 1u);
+    EXPECT_FALSE(guest.told("left"));
+    EXPECT_EQ(host->servers(), std::vector<PeerId>{server.id()});
+}
+
+// A room's member that knows no server meets at the one another member names:
+// the server, met as a member for a moment, is said to have left.
+TEST_F(CallTest, AServerAMemberNamesIsNoMemberEither) {
+    StandInServer server;
+    Side host;
+    CallConfig hosting = room();
+    hosting.discoverable = true;
+    hosting.dht = false;
+    hosting.servers = {server.address()};
+    host.start(hosting, false, false);
+    ASSERT_TRUE(wait_for([&] { return host->peers().empty() && !host.told("joined"); }));
+    Side guest;
+    CallConfig joining = room(RatsUrl{host.address()});
+    guest.start(joining, false, false);
+
+    ASSERT_TRUE(wait_for([&] { return guest->peers() == std::vector<PeerId>{host->id()}; }));
+    // The host's peer exchange named the server; met, it said Hello.
+    ASSERT_TRUE(wait_for([&] { return guest->servers() == std::vector<PeerId>{server.id()}; }));
+    EXPECT_EQ(guest->peers(), std::vector<PeerId>{host->id()});
+    EXPECT_TRUE(wait_for([&] { return guest.told_times("left") == 1; }));
+    EXPECT_EQ(guest.told_times("joined"), 2u);
 }
 
 TEST_F(CallTest, AScreenShareThatCannotPublishLeavesNothing) {

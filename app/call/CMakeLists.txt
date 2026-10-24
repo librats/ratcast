@@ -17,6 +17,8 @@ qt_add_qml_module(ratcast_call
 
 target_include_directories(ratcast_call PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
 target_link_libraries(ratcast_call PUBLIC Qt6::Quick ratcast::client ratcast_video)
+target_compile_definitions(ratcast_call PRIVATE
+    RATCAST_DEFAULT_SERVER="${RATCAST_DEFAULT_SERVER}")
 ratcast_target_defaults(ratcast_call)
 
 if(RATCAST_BUILD_TESTS)

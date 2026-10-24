@@ -58,6 +58,9 @@ constexpr const char* kUsage = R"(usage: ratcast-recv rats://HOST:PORT | rats://
                        a feed, this long past its fastest (default: its lifetime)
   --frames N           exit once N pictures are decoded
   --duration S         exit after S seconds
+  --server HOST[:PORT] meet the sender (rats://PEER-ID) at a ratcast-server too,
+                       through NATs (port 7700 by default)
+  --no-dht             at the server alone, not through the DHT
   --data-dir DIR       keep the peer id across runs
   --verbose            library logs
 
@@ -77,6 +80,8 @@ struct Options {
     std::optional<Duration> buffer;
     uint64_t frames = 0;
     uint32_t duration = 0;
+    std::vector<librats::HostEndpoint> servers;
+    bool dht = true;
     std::string data_dir;
     bool verbose = false;
 };
@@ -117,6 +122,15 @@ std::optional<Options> parse(int argc, char** argv) {
     }
     o.frames = args.number("frames", 1, 1'000'000'000).value_or(0);
     o.duration = args.number("duration", 1, 1'000'000).value_or(0);
+    if (const auto server = args.text("server")) {
+        if (std::optional<librats::HostEndpoint> parsed = parse_server(*server)) {
+            o.servers.push_back(std::move(*parsed));
+        } else {
+            std::cerr << "ratcast-recv: --server wants HOST or HOST:PORT\n";
+            ok = false;
+        }
+    }
+    o.dht = !args.flag("no-dht");
     o.data_dir = args.text("data-dir").value_or("");
     o.verbose = args.flag("verbose");
     o.output = args.text("output").value_or("");
@@ -184,12 +198,14 @@ public:
         }
         if (const auto sound = call_.sound_stats()) last_sound_ = *sound;
         if (const auto feed = call_.feed_stats()) last_feed_ = *feed;
+        const std::vector<PeerId> peers = call_.peers();
+        if (!peers.empty()) relayed_ = call_.relayed(peers.front());
         std::fflush(g_out);
     }
 
     /// The whole run as key=value pairs, for scripts. Call before the call ends.
     void summarise() {
-        std::fprintf(g_out, "summary cpu=%.0f", cpu_.total());
+        std::fprintf(g_out, "summary cpu=%.0f relayed=%d", cpu_.total(), relayed_ ? 1 : 0);
         summarise_video();
         summarise_feed();
         summarise_sound();
@@ -323,6 +339,7 @@ private:
     AudioPlayerStats last_sound_;
     DataPlayerStats last_feed_;
     unsigned seconds_ = 1;
+    bool relayed_ = false;  ///< the path to the sender, as last seen: through a relay
 };
 
 }  // namespace
@@ -417,9 +434,13 @@ int main(int argc, char** argv) {
     decoded.start();
     if (shown) shown->start();
     heard.start();
-    Result<std::unique_ptr<Call>> started = Call::start(
-        {.listen = false, .data_dir = o.data_dir, .dial = o.sender, .playback = playback},
-        handlers);
+    Result<std::unique_ptr<Call>> started = Call::start({.listen = false,
+                                                         .data_dir = o.data_dir,
+                                                         .dial = o.sender,
+                                                         .servers = o.servers,
+                                                         .dht = o.dht,
+                                                         .playback = playback},
+                                                        handlers);
     if (!started) {
         std::cerr << "ratcast-recv: the node did not start\n";
         return 1;

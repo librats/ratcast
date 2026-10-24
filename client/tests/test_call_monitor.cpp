@@ -238,6 +238,27 @@ TEST(CallMonitor, APathIsJudgedByWhatItLosesAndLetsExpire) {
     EXPECT_EQ(report.verdict.reason.rfind("path to ", 0), 0u);
 }
 
+TEST(CallMonitor, APathThroughARelaySaysSo) {
+    Snapshots s;
+    s.earlier.paths = {{kAnn, path(1'000'000, 0)}, {kBob, path(1'000'000, 0)}};
+    s.now.paths = {{kAnn, path(2'000'000, 0)}, {kBob, path(2'000'000, 0)}};
+    s.now.relayed = {kBob};
+
+    const CallReport report = compare(s.earlier, s.now);
+    ASSERT_EQ(report.paths.size(), 2u);
+    EXPECT_FALSE(report.paths[0].relayed);
+    EXPECT_TRUE(report.paths[1].relayed);
+    const std::vector<std::string> lines = report_lines(report);
+    EXPECT_EQ(std::ranges::count_if(lines,
+                                    [](const std::string& line) {
+                                        return line.find("relayed") != std::string::npos;
+                                    }),
+              1);
+    const std::vector<ReportSection> sections = report_sections(report);
+    EXPECT_EQ(sections.back().title, "Path to " + kBob.short_hex());
+    EXPECT_EQ(sections.back().rows.front().second, "relayed by a server");
+}
+
 TEST(CallMonitor, TheCallIsTheWorstOfItsParts) {
     Snapshots s;
     s.earlier.sent = {screen(0, 0, 0)};

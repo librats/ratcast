@@ -80,6 +80,11 @@ class CallController : public QObject {
     /// otherwise. Whitespace runs and control characters are not told, nor
     /// what is past Presence::kMaxNameSize bytes.
     Q_PROPERTY(QString name READ name WRITE setName NOTIFY nameChanged)
+    /// The server rooms are met at — HOST or HOST:PORT of a ratcast-server,
+    /// through NATs no straight path gets through — "" for none: the
+    /// environment's until the user says otherwise. Taken as a room is made
+    /// or joined.
+    Q_PROPERTY(QString server READ server WRITE setServer NOTIFY serverChanged)
     /// The others in the room (MembersModel): peerId, peer (a short one),
     /// name, muted, deafened, speaking, camera, sharing.
     Q_PROPERTY(QAbstractItemModel* members READ members CONSTANT)
@@ -143,11 +148,14 @@ public:
         VoiceConfig voice = {};
         /// What the others call this side until the user says otherwise.
         QString name = {};
+        /// The server rooms are met at until the user says otherwise.
+        QString server = {};
         /// The screen kept on while a share is watched; null: left alone.
         std::function<std::unique_ptr<ScreenAwake>()> keep_screen_awake = {};
 
         /// This computer's: its desktop, its speaker, the user's data
-        /// directory and name, discoverable through the DHT.
+        /// directory and name, discoverable through the DHT, the build's
+        /// server (RATCAST_DEFAULT_SERVER).
         static Environment system();
     };
 
@@ -179,6 +187,8 @@ public:
     QString notice() const { return notice_; }
     QString name() const { return name_; }
     void setName(const QString& name);
+    QString server() const { return server_; }
+    void setServer(const QString& server);
     MembersModel* members() { return &members_; }
     const MembersModel& memberList() const { return members_; }
     int cameras() const { return cameras_on_; }
@@ -208,6 +218,7 @@ Q_SIGNALS:
     void invitesChanged();
     void noticeChanged();
     void nameChanged();
+    void serverChanged();
     void camerasChanged();
     void mutedChanged();
     void deafenedChanged();
@@ -233,6 +244,8 @@ private:
     void set_watching(QString id);
     /// Start the call `config` says and be in `state`: talking, reporting.
     void start(CallConfig config, State state);
+    /// The server named, into `config`; false, with a notice, if it is none.
+    bool meet_at_server(CallConfig& config);
     /// The sources the desktop gave for the share asked in room `generation`,
     /// or why not.
     void share_opened(uint64_t generation, const ScreenShareConfig& config,
@@ -275,6 +288,7 @@ private:
     QStringList invites_;
     QString notice_;
     QString name_;
+    QString server_;
     MembersModel members_;
     int cameras_on_ = 0;
     bool muted_ = false;

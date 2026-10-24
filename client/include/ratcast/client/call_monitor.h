@@ -82,6 +82,7 @@ struct CallSnapshot {
     std::optional<DataPlayerStats> feed = {};
     PlayoutClockStats sync = {};
     std::vector<std::pair<PeerId, librats::PathStats>> paths = {};
+    std::vector<PeerId> relayed = {};  ///< of those, the paths through a relay
 };
 
 /// What `call` counts, at `now`.
@@ -161,6 +162,7 @@ struct PathReport {
     double loss = 0;       ///< share of the bytes resolved, 0..1
     uint64_t expired = 0;  ///< live messages whose lifetime ran out
     double repair = 0;     ///< FEC sent, bits per second
+    bool relayed = false;  ///< through a relay (a server), not straight
     Verdict verdict;
 };
 

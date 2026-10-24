@@ -46,6 +46,9 @@ option(RATCAST_BUILD_TOOLS "Build ratcast-send and ratcast-recv (tools/)" ON)
 # The release packages (.github/workflows/release.yml) keep themselves at the
 # latest release of this repository on GitHub; any other build never updates.
 option(RATCAST_UPDATES "The app updates itself from GitHub's releases (release packages)" OFF)
+# The ratcast-server the app's rooms meet at until the user names another.
+set(RATCAST_DEFAULT_SERVER "" CACHE STRING
+    "The server the app's rooms meet at by default: HOST or HOST:PORT; empty: none")
 set(RATCAST_UPDATE_REPOSITORY "librats/ratcast" CACHE STRING
     "The GitHub repository (owner/name) whose releases the app updates itself to")
 
@@ -61,6 +64,7 @@ endif()
 
 # Dependency order, bottom to top. A module may use only those above it here.
 add_subdirectory(libratcast)
+add_subdirectory(server)
 add_subdirectory(engine)
 add_subdirectory(client)
 

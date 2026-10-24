@@ -120,6 +120,7 @@ ApplicationWindow {
     // What is kept from one run to the next.
     Settings {
         property alias name: call.name
+        property alias server: call.server
     }
 
     /// What a member is called: its own name, or, until it says one, a
@@ -242,6 +243,17 @@ ApplicationWindow {
             text: call.name
             maximumLength: 32
             onTextEdited: call.name = text
+        }
+
+        TextField {
+            Layout.alignment: Qt.AlignHCenter
+            Layout.preferredWidth: 280
+            placeholderText: qsTr("A server to meet at (optional)")
+            text: call.server
+            onTextEdited: call.server = text
+            ToolTip.text: qsTr("A ratcast-server, HOST or HOST:PORT: rooms get through any NAT")
+            ToolTip.visible: hovered
+            ToolTip.delay: 600
         }
 
         Button {

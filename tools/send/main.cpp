@@ -75,6 +75,9 @@ Sound:
 Network:
   --port N             listen port (default 7700; 0 for any)
   --announce           be findable by peer id through the DHT (ratcast-recv --peer)
+  --server HOST[:PORT] and at a ratcast-server, met there through NATs (with
+                       --announce; port 7700 by default)
+  --no-dht             at the server alone, not through the DHT
   --data-dir DIR       keep the peer id, and the screen choice, across runs
   --verbose            library logs
 )";
@@ -96,6 +99,8 @@ struct Options {
     AudioEncoderConfig audio_encoder;
     uint16_t port = 7700;
     bool announce = false;
+    std::vector<librats::HostEndpoint> servers;
+    bool dht = true;
     std::string data_dir;
     bool verbose = false;
 };
@@ -150,6 +155,15 @@ std::optional<Options> parse(int argc, char** argv) {
     o.audio_encoder.expected_loss = music ? 0 : 10;
     o.port = static_cast<uint16_t>(args.number("port", 0, 65535).value_or(7700));
     o.announce = args.flag("announce");
+    if (const auto server = args.text("server")) {
+        if (std::optional<librats::HostEndpoint> parsed = parse_server(*server)) {
+            o.servers.push_back(std::move(*parsed));
+        } else {
+            std::cerr << "ratcast-send: --server wants HOST or HOST:PORT\n";
+            return std::nullopt;
+        }
+    }
+    o.dht = !args.flag("no-dht");
     o.data_dir = args.text("data-dir").value_or("");
     o.verbose = args.flag("verbose");
 
@@ -379,6 +393,8 @@ int main(int argc, char** argv) {
         Call::start({.port = o.port,
                      .data_dir = o.data_dir,
                      .discoverable = o.announce,
+                     .servers = o.servers,
+                     .dht = o.dht,
                      .capture_clock = o.source == "pattern" ? &WallClock::instance() : nullptr},
                     {.source_ended = [&](StreamId, Result<void> outcome) {
                         failed = !outcome;

@@ -30,6 +30,13 @@
  * node's peer id, looked for through the DHT if the call is discoverable, or
  * with one of the host's addresses and the port it listens on.
  *
+ * A call met by peer id meets at servers as well, if it knows one
+ * (CallConfig::servers, or a member's naming one): public nodes where both
+ * sides learn where the other's NAT maps it, dial at once, and are carried
+ * where no dial gets through (ratcast-server, librats' Rendezvous and Relay);
+ * a room's members, however they joined, are carried by one they all reach.
+ * A server is no member: never among peers(), nor joined.
+ *
  * A call may be a room (CallConfig::mesh): everyone with everyone, whoever
  * joins by whichever member's link. Each peer connected is asked whom it has,
  * and they are dialed (librats' PeerExchange, a hole punched through a peer
@@ -70,6 +77,10 @@
 #include "ratcast/session/media_session.h"
 
 #include "librats/node/node.h"
+
+namespace librats {
+class Rendezvous;
+}  // namespace librats
 
 namespace ratcast {
 
@@ -131,6 +142,13 @@ struct CallConfig {
     /// Who to call: an address, dialed at once, or a discoverable node's peer
     /// id, looked for through the DHT. None: wait to be called.
     std::optional<RatsUrl> dial = std::nullopt;
+    /// Servers a call met by peer id (this discoverable, or dialing one) meets
+    /// at too, and a room's member at all, dialed and kept while the call
+    /// lasts: "host:port".
+    std::vector<librats::HostEndpoint> servers = {};
+    /// A call met by peer id is looked for, and announced, through the DHT as
+    /// well as at the servers; false: at the servers alone.
+    bool dht = true;
     /// Nodes of another protocol never connect: another version, or a test.
     std::string protocol = RATCAST_PROTOCOL;
     /// Follow the host's network changes (interfaces, addresses, sleep).
@@ -207,6 +225,9 @@ public:
     /// it listens on) with the port. None for a call that does not listen.
     std::vector<std::string> invites() const;
     std::vector<PeerId> peers() const;
+    /// The servers it is connected to (CallConfig::servers, or named by a
+    /// peer): none of peers().
+    std::vector<PeerId> servers() const;
     /// Say who this side is — a name, muted, deafened — to every peer now and
     /// to each as it connects. Fails with InvalidArgument for a presence that
     /// is not valid.
@@ -215,6 +236,9 @@ public:
     std::optional<Presence> presence(const PeerId& peer) const;
     /// The path to `peer`, sampled every 100 ms: round trip, bandwidth, loss.
     std::optional<librats::PathStats> path(const PeerId& peer) const;
+    /// Whether that path goes through a relay — a server carrying the
+    /// connection, no punch having got through — rather than straight.
+    bool relayed(const PeerId& peer) const;
 
     // ── What this side sends ────────────────────────────────────────────────
 
@@ -311,13 +335,16 @@ private:
     void keep_together(const PeerId& peer);
     /// `peer`'s share is played in step no more.
     void leave_together(const PeerId& peer);
+    /// A server, not a member.
+    bool is_server(const PeerId& peer) const;
 
     const CallConfig config_;
     const CallHandlers handlers_;
     /// Set as the destructor begins: no handler runs, no player starts.
     std::atomic<bool> closing_{false};
     librats::Node node_;
-    MediaService* media_ = nullptr;  ///< the node's
+    MediaService* media_ = nullptr;              ///< the node's
+    librats::Rendezvous* rendezvous_ = nullptr;  ///< the node's, if it meets by peer id
 
     mutable std::mutex publishing_;
     std::map<StreamId, std::unique_ptr<Published>> published_;

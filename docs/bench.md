@@ -1501,3 +1501,31 @@ Four in a room, the sharer's uplink one copy wide (`bench/netem.py --room 4 --sh
   paces each path to its estimate and the queue is the sender's own, 30–75 ms, the network's
   empty. And steps past the ceiling only while the encoder sends 80% of its target: SVT-AV1 sits
   at about that, and nothing changed.
+
+## Behind NATs, met at a server (librats L21 (c), 5.6 step 1)
+
+`bench/nat.py`: the sender and the viewer each behind a NAT of its own — a namespace
+masquerading with nftables for a host behind it — and a `ratcast-server` on the "internet"
+between them, every hop 10 ms each way (the sides 40 ms apart). Both meet at the server alone
+(`--no-dht`): the viewer dials the sender's peer id. A `cone` NAT keeps one mapping for every
+destination and lets in only what comes from where the host sent (port-restricted, as home
+routers do); a `symmetric` one maps anew for each destination (`masquerade random`). 1280x720,
+30 fps, 3 Mbit/s at most, 10 s watched, two runs each.
+
+| NATs | pictures | first picture, ms | way | fps | stalls | through the server, MB |
+|---|---|---|---|---|---|---|
+| cone-cone | yes | 380 | straight | 30.4 | 0 | 0.0 |
+| cone-cone | yes | 394 | straight | 30.4 | 0 | 0.0 |
+| cone-symmetric | yes | 3520 | server | 24.5 | 4 | 2.0 |
+| cone-symmetric | yes | 4468 | server | 30.0 | 0 | 2.3 |
+| symmetric-symmetric | yes | 3513 | server | 30.3 | 0 | 2.4 |
+| symmetric-symmetric | yes | 4507 | server | 30.3 | 1 | 2.3 |
+
+- Two cone NATs: the server tells each of the other at once and their dials cross — a punch it
+  times — straight in a round trip or two.
+- A symmetric NAT on either side: the dials cannot get through (the mapping the server saw is
+  the server's alone), and after 3 s the viewer is carried through the server, its packets
+  forwarded as they come: 30 fps and the round trip of the two hops. The 24.5 fps run is the
+  sender's machine stalling (its pattern source made 15 frames in one second), not the path.
+- Before the hand-off went to a relay first, it went to a punch through the server, which gave
+  up after three rounds of six seconds: the first picture at 21.9 s.

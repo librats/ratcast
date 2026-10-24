@@ -23,4 +23,19 @@ std::string to_string(const RatsUrl& url) {
     return std::string(kScheme) + std::get<PeerId>(url).to_hex();
 }
 
+std::optional<librats::HostEndpoint> parse_server(std::string_view text) {
+    if (text.starts_with(kScheme)) text.remove_prefix(kScheme.size());
+    if (text.ends_with('/')) text.remove_suffix(1);
+    if (auto endpoint = librats::HostEndpoint::parse(text)) return endpoint;
+    // No port: a name, an IPv4 address, or an IPv6 one in brackets.
+    if (text.empty() || text.find('/') != std::string_view::npos) return std::nullopt;
+    if (text.front() == '[') {
+        if (text.back() != ']' || text.size() < 3) return std::nullopt;
+        text = text.substr(1, text.size() - 2);
+    } else if (text.find(':') != std::string_view::npos) {
+        return std::nullopt;
+    }
+    return librats::HostEndpoint(std::string(text), kServerPort);
+}
+
 }  // namespace ratcast

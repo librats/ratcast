@@ -10,6 +10,8 @@
 #include "librats/subsystems/hole_punch.h"
 #include "librats/subsystems/peer_exchange.h"
 #include "librats/subsystems/port_mapping_service.h"
+#include "librats/subsystems/relay.h"
+#include "librats/subsystems/rendezvous.h"
 #include "librats/util/network_utils.h"
 
 namespace ratcast {
@@ -128,28 +130,50 @@ Call::Call(CallConfig config, CallHandlers handlers)
     media_ = node_.add_subsystem(std::make_unique<MediaService>(
         session_handlers(),
         SessionConfig{.capture_clock = config_.capture_clock, .relays = config_.relays}));
-    // One key to meet under: the peer dialed, or this call's own. Whoever is
-    // met there dials the port the router forwards, if it does: the call is
-    // then reached through a NAT with no punch.
+    // One key to meet under: the peer dialed, or this call's own — in the
+    // DHT, where whoever is met dials the port the router forwards, if it
+    // does (a NAT then needs no punch), and at servers, which tell each side
+    // where the other's NAT maps it and carry what no punch gets through.
+    // A room's member joined by address meets nobody so, but knows a server
+    // its peers name for one.
     const PeerId* dialed = dialed_peer(config_);
-    if (dialed || config_.discoverable) {
-        node_.add_subsystem(std::make_unique<librats::PortMappingService>());
-        librats::DhtDiscovery::Config discovery;
-        discovery.discovery_key = discovery_key(dialed ? *dialed : node_.local_id());
-        discovery.data_dir = config_.data_dir;
-        discovery.search_interval = std::chrono::seconds(10);
-        node_.add_subsystem(std::make_unique<librats::DhtDiscovery>(std::move(discovery)));
+    const bool meets = dialed || config_.discoverable;
+    librats::Rendezvous::Config meeting;
+    if (meets) {
+        const std::string key = discovery_key(dialed ? *dialed : node_.local_id());
+        if (config_.dht) {
+            node_.add_subsystem(std::make_unique<librats::PortMappingService>());
+            librats::DhtDiscovery::Config discovery;
+            discovery.discovery_key = key;
+            discovery.data_dir = config_.data_dir;
+            discovery.search_interval = std::chrono::seconds(10);
+            node_.add_subsystem(std::make_unique<librats::DhtDiscovery>(std::move(discovery)));
+        }
+        meeting.keys = {key};
+    }
+    if (meets || config_.mesh) {
+        // A room's members met by address are carried by a server they all
+        // reach too, where no punch gets through.
+        meeting.servers = config_.servers;
+        rendezvous_ = node_.add_subsystem(std::make_unique<librats::Rendezvous>(meeting));
+        // A server learnt of from a member was taken for a member as it came.
+        rendezvous_->on_server_found([this](const PeerId& peer) { notify(handlers_.left, peer); });
+        node_.add_subsystem(std::make_unique<librats::HolePunch>());
+        node_.add_subsystem(std::make_unique<librats::Relay>());
     }
     if (config_.mesh) {
         librats::PeerExchange::Config exchange;
         exchange.introduce_requesters = true;
         node_.add_subsystem(std::make_unique<librats::PeerExchange>(exchange));
-        node_.add_subsystem(std::make_unique<librats::HolePunch>());
     }
-    node_.on_peer_connected(
-        [this](const librats::Peer& peer) { notify(handlers_.joined, peer.id()); });
-    node_.on_peer_disconnected(
-        [this](const PeerId& peer, librats::CloseReason) { notify(handlers_.left, peer); });
+    node_.on_peer_connected([this](const librats::Peer& peer) {
+        if (!is_server(peer.id())) notify(handlers_.joined, peer.id());
+    });
+    node_.on_peer_disconnected([this](const PeerId& peer, librats::CloseReason) {
+        // Still known: the subsystems' handlers, attached as the node
+        // starts, run after this one.
+        if (!is_server(peer)) notify(handlers_.left, peer);
+    });
 }
 
 Call::~Call() {
@@ -215,7 +239,19 @@ std::vector<std::string> Call::invites() const {
     return links;
 }
 
-std::vector<PeerId> Call::peers() const { return node_.connected_peers(); }
+std::vector<PeerId> Call::peers() const {
+    std::vector<PeerId> peers = node_.connected_peers();
+    std::erase_if(peers, [this](const PeerId& peer) { return is_server(peer); });
+    return peers;
+}
+
+std::vector<PeerId> Call::servers() const {
+    return rendezvous_ ? rendezvous_->servers() : std::vector<PeerId>{};
+}
+
+bool Call::is_server(const PeerId& peer) const {
+    return rendezvous_ && rendezvous_->is_server(peer);
+}
 
 Result<void> Call::set_presence(const Presence& presence) {
     return session().set_presence(presence);
@@ -227,6 +263,12 @@ std::optional<Presence> Call::presence(const PeerId& peer) const {
 
 std::optional<librats::PathStats> Call::path(const PeerId& peer) const {
     return node_.path_stats(peer);
+}
+
+bool Call::relayed(const PeerId& peer) const {
+    const std::vector<librats::PeerInfo> peers = node_.peers();
+    const auto info = std::ranges::find(peers, peer, &librats::PeerInfo::id);
+    return info != peers.end() && info->transport == librats::TransportKind::Relay;
 }
 
 MediaSession& Call::session() noexcept { return media_->session(); }

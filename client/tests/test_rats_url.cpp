@@ -33,4 +33,17 @@ TEST(RatsUrl, RefusesTheRest) {
     }
 }
 
+TEST(RatsUrl, AServerAsAUserWritesOne) {
+    using librats::HostEndpoint;
+    EXPECT_EQ(parse_server("degitx.com"), (HostEndpoint{"degitx.com", kServerPort}));
+    EXPECT_EQ(parse_server("degitx.com:9000"), (HostEndpoint{"degitx.com", 9000}));
+    EXPECT_EQ(parse_server("rats://degitx.com/"), (HostEndpoint{"degitx.com", kServerPort}));
+    EXPECT_EQ(parse_server("rats://203.0.113.5:7701"), (HostEndpoint{"203.0.113.5", 7701}));
+    EXPECT_EQ(parse_server("[2001:db8::1]"), (HostEndpoint{"2001:db8::1", kServerPort}));
+    EXPECT_EQ(parse_server("[2001:db8::1]:7701"), (HostEndpoint{"2001:db8::1", 7701}));
+    for (const char* text : {"", "rats://", "2001:db8::1", "host:0", "host:port", "a/b", "[]"}) {
+        EXPECT_FALSE(parse_server(text)) << text;
+    }
+}
+
 }  // namespace

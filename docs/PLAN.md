@@ -809,6 +809,18 @@ quickly as anyone's.
 - **5.6 SFU and E2EE**: the `server` node for big rooms and hard NATs (librats: **better with**
   L8, L11); SFrame E2EE once a relay that is not a member carries the frames, room key from the
   owner over Noise (MLS later). Viewers relaying in 5.3 are members, entitled to the share.
+  Optional throughout: a call that reaches no server works as before.
+  1. Meeting and carrying ✅ (librats L21 (c)): `server/`, `Server` and `ratcast-server` — a
+     node calls behind NATs meet at (`Rendezvous`) and are carried by where no punch gets
+     through (`Relay` serving: the packets of the end-to-end connection forwarded, nothing
+     read; 20 Mbit/s each way per connection, no hour's cap). Calls take servers from
+     `CallConfig::servers` (the app's settings, defaulting to the build's
+     `RATCAST_DEFAULT_SERVER`; the tools' `--server`), or from a member that names one; a
+     server is no member (`Call::servers()`), a path through it says so (`Call::relayed()`,
+     the monitor's "relayed"). `CallConfig::dht` false meets at servers alone.
+  2. The SFU: the server takes a share once and passes it to the viewers its sender hands it
+     — the 5.3 tree, a relay that is no viewer and always has room. Then sound for big rooms.
+  3. SFrame E2EE, the room key from the owner: the server forwards what it cannot read.
 - **5.4 Simulcast** (put off until a measurement asks for it): one weak path no longer pulls
   everyone down — the share in two layers (the full one and ~720p), each viewer receiving the
   one its path carries. SVC later where an encoder has it. Put off because the narrow path is
@@ -1210,7 +1222,7 @@ and the list is in priority order:
 | | L5 | Absolute deadlines when forwarding | needed | 5.3 | ✅ |
 | | L21 (a) | Two behind NATs meeting in the DHT: dialed again, the router's port | needed | 6, 10 (over the internet) | ✅ |
 | | L21 (b) | The same: the shared socket's own external port, by STUN | needed | 6, 10 (over the internet) | ✅ |
-| 1 | L21 (c) | The same: a node both reach to meet and relay through | needed | 6, 10 (over the internet) | |
+| | L21 (c) | The same: a node both reach to meet and relay through | needed | 6, 10 (over the internet) | ✅ |
 | 2 | L2 (a) | A live flow's start: the initial window | needed | 1.2 (long paths) | put off; eased by (b) |
 | 3 | L15 | Fewer system calls per reactor turn | improves | 3.2 (CPU) | |
 | 4 | L16 | ProbeRTT that does not starve a live flow | improves | 3.2 (`reorder`) | |
@@ -1367,9 +1379,20 @@ peer both are connected to, which two strangers do not have.
   does; a second server asked once, and a NAT that maps the socket anew for it (symmetric) is
   told in the log — only (c) reaches that one. The dev VM, behind two NATs: 87.110.133.5:7700,
   the port kept by both.
-- (c) A node both reach (a public one, as the `server` of 5.6 will be): a rendezvous for
-  `HolePunch` between peers that share no other, and `Relay` where no punch can work (a mapping
-  per destination).
+- (c) ✅ A node both reach (a public one: ratcast's `server`, 5.6): `Rendezvous`, a new
+  subsystem (`MessageType::Rendezvous`). A serving node says Hello to each peer; a peer
+  registers its keys (a SHA-256 of each: the server learns no link) with every server it
+  knows — configured, dialed and kept, or any that says Hello — and the server tells it of the
+  others under the key and them of it in the same moment, each at the endpoint its UDP packets
+  come from (`PeerInfo::endpoint`, the NAT's mapping of the shared socket, which no STUN of one's
+  own reaches for a NAT that maps per destination) and those it identified itself with. Both
+  dial at once with the punch profile, timed by the server; one not connected 3 s on is handed
+  to `Relay` — a circuit through the server, over which `HolePunch` tries for a direct link —
+  rather than to a punch first, which took three six-second rounds to give up. `Relay` now says
+  `Serving` to each peer, so clients probe it, and `HolePunch` sends its rendezvous through it,
+  before the room's members. Measured behind NATs in namespaces (`bench/nat.py`,
+  `docs/bench.md`, "Behind NATs"): two cone NATs meet straight, the first picture at 0.4 s; a
+  symmetric one on either side is carried by the server, the first picture at 3.5–4.5 s, 30 fps.
 
 **L13 — Fewer ACKs for live data.** *Optional; tried, put off.* An ACK every second packet
 (RFC 9000) is ~440 a second for an 8 Mbit/s feed in full frames — 0.22 Mbit/s back (2.7% of the

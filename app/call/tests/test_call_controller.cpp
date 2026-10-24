@@ -23,6 +23,9 @@
 #include "ratcast/engine/tone_source.h"
 #include "ratcast/engine/virtual_output.h"
 
+#include "librats/node/node.h"
+#include "librats/subsystems/rendezvous.h"
+
 using namespace ratcast;
 using namespace ratcast::app;
 using namespace std::chrono_literals;
@@ -387,6 +390,35 @@ TEST_F(CallControllerTest, AShareThatRunsOutStopsAndTheRoomGoesOn) {
     EXPECT_TRUE(wait_for([&] { return !ann_.sharing(); }));
     EXPECT_FALSE(ann_.notice().isEmpty()) << "the desktop stopped it, not the user";
     EXPECT_EQ(ann_.state(), State::InRoom);
+}
+
+// A room met at a server: the server is nobody's member. One that is none is
+// said so, and no room is made.
+TEST_F(CallControllerTest, ARoomIsMetAtTheServerNamedWhichIsNoMember) {
+    ann_.setServer("not a server:");
+    ann_.create();
+    EXPECT_EQ(ann_.state(), State::Idle);
+    EXPECT_FALSE(ann_.notice().isEmpty());
+
+    librats::NodeConfig node;
+    node.bind_address = "127.0.0.1";
+    node.protocol = environment().call.protocol;
+    librats::Node server(node);
+    librats::Rendezvous::Config serving;
+    serving.serve = true;
+    server.add_subsystem(std::make_unique<librats::Rendezvous>(serving));
+    ASSERT_TRUE(server.start());
+    const QString at = QString("127.0.0.1:%1").arg(server.listen_port());
+    ann_.setServer(at);
+    bob_.setServer(at);
+    both_in();
+    ASSERT_TRUE(wait_for([&] { return server.peer_count() == 2; }));
+    std::this_thread::sleep_for(300ms);
+    EXPECT_EQ(members(ann_), 1);
+    EXPECT_EQ(members(bob_), 1);
+    bob_.leave();
+    ann_.leave();
+    server.stop();
 }
 
 TEST_F(CallControllerTest, CallingOffTheDialogIsNoNews) {
