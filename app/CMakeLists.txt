@@ -115,6 +115,6 @@ elseif(UNIX AND NOT APPLE)
     # The desktop's menu entry and icon; Qt and the libraries are bundled into
     # the AppImage by linuxdeploy (.github/workflows/release.yml).
     install(FILES resources/ratcast.desktop DESTINATION "${CMAKE_INSTALL_DATADIR}/applications")
-    install(FILES resources/ratcast.svg
-            DESTINATION "${CMAKE_INSTALL_DATADIR}/icons/hicolor/scalable/apps")
+    install(FILES resources/ratcast.png
+            DESTINATION "${CMAKE_INSTALL_DATADIR}/icons/hicolor/512x512/apps")
 endif()
