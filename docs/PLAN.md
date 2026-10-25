@@ -817,7 +817,10 @@ quickly as anyone's.
      `CallConfig::servers` (the app's settings, defaulting to the build's
      `RATCAST_DEFAULT_SERVER`; the tools' `--server`), or from a member that names one; a
      server is no member (`Call::servers()`), a path through it says so (`Call::relayed()`,
-     the monitor's "relayed"). `CallConfig::dht` false meets at servers alone.
+     the monitor's "relayed"). `CallConfig::dht` false meets at servers alone. Built alone
+     on a bare host (`RATCAST_SERVER_ONLY`), run as a system service
+     (`server/ratcast-server.service`, README's "Running a server"); on a public host, a
+     viewer found the sender by peer id at it alone, over the internet.
   2. The SFU ✅: the server's session is a forwarder (`SessionConfig::forwarder`, wire
      `Forwarder` said on connect) — the 5.3 tree's relay that is no viewer: a sender whose
      uplink is short hands it viewers before any member, making it a subscriber once two or

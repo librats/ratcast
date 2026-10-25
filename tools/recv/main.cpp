@@ -448,8 +448,12 @@ int main(int argc, char** argv) {
     Call& call = **started;
     if (const auto* endpoint = std::get_if<librats::HostEndpoint>(&*o.sender)) {
         std::fprintf(g_out, "connecting to %s\n", endpoint->to_string().c_str());
+    } else if (o.dht) {
+        std::fprintf(g_out, "looking for %s through the DHT%s (can take a minute)\n",
+                     std::get<PeerId>(*o.sender).short_hex().c_str(),
+                     o.servers.empty() ? "" : " and at the server");
     } else {
-        std::fprintf(g_out, "looking for %s through the DHT (can take a minute)\n",
+        std::fprintf(g_out, "looking for %s at the server\n",
                      std::get<PeerId>(*o.sender).short_hex().c_str());
     }
 

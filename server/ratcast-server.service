@@ -1,0 +1,41 @@
+# ratcast-server as a system service (README.md, "Running a server"):
+#
+#   sudo cp ratcast-server.service /etc/systemd/system/
+#   sudo systemctl enable --now ratcast-server
+#
+# Its own user, made for it as it starts; its identity — the peer id calls
+# know it by — kept in /var/lib/ratcast-server across restarts. Calls dial
+# port 7700, UDP and TCP: open both where a firewall stands in front.
+
+[Unit]
+Description=ratcast-server: calls behind NATs meet and are carried here
+Documentation=https://github.com/librats/ratcast
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+ExecStart=/usr/local/bin/ratcast-server --data-dir ${STATE_DIRECTORY} --stats-every 60
+Restart=on-failure
+RestartSec=5
+DynamicUser=yes
+StateDirectory=ratcast-server
+# A connection a socket: room for max_peers and the connections carried.
+LimitNOFILE=8192
+
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+# Netlink: librats reads the host's addresses and follows their changes.
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX AF_NETLINK
+RestrictNamespaces=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=multi-user.target

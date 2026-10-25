@@ -74,6 +74,32 @@ automatically", unticked, leaves it to the user.
 
 Already cloned without `--recursive`: `git submodule update --init --recursive`.
 
+## Running a server
+
+Calls behind NATs find each other through the DHT and usually connect directly. A
+`ratcast-server` on a public host makes the rest connect too: calls behind NATs meet there, and
+are carried by it where no direct path can be punched. It also forwards a share, one copy from
+the sharer for all its viewers it carries or the sharer's uplink cannot reach. It reads nothing:
+connections are end-to-end encrypted, and so is every frame. Calls work without one.
+
+It needs librats and libratcast alone — no media libraries, no Qt:
+
+```bash
+git clone --recursive https://github.com/librats/ratcast.git
+cd ratcast
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DRATCAST_SERVER_ONLY=ON -DRATCAST_BUILD_TESTS=OFF
+cmake --build build --parallel 2
+sudo cmake --install build                  # /usr/local/bin/ratcast-server
+sudo cp server/ratcast-server.service /etc/systemd/system/
+sudo systemctl enable --now ratcast-server
+journalctl -u ratcast-server -f             # its id, then what it does each minute
+```
+
+Calls dial it on port 7700, UDP and TCP (`--port`): open both in the host's firewall. The app
+takes it in "A server to meet at", `HOST` or `HOST:PORT`, the tools as `--server HOST`; a build
+names one by default with `-DRATCAST_DEFAULT_SERVER=HOST`. `ratcast-server
+--help` lists the rest: how much one carried connection may move, how many are carried at once.
+
 ## C API
 
 libratcast has a C API, [`ratcast/ratcast.h`](libratcast/include/ratcast/ratcast.h), on top of

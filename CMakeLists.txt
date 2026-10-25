@@ -43,6 +43,9 @@ option(RATCAST_BUILD_APP   "Build the Qt 6 desktop application (needs Qt 6 Quick
 option(RATCAST_BUILD_TESTS "Build unit tests" ${PROJECT_IS_TOP_LEVEL})
 option(RATCAST_BUILD_BENCH "Build benchmarks (bench/)" OFF)
 option(RATCAST_BUILD_TOOLS "Build ratcast-send and ratcast-recv (tools/)" ON)
+# A server's host: libratcast and ratcast-server alone, no media library looked
+# for (engine, client, tools, bench and app left out).
+option(RATCAST_SERVER_ONLY "Build libratcast and ratcast-server alone, for a bare host" OFF)
 # The release packages (.github/workflows/release.yml) keep themselves at the
 # latest release of this repository on GitHub; any other build never updates.
 option(RATCAST_UPDATES "The app updates itself from GitHub's releases (release packages)" OFF)
@@ -65,19 +68,22 @@ endif()
 # Dependency order, bottom to top. A module may use only those above it here.
 add_subdirectory(libratcast)
 add_subdirectory(server)
-add_subdirectory(engine)
-add_subdirectory(client)
 
-if(RATCAST_BUILD_TOOLS)
-    add_subdirectory(tools)
-endif()
+if(NOT RATCAST_SERVER_ONLY)
+    add_subdirectory(engine)
+    add_subdirectory(client)
 
-if(RATCAST_BUILD_BENCH)
-    add_subdirectory(bench)
-endif()
+    if(RATCAST_BUILD_TOOLS)
+        add_subdirectory(tools)
+    endif()
 
-if(RATCAST_BUILD_APP)
-    add_subdirectory(app)
+    if(RATCAST_BUILD_BENCH)
+        add_subdirectory(bench)
+    endif()
+
+    if(RATCAST_BUILD_APP)
+        add_subdirectory(app)
+    endif()
 endif()
 
 ratcast_install_runtime()
