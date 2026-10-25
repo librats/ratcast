@@ -67,6 +67,11 @@
 
 namespace ratcast::app {
 
+/// Where the app keeps what lasts from one run to the next — its identities,
+/// the DHT's contacts — and its log: "ratcast" in the user's local application
+/// data (%LOCALAPPDATA% on Windows, ~/.local/share on Linux).
+QString data_folder();
+
 class CallController : public QObject {
     Q_OBJECT
     QML_ELEMENT

@@ -72,6 +72,10 @@ GitHub gives, and puts it in place. The AppImage is replaced at once; the Window
 next start. It starts with the next launch, or at once with "Restart now"; "Update
 automatically", unticked, leaves it to the user.
 
+The app keeps its identity, what it learnt of the DHT and its log, `ratcast.log` (the last few
+runs beside it), in `%LOCALAPPDATA%\ratcast` on Windows and `~/.local/share/ratcast` on Linux;
+"Open log folder" opens it.
+
 Already cloned without `--recursive`: `git submodule update --init --recursive`.
 
 ## Running a server

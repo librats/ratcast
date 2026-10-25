@@ -1,20 +1,46 @@
+#include "call_controller.h"
 #include "install.h"
+#include "librats/util/logger.h"
+#include "ratcast/client/log_file.h"
 #include "ratcast/version.h"
 
 #include <QtQml/qqmlextensionplugin.h>
 #include <QCommandLineParser>
+#include <QDir>
 #include <QGuiApplication>
 #include <QQmlApplicationEngine>
 #include <QString>
+#include <QSysInfo>
+#include <QUrl>
 
 #include <clocale>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 
 // Our QML modules, linked in statically.
 Q_IMPORT_QML_PLUGIN(Ratcast_VideoPlugin)
 Q_IMPORT_QML_PLUGIN(Ratcast_CallPlugin)
 Q_IMPORT_QML_PLUGIN(Ratcast_UpdatePlugin)
+
+namespace {
+
+/// Qt's messages, QML's warnings among them, logged with the rest: in the log
+/// file too.
+void log_qt_message(QtMsgType type, const QMessageLogContext& context, const QString& text) {
+    using librats::LogLevel;
+    LogLevel level = LogLevel::ERROR;  // critical and fatal
+    switch (type) {
+        case QtDebugMsg: level = LogLevel::DEBUG; break;
+        case QtInfoMsg: level = LogLevel::INFO; break;
+        case QtWarningMsg: level = LogLevel::WARN; break;
+        default: break;
+    }
+    const bool named = context.category && std::strcmp(context.category, "default") != 0;
+    librats::Logger::getInstance().log(level, named ? context.category : "qt", text.toStdString());
+}
+
+}  // namespace
 
 int main(int argc, char* argv[]) {
     QGuiApplication app(argc, argv);
@@ -22,11 +48,20 @@ int main(int argc, char* argv[]) {
     // the call's stats, codecs' options — keep the C one, as Qt advises.
     std::setlocale(LC_NUMERIC, "C");
     QGuiApplication::setApplicationName(QStringLiteral("ratcast"));
-    QGuiApplication::setOrganizationName(QStringLiteral("librats"));
+    QGuiApplication::setOrganizationName(QStringLiteral("ratcast"));
     QGuiApplication::setApplicationVersion(QString::fromLatin1(ratcast::version()));
     // An update an earlier run downloaded, put in place before anything else
     // is loaded: the new version then starts in this one's place.
     if (ratcast::app::update::start_updated()) return EXIT_SUCCESS;
+
+    const QString data = ratcast::app::data_folder();
+    const ratcast::LogFile log(
+        {.path = QDir(data).filePath(QStringLiteral("ratcast.log")).toStdString()});
+    qInstallMessageHandler(log_qt_message);
+    LOG_INFO("app", "ratcast " << ratcast::version() << ", librats " << ratcast::librats_version()
+                               << ", Qt " << qVersion() << ", "
+                               << QSysInfo::prettyProductName().toStdString() << " "
+                               << QSysInfo::currentCpuArchitecture().toStdString());
 
     QCommandLineParser options;
     options.setApplicationDescription(
@@ -61,6 +96,7 @@ int main(int argc, char* argv[]) {
         {QStringLiteral("libratsVersion"), QString::fromLatin1(ratcast::librats_version())},
         {QStringLiteral("link"), options.positionalArguments().value(0)},
         {QStringLiteral("statsEvery"), every},
+        {QStringLiteral("dataFolder"), QUrl::fromLocalFile(data)},
     });
 
     QObject::connect(

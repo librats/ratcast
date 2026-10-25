@@ -95,13 +95,17 @@ struct CallController::Cameras {
     }
 };
 
+QString data_folder() {
+    return QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation) +
+           QStringLiteral("/ratcast");
+}
+
 CallController::Environment CallController::Environment::system() {
     Environment environment;
     environment.name = user_name();
     environment.server = QStringLiteral(RATCAST_DEFAULT_SERVER);
     environment.call.discoverable = true;
-    environment.data_dir =
-        QStandardPaths::writableLocation(QStandardPaths::AppDataLocation).toStdString();
+    environment.data_dir = data_folder().toStdString();
     environment.open_share = [](const ScreenShareConfig& config, std::stop_token cancel) {
         return open_screen_share(config, std::move(cancel));
     };

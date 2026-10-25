@@ -15,7 +15,8 @@ import Ratcast.Video
 // A share watched may go full screen (F, a double click): only the share, on
 // black, its controls and the cursor there while the mouse moves.
 // The start also says what the updater does: a new version on its way, or in
-// place and to restart into.
+// place and to restart into. The start and the panel open the folder the log
+// is kept in.
 ApplicationWindow {
     id: root
 
@@ -25,6 +26,8 @@ ApplicationWindow {
     required property string link
     /// From the command line: print how a call goes every so many seconds.
     required property int statsEvery
+    /// Where the app keeps its identities and its log.
+    required property url dataFolder
 
     readonly property bool inRoom: call.state === CallController.InRoom
     readonly property bool watching: call.watching.length > 0
@@ -171,10 +174,19 @@ ApplicationWindow {
             font.bold: true
         }
 
-        Label {
+        RowLayout {
             Layout.alignment: Qt.AlignHCenter
-            text: "v" + root.ratcastVersion + "  ·  librats " + root.libratsVersion
-            opacity: 0.6
+            spacing: 8
+
+            Label {
+                text: "v" + root.ratcastVersion + "  ·  librats " + root.libratsVersion
+                opacity: 0.6
+            }
+            Button {
+                text: qsTr("Open log folder")
+                flat: true
+                onClicked: Qt.openUrlExternally(root.dataFolder)
+            }
         }
 
         ColumnLayout {
@@ -678,6 +690,12 @@ ApplicationWindow {
                             }
                         }
                     }
+                }
+
+                Button {
+                    text: qsTr("Open log folder")
+                    flat: true
+                    onClicked: Qt.openUrlExternally(root.dataFolder)
                 }
             }
         }

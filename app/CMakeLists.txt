@@ -78,6 +78,7 @@ target_link_libraries(ratcast_app PRIVATE
     Qt6::Quick
     ratcast_videoplugin
     ratcast_callplugin
+    ratcast_call
     ratcast_updateplugin
     ratcast_update
     ratcast::ratcast

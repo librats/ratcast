@@ -12,6 +12,7 @@ add_library(ratcast_client STATIC
     src/cpu_meter.cpp
     src/data_player.cpp
     src/data_publisher.cpp
+    src/log_file.cpp
     src/playback_meter.cpp
     src/playout_clock.cpp
     src/playout_schedule.cpp
