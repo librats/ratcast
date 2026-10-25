@@ -158,7 +158,7 @@ final place and shape: stage 0 is a walking skeleton, not a throwaway prototype.
 | **2. Sound** ✅ | audio, A/V sync; latency profiles put off to stages 5 and 6 | L4 ✅ |
 | **3. Standalone library** ✅ | MPEG-TS in and out, `rats://` URLs, a benchmark against librist and SRT, C API | — |
 | **4. Platforms** — in part | GPU paths and hardware codecs; Windows ✅ (its GPU path too) and macOS capture; netsim ✅ | — |
-| **5. Watch together** — in progress | one-to-many: a sender's budget, synchronised playout, forwarding tree, cinema, SFU and E2EE; simulcast put off | L5 |
+| **5. Watch together** ✅ | one-to-many: a sender's budget, synchronised playout, forwarding tree, SFU and E2EE; simulcast and cinema put off | L5 ✅ |
 | **6. App** ✅ | Qt app MVP, one to one: invites, voice with AEC / NS, screen / window / app-audio share, camera; on Linux first, the other OSes as stage 4 reaches them | — |
 | **7. Conferences** | active speaker, last-N, grid, moderation, text chat | — |
 | **8. Beyond** | Android, cinema mode, HDR, polish | — |
@@ -666,7 +666,7 @@ goes ahead meanwhile on Linux with the software codecs, which carry a one-to-one
 1080p screen; high resolutions and the other OSes come to it with these steps. 4.3 (a) came with
 a Windows machine at hand: the app and the tools run there now.
 
-### Stage 5 — Watch together
+### Stage 5 — Watch together ✅
 
 The main use case: one person streams, many watch. The app (6) and the room (10) made it a
 mesh: whoever shares sends a copy to each viewer, over the path straight to them, and the one
@@ -804,7 +804,7 @@ quickly as anyone's.
      and held for a minute; a relayed viewer still asks the sender for keyframes while its first
      is on its way from the relay; "nearest" is the sender's round trip, not the relay's to the
      viewer.
-- **5.5 The `cinema` latency profile** (from 2.3): seconds of buffer for retransmission to
+- **5.5 The `cinema` latency profile** (from 2.3; put off to stage 8, cinema mode): seconds of buffer for retransmission to
   repair anything, held as encoded frames (decoded 1080p is ~3 MB a picture), lip sync over it.
 - **5.6 SFU and E2EE**: the `server` node for big rooms and hard NATs (librats: **better with**
   L8, L11); SFrame E2EE once a relay that is not a member carries the frames, room key from the
@@ -858,7 +858,22 @@ quickly as anyone's.
   is busiest (a game). First measured: a room with one viewer far narrower than the others
   (`--member-paths`, one `cap-3`). Cheaper ways if that asks for one: the rate set by the others
   when one path is far below them, the narrow viewer getting what fits; temporal layers from the
-  one encoder. Comes with 5.6 at the latest, where rooms get big.
+  one encoder. Comes with stage 7 at the latest, where rooms get big.
+
+Closed with every test passing (625; ASan 625, TSan 588), what is left of it small. Left for
+later:
+- 5.1: the one overflow before the uplink is known, as a third viewer joins, which raises every
+  voice's buffer for ten seconds.
+- 5.2: a common delay that rises holds every viewer's pictures at once; held within the stream's
+  lifetime, a viewer much quicker than the slowest stays ahead.
+- 5.3: an uplink found full while the copies start is taken for narrower than it is, for a
+  minute; a relayed viewer asks the sender for keyframes while its first is on its way from the
+  relay; "nearest" is the sender's round trip, not the relay's to the viewer.
+- 5.6: sound for big rooms (top speakers, forwarded once: with stage 7's active speaker);
+  `Forward` names 64 viewers at most; a share forwarded through a server not yet seen on a real
+  path (the server met calls over the internet, but its two ends were on one network); who is
+  entitled is who has the link, MLS for rooms that want a membership of their own.
+- 5.4 (simulcast) and 5.5 (cinema, stage 8), put off as above.
 
 ### Stage 6 — App ✅
 
@@ -1226,7 +1241,7 @@ Active speaker, last-N, grid, moderation, text chat.
 
 ### Stage 8 — Beyond
 
-Android, cinema mode, HDR, polish.
+Android, cinema mode (5.5), HDR, polish.
 
 ## librats track
 
