@@ -70,8 +70,36 @@ Get the latest build from [Releases](https://github.com/librats/ratcast/releases
 While watching, press **F** or double-click the picture to go full screen, and **Esc** to leave
 it. **Ctrl+I** shows how the call is going: bitrate, latency and losses.
 
+<p align="center">
+  <img alt="A ratcast room with its links and the stats panel open" src="docs/ratcast-screen.png" width="720">
+</p>
+
 The app keeps its identity and log (`ratcast.log`) in `%LOCALAPPDATA%\ratcast` on Windows and in
 `~/.local/share/ratcast` on Linux. To find them, use **Open log folder**.
+
+## Network topology
+
+Every room starts as a mesh. Each member connects to each, and the sharer sends its own copy of
+the picture to every viewer. When the sharer's uplink can't carry all the copies, the share is
+rearranged one viewer at a time:
+
+- **Through a server.** A `ratcast-server` forwards the share like an SFU, so the sharer uploads
+  one copy for all the viewers the server takes. Viewers whose connection the server relays anyway,
+  such as those behind symmetric NATs, always get the share this way.
+- **Through another viewer.** A viewer with spare uplink passes the frames on as they came,
+  without re-encoding. This is used when there is no server, or when a frame through the server
+  would arrive too late.
+- **Directly**, as before, for the viewers the uplink still has room for.
+
+Sound always comes straight from the sharer. Keyframe requests and SFrame keys also go directly
+between the sharer and each viewer. Frames stay sealed on every hop, and a server is never given
+a key.
+
+<p align="center">
+  <img alt="A room of seven: the sharer sends one copy to a ratcast-server, which forwards it to V2, V3 and V4 (V4 behind a symmetric NAT, its connection relayed by the server), and one copy to V1, which passes it on to V5 and V6" src="docs/network-topology.png" width="760">
+</p>
+
+In this room of seven, the sharer uploads two copies instead of six.
 
 ## Running a server
 
