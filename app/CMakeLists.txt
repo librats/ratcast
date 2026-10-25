@@ -59,6 +59,19 @@ set_target_properties(ratcast_app PROPERTIES
     MACOSX_BUNDLE_SHORT_VERSION_STRING ${PROJECT_VERSION}
 )
 
+# Its icon: on Windows the executable's, with its version (resources/ratcast.rc.in);
+# elsewhere the windows' (the menu's comes from the desktop entry).
+if(WIN32)
+    configure_file(resources/ratcast.rc.in ratcast.rc @ONLY)
+    target_sources(ratcast_app PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/ratcast.rc")
+else()
+    qt_add_resources(ratcast_app ratcast_icon
+        PREFIX /ratcast
+        BASE   resources
+        FILES  resources/ratcast.png
+    )
+endif()
+
 qt_add_qml_module(ratcast_app
     URI     Ratcast
     VERSION 1.0

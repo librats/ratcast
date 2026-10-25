@@ -1,0 +1,34 @@
+// The executable's icon and version, as Explorer and the Task Manager show
+// them. IDI_ICON1 is also the icon Qt gives the app's windows.
+#include <winver.h>
+
+IDI_ICON1 ICON "@CMAKE_CURRENT_SOURCE_DIR@/resources/ratcast.ico"
+
+VS_VERSION_INFO VERSIONINFO
+FILEVERSION     @PROJECT_VERSION_MAJOR@,@PROJECT_VERSION_MINOR@,@PROJECT_VERSION_PATCH@,0
+PRODUCTVERSION  @PROJECT_VERSION_MAJOR@,@PROJECT_VERSION_MINOR@,@PROJECT_VERSION_PATCH@,0
+FILEFLAGSMASK   VS_FFI_FILEFLAGSMASK
+FILEFLAGS       0
+FILEOS          VOS_NT_WINDOWS32
+FILETYPE        VFT_APP
+FILESUBTYPE     VFT2_UNKNOWN
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904B0"
+        BEGIN
+            VALUE "CompanyName",      "librats Project"
+            VALUE "FileDescription",  "ratcast"
+            VALUE "FileVersion",      "@PROJECT_VERSION@"
+            VALUE "InternalName",     "ratcast"
+            VALUE "LegalCopyright",   "Copyright (c) librats contributors. MIT License."
+            VALUE "OriginalFilename", "ratcast.exe"
+            VALUE "ProductName",      "ratcast"
+            VALUE "ProductVersion",   "@PROJECT_VERSION@"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        VALUE "Translation", 0x409, 1200
+    END
+END

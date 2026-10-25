@@ -8,6 +8,7 @@
 #include <QCommandLineParser>
 #include <QDir>
 #include <QGuiApplication>
+#include <QIcon>
 #include <QQmlApplicationEngine>
 #include <QString>
 #include <QSysInfo>
@@ -50,6 +51,12 @@ int main(int argc, char* argv[]) {
     QGuiApplication::setApplicationName(QStringLiteral("ratcast"));
     QGuiApplication::setOrganizationName(QStringLiteral("ratcast"));
     QGuiApplication::setApplicationVersion(QString::fromLatin1(ratcast::version()));
+    // Wayland finds the window's icon by its desktop entry; Windows' is the
+    // executable's own (ratcast.rc.in).
+    QGuiApplication::setDesktopFileName(QStringLiteral("ratcast"));
+#ifndef Q_OS_WIN
+    QGuiApplication::setWindowIcon(QIcon(QStringLiteral(":/ratcast/ratcast.png")));
+#endif
     // An update an earlier run downloaded, put in place before anything else
     // is loaded: the new version then starts in this one's place.
     if (ratcast::app::update::start_updated()) return EXIT_SUCCESS;
