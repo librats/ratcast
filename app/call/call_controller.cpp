@@ -127,6 +127,7 @@ CallController::Environment CallController::Environment::system() {
         return sound ? std::move(*sound) : nullptr;
     };
     environment.keep_screen_awake = [] { return ratcast::keep_screen_awake("Watching a share"); };
+    environment.settings = [] { return std::make_unique<QSettings>(); };
     return environment;
 }
 
@@ -146,6 +147,7 @@ CallController::CallController(QObject* parent)
     reporting_.setInterval(1000);
     connect(&reporting_, &QTimer::timeout, this, &CallController::update_stats);
     connect(&printing_, &QTimer::timeout, this, &CallController::print_stats);
+    load_hearing();
 }
 
 CallController::~CallController() {
@@ -163,6 +165,7 @@ void CallController::setEnvironment(Environment environment) {
     environment_ = std::move(environment);
     setName(environment_.name);
     setServer(environment_.server);
+    load_hearing();
 }
 
 bool CallController::attach(QPointer<VideoView>& slot, Pictures& pictures, VideoView* view) {
@@ -257,6 +260,8 @@ void CallController::start(CallConfig config, State state) {
         return;
     }
     call_ = std::move(*started);
+    for (auto it = hearing_.cbegin(); it != hearing_.cend(); ++it)
+        tell_hearing(it.key(), it.value());
     for (const std::string& invite : call_->invites()) {
         invites_.push_back(QString::fromStdString(invite));
     }
@@ -377,6 +382,7 @@ void CallController::update_members() {
         std::sort(peers.begin(), peers.end());
         for (const PeerId& peer : peers) {
             const Presence presence = call_->presence(peer).value_or(Presence{});
+            const Hearing hearing = hearing_.value(id_of(peer));
             members.push_back({
                 .id = id_of(peer),
                 .peer = QString::fromStdString(peer.short_hex()),
@@ -386,6 +392,8 @@ void CallController::update_members() {
                 .speaking = std::ranges::find(speaking, peer) != speaking.end(),
                 .camera = offers(peer, true),
                 .sharing = offers(peer, false),
+                .volume = hearing.volume,
+                .muted_here = hearing.muted,
             });
         }
     }
@@ -453,6 +461,64 @@ void CallController::watch(const QString& id) {
         return;
     }
     if (const std::optional<PeerId> peer = PeerId::from_hex(id.toStdString())) call_->watch(*peer);
+}
+
+// ── How each member is heard ────────────────────────────────────────────────
+//
+// Kept in the settings as hearing/<id>/volume and hearing/<id>/muted, for
+// the members not heard as they come.
+
+void CallController::setVolume(const QString& id, double volume) {
+    Hearing hearing = hearing_.value(id);
+    hearing.volume = volume > 0.0 ? std::min(volume, kMaxVolume) : 0.0;  // NaN: 0
+    hear(id, hearing);
+}
+
+void CallController::setMutedHere(const QString& id, bool muted) {
+    Hearing hearing = hearing_.value(id);
+    hearing.muted = muted;
+    hear(id, hearing);
+}
+
+void CallController::load_hearing() {
+    hearing_.clear();
+    if (!environment_.settings) return;
+    const std::unique_ptr<QSettings> settings = environment_.settings();
+    settings->beginGroup(QStringLiteral("hearing"));
+    for (const QString& id : settings->childGroups()) {
+        if (!PeerId::from_hex(id.toStdString())) continue;
+        const double volume = settings->value(id + QStringLiteral("/volume"), 1.0).toDouble();
+        hearing_[id] = {.volume = volume > 0.0 ? std::min(volume, kMaxVolume) : 0.0,
+                        .muted = settings->value(id + QStringLiteral("/muted")).toBool()};
+    }
+}
+
+void CallController::hear(const QString& id, Hearing hearing) {
+    const std::optional<PeerId> peer = PeerId::from_hex(id.toStdString());
+    if (!peer || hearing == hearing_.value(id)) return;
+    const bool as_they_come = hearing == Hearing{};
+    if (as_they_come) {
+        hearing_.remove(id);
+    } else {
+        hearing_[id] = hearing;
+    }
+    if (environment_.settings) {
+        const std::unique_ptr<QSettings> settings = environment_.settings();
+        const QString group = QStringLiteral("hearing/") + id;
+        if (as_they_come) {
+            settings->remove(group);
+        } else {
+            settings->setValue(group + QStringLiteral("/volume"), hearing.volume);
+            settings->setValue(group + QStringLiteral("/muted"), hearing.muted);
+        }
+    }
+    tell_hearing(id, hearing);
+    update_members();
+}
+
+void CallController::tell_hearing(const QString& id, const Hearing& hearing) {
+    const std::optional<PeerId> peer = PeerId::from_hex(id.toStdString());
+    if (call_ && peer) call_->set_volume(*peer, hearing.muted ? 0.0f : float(hearing.volume));
 }
 
 // ── The camera ──────────────────────────────────────────────────────────────

@@ -15,8 +15,12 @@
 #include <QGuiApplication>
 #include <QTemporaryDir>
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cmath>
+#include <memory>
+#include <span>
 #include <thread>
 
 #include "ratcast/engine/pattern_source.h"
@@ -230,6 +234,74 @@ TEST_F(CallControllerTest, EveryoneTalksAndIsSeenSpeakingUntilMutedOrDeafened) {
     bob_.setDeafened(false);
     EXPECT_TRUE(wait_for(
         [&] { return !bob().value("muted").toBool() && bob().value("speaking").toBool(); }));
+}
+
+TEST_F(CallControllerTest, EachMemberIsHeardAsLoudAsSetAndItIsKept) {
+    // Ann's speaker, listened to: the loudest it played over a while.
+    auto loudest = std::make_shared<std::atomic<float>>(0.0f);
+    CallController::Environment ann = environment();
+    ann.open_speaker = [loudest] {
+        return std::make_unique<VirtualOutput>(
+            VirtualOutputConfig{}, [loudest](std::span<const float> samples, Timestamp) {
+                float block = 0.0f;
+                for (const float sample : samples) block = std::max(block, std::abs(sample));
+                float most = loudest->load();
+                while (block > most && !loudest->compare_exchange_weak(most, block)) {}
+            });
+    };
+    QTemporaryDir kept;
+    ASSERT_TRUE(kept.isValid());
+    const QString settings_file = kept.filePath("ratcast.conf");
+    ann.settings = [settings_file] {
+        return std::make_unique<QSettings>(settings_file, QSettings::IniFormat);
+    };
+    ann_.setEnvironment(ann);
+    ann_.setName("Ann");
+    const auto played = [&] {
+        wait_for([] { return false; }, 100ms);  // what was pulled before played out
+        *loudest = 0.0f;
+        wait_for([] { return false; }, 300ms);
+        return loudest->load();
+    };
+
+    both_in();
+    const QString bob = id_of(ann_, "Bob");
+    ASSERT_TRUE(wait_for([&] { return member(ann_, "Bob").value("speaking").toBool(); }));
+    const float as_it_comes = played();
+    EXPECT_GT(as_it_comes, 0.1f);
+
+    ann_.setVolume(bob, 0.5);
+    EXPECT_EQ(member(ann_, "Bob").value("volume").toDouble(), 0.5);
+    const float half = played();
+    EXPECT_GT(half, as_it_comes * 0.3f);
+    EXPECT_LT(half, as_it_comes * 0.7f);
+
+    ann_.setMutedHere(bob, true);
+    EXPECT_TRUE(member(ann_, "Bob").value("mutedHere").toBool());
+    EXPECT_EQ(played(), 0.0f);
+    EXPECT_TRUE(member(ann_, "Bob").value("speaking").toBool()) << "still seen speaking";
+    EXPECT_EQ(member(ann_, "Bob").value("volume").toDouble(), 0.5) << "the volume kept";
+    EXPECT_FALSE(member(bob_, "Ann").value("muted").toBool()) << "the others know nothing";
+
+    ann_.setVolume(bob, 7.0);
+    EXPECT_EQ(member(ann_, "Bob").value("volume").toDouble(), CallController::kMaxVolume);
+
+    // Kept for another run: Carl, on Ann's settings, hears Bob as Ann set
+    // from when he joins Bob, who stays in the room Ann left.
+    ann_.leave();
+    CallController::Environment carl = environment();
+    carl.settings = ann.settings;
+    carl_.setEnvironment(carl);
+    carl_.setName("Carl");
+    carl_.join(bob_.invites().value(0));
+    ASSERT_TRUE(wait_for([&] { return !member(carl_, "Bob").isEmpty(); }));
+    EXPECT_EQ(member(carl_, "Bob").value("volume").toDouble(), CallController::kMaxVolume);
+    EXPECT_TRUE(member(carl_, "Bob").value("mutedHere").toBool());
+
+    // As it comes again: nothing kept.
+    carl_.setVolume(bob, 1.0);
+    carl_.setMutedHere(bob, false);
+    EXPECT_TRUE(QSettings(settings_file, QSettings::IniFormat).childGroups().isEmpty());
 }
 
 TEST_F(CallControllerTest, WithoutAMicrophoneTheRoomGoesOn) {

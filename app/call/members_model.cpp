@@ -57,15 +57,18 @@ QVariant MembersModel::data(const QModelIndex& index, int role) const {
         case SpeakingRole: return member.speaking;
         case CameraRole: return member.camera;
         case SharingRole: return member.sharing;
+        case VolumeRole: return member.volume;
+        case MutedHereRole: return member.muted_here;
         default: return {};
     }
 }
 
 QHash<int, QByteArray> MembersModel::roleNames() const {
     return {
-        {IdRole, "peerId"},     {PeerRole, "peer"},         {NameRole, "name"},
-        {MutedRole, "muted"},   {DeafenedRole, "deafened"}, {SpeakingRole, "speaking"},
-        {CameraRole, "camera"}, {SharingRole, "sharing"},
+        {IdRole, "peerId"},           {PeerRole, "peer"},         {NameRole, "name"},
+        {MutedRole, "muted"},         {DeafenedRole, "deafened"}, {SpeakingRole, "speaking"},
+        {CameraRole, "camera"},       {SharingRole, "sharing"},   {VolumeRole, "volume"},
+        {MutedHereRole, "mutedHere"},
     };
 }
 

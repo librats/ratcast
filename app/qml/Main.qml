@@ -415,15 +415,32 @@ ApplicationWindow {
                     required property bool deafened
                     required property bool speaking
                     required property bool sharing
+                    required property real volume
+                    required property bool mutedHere
                     width: ListView.view.width
                     spacing: 8
 
                     Dot {
                         color: member.speaking ? Material.color(Material.Green) : "#4e5058"
                     }
+                    // A click on the name: how loud they are heard here.
                     PlainLabel {
                         Layout.fillWidth: true
                         text: root.memberName(member.name, member.peer)
+
+                        HoverHandler {
+                            cursorShape: Qt.PointingHandCursor
+                        }
+                        TapHandler {
+                            acceptedButtons: Qt.LeftButton | Qt.RightButton
+                            onTapped: hearing.open()
+                        }
+                    }
+                    Badge {
+                        text: member.mutedHere ? qsTr("off for you")
+                                               : member.volume !== 1
+                                                 ? qsTr("%1%").arg(Math.round(member.volume * 100))
+                                                 : ""
                     }
                     Badge {
                         text: member.deafened ? qsTr("deafened")
@@ -436,6 +453,67 @@ ApplicationWindow {
                         text: call.watching === member.peerId ? qsTr("Watching") : qsTr("Watch")
                         enabled: call.watching !== member.peerId
                         onClicked: call.watch(member.peerId)
+                    }
+
+                    Popup {
+                        id: hearing
+                        y: member.height
+                        width: member.width
+                        padding: 12
+                        background: Rectangle {
+                            color: "#111214"
+                            radius: 6
+                            border.color: "#4e5058"
+                        }
+
+                        ColumnLayout {
+                            anchors.fill: parent
+                            spacing: 4
+
+                            PlainLabel {
+                                Layout.fillWidth: true
+                                text: qsTr("%1, for you").arg(root.memberName(member.name, member.peer))
+                                font.bold: true
+                            }
+                            RowLayout {
+                                Layout.fillWidth: true
+                                enabled: !member.mutedHere
+
+                                Slider {
+                                    id: volume
+                                    Layout.fillWidth: true
+                                    from: 0
+                                    to: call.maxVolume
+                                    stepSize: 0.05
+                                    value: member.volume
+                                    onMoved: call.setVolume(member.peerId, value)
+                                }
+                                Label {
+                                    Layout.preferredWidth: 40
+                                    horizontalAlignment: Text.AlignRight
+                                    text: qsTr("%1%").arg(Math.round(volume.value * 100))
+                                }
+                            }
+                            RowLayout {
+                                CheckBox {
+                                    text: qsTr("Mute for me")
+                                    checked: member.mutedHere
+                                    onToggled: call.setMutedHere(member.peerId, checked)
+                                }
+                                Item {
+                                    Layout.fillWidth: true
+                                }
+                                Button {
+                                    text: qsTr("Reset")
+                                    flat: true
+                                    visible: member.volume !== 1
+                                    onClicked: {
+                                        call.setVolume(member.peerId, 1)
+                                        volume.value = 1
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }

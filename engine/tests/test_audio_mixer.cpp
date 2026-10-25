@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <limits>
 #include <thread>
 #include <vector>
 
@@ -98,6 +99,39 @@ TEST(AudioMixer, ClampsToFullScale) {
     ASSERT_TRUE(loud->start(constant(-0.8f), {}));
     ASSERT_TRUE(louder->start(constant(-0.9f), {}));
     EXPECT_EQ(device.pull(), std::vector<float>(8, -1.0f));
+}
+
+TEST(AudioMixer, PlaysEachInputAtItsVolume) {
+    HandOutput device;
+    AudioMixer mixer(device);
+    auto music = mixer.input();
+    auto voice = mixer.input();
+    EXPECT_EQ(music->volume(), 1.0f);
+
+    ASSERT_TRUE(music->start(constant(0.5f), {}));
+    music->set_volume(0.5f);
+    EXPECT_EQ(device.pull(), std::vector<float>(8, 0.25f)) << "one alone, at its volume";
+    music->set_volume(4.0f);
+    EXPECT_EQ(device.pull(), std::vector<float>(8, 1.0f)) << "louder, clamped";
+
+    int voice_pulls = 0;
+    ASSERT_TRUE(voice->start(
+        [&](std::span<float> out, Timestamp) {
+            ++voice_pulls;
+            std::ranges::fill(out, 0.25f);
+        },
+        {}));
+    music->set_volume(0.5f);
+    voice->set_volume(0.0f);
+    EXPECT_EQ(device.pull(), std::vector<float>(8, 0.25f));
+    EXPECT_EQ(voice_pulls, 1) << "silent, still pulled: it keeps its time";
+    voice->set_volume(2.0f);
+    EXPECT_EQ(device.pull(), std::vector<float>(8, 0.75f));
+
+    for (const float none : {-1.0f, std::numeric_limits<float>::quiet_NaN()}) {
+        voice->set_volume(none);
+        EXPECT_EQ(voice->volume(), 0.0f);
+    }
 }
 
 TEST(AudioMixer, TheDeviceRunsWhileAnInputDoes) {

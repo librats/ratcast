@@ -264,6 +264,12 @@ public:
     /// of whoever's played; nobody's with nullopt. Until this is called, the
     /// first offered play.
     void watch(std::optional<PeerId> peer);
+    /// How loud `peer`'s voice plays on this side, and only here: 1 as it
+    /// comes, 0 silent, 2 twice the amplitude (+6 dB). Kept while the call
+    /// lasts, for a voice that plays later or again; a voice turned down is
+    /// still heard as speaking (speaking(), `playback.heard`).
+    void set_volume(const PeerId& peer, float volume);
+    float volume(const PeerId& peer) const;
 
     /// The pictures and the sound with them, of the one watched.
     std::optional<ReceivedVideoStats> video_stats() const;
@@ -288,8 +294,8 @@ private:
     struct PublishedAs;
     template <typename Player>
     struct Playing {
-        std::unique_ptr<AudioOutput> output;  ///< a sound's input of the mixer
-        std::unique_ptr<Player> player;       ///< after its output: stopped before it
+        std::unique_ptr<AudioMixer::Input> output;  ///< a sound's
+        std::unique_ptr<Player> player;             ///< after its output: stopped before it
         StreamDescription description;
         explicit operator bool() const noexcept { return player != nullptr; }
         /// The player first: it plays into the output.
@@ -360,6 +366,7 @@ private:
     Playing<VideoPlayer> video_;  ///< the watched's, as is sound_
     Playing<AudioPlayer> sound_;
     std::map<PeerId, Member> members_;
+    std::map<PeerId, float> volumes_;  ///< the voices not at 1
     Playing<DataPlayer> feed_;
     std::unique_ptr<DataPlayer> ended_feed_;  ///< writing out what it held
 };

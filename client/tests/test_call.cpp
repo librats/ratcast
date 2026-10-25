@@ -15,9 +15,11 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <map>
 #include <memory>
 #include <mutex>
+#include <span>
 #include <string>
 #include <thread>
 #include <vector>
@@ -171,6 +173,14 @@ public:
         const auto it = heard_from_.find(peer);
         return it != heard_from_.end() ? it->second : 0;
     }
+    /// The loudest sample the speaker plays over `span`, from a little after
+    /// now: what was pulled before is played out first.
+    float loudest(std::chrono::milliseconds span = 200ms) {
+        std::this_thread::sleep_for(50ms);
+        loudest_ = 0.0f;
+        std::this_thread::sleep_for(span);
+        return loudest_;
+    }
     size_t camera_pictures() {
         std::lock_guard lock(mutex_);
         return camera_pictures_;
@@ -228,7 +238,16 @@ private:
     size_t heard_ = 0;
     std::map<PeerId, size_t> heard_from_;
     std::vector<std::string> events_;
-    VirtualOutput speaker_{VirtualOutputConfig{}};
+    std::atomic<float> loudest_{0.0f};
+    VirtualOutput speaker_{
+        VirtualOutputConfig{}, [this](std::span<const float> samples, Timestamp) {
+            float block = 0.0f;
+            for (const float sample : samples) {
+                block = std::max(block, std::abs(sample));
+            }
+            float most = loudest_.load();
+            while (block > most && !loudest_.compare_exchange_weak(most, block)) {}
+        }};
     std::unique_ptr<Call> call_;  ///< last: it plays into the rest
 };
 
@@ -484,6 +503,32 @@ TEST_F(CallTest, EveryonesVoiceAndCameraPlay) {
     EXPECT_TRUE(host->camera_stats().contains(ann->id()));
     EXPECT_EQ(host.told_times("ended voice"), 1u);
     EXPECT_EQ(host->speaking(), std::vector{ann->id()});
+}
+
+TEST_F(CallTest, EachVoicePlaysAsLoudAsThisSideSets) {
+    Side host;
+    host.start(config(), false, false);
+    Side ann;
+    ann.start(config(RatsUrl{host.address()}), false, false);
+    ASSERT_TRUE(wait_for([&] { return host.told("joined"); }));
+
+    // Set before the voice plays: it starts silent, yet heard speaking.
+    host->set_volume(ann->id(), 0.0f);
+    EXPECT_EQ(host->volume(ann->id()), 0.0f);
+    ann.publish_voice();
+    ASSERT_TRUE(wait_for([&] { return host.heard_from(ann->id()) >= 25; }));
+    EXPECT_TRUE(wait_for([&] { return host->speaking() == std::vector{ann->id()}; }));
+    EXPECT_EQ(host.loudest(), 0.0f);
+
+    // Turned up and down as it plays; the tone is at half of full scale.
+    host->set_volume(ann->id(), 1.0f);
+    EXPECT_EQ(host->volume(ann->id()), 1.0f);
+    EXPECT_GT(host.loudest(), 0.35f);
+    host->set_volume(ann->id(), 0.25f);
+    const float quarter = host.loudest();
+    EXPECT_GT(quarter, 0.07f);
+    EXPECT_LT(quarter, 0.2f);
+    EXPECT_EQ(host->volume(host->id()), 1.0f) << "anyone else's as it comes";
 }
 
 TEST_F(CallTest, PlaysTheScreenOfWhomItWatchesAndReceivesNoOther) {

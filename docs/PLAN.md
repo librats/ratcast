@@ -160,7 +160,7 @@ final place and shape: stage 0 is a walking skeleton, not a throwaway prototype.
 | **4. Platforms** — in part | GPU paths and hardware codecs; Windows ✅ (its GPU path too) and macOS capture; netsim ✅ | — |
 | **5. Watch together** ✅ | one-to-many: a sender's budget, synchronised playout, forwarding tree, SFU and E2EE; simulcast and cinema put off | L5 ✅ |
 | **6. App** ✅ | Qt app MVP, one to one: invites, voice with AEC / NS, screen / window / app-audio share, camera; on Linux first, the other OSes as stage 4 reaches them | — |
-| **7. Conferences** | active speaker, last-N, grid, moderation, text chat | — |
+| **7. Conferences** — in part | text chat, a link that holds, each member heard as loud as the listener sets ✅, active speaker, last-N, grid, moderation | — |
 | **8. Beyond** | Android, cinema mode, HDR, polish | — |
 | **9. Call monitor** ✅ | what a call does, as it does it: quality, bitrate, size, frame time, whether each end keeps up — a line a second in the console, a panel in the app | — |
 | **10. Room** ✅ | a voice lobby for a few, as Discord's: everyone with everyone, all talking from the start, who is there and who speaks, mute and deafen, anyone's screen or camera on and off while the room goes on | — |
@@ -1237,7 +1237,45 @@ real desktop.
 
 ### Stage 7 — Conferences
 
-Active speaker, last-N, grid, moderation, text chat.
+The room of stage 10 as a place people stay in: what they say in writing, a link that holds
+through a network's change, each heard as the listener likes, the cameras of many, and someone
+to keep order. *Done when* four or five apps in one room chat (a late joiner sees what was
+said), one loses its network for ten seconds and comes back by itself, each hears the others
+as loud as they set, the cameras are a grid with whoever speaks shown, and the room's maker
+sends one out. Steps are taken in the order the user picks, not their numbers'.
+
+- **7.1 Text chat**: messages over the session's control lane (a wire message of their own),
+  from the peer that sent them over its Noise connection; a late joiner given the last ones by
+  any member; a panel in the app, shown as plain text, links opened on a click, a count unread.
+- **7.2 A link that holds**: a member whose link is lost without leaving is dialed again (stage
+  10 left it to rejoin), shown as coming back meanwhile, through a server where no punch gets
+  through.
+- **7.3 Each heard as the listener likes** ✅ (in part): how loud each member's voice plays on
+  this side alone, muted here, kept for the next room. Left: push-to-talk, sounds as members
+  come, go and share.
+  Done so: an `AudioMixer` input has a volume (`set_volume()`, 0 to any, applied as it is
+  pulled — a silent one still pulled, so its player keeps its time and its `heard`); `Call`
+  keeps a volume for each peer (`set_volume()` / `volume()`), its voice's input set to it as it
+  plays and whenever changed, for a peer not yet heard too. The app's controller keeps how each
+  member is heard (`setVolume()`, 0 to 200 %, `setMutedHere()`, the volume kept under it) by peer
+  id in the settings, the members' rows saying both (`volume`, `mutedHere`); a click on a name
+  opens a slider, Mute for me and Reset, and a row says "60%" or "off for you". Who speaks is
+  seen as before, and the others are told nothing. A member is known by peer id, and one who
+  makes a room and one who joins a room are two identities (the guest's of 10.4): each kept
+  apart. Tested: the mixer's inputs at their volumes (alone and with others, clamped, silent and
+  still pulled, below 0 and NaN); a call on real nodes, a voice set silent before it plays yet
+  heard speaking, then up and down as it plays, measured at the speaker; two controllers, Bob at
+  half as loud and muted at Ann's speaker, still speaking, kept and found by another controller
+  on the same settings, nothing kept once back to as he comes; the rows' roles. Debug 582
+  passed (the rest skipped for hardware).
+- **7.4 Active speaker and a grid**: the cameras a grid, whoever speaks marked or made larger;
+  last-N — only the cameras of the last N to speak received, the rest a name — once rooms pass
+  five or six.
+- **7.5 Order**: the room's maker (its peer id in the link) asks a member to mute, sends one
+  out and keeps them out — each member drops them — and invites that let in only who has one;
+  who keeps order when the maker leaves.
+- **7.6 Rooms past a mesh** (when there are such): sound through a server, the top speakers by
+  level (5.6's); simulcast (5.4); Forward's 64.
 
 ### Stage 8 — Beyond
 

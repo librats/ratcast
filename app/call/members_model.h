@@ -25,8 +25,10 @@ struct Member {
     bool muted = false;
     bool deafened = false;
     bool speaking = false;
-    bool camera = false;   ///< its camera on
-    bool sharing = false;  ///< a screen or a window shared
+    bool camera = false;      ///< its camera on
+    bool sharing = false;     ///< a screen or a window shared
+    double volume = 1.0;      ///< how loud it is heard here: 1 as it comes
+    bool muted_here = false;  ///< not heard here, whatever its volume (role `mutedHere`)
 
     friend bool operator==(const Member&, const Member&) = default;
 };
@@ -44,6 +46,8 @@ public:
         SpeakingRole,
         CameraRole,
         SharingRole,
+        VolumeRole,
+        MutedHereRole,
     };
 
     using QAbstractListModel::QAbstractListModel;

@@ -5,45 +5,35 @@
 
 namespace ratcast {
 
-class AudioMixer::Input final : public AudioOutput {
-public:
-    explicit Input(AudioMixer& mixer) noexcept : mixer_(mixer) {}
-    ~Input() override { stop(); }
-
-    const AudioFormat& format() const noexcept override { return mixer_.output_.format(); }
-
-    Result<void> start(Pull pull, EndHandler ended) override {
-        if (pull_) return fail(Errc::InvalidArgument);
-        pull_ = std::move(pull);
-        ended_ = std::move(ended);
-        if (Result<void> started = mixer_.start(*this); !started) {
-            pull_ = {};
-            ended_ = {};
-            return started;
-        }
-        return {};
-    }
-
-    void stop() override {
-        if (!pull_) return;
-        mixer_.stop(*this);
+Result<void> AudioMixer::Input::start(Pull pull, EndHandler ended) {
+    if (pull_) return fail(Errc::InvalidArgument);
+    pull_ = std::move(pull);
+    ended_ = std::move(ended);
+    if (Result<void> started = mixer_.start(*this); !started) {
         pull_ = {};
         ended_ = {};
+        return started;
     }
+    return {};
+}
 
-    Pull pull_;
-    EndHandler ended_;
+void AudioMixer::Input::stop() {
+    if (!pull_) return;
+    mixer_.stop(*this);
+    pull_ = {};
+    ended_ = {};
+}
 
-private:
-    AudioMixer& mixer_;
-};
+void AudioMixer::Input::set_volume(float volume) noexcept {
+    volume_.store(volume > 0.0f ? volume : 0.0f, std::memory_order_relaxed);  // NaN: 0
+}
 
 AudioMixer::~AudioMixer() {
     std::lock_guard lifecycle(lifecycle_);
     if (running_) output_.stop();
 }
 
-std::unique_ptr<AudioOutput> AudioMixer::input() { return std::make_unique<Input>(*this); }
+std::unique_ptr<AudioMixer::Input> AudioMixer::input() { return std::make_unique<Input>(*this); }
 
 Result<void> AudioMixer::start(Input& input) {
     std::lock_guard lifecycle(lifecycle_);
@@ -83,7 +73,7 @@ void AudioMixer::stop(Input& input) {
 void AudioMixer::pull(std::span<float> out, Timestamp play_time) {
     std::lock_guard lock(mutex_);
     std::ranges::fill(out, 0.0f);
-    if (inputs_.size() == 1) {
+    if (inputs_.size() == 1 && inputs_.front()->volume() == 1.0f) {
         inputs_.front()->pull_(out, play_time);
         return;
     }
@@ -92,7 +82,8 @@ void AudioMixer::pull(std::span<float> out, Timestamp play_time) {
     for (Input* input : inputs_) {
         std::ranges::fill(share, 0.0f);
         input->pull_(share, play_time);
-        for (size_t i = 0; i < out.size(); ++i) out[i] += share[i];
+        const float volume = input->volume();
+        for (size_t i = 0; i < out.size(); ++i) out[i] += share[i] * volume;
     }
     for (float& sample : out) sample = std::clamp(sample, -1.0f, 1.0f);
 }

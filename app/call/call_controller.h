@@ -42,6 +42,7 @@
 #include <QMap>
 #include <QObject>
 #include <QPointer>
+#include <QSettings>
 #include <QString>
 #include <QStringList>
 #include <QTimer>
@@ -93,6 +94,8 @@ class CallController : public QObject {
     /// The others in the room (MembersModel): peerId, peer (a short one),
     /// name, muted, deafened, speaking, camera, sharing.
     Q_PROPERTY(QAbstractItemModel* members READ members CONSTANT)
+    /// The loudest a member can be heard (setVolume()).
+    Q_PROPERTY(double maxVolume READ maxVolume CONSTANT)
     /// How many of the others have their camera on.
     Q_PROPERTY(int cameras READ cameras NOTIFY camerasChanged)
     /// The microphone silenced, as the user says; kept from one room to the
@@ -132,6 +135,9 @@ public:
     enum class State { Idle, Joining, InRoom };
     Q_ENUM(State)
 
+    /// The loudest a member is heard: twice the amplitude, +6 dB.
+    static constexpr double kMaxVolume = 2.0;
+
     /// What the controller takes from the system; tests stand in for it.
     struct Environment {
         /// What every room starts from: where it listens, its protocol.
@@ -157,10 +163,13 @@ public:
         QString server = {};
         /// The screen kept on while a share is watched; null: left alone.
         std::function<std::unique_ptr<ScreenAwake>()> keep_screen_awake = {};
+        /// Where how each member is heard — how loud, muted here — is kept
+        /// from one run to the next; null: while the controller lives.
+        std::function<std::unique_ptr<QSettings>()> settings = {};
 
         /// This computer's: its desktop, its speaker, the user's data
-        /// directory and name, discoverable through the DHT, the build's
-        /// server (RATCAST_DEFAULT_SERVER).
+        /// directory, settings and name, discoverable through the DHT, the
+        /// build's server (RATCAST_DEFAULT_SERVER).
         static Environment system();
     };
 
@@ -182,6 +191,12 @@ public:
     Q_INVOKABLE void stopSharing();
     /// Watch the share of the member of `id`; "": none.
     Q_INVOKABLE void watch(const QString& id);
+    /// How loud the member of `id` is heard on this side alone: from 0
+    /// through 1, as they come, to kMaxVolume; kept for them, in this room
+    /// and the next.
+    Q_INVOKABLE void setVolume(const QString& id, double volume);
+    /// The member of `id` not heard on this side at all, their volume kept.
+    Q_INVOKABLE void setMutedHere(const QString& id, bool muted);
     /// Draw the camera of the member of `id` into `view`; null: nowhere.
     Q_INVOKABLE void setCameraView(const QString& id, ratcast::app::VideoView* view);
     /// Put `text` on the clipboard: an invite, for the user to send.
@@ -195,6 +210,7 @@ public:
     QString server() const { return server_; }
     void setServer(const QString& server);
     MembersModel* members() { return &members_; }
+    static double maxVolume() { return kMaxVolume; }
     const MembersModel& memberList() const { return members_; }
     int cameras() const { return cameras_on_; }
     bool muted() const { return muted_; }
@@ -278,6 +294,17 @@ private:
     void update_members();
     /// `watched` anew, from the row of the member watched.
     void update_watched();
+    /// How a member is heard on this side, as the user set it.
+    struct Hearing {
+        double volume = 1.0;
+        bool muted = false;
+        friend bool operator==(const Hearing&, const Hearing&) = default;
+    };
+    /// What the settings keep, and the call told it.
+    void load_hearing();
+    /// `id` heard so from now on: kept, saved, the call told.
+    void hear(const QString& id, Hearing hearing);
+    void tell_hearing(const QString& id, const Hearing& hearing);
     void update_levels();
     /// Report on the call just started, every second and, if asked, on
     /// standard output.
@@ -295,6 +322,7 @@ private:
     QString name_;
     QString server_;
     MembersModel members_;
+    QMap<QString, Hearing> hearing_;  ///< the members not heard as they come, by id
     int cameras_on_ = 0;
     bool muted_ = false;
     bool deafened_ = false;

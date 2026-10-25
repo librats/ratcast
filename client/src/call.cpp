@@ -380,7 +380,7 @@ void Call::play(Playing<Player>& slot, const PeerId& peer, const StreamDescripti
                 std::vector<std::function<void()>>& events) {
     const CallPlayback& playback = config_.playback;
     MediaSession& media = session();
-    std::unique_ptr<AudioOutput> output;
+    std::unique_ptr<AudioMixer::Input> output;
     std::unique_ptr<Player> player;
     if constexpr (std::is_same_v<Player, VideoPlayer>) {
         // A camera keeps its own time; the other pictures go with the sound.
@@ -401,6 +401,9 @@ void Call::play(Playing<Player>& slot, const PeerId& peer, const StreamDescripti
             };
         }
         output = mixer_->input();
+        if (const auto set = volumes_.find(peer); voice && set != volumes_.end()) {
+            output->set_volume(set->second);
+        }
         player = std::make_unique<AudioPlayer>(media, peer, description, *output,
                                                AudioPlayerConfig{.sync = voice ? nullptr : &sync_},
                                                std::move(observer));
@@ -629,6 +632,26 @@ std::optional<AudioPlayerStats> Call::sound_stats() const {
     std::lock_guard lock(playing_);
     if (!sound_) return std::nullopt;
     return sound_.player->stats();
+}
+
+void Call::set_volume(const PeerId& peer, float volume) {
+    volume = volume > 0.0f ? volume : 0.0f;  // as the mixer takes it, NaN 0
+    std::lock_guard lock(playing_);
+    if (volume == 1.0f) {
+        volumes_.erase(peer);
+    } else {
+        volumes_[peer] = volume;
+    }
+    const auto member = members_.find(peer);
+    if (member != members_.end() && member->second.voice) {
+        member->second.voice.output->set_volume(volume);
+    }
+}
+
+float Call::volume(const PeerId& peer) const {
+    std::lock_guard lock(playing_);
+    const auto set = volumes_.find(peer);
+    return set != volumes_.end() ? set->second : 1.0f;
 }
 
 std::vector<PeerId> Call::speaking(Duration hold) const {
