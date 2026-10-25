@@ -1,45 +1,141 @@
 # ratcast
 
-P2P voice, video and screen sharing built on [librats](https://github.com/librats/librats) —
-made for watching movies and games together: one person streams, everyone else watches.
+<p align="center">
+  <a href="https://github.com/librats/ratcast">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="docs/logo-dark.png">
+      <img alt="ratcast" src="docs/logo.png" width="480">
+    </picture>
+  </a>
+</p>
 
-- **libratcast** — a media transport library over librats (in the spirit of librist / SRT):
-  deadline-bound delivery, FEC, congestion-driven rate control, one-to-many fan-out.
-- **ratcast** — a Qt 6 desktop app for calls and streams (Windows, Linux, macOS; Android later).
+<p align="center">
+  <a href="https://github.com/librats/ratcast/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/librats/ratcast/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="https://github.com/librats/ratcast/releases"><img alt="Release" src="https://img.shields.io/github/release/librats/ratcast.svg"></a>
+  <a href="LICENSE"><img alt="MIT License" src="https://img.shields.io/badge/License-MIT-blue.svg"></a>
+  <a href="https://isocpp.org/"><img alt="C++20" src="https://img.shields.io/badge/C%2B%2B-20-blue.svg"></a>
+</p>
 
-Early development. See [docs/PLAN.md](docs/PLAN.md) for the design and roadmap.
+<p align="center"><b>Peer-to-peer calls and screen sharing for watching things together.</b></p>
+
+One person shares a movie, a game or a desktop, and the others watch it live while everyone talks.
+There is no account to create and no service in the middle. You make a room, send the link, and
+the picture goes straight from the sharer to each viewer, encrypted end to end.
+
+ratcast is built on [librats](https://github.com/librats/librats). It comes in two parts:
+
+- **ratcast**: the desktop app for Windows and Linux. macOS and Android are planned.
+- **libratcast**: the media transport underneath it. You can use it on its own, much like SRT
+  or librist.
+
+## Features
+
+- **Rooms by link.** Make a room, copy its `rats://` link and send it to whoever should join.
+  Peers find each other through the DHT. A server is optional.
+- **Share a screen or a window with its sound.** Viewers hear what your applications play, but
+  never the call's own voices.
+- **Voice that is easy to listen to.** Echo cancellation, noise suppression and automatic gain
+  (WebRTC AudioProcessing) are built in. You can mute or deafen yourself and see who is speaking.
+- **Camera.** Each side can show itself next to the share.
+- **Hardware encoding.** AV1, HEVC and H.264 run on NVENC, AMF or Quick Sync when a GPU has
+  them. Otherwise SVT-AV1, libaom or OpenH264 encode on the CPU. On Windows the screen goes to the
+  encoder without leaving the GPU.
+- **Low latency on real networks.** Rate control follows the path, and FEC and retransmission
+  repair losses within each frame's deadline. On one host a picture takes about 18 ms from
+  capture to the screen. The numbers for lossy and distant paths are in
+  [docs/bench.md](docs/bench.md).
+- **Encrypted end to end.** Connections use the Noise protocol, and every frame is also sealed
+  with SFrame. A server that forwards a share can't read it.
+- **Gets through NATs.** It tries port mapping and hole punching first, then falls back to a
+  relay through a `ratcast-server` when nothing else works.
+- **Updates itself.** The app installs new releases from GitHub, but never while a call is on.
+
+## Download
+
+Get the latest build from [Releases](https://github.com/librats/ratcast/releases).
+
+| Platform | Package | Notes |
+|---|---|---|
+| Windows 10/11 x64 | `ratcast-<version>-windows-x64.zip` | Unzip and run `ratcast.exe` |
+| Linux x86_64 | `ratcast-<version>-linux-x86_64.AppImage` | glibc 2.39+ and PipeWire 1.0+ (Ubuntu 24.04, Debian 13, Fedora 40 or newer) |
+
+## Using it
+
+1. **Make a room** and send the link it shows to your friends.
+2. They paste the link and press **Join**. A link given on the command line works too:
+   `ratcast rats://…`.
+3. Press **Share**, choose a screen or a window, and decide whether to share its sound.
+   The others press **Watch**.
+
+While watching, press **F** or double-click the picture to go full screen, and **Esc** to leave
+it. **Ctrl+I** shows how the call is going: bitrate, latency and losses.
+
+The app keeps its identity and log (`ratcast.log`) in `%LOCALAPPDATA%\ratcast` on Windows and in
+`~/.local/share/ratcast` on Linux. To find them, use **Open log folder**.
+
+## Running a server
+
+Calls usually connect directly. A `ratcast-server` on a public host helps the rest. Rooms behind
+strict NATs can meet there, and it relays a connection when no direct path can be punched. It
+can also forward a share, so the sharer uploads one copy no matter how many people watch. It
+can't read anything it carries, and calls work fine without one.
+
+The server needs only librats and libratcast, with no media libraries and no Qt:
+
+```bash
+git clone --recursive https://github.com/librats/ratcast.git
+cd ratcast
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DRATCAST_SERVER_ONLY=ON -DRATCAST_BUILD_TESTS=OFF
+cmake --build build --parallel 2
+sudo cmake --install build                  # /usr/local/bin/ratcast-server
+sudo cp server/ratcast-server.service /etc/systemd/system/
+sudo systemctl enable --now ratcast-server
+journalctl -u ratcast-server -f             # its id, then what it does each minute
+```
+
+The server listens on port **7700, both UDP and TCP** (change it with `--port`), so open both in
+the firewall. Enter it in the app as *A server to meet at* (`HOST` or `HOST:PORT`), or pass
+`--server HOST` to the tools. A build can name a default server with
+`-DRATCAST_DEFAULT_SERVER=HOST`. `ratcast-server --help` lists the limits you can set.
 
 ## Building
 
 ```bash
 git clone --recursive https://github.com/librats/ratcast.git
 cd ratcast
-cmake --preset debug          # or: core (libraries only, no Qt), release, asan
+cmake --preset debug          # or: core (libraries only, no Qt), release, asan, tsan
 cmake --build --preset debug
 ctest --preset debug
 ```
 
-Requirements: CMake 3.22+, Ninja, a C++20 compiler, and for the app Qt 6.6+ with Qt Quick, Qt
-Shader Tools and QtGui's private headers, for QRhi (Debian/Ubuntu: `qt6-declarative-dev
-qt6-shadertools-dev qt6-base-private-dev`; the Qt installer: add the Qt Shader Tools module).
-Without them the app is skipped and the libraries still build.
+If you already cloned without `--recursive`, run `git submodule update --init --recursive`.
 
-### Windows
+**Requirements:** CMake 3.22+, Ninja and a C++20 compiler. The media libraries are optional:
+FFmpeg, libopus, PipeWire and `webrtc-audio-processing-1`, found through pkg-config. Without one
+of them, the parts that need it are left out. The app also needs Qt 6.6+ with Qt Quick,
+Qt Shader Tools and QtGui's private headers. On Debian and Ubuntu, install
+`qt6-declarative-dev qt6-shadertools-dev qt6-base-private-dev`. With the Qt installer, add the
+Qt Shader Tools module. Without Qt the app is skipped and the libraries still build.
 
-Visual Studio 2022 (MSVC) and the Windows SDK; the media libraries come from
-[vcpkg](https://vcpkg.io), WebRTC's AudioProcessing (echo cancellation) through the overlay port
-in this repository:
+Programs are built into `build/<preset>/bin`.
+
+<details>
+<summary><b>Windows</b></summary>
+
+You need Visual Studio 2022 (MSVC) and the Windows SDK. The media libraries come from
+[vcpkg](https://vcpkg.io), and WebRTC's AudioProcessing comes from the overlay port in this
+repository:
 
 ```powershell
 vcpkg install ffmpeg[avcodec,avformat,swscale,nvcodec,amf,qsv,dav1d,svt-av1,aom,openh264] `
     opus pkgconf webrtc-audio-processing sdl3 --overlay-ports=cmake/vcpkg-ports --triplet x64-windows
 ```
 
-FFmpeg's features are every encoder the engine may pick: NVENC, AMF and Quick Sync for the GPUs
-(their runtimes come with the drivers), SVT-AV1, libaom and OpenH264 where there is none. Never
-add `gpl` or `version3`: the app is MIT and ships FFmpeg as LGPL 2.1.
+These FFmpeg features cover every encoder the engine may pick. The GPU encoders (NVENC, AMF,
+Quick Sync) get their runtimes from the drivers. Never add `gpl` or `version3`: the app is MIT
+and ships FFmpeg under LGPL 2.1.
 
-Then configure with vcpkg's toolchain and Qt's prefix, e.g. in a `CMakeUserPresets.json`:
+Then configure with vcpkg's toolchain and Qt's prefix, for example in a `CMakeUserPresets.json`:
 
 ```json
 {
@@ -55,60 +151,45 @@ Then configure with vcpkg's toolchain and Qt's prefix, e.g. in a `CMakeUserPrese
 }
 ```
 
-Screens and windows are captured through Windows.Graphics.Capture (Windows 10 1903+), sound
-through WASAPI (the applications' sound without the call's own needs Windows 10 2004+), cameras
-through Media Foundation.
+The app captures screens through Windows.Graphics.Capture (Windows 10 1903+), sound through
+WASAPI and cameras through Media Foundation. Sharing the applications' sound without the call's
+own needs Windows 10 2004 or newer.
 
-`cmake --install` lays out a folder that runs on a bare Windows: the programs, the DLLs they
-import, Qt's (windeployqt) and MSVC's runtime. That folder, zipped, is what
-[the release workflow](.github/workflows/release.yml) publishes for a `v*` tag (the binaries
-take its version: `-DRATCAST_VERSION`, else the last `v*` tag git sees), and leaves as an artifact for every push to main — beside a Linux AppImage
-(the app with FFmpeg's same encoders, Qt and the rest, but PipeWire and GLib, which are the
-machine's: glibc 2.39 and PipeWire 1.0 or newer, as on Ubuntu 24.04, Debian 13, Fedora 40).
-Both keep themselves at the latest release (`-DRATCAST_UPDATES=ON`, which only that workflow
-sets): a little after the start and every six hours the app looks at GitHub's latest release,
-downloads its package for the system — never while a call is on — checks it against the SHA-256
-GitHub gives, and puts it in place. The AppImage is replaced at once; the Windows folder at the
-next start. It starts with the next launch, or at once with "Restart now"; "Update
-automatically", unticked, leaves it to the user.
+`cmake --install` lays out a folder that runs on a bare Windows. It holds the programs, their
+DLLs, Qt and MSVC's runtime.
 
-The app keeps its identity, what it learnt of the DHT and its log, `ratcast.log` (the last few
-runs beside it), in `%LOCALAPPDATA%\ratcast` on Windows and `~/.local/share/ratcast` on Linux;
-"Open log folder" opens it.
+</details>
 
-Already cloned without `--recursive`: `git submodule update --init --recursive`.
+<details>
+<summary><b>Releases</b></summary>
 
-## Running a server
+[`release.yml`](.github/workflows/release.yml) builds the Windows zip and the Linux AppImage on
+every push to `main` and publishes them as a GitHub release for each `v*` tag. Both packages
+carry the same FFmpeg encoders. The version comes from `-DRATCAST_VERSION`, or else from the last
+`v*` tag. Only release builds update themselves (`-DRATCAST_UPDATES=ON`). They check GitHub
+shortly after start and then every six hours, and verify each download against its SHA-256. The
+AppImage is replaced at once. The Windows folder is replaced at the next start, or at once
+with **Restart now**.
 
-Calls behind NATs find each other through the DHT and usually connect directly. A
-`ratcast-server` on a public host makes the rest connect too: calls behind NATs meet there, and
-are carried by it where no direct path can be punched. It also forwards a share, one copy from
-the sharer for all its viewers it carries or the sharer's uplink cannot reach. It reads nothing:
-connections are end-to-end encrypted, and so is every frame. Calls work without one.
+</details>
 
-It needs librats and libratcast alone — no media libraries, no Qt:
+## libratcast
 
-```bash
-git clone --recursive https://github.com/librats/ratcast.git
-cd ratcast
-cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DRATCAST_SERVER_ONLY=ON -DRATCAST_BUILD_TESTS=OFF
-cmake --build build --parallel 2
-sudo cmake --install build                  # /usr/local/bin/ratcast-server
-sudo cp server/ratcast-server.service /etc/systemd/system/
-sudo systemctl enable --now ratcast-server
-journalctl -u ratcast-server -f             # its id, then what it does each minute
-```
+libratcast moves encoded frames between peers. It has no codecs and no capture, so it is useful
+without the rest of ratcast, and the server links only this library.
 
-Calls dial it on port 7700, UDP and TCP (`--port`): open both in the host's firewall. The app
-takes it in "A server to meet at", `HOST` or `HOST:PORT`, the tools as `--server HOST`; a build
-names one by default with `-DRATCAST_DEFAULT_SERVER=HOST`. `ratcast-server
---help` lists the rest: how much one carried connection may move, how many are carried at once.
+- **Deadline-bound delivery.** Each frame either arrives in time or is dropped, so the stream
+  never stalls behind an old one. Losses are repaired with FEC and retransmission.
+- **Rate control** follows librats' path measurements. When one peer receives several streams,
+  they share its path.
+- **One-to-many.** One sender can feed many viewers, directly or through a server.
+- **Every frame is encrypted with SFrame**, with a key for each sender.
+- **Tools.** `ratcast-send` and `ratcast-recv` can carry an MPEG-TS feed in and out.
+  `bench/netem.py` compares the transport with SRT and librist on emulated networks.
 
-## C API
-
-libratcast has a C API, [`ratcast/ratcast.h`](libratcast/include/ratcast/ratcast.h), on top of
-librats' own ([`rats.h`](external/librats/src/librats/bindings/rats.h)): librats makes the node
-and connects it, ratcast carries the media.
+libratcast has a C API, [`ratcast/ratcast.h`](libratcast/include/ratcast/ratcast.h), built on
+librats' own ([`rats.h`](external/librats/src/librats/bindings/rats.h)). librats creates the node
+and connects it, and ratcast carries the media:
 
 ```c
 rats_config_t config = {.protocol = RATCAST_PROTOCOL};  /* reaches ratcast-send */
@@ -125,8 +206,17 @@ ratcast_subscribe(media, peer_id, stream->id, 200000);
 ```
 
 A sender offers streams with `ratcast_add_stream()` and sends encoded frames with
-`ratcast_send_frame()`. [`test_capi_c.c`](libratcast/tests/test_capi_c.c) is a whole program.
+`ratcast_send_frame()`. [`test_capi_c.c`](libratcast/tests/test_capi_c.c) is a complete program.
+
+To try the transport on one machine, run `ratcast-send --source pattern --audio tone` and
+`ratcast-recv rats://127.0.0.1:7700`.
+
+## More
+
+- [docs/PLAN.md](docs/PLAN.md): the design and roadmap.
+- [docs/bench.md](docs/bench.md): measurements and how to reproduce them.
+- [librats](https://github.com/librats/librats): the P2P layer underneath.
 
 ## License
 
-[MIT](LICENSE)
+[MIT](LICENSE). ratcast has no GPL dependencies.
