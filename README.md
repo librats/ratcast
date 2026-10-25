@@ -213,8 +213,6 @@ To try the transport on one machine, run `ratcast-send --source pattern --audio 
 
 ## More
 
-- [docs/PLAN.md](docs/PLAN.md): the design and roadmap.
-- [docs/bench.md](docs/bench.md): measurements and how to reproduce them.
 - [librats](https://github.com/librats/librats): the P2P layer underneath.
 
 ## License
