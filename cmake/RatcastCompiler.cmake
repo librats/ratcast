@@ -15,4 +15,11 @@ function(ratcast_target_defaults target)
         # rarely used parts of the API out of our translation units.
         target_compile_definitions(${target} PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
     endif()
+
+    # Every program of ours runs with UTF-8 for its code page, as our strings
+    # are: MSVC's linker embeds the manifest that says so.
+    get_target_property(type ${target} TYPE)
+    if(MSVC AND type STREQUAL "EXECUTABLE")
+        target_sources(${target} PRIVATE "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/utf8.manifest")
+    endif()
 endfunction()
