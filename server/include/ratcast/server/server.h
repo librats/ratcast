@@ -22,9 +22,16 @@
  * whose connection it carries anyway. It watches nothing, decodes nothing,
  * keeps no frame.
  *
+ * Servers that announce themselves (ServerConfig::announce) know each other:
+ * each is found in the DHT under the protocol's key of servers
+ * (servers_key()) and connects to the others there, and tells each call it
+ * helps of them (librats' Rendezvous, Servers) — which the call keeps, to
+ * meet at any of them later.
+ *
  * Threads: every method may be called from any thread.
  */
 
+#include <chrono>
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -34,7 +41,10 @@
 #include "ratcast/ratcast.h"
 #include "ratcast/session/media_network.h"
 
+#include "librats/core/host_endpoint.h"
+
 namespace librats {
+class DhtDiscovery;
 class HolePunch;
 class Node;
 class Relay;
@@ -63,10 +73,31 @@ struct ServerConfig {
     size_t max_relayed_per_peer = 8;
     /// Peers connected at once.
     size_t max_peers = 1024;
+    /// Be found by the other servers and find them (servers_key()): calls
+    /// told of each — and so told of this one by the others — meet and are
+    /// carried here though their users never named it. Off by default, as
+    /// what it carries spends its owner's bandwidth.
+    bool announce = false;
+    /// The DHT an announcing server is found in: the internet's, or one of
+    /// its own (servers on one network, tests).
+    struct Dht {
+        /// Where it is entered; none: the internet's well-known nodes.
+        std::vector<librats::HostEndpoint> bootstrap = {};
+        /// Ask STUN where the server is seen from — its public address, and
+        /// a NAT's port — for its DHT id and what it announces; off in a DHT
+        /// of its own, where the internet's view is no use.
+        bool stun = true;
+        /// How often the others are looked for.
+        std::chrono::milliseconds search_every{30000};
+    } dht = {};
 };
 
+/// The DHT key servers of `protocol` announce themselves under.
+std::string servers_key(const std::string& protocol);
+
 struct ServerStats {
-    size_t peers = 0;          ///< connected now
+    size_t peers = 0;          ///< connected now, other servers too
+    size_t servers = 0;        ///< other servers connected now
     size_t registrations = 0;  ///< of rooms' keys, every peer's
     size_t relayed = 0;        ///< connections carried now
     uint64_t relayed_bytes = 0;
@@ -86,6 +117,8 @@ public:
 
     const PeerId& id() const noexcept;
     uint16_t port() const noexcept;
+    /// The DHT's port, where another server may enter it; 0: not announcing.
+    uint16_t dht_port() const noexcept;
     ServerStats stats() const;
 
 private:
@@ -96,6 +129,7 @@ private:
     librats::Rendezvous* rendezvous_ = nullptr;
     librats::HolePunch* punch_ = nullptr;
     librats::Relay* relay_ = nullptr;
+    librats::DhtDiscovery* dht_ = nullptr;  ///< announcing
 };
 
 }  // namespace ratcast

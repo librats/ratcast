@@ -16,6 +16,7 @@
 #include <atomic>
 #include <chrono>
 #include <cmath>
+#include <filesystem>
 #include <map>
 #include <memory>
 #include <mutex>
@@ -818,6 +819,12 @@ public:
     }
     ~StandInServer() { node_.stop(); }
 
+    /// Know `other`: each says Hello, a server the other's calls are told of.
+    void meet(const StandInServer& other) {
+        node_.connect("127.0.0.1", other.node_.listen_port());
+        EXPECT_TRUE(wait_for([&] { return node_.peer(other.id()).has_value(); }));
+    }
+
     const PeerId& id() const { return node_.local_id(); }
     librats::HostEndpoint address() const { return {"127.0.0.1", node_.listen_port()}; }
 
@@ -1021,6 +1028,37 @@ TEST_F(CallTest, AServerAMemberNamesIsNoMemberEither) {
     EXPECT_EQ(guest->peers(), std::vector<PeerId>{host->id()});
     EXPECT_TRUE(wait_for([&] { return guest.told_times("left") == 1; }));
     EXPECT_EQ(guest.told_times("joined"), 2u);
+}
+
+// The server a call meets at tells it of the others it knows; the call keeps
+// them in its data directory, and the next one there knows them from the start.
+TEST_F(CallTest, ACallKeepsTheServersItIsToldOfForTheNext) {
+    StandInServer server, other;
+    server.meet(other);
+    const std::filesystem::path folder =
+        std::filesystem::temp_directory_path() / "ratcast_call_known_servers";
+    std::filesystem::remove_all(folder);
+    const auto knows = [](Side& side, const librats::HostEndpoint& at) {
+        const std::vector<librats::HostEndpoint> known = side->known_servers();
+        return std::ranges::find(known, at) != known.end();
+    };
+    const auto knows_other = [&](Side& side) { return knows(side, other.address()); };
+
+    Side first;
+    CallConfig config = at_server(server);
+    config.data_dir = folder.string();
+    first.start(config, false, false);
+    EXPECT_TRUE(wait_for([&] { return knows_other(first); }));
+    EXPECT_FALSE(knows(first, server.address())) << "told of the server it is at";
+    first.hang_up();
+
+    Side next;
+    CallConfig alone = config;
+    alone.servers = {};
+    next.start(alone, false, false);
+    EXPECT_TRUE(knows_other(next));
+    next.hang_up();
+    std::filesystem::remove_all(folder);
 }
 
 TEST_F(CallTest, AScreenShareThatCannotPublishLeavesNothing) {

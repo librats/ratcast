@@ -133,6 +133,12 @@ the firewall. Enter it in the app's *Settings*, under *Network* (`HOST` or `HOST
 `--server HOST` to the tools. A build can name a default server with
 `-DRATCAST_DEFAULT_SERVER=HOST`. `ratcast-server --help` lists the limits you can set.
 
+With `--announce` the server is found by the other servers that announce themselves in the
+DHT, and finds them. Each tells the calls it helps about the others, and a call remembers them
+in its data folder. A build starts from the servers it is given with `-DRATCAST_SERVERS=HOST;…`
+(`degitx.com` by default). The DHT runs on a UDP port of its own, so let outgoing UDP and its
+answers through.
+
 ## Building
 
 ```bash

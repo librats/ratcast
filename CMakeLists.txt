@@ -52,6 +52,9 @@ option(RATCAST_UPDATES "The app updates itself from GitHub's releases (release p
 # The ratcast-server the app's rooms meet at until the user names another.
 set(RATCAST_DEFAULT_SERVER "" CACHE STRING
     "The server the app's rooms meet at by default: HOST or HOST:PORT; empty: none")
+# The ratcast-servers a client knows of from the start; more are learnt from them.
+set(RATCAST_SERVERS "degitx.com" CACHE STRING
+    "The servers a client knows of from the start: HOST or HOST:PORT, separated by ';'")
 set(RATCAST_UPDATE_REPOSITORY "librats/ratcast" CACHE STRING
     "The GitHub repository (owner/name) whose releases the app updates itself to")
 

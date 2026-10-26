@@ -165,7 +165,7 @@ final place and shape: stage 0 is a walking skeleton, not a throwaway prototype.
 | **8. Beyond** | Android, cinema mode, HDR, moderation, push-to-talk, rooms past a mesh, polish | — |
 | **9. Call monitor** ✅ | what a call does, as it does it: quality, bitrate, size, frame time, whether each end keeps up — a line a second in the console, a panel in the app | — |
 | **10. Room** ✅ | a voice lobby for a few, as Discord's: everyone with everyone, all talking from the start, who is there and who speaks, mute and deafen, anyone's screen or camera on and off while the room goes on | — |
-| **12. Getting through** — in part | a call that holds as a member's address changes (a VPN, another network); servers found without being typed in, the room's met at by all its members alike; joining fast and seen to be | L23 ✅ |
+| **12. Getting through** — in part | a call that holds as a member's address changes (a VPN, another network); servers found without being typed in, the room's met at by all its members alike; joining fast and seen to be | L23 ✅, L24 ✅ |
 | **11. Full screen** ✅ | a share watched on the whole screen with nothing else on it, the controls and the cursor there while the mouse moves; the picture pixel-exact; the screen kept awake while watching | — |
 
 ### Stage 0 — Skeleton ✅
@@ -1453,11 +1453,20 @@ it is.
   rules. Left: the circuit is not given up for a direct link afterwards within a run (the NAT
   state that blocks the dials outlives it); without a server, the DHT's 10 s rounds are all a
   move has.
-- **12.2 Servers that know each other**: a server announces itself in the DHT under a key of
-  the protocol (`ratcast-server --announce`, as relaying spends its owner's bandwidth), finds
-  the others there and tells a client the ones it knows; a client keeps them in its data
-  directory, starts from a list the build carries (degitx.com) and refreshes it in the
-  background — joining never waits for the DHT.
+- **12.2 Servers that know each other** ✅: a server announces itself in the DHT under the
+  protocol's key of servers (`ratcast-server --announce`, off by default as relaying spends its
+  owner's bandwidth; `servers_key()`: "ratcast/0/servers"), connects to the others found there
+  and tells each call it helps of them (librats L24: Rendezvous' Servers, as the call connects
+  and as it registers again once another came). A call keeps what it is told in its data
+  directory (`KnownServers`, the file `servers`: the most lately told of first, 64 at most, one
+  not told of for 30 days forgotten), after the list the build carries (`RATCAST_SERVERS`,
+  "degitx.com"); `Call::known_servers()`. Nothing waits for the DHT: a call starts from what it
+  has, and learns more from any server it meets. Tested: three servers in a DHT of their own
+  find each other and a call is told of the two it is not at (`server_tests`); Rendezvous'
+  Servers, once, never of the peer itself, from a server alone; the list kept, aged, capped and
+  read past a bad line; a call keeping what it is told for the next. Left: the list is not used
+  to meet yet (12.3); a server is known by the address it is seen at, so the build's
+  `degitx.com` and its IP are two entries until 12.3 resolves them.
 - **12.3 The room's server, the same for all**: of the servers a client knows, the first k by a
   hash of the room's key and the server (rendezvous hashing: one by IP, weighted by what a
   server says it can carry in its Hello), registered with all k — two members with lists that
@@ -1498,6 +1507,7 @@ and the list is in priority order:
 | | L21 (c) | The same: a node both reach to meet and relay through | needed | 6, 10 (over the internet) | ✅ |
 | | L22 | A lost peer dialed again; a node that leaves says so | needed | 7.2 | ✅ |
 | | L23 | A peer that moves: told of by the server, its dead link replaced | needed | 12.1 | ✅ |
+| | L24 | Servers that know each other, and tell their peers of the others | needed | 12.2 | ✅ |
 | 2 | L2 (a) | A live flow's start: the initial window | needed | 1.2 (long paths) | put off; eased by (b) |
 | 3 | L15 | Fewer system calls per reactor turn | improves | 3.2 (CPU) | |
 | 4 | L16 | ProbeRTT that does not starve a live flow | improves | 3.2 (`reorder`) | |
@@ -1706,6 +1716,17 @@ relayed one), while `Relay` refused a circuit to a peer connected at all. Now:
   identify) with no disconnect; an end whose link the other closed for a standby hears a reset
   and hands over too; of two standbys, `PeerTable::prevails` — the table's own rules — as at
   the other end; a peer that leaves takes its standby with it. `Node::standbys()`.
+
+**L24 — Servers that know each other, and tell their peers of the others.** ✅ *Needed by
+12.2.* A node knew a server only by being given it or by a member's naming it. Now:
+- `Rendezvous`: servers connected to each other say Hello both ways (as before); a server tells
+  each peer the others it is connected to — op Servers, `[count] × {ip, port}`, the first of
+  each one's endpoints — as it says Hello, and again as it answers a registration when another
+  has come since (not on every one); never the peer itself. A node hears it from a server alone
+  (`on_servers()`) and keeps it as it likes: Rendezvous dials only `Config::servers`.
+- `DhtDiscovery`: a peer found connected is, once its link goes, dialed as though found for the
+  first time (`Redials::connected`) — before, one first found more than `redial_for` (2 min)
+  ago was never dialed again, so two servers up for long that lost their link stayed apart.
 
 **L13 — Fewer ACKs for live data.** *Optional; tried, put off.* An ACK every second packet
 (RFC 9000) is ~440 a second for an 8 Mbit/s feed in full frames — 0.22 Mbit/s back (2.7% of the

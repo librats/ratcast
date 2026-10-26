@@ -3,6 +3,7 @@
 #include "ratcast/session/media_service.h"
 
 #include "librats/node/node.h"
+#include "librats/subsystems/dht_discovery.h"
 #include "librats/subsystems/hole_punch.h"
 #include "librats/subsystems/relay.h"
 #include "librats/subsystems/rendezvous.h"
@@ -21,6 +22,8 @@ librats::NodeConfig node_config(const ServerConfig& config) {
 }
 
 }  // namespace
+
+std::string servers_key(const std::string& protocol) { return protocol + "/servers"; }
 
 Result<std::unique_ptr<Server>> Server::start(ServerConfig config) {
     std::unique_ptr<Server> server(new Server(config));
@@ -49,6 +52,18 @@ Server::Server(const ServerConfig& config)
     // A call lasts as long as it lasts: a carried one is not cut after an hour.
     relay.max_circuit_duration = std::chrono::seconds(0);
     relay_ = node_->add_subsystem(std::make_unique<librats::Relay>(relay));
+    if (config.announce) {
+        // Found under the key of servers, and connecting to the others found
+        // there: each says Hello, and is a server the calls here are told of.
+        librats::DhtDiscovery::Config discovery;
+        discovery.discovery_key = servers_key(config.protocol);
+        discovery.bind_address = config.bind_address;
+        discovery.data_dir = config.data_dir;
+        discovery.bootstrap_nodes = config.dht.bootstrap;
+        discovery.discover_external_ip = config.dht.stun;
+        discovery.search_interval = config.dht.search_every;
+        dht_ = node_->add_subsystem(std::make_unique<librats::DhtDiscovery>(discovery));
+    }
 }
 
 Server::~Server() { node_->stop(); }
@@ -57,9 +72,12 @@ const PeerId& Server::id() const noexcept { return node_->local_id(); }
 
 uint16_t Server::port() const noexcept { return node_->listen_port(); }
 
+uint16_t Server::dht_port() const noexcept { return dht_ ? dht_->dht_port() : 0; }
+
 ServerStats Server::stats() const {
     ServerStats stats{
         .peers = node_->peer_count(),
+        .servers = rendezvous_->servers().size(),
         .registrations = rendezvous_->registrations(),
         .relayed = relay_->carried_circuits(),
         .relayed_bytes = relay_->carried_bytes(),

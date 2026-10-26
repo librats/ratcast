@@ -37,7 +37,8 @@
  * a room's members, however they joined, are carried by one they all reach.
  * A server is no member: never among peers(), nor joined, nor given the key
  * this side's frames are sealed under end to end — what it carries or
- * forwards, it cannot read.
+ * forwards, it cannot read. A server tells of the others it knows, which the
+ * call keeps in its data directory (known_servers(), KnownServers).
  *
  * A call may be a room (CallConfig::mesh): everyone with everyone, whoever
  * joins by whichever member's link. Each peer connected is asked whom it has,
@@ -75,6 +76,7 @@
 #include "ratcast/client/audio_publisher.h"
 #include "ratcast/client/data_player.h"
 #include "ratcast/client/data_publisher.h"
+#include "ratcast/client/known_servers.h"
 #include "ratcast/client/playout_clock.h"
 #include "ratcast/client/rats_url.h"
 #include "ratcast/client/video_player.h"
@@ -267,6 +269,9 @@ public:
     /// The servers it is connected to (CallConfig::servers, or named by a
     /// peer): none of peers().
     std::vector<PeerId> servers() const;
+    /// The servers this side knows of: the build's, and those servers told it
+    /// of — in this call or, kept in the data directory, an earlier one.
+    std::vector<librats::HostEndpoint> known_servers() const;
     /// Say who this side is — a name, muted, deafened — to every peer now and
     /// to each as it connects. Fails with InvalidArgument for a presence that
     /// is not valid.
@@ -412,6 +417,7 @@ private:
     librats::Node node_;
     MediaService* media_ = nullptr;              ///< the node's
     librats::Rendezvous* rendezvous_ = nullptr;  ///< the node's, if it meets by peer id
+    KnownServers known_servers_;
     /// The peers away, and what each member last said of itself: kept while
     /// it is away and as it comes back, until it says again.
     mutable std::mutex members_mutex_;

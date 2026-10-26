@@ -6,6 +6,8 @@
 # Its own user, made for it as it starts; its identity — the peer id calls
 # know it by — kept in /var/lib/ratcast-server across restarts. Calls dial
 # port 7700, UDP and TCP: open both where a firewall stands in front.
+# Add --announce to ExecStart for calls to find it by themselves (the DHT's
+# own port, UDP, is any: let outgoing UDP and its answers through).
 
 [Unit]
 Description=ratcast-server: calls behind NATs meet and are carried here

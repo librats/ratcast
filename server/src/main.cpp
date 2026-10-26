@@ -2,8 +2,8 @@
 // carried by where nothing else gets through (ratcast/server/server.h).
 //
 //   ratcast-server [--port 7700] [--bind ADDRESS] [--data-dir DIR]
-//                  [--relay-mbps 20] [--max-relayed 64] [--stats-every 10]
-//                  [--verbose]
+//                  [--relay-mbps 20] [--max-relayed 64] [--announce]
+//                  [--stats-every 10] [--verbose]
 
 #include <atomic>
 #include <charconv>
@@ -28,6 +28,9 @@ constexpr const char* kUsage =
     "  --data-dir DIR    where the server keeps its identity across runs\n"
     "  --relay-mbps N    what one carried connection may move each way (20)\n"
     "  --max-relayed N   connections carried at once (64)\n"
+    "  --announce        be found by the other servers in the DHT and find them:\n"
+    "                    calls they help are told of this one, and meet and are\n"
+    "                    carried here though nobody named it\n"
     "  --stats-every S   print what it does every S seconds, 0: never (10)\n"
     "  --verbose         librats' logs, all of them\n"
     "Calls reach it as rats://HOST:PORT (CallConfig::servers, the app's settings,\n"
@@ -59,6 +62,10 @@ int main(int argc, char** argv) {
         }
         if (name == "--verbose") {
             verbose = true;
+            continue;
+        }
+        if (name == "--announce") {
+            config.announce = true;
             continue;
         }
         if (i + 1 == argc) {
@@ -100,8 +107,8 @@ int main(int argc, char** argv) {
         return 1;
     }
     const std::unique_ptr<ratcast::Server>& server = *started;
-    std::printf("ratcast-server %s on port %u\n", server->id().to_hex().c_str(),
-                unsigned{server->port()});
+    std::printf("ratcast-server %s on port %u%s\n", server->id().to_hex().c_str(),
+                unsigned{server->port()}, config.announce ? ", announced" : "");
     std::fflush(stdout);
 
     auto next = std::chrono::steady_clock::now();
@@ -111,9 +118,9 @@ int main(int argc, char** argv) {
         next += std::chrono::seconds(stats_every);
         const ratcast::ServerStats stats = server->stats();
         std::printf(
-            "peers %zu, registered %zu, relaying %zu (%.1f MB so far), punches %llu, "
-            "forwarding %zu to %zu (%.1f MB)\n",
-            stats.peers, stats.registrations, stats.relayed,
+            "peers %zu (servers %zu), registered %zu, relaying %zu (%.1f MB so far), "
+            "punches %llu, forwarding %zu to %zu (%.1f MB)\n",
+            stats.peers, stats.servers, stats.registrations, stats.relayed,
             static_cast<double>(stats.relayed_bytes) / 1e6,
             static_cast<unsigned long long>(stats.punches), stats.forwarded, stats.forwarded_to,
             static_cast<double>(stats.forwarded_bytes) / 1e6);

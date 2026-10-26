@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <filesystem>
 #include <type_traits>
 #include <utility>
 
@@ -142,6 +143,10 @@ Call::Call(CallConfig config, CallHandlers handlers)
     : config_(std::move(config)),
       handlers_(std::move(handlers)),
       node_(node_config(config_)),
+      known_servers_(
+          config_.data_dir.empty()
+              ? std::string()
+              : (std::filesystem::path(config_.data_dir) / KnownServers::kFile).string()),
       sync_(SteadyClock::instance(), config_.playback.sync) {
     if (config_.playback.sound) mixer_.emplace(*config_.playback.sound);
     // What it sends is sealed end to end, its key given to members alone: a
@@ -179,6 +184,12 @@ Call::Call(CallConfig config, CallHandlers handlers)
         rendezvous_ = node_.add_subsystem(std::make_unique<librats::Rendezvous>(meeting));
         // A server learnt of from a member was taken for a member as it came.
         rendezvous_->on_server_found([this](const PeerId& peer) { notify(handlers_.left, peer); });
+        rendezvous_->on_servers([this](const PeerId&, const std::vector<librats::Address>& told) {
+            std::vector<librats::HostEndpoint> servers;
+            for (const librats::Address& at : told)
+                servers.emplace_back(at.ip.to_string(), at.port);
+            known_servers_.told(servers);
+        });
         node_.add_subsystem(std::make_unique<librats::HolePunch>());
         node_.add_subsystem(std::make_unique<librats::Relay>());
     }
@@ -321,6 +332,8 @@ bool Call::interrupted(const PeerId& peer, Duration after) const {
 std::vector<PeerId> Call::servers() const {
     return rendezvous_ ? rendezvous_->servers() : std::vector<PeerId>{};
 }
+
+std::vector<librats::HostEndpoint> Call::known_servers() const { return known_servers_.all(); }
 
 bool Call::is_server(const PeerId& peer) const {
     return rendezvous_ && rendezvous_->is_server(peer);

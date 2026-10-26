@@ -1,9 +1,12 @@
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <memory>
+#include <mutex>
 #include <thread>
+#include <vector>
 
 #include "ratcast/server/server.h"
 #include "ratcast/session/media_service.h"
@@ -30,11 +33,15 @@ bool wait_for(Pred pred, std::chrono::milliseconds timeout = 15s) {
     return pred();
 }
 
-std::unique_ptr<Server> start_server() {
+ServerConfig server_config() {
     ServerConfig config;
     config.port = 0;
     config.bind_address = "127.0.0.1";
     config.protocol = kProtocol;
+    return config;
+}
+
+std::unique_ptr<Server> start_server(const ServerConfig& config = server_config()) {
     auto server = Server::start(config);
     return server ? std::move(*server) : nullptr;
 }
@@ -185,6 +192,71 @@ TEST(Server, ForwardsAShareToTheViewersItCarries) {
     EXPECT_EQ(stats.forwarded, 1u);
     EXPECT_EQ(stats.forwarded_to, 2u);
     EXPECT_GT(stats.forwarded_bytes, 0u);
+}
+
+// Servers that announce themselves find each other in the DHT and connect;
+// a call is told of the others by the one it meets at.
+TEST(Server, ServersThatAnnounceKnowEachOtherAndTellACall) {
+    const auto announcing = [](std::vector<librats::HostEndpoint> bootstrap) {
+        ServerConfig config = server_config();
+        config.announce = true;
+        // A DHT of their own on loopback, which the first enters nowhere.
+        config.dht.bootstrap = bootstrap.empty()
+                                   ? std::vector{librats::HostEndpoint("127.0.0.1", 1)}
+                                   : std::move(bootstrap);
+        config.dht.stun = false;
+        config.dht.search_every = 500ms;
+        return start_server(config);
+    };
+    const auto first = announcing({});
+    ASSERT_TRUE(first);
+    ASSERT_TRUE(wait_for([&] { return first->dht_port() != 0; }, 5s));
+    const librats::HostEndpoint entry("127.0.0.1", first->dht_port());
+    const auto second = announcing({entry});
+    const auto third = announcing({entry});
+    ASSERT_TRUE(second && third);
+    EXPECT_TRUE(wait_for(
+        [&] {
+            return first->stats().servers == 2 && second->stats().servers == 2 &&
+                   third->stats().servers == 2;
+        },
+        30s))
+        << "servers " << first->stats().servers << " " << second->stats().servers << " "
+        << third->stats().servers;
+
+    librats::NodeConfig config;
+    config.bind_address = "127.0.0.1";
+    config.protocol = kProtocol;
+    librats::Node call(config);
+    librats::Rendezvous::Config meeting;
+    meeting.keys = {"ratcast/stream/room"};
+    meeting.servers = {librats::HostEndpoint("127.0.0.1", first->port())};
+    auto* rendezvous = call.add_subsystem(std::make_unique<librats::Rendezvous>(meeting));
+    std::mutex mutex;
+    std::vector<uint16_t> told;
+    rendezvous->on_servers([&](const PeerId&, const std::vector<librats::Address>& servers) {
+        std::lock_guard lock(mutex);
+        told.clear();
+        for (const librats::Address& at : servers) told.push_back(at.port);
+        std::ranges::sort(told);
+    });
+    ASSERT_TRUE(call.start());
+    std::vector<uint16_t> others{second->port(), third->port()};
+    std::ranges::sort(others);
+    EXPECT_TRUE(wait_for([&] {
+        std::lock_guard lock(mutex);
+        return told == others;
+    }));
+    EXPECT_EQ(first->stats().peers, 3u);
+    call.stop();
+}
+
+// One that does not announce is in no DHT.
+TEST(Server, AServerAnnouncesItselfOnlyIfAsked) {
+    const auto server = start_server();
+    ASSERT_TRUE(server);
+    EXPECT_EQ(server->dht_port(), 0);
+    EXPECT_EQ(server->stats().servers, 0u);
 }
 
 TEST(Server, APortTakenIsUnavailable) {
