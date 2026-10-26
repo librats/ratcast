@@ -59,6 +59,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <set>
 #include <string>
 #include <variant>
 #include <vector>
@@ -166,13 +167,26 @@ struct CallConfig {
     /// What this side shares goes through relays — viewers that pass it on —
     /// while the copies through its uplink are short (SessionConfig::relays).
     bool relays = true;
+    /// A peer whose link stays silent this long is lost (librats' UDP idle
+    /// timeout); zero: librats' own, 45 s. A link silent for less is kept,
+    /// and plays on when it hears again.
+    Duration lost_after = Duration::zero();
+    /// A peer lost — its link gone silent or broken, closed by neither side —
+    /// is dialed again at where it was last known (and dials this side, which
+    /// it lost too) for this long, away() meanwhile, then left; zero: left at
+    /// once. A peer that hangs up is left at once.
+    Duration redial_for = std::chrono::minutes(2);
     CallPlayback playback = {};
 };
 
 struct CallHandlers {
-    /// A peer connected, or left: hung up, or lost.
+    /// A peer connected — or came back after it was lost — or left: hung up,
+    /// or was lost and did not come back in time (CallConfig::redial_for).
     std::function<void(const PeerId& peer)> joined = {};
     std::function<void(const PeerId& peer)> left = {};
+    /// A peer's link was lost and it is being dialed again: away() until it
+    /// joins again or leaves.
+    std::function<void(const PeerId& peer)> lost = {};
     /// A stream of `peer`'s started playing, or failed to (the outcome).
     std::function<void(const PeerId& peer, const StreamDescription& stream, Result<void> outcome)>
         playing = {};
@@ -227,6 +241,13 @@ public:
     /// it listens on) with the port. None for a call that does not listen.
     std::vector<std::string> invites() const;
     std::vector<PeerId> peers() const;
+    /// The peers lost and dialed again (CallConfig::redial_for): none of
+    /// peers(), members still.
+    std::vector<PeerId> away() const;
+    /// Whether `peer`'s link is cut: it is away, or connected with what it
+    /// answers unanswered for `after` — gone quiet, maybe lost, maybe back in a
+    /// moment (librats' PathStats::unanswered_since).
+    bool interrupted(const PeerId& peer, Duration after = std::chrono::seconds(2)) const;
     /// The servers it is connected to (CallConfig::servers, or named by a
     /// peer): none of peers().
     std::vector<PeerId> servers() const;
@@ -234,7 +255,8 @@ public:
     /// to each as it connects. Fails with InvalidArgument for a presence that
     /// is not valid.
     Result<void> set_presence(const Presence& presence);
-    /// What `peer` last said of itself; none before it said anything.
+    /// What `peer` last said of itself — while it is away, before it was
+    /// lost; none before it said anything, or once it left.
     std::optional<Presence> presence(const PeerId& peer) const;
     /// The path to `peer`, sampled every 100 ms: round trip, bandwidth, loss.
     std::optional<librats::PathStats> path(const PeerId& peer) const;
@@ -358,6 +380,11 @@ private:
     librats::Node node_;
     MediaService* media_ = nullptr;              ///< the node's
     librats::Rendezvous* rendezvous_ = nullptr;  ///< the node's, if it meets by peer id
+    /// The peers away, and what each member last said of itself: kept while
+    /// it is away and as it comes back, until it says again.
+    mutable std::mutex members_mutex_;
+    std::set<PeerId> away_;
+    std::map<PeerId, Presence> said_;
 
     mutable std::mutex publishing_;
     std::map<StreamId, std::unique_ptr<Published>> published_;

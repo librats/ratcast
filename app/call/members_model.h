@@ -25,8 +25,11 @@ struct Member {
     bool muted = false;
     bool deafened = false;
     bool speaking = false;
-    bool camera = false;      ///< its camera on
-    bool sharing = false;     ///< a screen or a window shared
+    bool camera = false;   ///< its camera on
+    bool sharing = false;  ///< a screen or a window shared
+    /// Its link cut — lost and dialed again, or gone quiet — and maybe back in
+    /// a moment (Call::interrupted()).
+    bool reconnecting = false;
     double volume = 1.0;      ///< how loud it is heard here: 1 as it comes
     bool muted_here = false;  ///< not heard here, whatever its volume (role `mutedHere`)
 
@@ -46,6 +49,7 @@ public:
         SpeakingRole,
         CameraRole,
         SharingRole,
+        ReconnectingRole,
         VolumeRole,
         MutedHereRole,
     };

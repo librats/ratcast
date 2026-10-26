@@ -10,6 +10,7 @@
 #include "librats/subsystems/hole_punch.h"
 #include "librats/subsystems/peer_exchange.h"
 #include "librats/subsystems/port_mapping_service.h"
+#include "librats/subsystems/reconnection.h"
 #include "librats/subsystems/relay.h"
 #include "librats/subsystems/rendezvous.h"
 #include "librats/util/network_utils.h"
@@ -50,6 +51,8 @@ librats::NodeConfig node_config(const CallConfig& config) {
     node.data_dir = config.data_dir;
     node.protocol = config.protocol;
     node.enable_network_monitor = config.watch_network;
+    node.udp_idle_timeout =
+        std::chrono::duration_cast<std::chrono::milliseconds>(config.lost_after);
     // Paths are sampled every 100 ms, as MediaService's rate control asks.
     return node;
 }
@@ -170,13 +173,48 @@ Call::Call(CallConfig config, CallHandlers handlers)
         exchange.introduce_requesters = true;
         node_.add_subsystem(std::make_unique<librats::PeerExchange>(exchange));
     }
+    // A peer lost is dialed again where it was, as it dials this side: a
+    // member whose network went for longer than a link keeps quiet for
+    // (lost_after) comes back by itself.
+    const bool redials = config_.redial_for > Duration::zero();
+    if (redials) {
+        librats::ReconnectionService::Config redial;
+        redial.persist_discovered = false;  // only the lost
+        redial.startup_targets = 0;
+        redial.max_backoff = std::chrono::seconds(8);
+        redial.lost_for = std::chrono::duration_cast<std::chrono::milliseconds>(config_.redial_for);
+        auto* reconnect =
+            node_.add_subsystem(std::make_unique<librats::ReconnectionService>(redial));
+        reconnect->on_given_up([this](const PeerId& peer) {
+            bool was_away = false;
+            {
+                std::lock_guard lock(members_mutex_);
+                was_away = away_.erase(peer) > 0;
+                if (was_away) said_.erase(peer);
+            }
+            if (was_away) notify(handlers_.left, peer);
+        });
+    }
     node_.on_peer_connected([this](const librats::Peer& peer) {
-        if (!is_server(peer.id())) notify(handlers_.joined, peer.id());
+        if (is_server(peer.id())) return;
+        {
+            std::lock_guard lock(members_mutex_);
+            away_.erase(peer.id());
+        }
+        notify(handlers_.joined, peer.id());
     });
-    node_.on_peer_disconnected([this](const PeerId& peer, librats::CloseReason) {
-        // Still known: the subsystems' handlers, attached as the node
-        // starts, run after this one.
-        if (!is_server(peer)) notify(handlers_.left, peer);
+    node_.on_peer_disconnected([this, redials](const PeerId& peer, librats::CloseReason reason) {
+        if (is_server(peer)) return;
+        const bool lost = redials && librats::ReconnectionService::lost(reason);
+        {
+            std::lock_guard lock(members_mutex_);
+            if (lost) {
+                away_.insert(peer);
+            } else {
+                said_.erase(peer);
+            }
+        }
+        notify(lost ? handlers_.lost : handlers_.left, peer);
     });
 }
 
@@ -249,6 +287,21 @@ std::vector<PeerId> Call::peers() const {
     return peers;
 }
 
+std::vector<PeerId> Call::away() const {
+    std::lock_guard lock(members_mutex_);
+    return {away_.begin(), away_.end()};
+}
+
+bool Call::interrupted(const PeerId& peer, Duration after) const {
+    {
+        std::lock_guard lock(members_mutex_);
+        if (away_.contains(peer)) return true;
+    }
+    const std::optional<librats::PathStats> path = node_.path_stats(peer);
+    if (!path || path->unanswered_since == std::chrono::steady_clock::time_point{}) return false;
+    return std::chrono::steady_clock::now() - path->unanswered_since >= after;
+}
+
 std::vector<PeerId> Call::servers() const {
     return rendezvous_ ? rendezvous_->servers() : std::vector<PeerId>{};
 }
@@ -262,7 +315,10 @@ Result<void> Call::set_presence(const Presence& presence) {
 }
 
 std::optional<Presence> Call::presence(const PeerId& peer) const {
-    return media_->session().presence(peer);
+    if (std::optional<Presence> said = media_->session().presence(peer)) return said;
+    std::lock_guard lock(members_mutex_);
+    const auto said = said_.find(peer);
+    return said != said_.end() ? std::optional(said->second) : std::nullopt;
 }
 
 std::optional<librats::PathStats> Call::path(const PeerId& peer) const {
@@ -300,6 +356,10 @@ SessionHandlers Call::session_handlers() {
             },
         .presence_changed =
             [this](const PeerId& peer, const Presence& presence) {
+                {
+                    std::lock_guard lock(members_mutex_);
+                    said_[peer] = presence;
+                }
                 notify(handlers_.presence, peer, presence);
             },
     };

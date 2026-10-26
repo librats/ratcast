@@ -1565,3 +1565,26 @@ of three copies, it hands them to the server. Two runs each.
 - Forwarded, the stalls are in the first two seconds, while the uplink is found full and the
   viewers handed over, each from a keyframe (14 fps, then 35 catching up), and one short gap
   near the seventh, at every viewer at once: the sender's side.
+
+## A room that mends (7.2)
+
+`bench/netem.py --room 3 --duration 90 --cut-off 60@8`: three members talking, the last one's
+network gone both ways for 60 s (`tc netem loss 100%` on its veth, both ends), 8 s after
+everyone is in, neither side told. "Longest voice gap" is the longest any member did not hear
+a voice: the cut, and how long the room took to be whole again.
+
+| cut | path | voices heard | longest voice gap, s | voice latency p50 / p95, ms (after) |
+|---|---|---:|---:|---:|
+| 15 s | local | 2 of 2 | 15.0 | 79.9 / 159.7 |
+| 15 s | rtt-100 | 2 of 2 | 15.1 | 116.7 / 188.4 |
+| 60 s | local | 2 of 2 | 60.5, 60.1 | 62.5 / 63.5 |
+| 60 s | rtt-100 | 2 of 2 | 60.4 | 114.7 / 116.7 |
+
+- A 15 s cut is less than librats' idle timeout (45 s): the links hold, and play on as the
+  network comes back — before 7.2 as now. The voices' delay stays raised after it (p50 80 ms
+  on the bare link against 62): the jitter buffer remembers the burst for 10 s (10.5's).
+- A 60 s cut times every link of the member out at 45 s. Before 7.2 nobody dialed anybody and
+  the room stayed apart to the end of the run. Now each side dials the other where it was last
+  known — again and again, 8 s apart at most, while the network is down — and the room is
+  whole 0.1–0.5 s after the network is back.
+

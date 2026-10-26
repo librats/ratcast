@@ -14,6 +14,7 @@
 #include <QCoreApplication>
 #include <QGuiApplication>
 #include <QTemporaryDir>
+#include <QUrl>
 
 #include <algorithm>
 #include <atomic>
@@ -26,6 +27,7 @@
 #include "ratcast/engine/pattern_source.h"
 #include "ratcast/engine/tone_source.h"
 #include "ratcast/engine/virtual_output.h"
+#include "udp_path.h"
 
 #include "librats/node/node.h"
 #include "librats/subsystems/rendezvous.h"
@@ -302,6 +304,28 @@ TEST_F(CallControllerTest, EachMemberIsHeardAsLoudAsSetAndItIsKept) {
     carl_.setVolume(bob, 1.0);
     carl_.setMutedHere(bob, false);
     EXPECT_TRUE(QSettings(settings_file, QSettings::IniFormat).childGroups().isEmpty());
+}
+
+TEST_F(CallControllerTest, AMemberCutOffIsListedByNameReconnectingUntilBack) {
+    CallController::Environment quick = environment();
+    quick.call.lost_after = 3s;
+    for (CallController* side : {&ann_, &bob_}) side->setEnvironment(quick);
+    ann_.setName("Ann");
+    bob_.setName("Bob");
+    const QString invite = make_room();
+    test::UdpPath path(QUrl(invite).port());
+    bob_.join(QString("rats://127.0.0.1:%1").arg(path.port()));
+    ASSERT_TRUE(wait_for([&] { return !member(ann_, "Bob").isEmpty(); }));
+    EXPECT_FALSE(member(ann_, "Bob").value("reconnecting").toBool());
+
+    // Cut off: Ann still lists him by name, reconnecting — quiet, then lost and
+    // dialed again where he listens, which the dead path does not stand in.
+    path.dead = true;
+    EXPECT_TRUE(wait_for([&] { return member(ann_, "Bob").value("reconnecting").toBool(); }, 5s));
+    EXPECT_TRUE(wait_for([&] {
+        const QVariantMap bob = member(ann_, "Bob");
+        return !bob.isEmpty() && !bob.value("reconnecting").toBool() && members(ann_) == 1;
+    })) << "back";
 }
 
 TEST_F(CallControllerTest, WithoutAMicrophoneTheRoomGoesOn) {

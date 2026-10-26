@@ -160,7 +160,7 @@ final place and shape: stage 0 is a walking skeleton, not a throwaway prototype.
 | **4. Platforms** — in part | GPU paths and hardware codecs; Windows ✅ (its GPU path too) and macOS capture; netsim ✅ | — |
 | **5. Watch together** ✅ | one-to-many: a sender's budget, synchronised playout, forwarding tree, SFU and E2EE; simulcast and cinema put off | L5 ✅ |
 | **6. App** ✅ | Qt app MVP, one to one: invites, voice with AEC / NS, screen / window / app-audio share, camera; on Linux first, the other OSes as stage 4 reaches them | — |
-| **7. Conferences** — in part | text chat, a link that holds, each member heard as loud as the listener sets ✅, active speaker, last-N, grid, moderation | — |
+| **7. Conferences** — in part | text chat, a link that holds ✅, each member heard as loud as the listener sets ✅, active speaker, last-N, grid, moderation | — |
 | **8. Beyond** | Android, cinema mode, HDR, polish | — |
 | **9. Call monitor** ✅ | what a call does, as it does it: quality, bitrate, size, frame time, whether each end keeps up — a line a second in the console, a panel in the app | — |
 | **10. Room** ✅ | a voice lobby for a few, as Discord's: everyone with everyone, all talking from the start, who is there and who speaks, mute and deafen, anyone's screen or camera on and off while the room goes on | — |
@@ -1247,9 +1247,41 @@ sends one out. Steps are taken in the order the user picks, not their numbers'.
 - **7.1 Text chat**: messages over the session's control lane (a wire message of their own),
   from the peer that sent them over its Noise connection; a late joiner given the last ones by
   any member; a panel in the app, shown as plain text, links opened on a click, a count unread.
-- **7.2 A link that holds**: a member whose link is lost without leaving is dialed again (stage
+- **7.2 A link that holds** ✅: a member whose link is lost without leaving is dialed again (stage
   10 left it to rejoin), shown as coming back meanwhile, through a server where no punch gets
-  through.
+  through. librats: **needs** L22 ✅.
+  Measured first (`bench/netem.py --room 3 --cut-off S@A`, the last member's network gone, new
+  here): a link silent for less than librats' idle timeout (45 s) already held — 15 s cut, the
+  room whole again as the network came back, the longest any voice was not heard 15.0 s — and
+  one silent for longer did not: every link of the member timed out, nobody dialed anyone, and
+  the room stayed apart. Now (`docs/bench.md`, "A room that mends"): a 60 s cut, the room
+  whole 0.1–0.5 s after the network is back, on the bare link and at 100 ms round trips.
+  Done so: a member's link that is lost (L22: closed by neither side — gone quiet past the idle
+  timeout, or stopped answering) is not its leaving. `Call` keeps it a member, `away()`, its
+  name kept (`presence()` says what it last said, until it leaves), and librats'
+  `ReconnectionService` dials it again where it was last known — the address it listens at and
+  the endpoint its packets came from — as it dials this side (each side lost the other), for
+  `CallConfig::redial_for` (2 min), starting over when the host's network changes; it is
+  `joined` again when back, `left` when not (`CallHandlers::lost`, then one of the two). A
+  member that hangs up says goodbye (L22) and is left at once. Before a link is lost, a member
+  whose link has gone unanswered for 2 s is `interrupted()` (L22's `unanswered_since`: asked
+  and not answered, which a quiet member that is only asked nothing never is). The app lists
+  the away with the rest, and both kinds as `reconnecting` — an orange dot, "reconnecting…".
+  `CallConfig::lost_after` sets librats' idle timeout (the tests' 1.5–4 s). A room met by peer
+  id or at a server comes back through those as well: they find a returning member as they
+  found it first (DHT, `Rendezvous` dialing its servers and registering again). Not here: a
+  member that cannot be dialed at any address it had and meets nobody by key (both behind NATs
+  in a room joined by address, no server) waits for the other to dial it, which it may not
+  manage; the 15 s cut leaves the voices' delay raised for the jitter buffer's 10 s memory
+  (10.5's). Tested: librats — a stopping node's goodbye (PeerClosed), when a path was last
+  heard and since when it is unanswered, a lost peer dialed again through a path that went
+  dead and back, one not back given up on and told, one that left not dialed, the C ABI's;
+  ratcast — on real nodes through a UDP path that goes dead (`client/tests/udp_path.h`): a
+  member cut off is interrupted, lost, dialed again and back, never left, known by name
+  throughout; one gone while away is away by name, then left in time; one that hangs up is
+  left at once, never lost; the controller lists a member cut off by name, reconnecting, until
+  back. Debug 636 passed; the new tests under TSan clean (librats' own suite, 1113, in
+  its release build).
 - **7.3 Each heard as the listener likes** ✅ (in part): how loud each member's voice plays on
   this side alone, muted here, kept for the next room. Left: push-to-talk, sounds as members
   come, go and share.
@@ -1311,6 +1343,7 @@ and the list is in priority order:
 | | L21 (a) | Two behind NATs meeting in the DHT: dialed again, the router's port | needed | 6, 10 (over the internet) | ✅ |
 | | L21 (b) | The same: the shared socket's own external port, by STUN | needed | 6, 10 (over the internet) | ✅ |
 | | L21 (c) | The same: a node both reach to meet and relay through | needed | 6, 10 (over the internet) | ✅ |
+| | L22 | A lost peer dialed again; a node that leaves says so | needed | 7.2 | ✅ |
 | 2 | L2 (a) | A live flow's start: the initial window | needed | 1.2 (long paths) | put off; eased by (b) |
 | 3 | L15 | Fewer system calls per reactor turn | improves | 3.2 (CPU) | |
 | 4 | L16 | ProbeRTT that does not starve a live flow | improves | 3.2 (`reorder`) | |
@@ -1481,6 +1514,18 @@ peer both are connected to, which two strangers do not have.
   before the room's members. Measured behind NATs in namespaces (`bench/nat.py`,
   `docs/bench.md`, "Behind NATs"): two cone NATs meet straight, the first picture at 0.4 s; a
   symmetric one on either side is carried by the server, the first picture at 3.5–4.5 s, 30 fps.
+
+**L22 — A lost peer dialed again; a node that leaves says so.** ✅ *Needed by 7.2.* A link
+lost — its peer's network gone longer than the UDP idle timeout — was closed and nobody dialed
+again; and a node stopping aborted its UDP connections, so its peers saw `PeerReset` for a
+leaving as for a failure and could not tell the two apart. Now: a node stopping says an
+orderly goodbye at once (its peers see `PeerClosed`); `ReconnectionService::Config::lost_for`
+dials a peer lost (`lost()`: `IdleTimeout`, `PeerReset`) again at the addresses and endpoint it
+was last seen at, until it is back over any route or the time is up (`on_given_up`), starting
+over on `NetworkChanged`; `NodeConfig::udp_idle_timeout` (45 s by default, keep-alives four
+times within it); `PathStats::heard_at` and `unanswered_since` (since when what the peer
+answers has gone unanswered); the C ABI's `udp_idle_timeout_ms` and
+`rats_enable_reconnect_lost()`.
 
 **L13 — Fewer ACKs for live data.** *Optional; tried, put off.* An ACK every second packet
 (RFC 9000) is ~440 a second for an 8 Mbit/s feed in full frames — 0.22 Mbit/s back (2.7% of the

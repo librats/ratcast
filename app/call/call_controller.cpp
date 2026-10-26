@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <filesystem>
+#include <iterator>
 #include <map>
 #include <mutex>
 #include <utility>
@@ -387,7 +388,9 @@ void CallController::update_members() {
                        (stream.description.label == kCameraLabel) == camera;
             });
         };
+        // The members lost are listed too, while they are dialed again.
         std::vector<PeerId> peers = call_->peers();
+        std::ranges::copy(call_->away(), std::back_inserter(peers));
         std::sort(peers.begin(), peers.end());
         for (const PeerId& peer : peers) {
             const Presence presence = call_->presence(peer).value_or(Presence{});
@@ -401,6 +404,7 @@ void CallController::update_members() {
                 .speaking = std::ranges::find(speaking, peer) != speaking.end(),
                 .camera = offers(peer, true),
                 .sharing = offers(peer, false),
+                .reconnecting = call_->interrupted(peer),
                 .volume = hearing.volume,
                 .muted_here = hearing.muted,
             });
@@ -634,6 +638,8 @@ CallHandlers CallController::handlers(uint64_t generation) {
                 });
             },
         .left = [this,
+                 generation](const PeerId&) { post(generation, [this] { update_members(); }); },
+        .lost = [this,
                  generation](const PeerId&) { post(generation, [this] { update_members(); }); },
         .playing =
             [this, generation](const PeerId& peer, const StreamDescription& stream,

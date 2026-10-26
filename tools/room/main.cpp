@@ -326,6 +326,10 @@ int main(int argc, char** argv) {
     const CallHandlers handlers{
         .joined = [](const PeerId& peer) { std::printf("joined: %s\n", peer.short_hex().c_str()); },
         .left = [](const PeerId& peer) { std::printf("left: %s\n", peer.short_hex().c_str()); },
+        .lost =
+            [](const PeerId& peer) {
+                std::printf("lost: %s, dialing again\n", peer.short_hex().c_str());
+            },
         .playing =
             [](const PeerId& peer, const StreamDescription& stream, Result<void> outcome) {
                 if (!outcome) {

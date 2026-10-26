@@ -73,6 +73,7 @@ TEST(MembersModel, ARowIsAMapOfItsRoles) {
     EXPECT_FALSE(row.value("sharing").toBool());
     EXPECT_EQ(row.value("volume").toDouble(), 1.0) << "heard as it comes";
     EXPECT_FALSE(row.value("mutedHere").toBool());
+    EXPECT_FALSE(row.value("reconnecting").toBool());
     EXPECT_TRUE(model.get(1).isEmpty());
     EXPECT_TRUE(model.get(-1).isEmpty());
 }

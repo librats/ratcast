@@ -438,13 +438,15 @@ ApplicationWindow {
                     required property bool deafened
                     required property bool speaking
                     required property bool sharing
+                    required property bool reconnecting
                     required property real volume
                     required property bool mutedHere
                     width: ListView.view.width
                     spacing: 8
 
                     Dot {
-                        color: member.speaking ? Material.color(Material.Green) : "#4e5058"
+                        color: member.reconnecting ? Material.color(Material.Orange)
+                             : member.speaking ? Material.color(Material.Green) : "#4e5058"
                     }
                     // A click on the name: how loud they are heard here.
                     PlainLabel {
@@ -466,8 +468,11 @@ ApplicationWindow {
                                                  : ""
                     }
                     Badge {
-                        text: member.deafened ? qsTr("deafened")
-                                              : member.muted ? qsTr("muted") : ""
+                        text: member.reconnecting ? qsTr("reconnecting…")
+                              : member.deafened ? qsTr("deafened")
+                              : member.muted ? qsTr("muted") : ""
+                        color: member.reconnecting ? Material.color(Material.Orange)
+                                                   : Material.foreground
                     }
                     Button {
                         visible: member.sharing

@@ -50,6 +50,13 @@ each viewer showed the pictures, and how far apart the viewers were.
 
     bench/netem.py --room 4 --share --member-paths local,rtt-100,loss-2 local
 
+With --cut-off S@A the last member's network goes for S seconds, A seconds
+after everyone is in, neither side told: a link silent past librats' idle
+timeout (45 s) is lost and dialed again. The table then gives the longest
+any voice was not heard: the cut, and how long the room took to mend.
+
+    bench/netem.py --room 3 --duration 90 --cut-off 60@8 local
+
 With --netsim the same scenarios run through ratcast-netsim instead: a proxy
 on loopback whose two directions follow netem's rules in user space, with no
 namespaces, no tc, no root, on any OS. The viewer dials the proxy, which
@@ -237,6 +244,16 @@ def uplink_bytes(index):
     """Bytes member `index` has sent so far."""
     show = in_member(index, "ip", "-j", "-s", "link", "show", "dev", "eth0")
     return json.loads(sh(*show).stdout)[0]["stats64"]["tx"]["bytes"]
+
+
+def cut_off(index, dead, members, options, member_paths):
+    """Member `index`'s network gone both ways, or back to its path."""
+    if not dead:
+        shape_uplinks(members, options, member_paths)
+        return
+    for command in (in_member(index, "tc", "qdisc", "replace", "dev", "eth0"),
+                    ["tc", "qdisc", "replace", "dev", f"r{index}"]):
+        sh(*command, "root", "netem", "loss", "100%")
 
 
 def shape(scenario):
@@ -512,6 +529,14 @@ def run_room(scenario, args, log_dir, index):
                 started = time.monotonic()
             if i + 1 < members:
                 time.sleep(args.join_after)
+        if args.cut_off:
+            down, at = args.cut_off
+            last = members - 1
+            for delay, dead in ((at, True), (at + down, False)):
+                cut = threading.Timer(delay, cut_off, (last, dead, members, scenario.forward,
+                                                       args.member_paths))
+                changes.append(cut)
+                cut.start()
         for process in processes:
             process.wait(timeout=args.duration + members * args.join_after + 30)
         took = time.monotonic() - started
@@ -560,6 +585,8 @@ def room_run(summaries):
         "uplink_first": summaries[0].get("uplink_mbps"),
         "uplink_others": worst("uplink_mbps", viewers),
         "cpu": worst("cpu"),
+        "longest_gap_s": (gap / 1000 if (gap := worst("voice_longest_gap_ms")) is not None
+                          else None),
     }
 
 
@@ -571,15 +598,18 @@ def room_table(results, args):
         + (f"; the first shares {args.size} at {args.fps} fps, {args.codec}, {args.bitrate} "
            f"kbit/s at most" if args.share else "")
         + (f", members {' '.join(args.send_args)}" if args.send_args else "")
+        + (f"; the last member's network gone for {args.cut_off[0]:g} s, {args.cut_off[1]:g} s "
+           f"after everyone is in" if args.cut_off else "")
         + f"; {args.duration} s with everyone in, medians of {args.repeat}. Voices: the worst "
         f"member's; breaks, losses and concealment: all members' together.",
         "",
         "| scenario | path | voices heard | all heard after, ms | voice latency p50 / p95 / p99 "
         "/ max, ms | breaks | lost / concealed, ms "
         + ("| share: first picture, ms | fps | latency p95, ms | stalls " if args.share else "")
-        + "| sent, Mbit/s: first / others | CPU, % |",
+        + "| sent, Mbit/s: first / others | CPU, % |"
+        + (" longest voice gap, s |" if args.cut_off else ""),
         "|---|---|---:|---:|---:|---:|---:|" + ("---:|---:|---:|---:|" if args.share else "")
-        + "---:|---:|",
+        + "---:|---:|" + ("---:|" if args.cut_off else ""),
     ]
     for scenario, runs in results:
         def m(key, digits=0):
@@ -593,7 +623,8 @@ def room_table(results, args):
             f"| {m('lost')} / {m('concealed_ms')} "
             + (f"| {m('first_picture_ms')} | {m('fps')} | {m('picture_p95', 1)} | {m('stalls')} "
                if args.share else "")
-            + f"| {m('uplink_first', 2)} / {m('uplink_others', 2)} | {m('cpu')} |")
+            + f"| {m('uplink_first', 2)} / {m('uplink_others', 2)} | {m('cpu')} |"
+            + (f" {m('longest_gap_s', 1)} |" if args.cut_off else ""))
     if args.share:
         rows += share_in_step_table(results, args)
     return "\n".join(rows)
@@ -763,6 +794,9 @@ def main():
                         help="measure a room of N members instead (2 to 8)")
     parser.add_argument("--share", action="store_true",
                         help="with --room: the first member shares the pattern")
+    parser.add_argument("--cut-off", default="", metavar="S@A",
+                        help="with --room: the last member's network gone for S seconds, "
+                             "A seconds after everyone is in")
     parser.add_argument("--member-paths", default="", metavar="S1,S2,...",
                         help="with --room: the second member's own path, the third's, ...")
     args = parser.parse_args()
@@ -793,6 +827,16 @@ def main():
     if len(member_paths) > max(args.room - 1, 0):
         parser.error("--member-paths: one for each member after the first, at most")
     args.member_paths = [by_name[p] for p in member_paths]
+    if args.cut_off:
+        if not args.room:
+            parser.error("--cut-off is --room's")
+        try:
+            down, at = (float(part) for part in args.cut_off.split("@"))
+        except ValueError:
+            parser.error("--cut-off: S@A, seconds, as 60@8")
+        if at + down >= args.duration:
+            parser.error("--cut-off: over before the run is (--duration)")
+        args.cut_off = (down, at)
     transports = args.transport.split(",")
     if not set(transports) <= set(TRANSPORTS):
         parser.error(f"--transport: of {', '.join(TRANSPORTS)}, please")

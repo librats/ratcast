@@ -28,6 +28,8 @@
 #include "ratcast/engine/tone_source.h"
 #include "ratcast/engine/virtual_output.h"
 
+#include "udp_path.h"
+
 #include "librats/subsystems/hole_punch.h"
 #include "librats/subsystems/relay.h"
 #include "librats/subsystems/rendezvous.h"
@@ -209,6 +211,7 @@ private:
         return CallHandlers{
             .joined = [this](const PeerId&) { tell("joined"); },
             .left = [this](const PeerId&) { tell("left"); },
+            .lost = [this](const PeerId&) { tell("lost"); },
             .playing =
                 [this](const PeerId&, const StreamDescription& stream, Result<void> outcome) {
                     tell((outcome ? "playing " : "failed ") + stream.label);
@@ -780,6 +783,94 @@ CallConfig at_server(const StandInServer& server, std::optional<RatsUrl> dial = 
     config.dht = false;
     config.servers = {server.address()};
     return config;
+}
+
+/// A room's member whose links go lost after `lost_after` of silence, and
+/// whose lost peers are dialed again for `redial_for`.
+CallConfig quick_to_lose(std::optional<RatsUrl> dial = std::nullopt,
+                         Duration lost_after = std::chrono::seconds(4),
+                         Duration redial_for = std::chrono::seconds(30)) {
+    CallConfig config = room(std::move(dial));
+    config.lost_after = lost_after;
+    config.redial_for = redial_for;
+    return config;
+}
+
+/// Ann and Bob in one room, each knowing the other's name.
+void meet(Side& ann, Side& bob) {
+    ASSERT_TRUE(ann->set_presence({.name = "Ann"}));
+    ASSERT_TRUE(bob->set_presence({.name = "Bob"}));
+    ASSERT_TRUE(wait_for([&] {
+        const std::optional<Presence> bob_said = ann->presence(bob->id());
+        return ann->peers().size() == 1 && bob_said && bob_said->name == "Bob";
+    }));
+}
+
+TEST_F(CallTest, AMemberWhoseNetworkGoesIsAwayAndComesBackByItself) {
+    Side ann;
+    ann.start(quick_to_lose(), false, false);
+    test::UdpPath path(ann->port());
+    Side bob;
+    bob.start(quick_to_lose(RatsUrl{librats::HostEndpoint{"127.0.0.1", path.port()}}), false,
+              false);
+    meet(ann, bob);
+    ann.publish_voice();  // something Bob answers, even silent
+    EXPECT_FALSE(ann->interrupted(bob->id()));
+
+    // Gone quiet: cut off, not yet lost.
+    path.dead = true;
+    EXPECT_TRUE(wait_for([&] { return ann->interrupted(bob->id(), std::chrono::seconds(1)); },
+                         std::chrono::seconds(3)));
+    EXPECT_EQ(ann->peers().size(), 1u) << "kept while it may come back";
+
+    // Lost: away, still known by name, dialed again where it said it listens
+    // — here, past the dead path — and back.
+    ASSERT_TRUE(wait_for([&] { return ann.told("lost"); }));
+    EXPECT_TRUE(wait_for([&] { return ann.told_times("joined") == 2; }))
+        << ::testing::PrintToString(ann.events());
+    EXPECT_TRUE(ann->away().empty());
+    EXPECT_FALSE(ann->interrupted(bob->id()));
+    EXPECT_FALSE(ann.told("left")) << "never gone";
+    ASSERT_TRUE(ann->presence(bob->id())) << "known by name throughout";
+    EXPECT_EQ(ann->presence(bob->id())->name, "Bob");
+}
+
+TEST_F(CallTest, AMemberLostWhileAwayIsShownAwayByNameAndLeftInTime) {
+    Side ann;
+    ann.start(quick_to_lose(std::nullopt, std::chrono::milliseconds(1500), std::chrono::seconds(2)),
+              false, false);
+    test::UdpPath path(ann->port());
+    Side bob;
+    bob.start(quick_to_lose(RatsUrl{librats::HostEndpoint{"127.0.0.1", path.port()}}), false,
+              false);
+    meet(ann, bob);
+    const PeerId bob_id = bob->id();
+
+    // Gone with the network down: the goodbye never comes.
+    path.dead = true;
+    bob.hang_up();
+    ASSERT_TRUE(wait_for([&] { return ann.told("lost"); }));
+    EXPECT_EQ(ann->away(), std::vector{bob_id});
+    EXPECT_TRUE(ann->peers().empty());
+    EXPECT_TRUE(ann->interrupted(bob_id));
+    ASSERT_TRUE(ann->presence(bob_id));
+    EXPECT_EQ(ann->presence(bob_id)->name, "Bob") << "known by name while away";
+
+    EXPECT_TRUE(wait_for([&] { return ann.told("left"); })) << "given up on in time";
+    EXPECT_TRUE(ann->away().empty());
+    EXPECT_FALSE(ann->presence(bob_id));
+}
+
+TEST_F(CallTest, AMemberWhoHangsUpIsLeftAtOnce) {
+    Side ann;
+    ann.start(quick_to_lose(), false, false);
+    Side bob;
+    bob.start(quick_to_lose(RatsUrl{ann.address()}), false, false);
+    ASSERT_TRUE(wait_for([&] { return ann->peers().size() == 1; }));
+    bob.hang_up();
+    EXPECT_TRUE(wait_for([&] { return ann.told("left"); }, std::chrono::seconds(2)));
+    EXPECT_FALSE(ann.told("lost")) << "a goodbye is no loss";
+    EXPECT_TRUE(ann->away().empty());
 }
 
 TEST_F(CallTest, CallsMeetByPeerIdAtAServerWhichIsNoMember) {
