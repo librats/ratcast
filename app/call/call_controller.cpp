@@ -262,6 +262,7 @@ void CallController::start(CallConfig config, State state) {
     call_ = std::move(*started);
     for (auto it = hearing_.cbegin(); it != hearing_.cend(); ++it)
         tell_hearing(it.key(), it.value());
+    call_->set_share_volume(float(share_volume_));
     for (const std::string& invite : call_->invites()) {
         invites_.push_back(QString::fromStdString(invite));
     }
@@ -335,6 +336,14 @@ void CallController::setDeafened(bool deafened) {
     deafened_ = deafened;
     Q_EMIT deafenedChanged();
     apply_voice();
+}
+
+void CallController::setShareVolume(double volume) {
+    volume = volume > 0.0 ? std::min(volume, kMaxVolume) : 0.0;  // NaN: 0
+    if (volume == share_volume_) return;
+    share_volume_ = volume;
+    Q_EMIT shareVolumeChanged();
+    if (call_) call_->set_share_volume(float(volume));
 }
 
 void CallController::apply_voice() {

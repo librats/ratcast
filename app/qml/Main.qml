@@ -124,6 +124,7 @@ ApplicationWindow {
     Settings {
         property alias name: call.name
         property alias server: call.server
+        property alias shareVolume: call.shareVolume
     }
 
     /// What a member is called: its own name, or, until it says one, a
@@ -152,6 +153,28 @@ ApplicationWindow {
     component PlainLabel: Label {
         textFormat: Text.PlainText
         elide: Text.ElideRight
+    }
+
+    /// How loud the share watched plays, beside the voices.
+    component ShareVolume: RowLayout {
+        spacing: 4
+
+        Label {
+            text: qsTr("Sound")
+        }
+        Slider {
+            id: slider
+            Layout.preferredWidth: 140
+            from: 0
+            to: call.maxVolume
+            stepSize: 0.05
+            value: call.shareVolume
+            onMoved: call.shareVolume = value
+        }
+        Label {
+            Layout.preferredWidth: 40
+            text: qsTr("%1%").arg(Math.round(slider.value * 100))
+        }
     }
 
     component Badge: Label {
@@ -577,6 +600,9 @@ ApplicationWindow {
                 ToolTip.visible: hovered
                 ToolTip.text: qsTr("F, or a double click on the share; Esc to leave")
             }
+            ShareVolume {
+                Layout.leftMargin: 8
+            }
         }
 
         Label {
@@ -997,6 +1023,9 @@ ApplicationWindow {
                     ToolTip.visible: fullQualityHover.hovered && call.quality.length > 0
                     ToolTip.text: call.qualityReason.length > 0
                                   ? call.quality + ": " + call.qualityReason : call.quality
+                }
+                ShareVolume {
+                    Layout.leftMargin: 8
                 }
                 Button {
                     Layout.leftMargin: 8

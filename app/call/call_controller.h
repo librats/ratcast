@@ -103,6 +103,9 @@ class CallController : public QObject {
     Q_PROPERTY(bool muted READ muted WRITE setMuted NOTIFY mutedChanged)
     /// Nobody heard: the speaker plays silence.
     Q_PROPERTY(bool deafened READ deafened WRITE setDeafened NOTIFY deafenedChanged)
+    /// How loud the sound of the share watched plays, beside the voices: from
+    /// 0 through 1, as it comes, to maxVolume; whoever's it is.
+    Q_PROPERTY(double shareVolume READ shareVolume WRITE setShareVolume NOTIFY shareVolumeChanged)
     /// This side's voice on the microphone.
     Q_PROPERTY(bool speaking READ speaking NOTIFY speakingChanged)
     /// This side's camera on: sent while in a room, and with the next one;
@@ -217,6 +220,8 @@ public:
     void setMuted(bool muted);
     bool deafened() const { return deafened_; }
     void setDeafened(bool deafened);
+    double shareVolume() const { return share_volume_; }
+    void setShareVolume(double volume);
     bool speaking() const { return speaking_; }
     bool camera() const { return camera_; }
     void setCamera(bool on);
@@ -243,6 +248,7 @@ Q_SIGNALS:
     void camerasChanged();
     void mutedChanged();
     void deafenedChanged();
+    void shareVolumeChanged();
     void speakingChanged();
     void cameraChanged();
     void sharingChanged();
@@ -326,6 +332,7 @@ private:
     int cameras_on_ = 0;
     bool muted_ = false;
     bool deafened_ = false;
+    double share_volume_ = 1.0;
     bool speaking_ = false;
     bool camera_ = false;
     bool sharing_ = false;

@@ -270,6 +270,11 @@ public:
     /// still heard as speaking (speaking(), `playback.heard`).
     void set_volume(const PeerId& peer, float volume);
     float volume(const PeerId& peer) const;
+    /// How loud the sound with the pictures watched plays — a film's beside
+    /// the voices — as set_volume() takes it; whoever is watched, for as long
+    /// as the call lasts.
+    void set_share_volume(float volume);
+    float share_volume() const;
 
     /// The pictures and the sound with them, of the one watched.
     std::optional<ReceivedVideoStats> video_stats() const;
@@ -367,6 +372,7 @@ private:
     Playing<AudioPlayer> sound_;
     std::map<PeerId, Member> members_;
     std::map<PeerId, float> volumes_;  ///< the voices not at 1
+    float share_volume_ = 1.0f;
     Playing<DataPlayer> feed_;
     std::unique_ptr<DataPlayer> ended_feed_;  ///< writing out what it held
 };

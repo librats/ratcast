@@ -343,6 +343,49 @@ TEST_F(CallControllerTest, AnyoneSharesAndStopsWhileTheRoomGoesOn) {
     EXPECT_TRUE(wait_for([&] { return bob_.watching() == ann; }));
 }
 
+TEST_F(CallControllerTest, TheShareIsHeardAsLoudAsSetBesideTheVoices) {
+    // Bob's speaker, listened to: the loudest it played over a while.
+    auto loudest = std::make_shared<std::atomic<float>>(0.0f);
+    CallController::Environment bob = environment();
+    bob.open_speaker = [loudest] {
+        return std::make_unique<VirtualOutput>(
+            VirtualOutputConfig{}, [loudest](std::span<const float> samples, Timestamp) {
+                float block = 0.0f;
+                for (const float sample : samples) block = std::max(block, std::abs(sample));
+                float most = loudest->load();
+                while (block > most && !loudest->compare_exchange_weak(most, block)) {}
+            });
+    };
+    bob_.setEnvironment(bob);
+    bob_.setName("Bob");
+    const auto played = [&] {
+        wait_for([] { return false; }, 100ms);  // what was pulled before played out
+        *loudest = 0.0f;
+        wait_for([] { return false; }, 300ms);
+        return loudest->load();
+    };
+
+    // Set before the room: the share is silent from the start, Ann's voice not.
+    bob_.setShareVolume(0.0);
+    both_in();
+    ann_.setMuted(true);
+    ann_.share(false, true);
+    ASSERT_TRUE(wait_for([&] { return bob_.watching() == id_of(bob_, "Ann"); }));
+    wait_for([] { return false; }, 1s);  // its sound playing by now, as the next shows
+    EXPECT_LT(played(), 1e-3f) << "the share silent, Ann's muted voice the least bit";
+
+    bob_.setShareVolume(1.0);
+    const float as_it_comes = played();
+    EXPECT_GT(as_it_comes, 0.1f);
+    bob_.setShareVolume(0.5);
+    const float half = played();
+    EXPECT_GT(half, as_it_comes * 0.3f);
+    EXPECT_LT(half, as_it_comes * 0.7f);
+
+    bob_.setShareVolume(9.0);
+    EXPECT_EQ(bob_.shareVolume(), CallController::kMaxVolume);
+}
+
 TEST_F(CallControllerTest, WhatIsWatchedIsChosen) {
     both_in();
     ann_.share(false, false);

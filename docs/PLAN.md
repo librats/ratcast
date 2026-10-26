@@ -1268,6 +1268,12 @@ sends one out. Steps are taken in the order the user picks, not their numbers'.
   half as loud and muted at Ann's speaker, still speaking, kept and found by another controller
   on the same settings, nothing kept once back to as he comes; the rows' roles. Debug 582
   passed (the rest skipped for hardware).
+  The share's sound too, beside the voices — a film turned down under the talk: `Call`'s
+  `set_share_volume()` sets the input of the sound with the pictures watched, whoever's it is,
+  as it starts and when changed; the controller's `shareVolume` (0 to 200 %, kept by QML's
+  `Settings`), a slider over the share and among full screen's controls. Tested: a call's
+  share sound silent from before it plays, then up and down, the voices as they come whatever
+  it is; Bob's speaker with Ann's share silent from before the room, then at full and half.
 - **7.4 Active speaker and a grid**: the cameras a grid, whoever speaks marked or made larger;
   last-N — only the cameras of the last N to speak received, the rest a name — once rooms pass
   five or six.

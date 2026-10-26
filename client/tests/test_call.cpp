@@ -531,6 +531,33 @@ TEST_F(CallTest, EachVoicePlaysAsLoudAsThisSideSets) {
     EXPECT_EQ(host->volume(host->id()), 1.0f) << "anyone else's as it comes";
 }
 
+TEST_F(CallTest, TheSoundWatchedPlaysAsLoudAsThisSideSetsApartFromTheVoices) {
+    Side host;
+    host.start(config(), false, false);
+    Side guest;
+    guest.start(config(RatsUrl{host.address()}), false, false);
+
+    // Set before the sound plays: it starts silent, yet played.
+    guest->set_share_volume(0.0f);
+    EXPECT_EQ(guest->share_volume(), 0.0f);
+    host.publish_tone();
+    ASSERT_TRUE(wait_for([&] { return guest.told("playing tone") && guest.heard() >= 25; }));
+    EXPECT_EQ(guest.loudest(), 0.0f);
+
+    guest->set_share_volume(1.0f);
+    EXPECT_GT(guest.loudest(), 0.35f);
+    guest->set_share_volume(0.25f);
+    const float quarter = guest.loudest();
+    EXPECT_GT(quarter, 0.07f);
+    EXPECT_LT(quarter, 0.2f);
+
+    // The voices as they come, whatever the share's.
+    guest->set_share_volume(0.0f);
+    host.publish_voice();
+    ASSERT_TRUE(wait_for([&] { return guest.heard_from(host->id()) >= 50; }));
+    EXPECT_GT(guest.loudest(), 0.35f);
+}
+
 TEST_F(CallTest, PlaysTheScreenOfWhomItWatchesAndReceivesNoOther) {
     VideoEncoderConfig probe;
     probe.width = 160;

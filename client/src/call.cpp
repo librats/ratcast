@@ -401,7 +401,9 @@ void Call::play(Playing<Player>& slot, const PeerId& peer, const StreamDescripti
             };
         }
         output = mixer_->input();
-        if (const auto set = volumes_.find(peer); voice && set != volumes_.end()) {
+        if (!voice) {
+            output->set_volume(share_volume_);
+        } else if (const auto set = volumes_.find(peer); set != volumes_.end()) {
             output->set_volume(set->second);
         }
         player = std::make_unique<AudioPlayer>(media, peer, description, *output,
@@ -652,6 +654,18 @@ float Call::volume(const PeerId& peer) const {
     std::lock_guard lock(playing_);
     const auto set = volumes_.find(peer);
     return set != volumes_.end() ? set->second : 1.0f;
+}
+
+void Call::set_share_volume(float volume) {
+    volume = volume > 0.0f ? volume : 0.0f;  // as the mixer takes it, NaN 0
+    std::lock_guard lock(playing_);
+    share_volume_ = volume;
+    if (sound_) sound_.output->set_volume(volume);
+}
+
+float Call::share_volume() const {
+    std::lock_guard lock(playing_);
+    return share_volume_;
 }
 
 std::vector<PeerId> Call::speaking(Duration hold) const {
