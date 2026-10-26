@@ -161,8 +161,8 @@ final place and shape: stage 0 is a walking skeleton, not a throwaway prototype.
 | **4. Platforms** — in part | GPU paths and hardware codecs; Windows ✅ (its GPU path too) and macOS capture; netsim ✅ | — |
 | **5. Watch together** ✅ | one-to-many: a sender's budget, synchronised playout, forwarding tree, SFU and E2EE; simulcast and cinema put off | L5 ✅ |
 | **6. App** ✅ | Qt app MVP, one to one: invites, voice with AEC / NS, screen / window / app-audio share, camera; on Linux first, the other OSes as stage 4 reaches them | — |
-| **7. Conferences** — in part | text chat ✅, a link that holds ✅, each member heard as loud as the listener sets ✅, active speaker ✅, last-N ✅, grid ✅, settings ✅, moderation | — |
-| **8. Beyond** | Android, cinema mode, HDR, polish | — |
+| **7. Conferences** ✅ | text chat, a link that holds, each member heard as loud as the listener sets, active speaker, last-N, grid, settings; moderation, push-to-talk and sounds put off to stage 8 | — |
+| **8. Beyond** | Android, cinema mode, HDR, moderation, push-to-talk, rooms past a mesh, polish | — |
 | **9. Call monitor** ✅ | what a call does, as it does it: quality, bitrate, size, frame time, whether each end keeps up — a line a second in the console, a panel in the app | — |
 | **10. Room** ✅ | a voice lobby for a few, as Discord's: everyone with everyone, all talking from the start, who is there and who speaks, mute and deafen, anyone's screen or camera on and off while the room goes on | — |
 | **11. Full screen** ✅ | a share watched on the whole screen with nothing else on it, the controls and the cursor there while the mouse moves; the picture pixel-exact; the screen kept awake while watching | — |
@@ -859,7 +859,8 @@ quickly as anyone's.
   is busiest (a game). First measured: a room with one viewer far narrower than the others
   (`--member-paths`, one `cap-3`). Cheaper ways if that asks for one: the rate set by the others
   when one path is far below them, the narrow viewer getting what fits; temporal layers from the
-  one encoder. Comes with stage 7 at the latest, where rooms get big.
+  one encoder. Comes with rooms past a mesh at the latest (7.6, put off to stage 8), where
+  rooms get big.
 
 Closed with every test passing (625; ASan 625, TSan 588), what is left of it small. Left for
 later:
@@ -1236,7 +1237,7 @@ refresh rate than the share's frame rate is drawn at the window's own pace (the 
 each frame), not paced to the share's; the cursor's hiding and the bars' fading not seen on a
 real desktop.
 
-### Stage 7 — Conferences
+### Stage 7 — Conferences ✅
 
 The room of stage 10 as a place people stay in: what they say in writing, a link that holds
 through a network's change, each heard as the listener likes, the cameras of many, and someone
@@ -1318,8 +1319,8 @@ sends one out. Steps are taken in the order the user picks, not their numbers'.
   back. Debug 636 passed; the new tests under TSan clean (librats' own suite, 1113, in
   its release build).
 - **7.3 Each heard as the listener likes** ✅ (in part): how loud each member's voice plays on
-  this side alone, muted here, kept for the next room. Left: push-to-talk, sounds as members
-  come, go and share.
+  this side alone, muted here, kept for the next room. Push-to-talk and sounds as members
+  come, go and share put off to stage 8.
   Done so: an `AudioMixer` input has a volume (`set_volume()`, 0 to any, applied as it is
   pulled — a silent one still pulled, so its player keeps its time and its `heard`); `Call`
   keeps a volume for each peer (`set_volume()` / `volume()`), its voice's input set to it as it
@@ -1363,10 +1364,10 @@ sends one out. Steps are taken in the order the user picks, not their numbers'.
   call on real nodes showing one camera of two — the first offered, kept against one never heard,
   given up to the other as it speaks (received no more), kept while both speak, back as the other
   stops; two controllers' cameras at one shown, the shown one muted and the other in its place.
-- **7.5 Order**: the room's maker (its peer id in the link) asks a member to mute, sends one
+- **7.5 Order** (put off to stage 8): the room's maker (its peer id in the link) asks a member to mute, sends one
   out and keeps them out — each member drops them — and invites that let in only who has one;
   who keeps order when the maker leaves.
-- **7.6 Rooms past a mesh** (when there are such): sound through a server, the top speakers by
+- **7.6 Rooms past a mesh** (when there are such; put off to stage 8): sound through a server, the top speakers by
   level (5.6's); simulcast (5.4); Forward's 64.
 - **7.7 Settings** ✅: a place for what the user sets, laid out for more to come; the
   microphone, the speaker and the camera chosen where the defaults will not do; the window
@@ -1404,9 +1405,18 @@ sends one out. Steps are taken in the order the user picks, not their numbers'.
   headset played on at once with the echo from it, the microphone and the camera opened anew,
   heard and seen as before.
 
+Closed with every test passing (682), on what a room of friends needs: the done-when's last
+part, the room's maker sending one out, went with 7.5. Left for later, in stage 8:
+- 7.3: push-to-talk; sounds as members come, go and share.
+- 7.5: order — the maker muting a member, sending one out and keeping them out, invites that
+  let in only who has one.
+- 7.6: rooms past a mesh — sound through a server, the top speakers by level, simulcast (5.4),
+  more than `Forward`'s 64.
+
 ### Stage 8 — Beyond
 
-Android, cinema mode (5.5), HDR, polish.
+Android, cinema mode (5.5), HDR, polish; from stage 7, moderation (7.5), push-to-talk and the
+room's sounds (7.3), rooms past a mesh (7.6).
 
 ## librats track
 
