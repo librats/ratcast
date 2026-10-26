@@ -59,6 +59,9 @@ public:
     /// Largest live message the network carries.
     virtual size_t max_live_message() const = 0;
 
+    /// This node's id, as its peers know it; zero until the network knows.
+    virtual PeerId local_id() const = 0;
+
     /// Send to `peer` no faster than `bits_per_second`, whatever its path would
     /// take; 0 lifts the ceiling (librats' set_send_ceiling). What keeps the
     /// copies of a stream to several peers within the uplink they all go through

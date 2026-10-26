@@ -38,7 +38,10 @@
  *
  * Beside streams, a session says who it is (Presence: a name, muted,
  * deafened) to every peer as it connects and whenever that changes, and keeps
- * what each peer said of itself.
+ * what each peer said of itself. It says what its member writes (say()) to
+ * every peer entitled to its frames, and keeps the last that was said
+ * (chat.h): a peer that connects asks what was said, and each tells it what
+ * it knows, by whom and when — a member that came later reads what it missed.
  *
  * A share may be played in step by all who watch it, each frame shown
  * everywhere at once (set_playout_need()): each viewer measures its clock
@@ -123,6 +126,7 @@
 #include "ratcast/core/result.h"
 #include "ratcast/core/time.h"
 #include "ratcast/export.h"
+#include "ratcast/session/chat.h"
 #include "ratcast/session/common_delay.h"
 #include "ratcast/session/media_network.h"
 #include "ratcast/session/peer_clock.h"
@@ -165,10 +169,13 @@ struct SessionConfig {
     /// Seal this node's frames end to end, and take a frame passed on by
     /// another only sealed (see above). False: this node's go as they are.
     bool seal = true;
-    /// Who may read this node's frames, given its key as they subscribe:
-    /// null, every subscriber but a forwarder. Asked on a network thread;
-    /// must not call back into the session.
+    /// Who may read this node's frames, given its key as they subscribe —
+    /// and what is said, and tell it: null, every peer; never a forwarder.
+    /// Asked on a network thread; must not call back into the session.
     std::function<bool(const PeerId& peer)> entitled = {};
+    /// The messages kept of what was said, told to a peer that asks (a
+    /// forwarder keeps none).
+    size_t chat_kept = ChatLog::kDefaultKept;
 };
 
 struct SessionHandlers {
@@ -185,6 +192,9 @@ struct SessionHandlers {
     std::function<void(StreamId stream, uint32_t bits_per_second)> bitrate_changed = {};
     /// A peer said who it is, or that something of it changed.
     std::function<void(const PeerId& peer, const Presence& presence)> presence_changed = {};
+    /// A message new here: said by a peer, or told by one — what was said
+    /// before this node came, or while it was away. Not what say() said.
+    std::function<void(const ChatMessage& message)> said = {};
 };
 
 struct OutgoingStreamStats {
@@ -305,6 +315,20 @@ public:
     /// and id.
     std::vector<OfferedStream> offered() const;
 
+    // ── What is said ────────────────────────────────────────────────────────
+
+    /// Say `text` to every peer entitled (SessionConfig::entitled), as of
+    /// `now` by the wall clock — or a moment after what this node said last,
+    /// if that was later — with the name this node gave (set_presence()).
+    /// Kept with what was said, and told to who asks. Fails with
+    /// InvalidArgument for a text no valid message has (is_valid()),
+    /// Unsupported for a forwarder, and Unavailable while the network does not
+    /// know this node's id.
+    Result<ChatMessage> say(std::string text, WallTime now);
+
+    /// What this node knows was said, oldest first (ChatLog).
+    std::vector<ChatMessage> chat() const;
+
     // ── Playing in step ─────────────────────────────────────────────────────
 
     /// This node plays `peer`'s share in step with the peer's other viewers,
@@ -418,9 +442,18 @@ private:
                                const wire::FrameHeader& header, std::span<const uint8_t> message);
     void on_relayed_path(const PeerId& relay, const wire::RelayedPath& report);
     void on_cannot_reach(const PeerId& relay, const wire::CannotReach& cannot);
-    /// Announce every stream offered to `peer`, and say who this node is.
+    /// Announce every stream offered to `peer`, say who this node is, and ask
+    /// what was said.
     void announce_all(const PeerId& peer);
     void on_presence(const PeerId& peer, Presence presence);
+    /// Whether `peer` may read this node's frames and what is said
+    /// (SessionConfig::entitled).
+    bool entitled(const PeerId& peer) const;
+    /// `message`, from `peer`: its own words (`told` false: its name as it
+    /// said it) or what it knows another said.
+    void on_chat(const PeerId& peer, ChatMessage message, bool told);
+    /// Tell `peer` every message this node knows was said.
+    void tell_chat(const PeerId& peer);
     void on_announce(const PeerId& peer, StreamDescription description);
     void on_withdraw(const PeerId& peer, StreamId stream);
     void on_subscribe(const PeerId& peer, StreamId stream);
@@ -484,6 +517,12 @@ private:
     /// connecting as it changes never hears the old one last.
     std::mutex presence_mutex_;
     std::optional<Presence> presence_;  ///< this node's, once said
+
+    /// Guards the two below; taken before mutex_ and the presence mutex, never
+    /// under them.
+    mutable std::mutex chat_mutex_;
+    ChatLog chat_;
+    WallTime last_said_{};  ///< when this node said something last
     /// The next stream's slot in the tags of its frames; never 0, so no tag is.
     uint16_t next_slot_ = 1;
 

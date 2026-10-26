@@ -222,6 +222,10 @@ private:
                 [this](const PeerId&, const Presence& presence) {
                     tell("presence " + presence.name + (presence.muted ? " muted" : ""));
                 },
+            .said =
+                [this](const ChatMessage& message) {
+                    tell("said " + message.name + ": " + message.text);
+                },
             .source_ended =
                 [this](StreamId stream, Result<void> outcome) {
                     tell("source " + std::to_string(stream) + (outcome ? " ended" : " failed"));
@@ -871,6 +875,59 @@ TEST_F(CallTest, AMemberWhoHangsUpIsLeftAtOnce) {
     EXPECT_TRUE(wait_for([&] { return ann.told("left"); }, std::chrono::seconds(2)));
     EXPECT_FALSE(ann.told("lost")) << "a goodbye is no loss";
     EXPECT_TRUE(ann->away().empty());
+}
+
+TEST_F(CallTest, WhatIsSaidReachesEveryMemberAndOneWhoComesLaterReadsIt) {
+    Side host;
+    host.start(room(), false, false);
+    Side ann;
+    ann.start(room(RatsUrl{host.address()}), false, false);
+    meet(host, ann);  // named Ann and Bob
+    ASSERT_TRUE(host->set_presence({.name = "Host"}));
+    ASSERT_TRUE(ann->set_presence({.name = "Ann"}));
+
+    const Result<ChatMessage> hi = ann->say("hi, all");
+    ASSERT_TRUE(hi);
+    EXPECT_EQ(hi->name, "Ann");
+    EXPECT_EQ(hi->author, ann->id());
+    ASSERT_TRUE(wait_for([&] { return host.told("said Ann: hi, all"); }));
+    ASSERT_TRUE(host->say("welcome"));
+    ASSERT_TRUE(wait_for([&] { return ann.told("said Host: welcome"); }));
+
+    // Bob comes later, through Ann, and reads it all — once.
+    Side bob;
+    bob.start(room(RatsUrl{ann.address()}), false, false);
+    ASSERT_TRUE(wait_for([&] { return bob->peers().size() == 2; }));
+    ASSERT_TRUE(wait_for([&] { return bob->chat().size() == 2; }));
+    EXPECT_EQ(bob->chat(), host->chat());
+    EXPECT_EQ(bob->chat(), ann->chat());
+    ASSERT_TRUE(bob->set_presence({.name = "Bob"}));
+    ASSERT_TRUE(bob->say("sorry I'm late"));
+    for (Side* other : {&host, &ann}) {
+        EXPECT_TRUE(wait_for([&] { return other->told("said Bob: sorry I'm late"); }));
+    }
+    std::this_thread::sleep_for(200ms);
+    EXPECT_EQ(bob.told_times("said Ann: hi, all"), 1u);
+    EXPECT_EQ(host->say("").error(), Errc::InvalidArgument);
+}
+
+TEST_F(CallTest, WhatWasSaidWhileAMemberWasAwayIsToldItOnItsReturn) {
+    Side ann;
+    ann.start(quick_to_lose(std::nullopt, std::chrono::milliseconds(1500)), false, false);
+    test::UdpPath path(ann->port());
+    Side bob;
+    bob.start(quick_to_lose(RatsUrl{librats::HostEndpoint{"127.0.0.1", path.port()}},
+                            std::chrono::milliseconds(1500)),
+              false, false);
+    meet(ann, bob);
+
+    path.dead = true;
+    ASSERT_TRUE(wait_for([&] { return ann.told("lost"); }));
+    ASSERT_TRUE(ann->say("are you there?"));
+    path.dead = false;
+    ASSERT_TRUE(wait_for([&] { return bob.told("said Ann: are you there?"); }))
+        << ::testing::PrintToString(bob.events());
+    EXPECT_EQ(bob->chat(), ann->chat());
 }
 
 TEST_F(CallTest, CallsMeetByPeerIdAtAServerWhichIsNoMember) {

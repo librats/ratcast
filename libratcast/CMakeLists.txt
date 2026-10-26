@@ -9,10 +9,12 @@ add_library(ratcast
     src/core/result.cpp
     src/core/time.cpp
     src/core/version.cpp
+    src/session/chat.cpp
     src/session/common_delay.cpp
     src/session/media_service.cpp
     src/session/media_session.cpp
     src/session/peer_clock.cpp
+    src/session/plain_text.cpp
     src/session/presence.cpp
     src/session/rate_controller.cpp
     src/session/sframe.cpp

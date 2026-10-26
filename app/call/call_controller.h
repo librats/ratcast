@@ -21,7 +21,8 @@
  * are listed (`members`) by it, with who is speaking and whose camera and
  * share are on. Each member's camera goes to the view QML gives for it
  * (setCameraView()), the share watched to `video`, this side's own camera to
- * `preview`.
+ * `preview`. What is said in writing is `chat` (ChatModel): said with say(),
+ * and what the others said, what was said before this side came among it.
  *
  * What went wrong, or ended without the user, is the notice: a share the
  * desktop could not make or that stopped, a link that is none, a camera
@@ -56,6 +57,7 @@
 #include <string>
 #include <thread>
 
+#include "chat_model.h"
 #include "members_model.h"
 #include "ratcast/client/call.h"
 #include "ratcast/client/call_monitor.h"
@@ -96,6 +98,9 @@ class CallController : public QObject {
     Q_PROPERTY(QAbstractItemModel* members READ members CONSTANT)
     /// The loudest a member can be heard (setVolume()).
     Q_PROPERTY(double maxVolume READ maxVolume CONSTANT)
+    /// What is said in the room (ChatModel), from the start of this side's
+    /// time in it.
+    Q_PROPERTY(ratcast::app::ChatModel* chat READ chat CONSTANT)
     /// How many of the others have their camera on.
     Q_PROPERTY(int cameras READ cameras NOTIFY camerasChanged)
     /// The microphone silenced, as the user says; kept from one room to the
@@ -202,6 +207,10 @@ public:
     Q_INVOKABLE void setMutedHere(const QString& id, bool muted);
     /// Draw the camera of the member of `id` into `view`; null: nowhere.
     Q_INVOKABLE void setCameraView(const QString& id, ratcast::app::VideoView* view);
+    /// Say `text` to the room, its ends trimmed, its line breaks kept and
+    /// any other control character dropped: false for nothing to say, and,
+    /// with a notice, for too much (ChatMessage::kMaxTextSize).
+    Q_INVOKABLE bool say(const QString& text);
     /// Put `text` on the clipboard: an invite, for the user to send.
     Q_INVOKABLE void copy(const QString& text);
 
@@ -214,6 +223,7 @@ public:
     void setServer(const QString& server);
     MembersModel* members() { return &members_; }
     static double maxVolume() { return kMaxVolume; }
+    ChatModel* chat() { return &chat_; }
     const MembersModel& memberList() const { return members_; }
     int cameras() const { return cameras_on_; }
     bool muted() const { return muted_; }
@@ -328,6 +338,7 @@ private:
     QString name_;
     QString server_;
     MembersModel members_;
+    ChatModel chat_;
     QMap<QString, Hearing> hearing_;  ///< the members not heard as they come, by id
     int cameras_on_ = 0;
     bool muted_ = false;

@@ -341,6 +341,12 @@ int main(int argc, char** argv) {
             [](const PeerId& peer, const Presence& presence) {
                 std::printf("%s is %s\n", peer.short_hex().c_str(), presence.name.c_str());
             },
+        // Plain text by then: nothing in it a terminal acts on.
+        .said =
+            [](const ChatMessage& message) {
+                std::printf("%s (%s): %s\n", message.name.c_str(),
+                            message.author.short_hex().c_str(), message.text.c_str());
+            },
     };
 
     voices.start();

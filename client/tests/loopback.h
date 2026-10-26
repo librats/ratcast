@@ -80,6 +80,7 @@ private:
         }
         bool writable(const PeerId&) const override { return true; }
         size_t max_live_message() const override { return 4 * 1024 * 1024; }
+        PeerId local_id() const override { return self_; }
 
     private:
         void send(const PeerId& peer, const Buffer& message) {

@@ -34,6 +34,7 @@ public:
     }
     bool writable(const PeerId&) const override { return true; }
     size_t max_live_message() const override { return 4 * 1024 * 1024; }
+    PeerId local_id() const override { return {}; }
 };
 
 PeerId make_peer(uint32_t seed) {

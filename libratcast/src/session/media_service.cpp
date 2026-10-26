@@ -111,6 +111,11 @@ bool MediaService::writable(const PeerId& peer) const {
 
 size_t MediaService::max_live_message() const { return librats::SendOptions::kMaxLivePayload; }
 
+PeerId MediaService::local_id() const {
+    const librats::PeerNetwork* network = network_.load(std::memory_order_acquire);
+    return network ? network->local_id() : PeerId{};
+}
+
 void MediaService::set_send_ceiling(const PeerId& peer, uint64_t bits_per_second) {
     if (librats::PeerNetwork* network = network_.load(std::memory_order_acquire)) {
         network->set_send_ceiling(peer, bits_per_second);

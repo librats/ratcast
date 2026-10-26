@@ -10,8 +10,10 @@ import Ratcast.Video
 // join), joining, and the room. CallController says which. In the room, the
 // members down the side — who speaks, who is muted or deafened, whose camera
 // and share are on — the share watched in the middle with the cameras beside
-// it, and the controls along the bottom: microphone, sound, camera, sharing,
-// how the call goes (a panel on a button or Ctrl+I, its quality a dot), leave.
+// it, what is said in a pane on the right (on a button that counts what is
+// unread), and the controls along the bottom: microphone, sound, camera,
+// sharing, chat, how the call goes (a panel on a button or Ctrl+I, its quality
+// a dot), leave.
 // A share watched may go full screen (F, a double click): only the share, on
 // black, its controls and the cursor there while the mouse moves.
 // The start also says what the updater does: a new version on its way, or in
@@ -563,7 +565,7 @@ ApplicationWindow {
         readonly property bool camerasBeside: root.watching && root.cameraTiles > 0
                                               && !root.fullScreen
         anchors.left: root.fullScreen ? parent.left : side.right
-        anchors.right: parent.right
+        anchors.right: chatPane.visible ? chatPane.left : parent.right
         anchors.top: parent.top
         anchors.bottom: root.fullScreen ? parent.bottom : controls.top
         anchors.margins: root.fullScreen ? 0 : 12
@@ -810,6 +812,164 @@ ApplicationWindow {
         }
     }
 
+    // What is said: the messages down a pane, the newest at the bottom, a box
+    // to write in under them (Enter sends, Shift+Enter breaks the line). A
+    // text shows as it was written, its web links opening in the browser.
+    Pane {
+        id: chatPane
+
+        property bool shown: false
+
+        anchors.right: parent.right
+        anchors.top: parent.top
+        anchors.bottom: controls.top
+        width: 320
+        padding: 0
+        visible: root.inRoom && !root.fullScreen && shown
+        Material.elevation: 2
+
+        onShownChanged: if (shown) {
+            draft.forceActiveFocus()
+            messages.positionViewAtEnd()
+        }
+
+        // Read while shown in a window in front.
+        Binding {
+            target: call.chat
+            property: "reading"
+            value: chatPane.visible && root.active
+        }
+
+        ColumnLayout {
+            anchors.fill: parent
+            spacing: 0
+
+            RowLayout {
+                Layout.fillWidth: true
+                Layout.leftMargin: 12
+                Layout.topMargin: 8
+
+                Label {
+                    Layout.fillWidth: true
+                    text: qsTr("Chat")
+                    font.pixelSize: 20
+                    font.bold: true
+                }
+                ToolButton {
+                    text: "✕"
+                    onClicked: chatPane.shown = false
+                }
+            }
+
+            Item {
+                Layout.fillWidth: true
+                Layout.fillHeight: true
+
+                Label {
+                    anchors.centerIn: parent
+                    text: qsTr("Nothing said yet")
+                    opacity: 0.5
+                    visible: messages.count === 0
+                }
+
+                ListView {
+                    id: messages
+
+                    // At the newest: a message coming is followed; scrolled
+                    // up to read, the view stays.
+                    property bool following: true
+
+                    anchors.fill: parent
+                    clip: true
+                    model: call.chat
+                    bottomMargin: 8
+                    onContentYChanged: following = atYEnd
+                    onCountChanged: if (following) Qt.callLater(positionViewAtEnd)
+                    ScrollBar.vertical: ScrollBar {}
+
+                    delegate: ColumnLayout {
+                        id: message
+                        required property string peer
+                        required property string name
+                        required property string html
+                        required property string time
+                        required property bool mine
+                        required property bool continued
+                        width: ListView.view.width
+                        spacing: 0
+
+                        RowLayout {
+                            Layout.fillWidth: true
+                            Layout.leftMargin: 12
+                            Layout.rightMargin: 12
+                            Layout.topMargin: 10
+                            visible: !message.continued
+                            spacing: 6
+
+                            PlainLabel {
+                                Layout.maximumWidth: message.width - 100
+                                text: message.mine ? qsTr("You")
+                                                   : root.memberName(message.name, message.peer)
+                                font.bold: true
+                                color: message.mine ? Material.accent : Material.foreground
+                            }
+                            Label {
+                                Layout.fillWidth: true
+                                text: message.time
+                                opacity: 0.5
+                                font.pixelSize: 11
+                            }
+                        }
+                        // Escaped by the model: no markup but its links.
+                        TextEdit {
+                            id: words
+                            Layout.fillWidth: true
+                            Layout.leftMargin: 12
+                            Layout.rightMargin: 12
+                            Layout.topMargin: 2
+                            readOnly: true
+                            selectByMouse: true
+                            textFormat: TextEdit.RichText
+                            wrapMode: TextEdit.Wrap
+                            text: message.html
+                            color: Material.foreground
+                            selectionColor: Material.accent
+                            font.pixelSize: 14
+                            onLinkActivated: link => Qt.openUrlExternally(link)
+
+                            HoverHandler {
+                                cursorShape: words.hoveredLink.length > 0 ? Qt.PointingHandCursor
+                                                                          : Qt.IBeamCursor
+                            }
+                        }
+                    }
+                }
+            }
+
+            ScrollView {
+                Layout.fillWidth: true
+                Layout.margins: 8
+                Layout.maximumHeight: 120
+
+                TextArea {
+                    id: draft
+                    placeholderText: qsTr("Say something")
+                    wrapMode: TextArea.Wrap
+
+                    function send(event) {
+                        if (event.modifiers & Qt.ShiftModifier) {
+                            event.accepted = false
+                            return
+                        }
+                        if (call.say(text)) clear()
+                    }
+                    Keys.onReturnPressed: event => send(event)
+                    Keys.onEnterPressed: event => send(event)
+                }
+            }
+        }
+    }
+
     Shortcut {
         sequence: "Ctrl+I"
         enabled: root.inRoom
@@ -913,6 +1073,13 @@ ApplicationWindow {
                     ToolTip.visible: hovered
                     ToolTip.text: qsTr("How the call goes (Ctrl+I)")
                 }
+            }
+            Button {
+                text: call.chat.unread > 0 ? qsTr("Chat (%1)").arg(call.chat.unread) : qsTr("Chat")
+                checkable: true
+                checked: chatPane.shown
+                highlighted: call.chat.unread > 0
+                onToggled: chatPane.shown = checked
             }
             Button {
                 Layout.leftMargin: 8

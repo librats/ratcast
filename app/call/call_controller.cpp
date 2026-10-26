@@ -34,6 +34,18 @@ std::string presence_name(const QString& name) {
     return kept.toStdString();
 }
 
+/// `text` as a message may carry it: line breaks as "\n", other control
+/// characters dropped, the ends trimmed.
+std::string chat_text(QString text) {
+    text.replace(QStringLiteral("\r\n"), QStringLiteral("\n"));
+    text.replace(u'\r', u'\n');
+    QString kept;
+    for (const QChar c : std::as_const(text)) {
+        if (c == u'\n' || c == u'\t' || c.category() != QChar::Other_Control) kept += c;
+    }
+    return kept.trimmed().toStdString();
+}
+
 /// The login name of the user running this.
 QString user_name() {
     QString name = qEnvironmentVariable("USER");
@@ -238,6 +250,7 @@ void CallController::join(const QString& link) {
 
 void CallController::start(CallConfig config, State state) {
     set_notice({});
+    chat_.clear();
     const uint64_t generation = ++generation_;
     voice_ = std::make_unique<VoiceChannel>(environment_.voice);
     std::unique_ptr<AudioOutput> device =
@@ -624,6 +637,25 @@ void CallController::print_stats() {
     std::fflush(stdout);
 }
 
+// ── What is said ────────────────────────────────────────────────────────────
+
+bool CallController::say(const QString& text) {
+    if (!call_) return false;
+    std::string words = chat_text(text);
+    if (words.empty()) return false;
+    if (words.size() > ChatMessage::kMaxTextSize) {
+        set_notice(tr("That is too long to send: say it in a few messages."));
+        return false;
+    }
+    const Result<ChatMessage> said = call_->say(std::move(words));
+    if (!said) {
+        set_notice(tr("That cannot be sent (%1).").arg(describe(said.error())));
+        return false;
+    }
+    chat_.add(*said, /*mine=*/true);
+    return true;
+}
+
 void CallController::copy(const QString& text) { QGuiApplication::clipboard()->setText(text); }
 
 // ── The call's events ───────────────────────────────────────────────────────
@@ -675,6 +707,12 @@ CallHandlers CallController::handlers(uint64_t generation) {
         .presence = [this, generation](
                         const PeerId&,
                         const Presence&) { post(generation, [this] { update_members(); }); },
+        .said =
+            [this, generation](const ChatMessage& message) {
+                // This side's own too, said before it came back.
+                post(generation,
+                     [this, message] { chat_.add(message, message.author == call_->id()); });
+            },
         .source_ended =
             [this, generation](StreamId stream, Result<void> outcome) {
                 post(generation, [this, stream, outcome] {

@@ -130,6 +130,7 @@ public:
     }
     bool writable(const PeerId& peer) const override { return !full_.contains(peer); }
     size_t max_live_message() const override { return 64 * 1024; }
+    PeerId local_id() const override { return self_; }
     bool relayed(const PeerId& peer) const override { return carried.contains(peer); }
     void set_send_ceiling(const PeerId& peer, uint64_t bits_per_second) override {
         if (bits_per_second == 0) {
@@ -188,6 +189,7 @@ struct Party {
             .bitrate_changed = [this](StreamId, uint32_t b) { bitrates.push_back(b); },
             .presence_changed = [this](const PeerId&,
                                        const Presence& p) { presences.push_back(p); },
+            .said = [this](const ChatMessage& m) { said.push_back(m); },
         };
     }
 
@@ -200,6 +202,7 @@ struct Party {
     int keyframes_needed = 0;
     std::vector<uint32_t> bitrates;
     std::vector<Presence> presences;  ///< what peers said of themselves, in order
+    std::vector<ChatMessage> said;    ///< messages new here, in order
     std::function<void(const EncodedFrame&)> on_frame;
     MediaSession session;  // last: its handlers point at the members above
 };
@@ -992,6 +995,137 @@ TEST_F(MediaSessionTest, RefusesAPresenceThatIsNotValid) {
     EXPECT_EQ(sender.session.set_presence({"a\nb"}).error(), Errc::InvalidArgument);
     hub.deliver_all();
     EXPECT_TRUE(receiver.presences.empty());
+}
+
+// ── What is said ────────────────────────────────────────────────────────────
+
+namespace {
+
+constexpr WallTime kNoon{std::chrono::hours(482'000)};
+
+std::vector<std::string> texts(const std::vector<ChatMessage>& messages) {
+    std::vector<std::string> out;
+    for (const ChatMessage& m : messages) out.push_back(m.text);
+    return out;
+}
+
+}  // namespace
+
+TEST_F(MediaSessionTest, WhatIsSaidGoesToEveryPeerByWhoSaidIt) {
+    ASSERT_TRUE(sender.session.set_presence({"Ann"}));
+    const Result<ChatMessage> hello = sender.session.say("hello\nthere", kNoon);
+    ASSERT_TRUE(hello);
+    EXPECT_EQ(hello->author, sender.id);
+    EXPECT_EQ(hello->name, "Ann");
+    EXPECT_EQ(hello->sent, kNoon);
+    hub.deliver_all();
+
+    ASSERT_EQ(receiver.said.size(), 1u);
+    EXPECT_EQ(receiver.said[0], *hello);
+    EXPECT_EQ(receiver.session.chat(), std::vector{*hello});
+    EXPECT_EQ(sender.session.chat(), std::vector{*hello});
+    EXPECT_TRUE(sender.said.empty()) << "its own is what say() returns";
+}
+
+TEST_F(MediaSessionTest, WhatOneSaysAtOnceIsToldApartAndInOrder) {
+    ASSERT_TRUE(sender.session.say("one", kNoon));
+    ASSERT_TRUE(sender.session.say("two", kNoon));
+    ASSERT_TRUE(sender.session.say("three", kNoon - 1s)) << "its clock went back";
+    hub.deliver_all();
+    const std::vector<ChatMessage> chat = receiver.session.chat();
+    EXPECT_EQ(texts(chat), (std::vector<std::string>{"one", "two", "three"}));
+    EXPECT_LT(chat[0].sent, chat[1].sent);
+    EXPECT_LT(chat[1].sent, chat[2].sent);
+}
+
+TEST_F(MediaSessionTest, OneThatComesLaterIsToldWhatWasSaidOnceByEach) {
+    ASSERT_TRUE(sender.session.set_presence({"Ann"}));
+    ASSERT_TRUE(receiver.session.set_presence({"Bob"}));
+    ASSERT_TRUE(sender.session.say("first", kNoon));
+    hub.deliver_all();
+    ASSERT_TRUE(receiver.session.say("second", kNoon + 1s));
+    hub.deliver_all();
+
+    // Ann renamed herself since: what was said keeps the name it was said by.
+    ASSERT_TRUE(sender.session.set_presence({"Annie"}));
+    Party late(hub, clock, 3);
+    connect(sender, late);
+    connect(receiver, late);
+    hub.deliver_all();
+
+    EXPECT_EQ(texts(late.said), (std::vector<std::string>{"first", "second"}))
+        << "told by both, each once";
+    EXPECT_EQ(late.session.chat(), sender.session.chat());
+    EXPECT_EQ(late.session.chat()[0].author, sender.id);
+    EXPECT_EQ(late.session.chat()[0].name, "Ann");
+    EXPECT_EQ(late.session.chat()[1].author, receiver.id);
+    EXPECT_EQ(late.session.chat()[1].name, "Bob");
+    EXPECT_TRUE(sender.said.size() == 1 && receiver.said.size() == 1)
+        << "nothing new to those who were there";
+}
+
+TEST_F(MediaSessionTest, WhatWasSaidWhileAwayIsToldOnComingBack) {
+    receiver.session.on_peer_disconnected(sender.id);
+    sender.session.on_peer_disconnected(receiver.id);
+    ASSERT_TRUE(sender.session.say("while you were out", kNoon));
+    hub.deliver_all();
+    EXPECT_TRUE(receiver.said.empty());
+
+    connect(sender, receiver);
+    hub.deliver_all();
+    EXPECT_EQ(texts(receiver.said), std::vector<std::string>{"while you were out"});
+
+    // A link that lost a race asks again: nothing new.
+    sender.session.on_peer_rerouted(receiver.id);
+    receiver.session.on_peer_rerouted(sender.id);
+    hub.deliver_all();
+    EXPECT_EQ(receiver.said.size(), 1u);
+    EXPECT_GE(hub.delivered[wire::MessageKind::ChatTold], 2);
+}
+
+TEST_F(MediaSessionTest, KeepsTheLastThatWasSaid) {
+    Party forgetful(hub, clock, 3, SessionConfig{.chat_kept = 2});
+    connect(sender, forgetful);
+    for (int i = 0; i < 3; ++i) {
+        ASSERT_TRUE(sender.session.say(std::to_string(i), kNoon + std::chrono::seconds(i)));
+    }
+    hub.deliver_all();
+    EXPECT_EQ(texts(forgetful.session.chat()), (std::vector<std::string>{"1", "2"}));
+    EXPECT_EQ(sender.session.chat().size(), 3u);
+}
+
+TEST_F(MediaSessionTest, NothingIsSaidToNorHeardFromThoseNotEntitled) {
+    Party server(hub, clock, 9, SessionConfig{.forwarder = true});
+    Party stranger(hub, clock, 8);
+    Party picky(hub, clock, 4,
+                SessionConfig{.entitled = [&](const PeerId& p) { return p != stranger.id; }});
+    ASSERT_TRUE(sender.session.say("before", kNoon));
+    for (Party* other : {&server, &stranger}) connect(picky, *other);
+    connect(picky, sender);
+    hub.deliver_all();
+    ASSERT_EQ(texts(picky.said), std::vector<std::string>{"before"});
+
+    ASSERT_TRUE(picky.session.say("to members", kNoon + 1s));
+    ASSERT_TRUE(stranger.session.say("let me in", kNoon + 2s));
+    hub.deliver_all();
+    EXPECT_TRUE(stranger.said.empty()) << "neither told nor said to";
+    EXPECT_TRUE(server.said.empty());
+    EXPECT_TRUE(server.session.chat().empty()) << "a forwarder keeps nothing";
+    EXPECT_EQ(texts(picky.session.chat()), (std::vector<std::string>{"before", "to members"}));
+    EXPECT_EQ(server.session.say("hi", kNoon).error(), Errc::Unsupported);
+
+    // A server not known for one yet is asked, and answers nothing.
+    EXPECT_EQ(hub.delivered[wire::MessageKind::ChatTold], 1) << "the sender's, to picky";
+}
+
+TEST_F(MediaSessionTest, RefusesToSayWhatIsNotAMessage) {
+    EXPECT_EQ(sender.session.say("", kNoon).error(), Errc::InvalidArgument);
+    EXPECT_EQ(sender.session.say("bell\a", kNoon).error(), Errc::InvalidArgument);
+    EXPECT_EQ(sender.session.say(std::string(ChatMessage::kMaxTextSize + 1, 'a'), kNoon).error(),
+              Errc::InvalidArgument);
+    EXPECT_TRUE(sender.session.say(std::string(ChatMessage::kMaxTextSize, 'a'), kNoon));
+    hub.deliver_all();
+    EXPECT_EQ(receiver.said.size(), 1u);
 }
 
 // ── Peers coming and going ──────────────────────────────────────────────────

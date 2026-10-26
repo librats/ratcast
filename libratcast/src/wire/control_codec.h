@@ -3,7 +3,7 @@
 /**
  * @file control_codec.h
  * @brief The control plane: offering streams, subscribing, asking for keyframes,
- * saying who one is, agreeing when a share plays.
+ * saying who one is, agreeing when a share plays, what is said in writing.
  *
  * Control messages travel reliably and in order on the media lane, frames
  * beside them as live messages. Every one names a stream by the id its sender
@@ -36,6 +36,11 @@
  *   CannotReach       prefix, varint stream, the viewer's 32-byte id
  *   Forwarder         prefix
  *   FrameKey          prefix, varint KID, 32-byte base key
+ *   Chat              prefix, varint sent (µs since the Unix epoch),
+ *                     varint text length + text
+ *   ChatAsk           prefix
+ *   ChatTold          prefix, the author's 32-byte id, varint sent,
+ *                     varint name length + name, varint text length + text
  *
  * A later version may append fields to any of them: a receiver reads the
  * fields it knows and ignores whatever follows.
@@ -51,6 +56,7 @@
 #include "ratcast/core/buffer.h"
 #include "ratcast/core/result.h"
 #include "ratcast/core/time.h"
+#include "ratcast/session/chat.h"
 #include "ratcast/session/media_network.h"
 #include "ratcast/session/presence.h"
 #include "ratcast/session/rate_controller.h"
@@ -162,13 +168,29 @@ struct FrameKey {
     std::array<uint8_t, 32> key{};
 };
 
+/// A member's words to a peer, said now (MediaSession::say()). Who said them
+/// is who sent them: the connection says.
+struct Chat {
+    WallTime sent{};  ///< by the sayer's clock
+    std::string text;
+};
+
+/// What was said? Answered with a ChatTold for each message the peer knows.
+struct ChatAsk {};
+
+/// A message the sender knows was said, by itself or another, as it knows it.
+struct ChatTold {
+    ChatMessage message;
+};
+
 using ControlMessage =
     std::variant<Announce, Withdraw, Subscribe, Unsubscribe, KeyframeRequest, PresenceUpdate,
                  ClockProbe, ClockEcho, PlayoutNeed, PlayoutDelay, Forward, RelayedPath, Uplink,
-                 CannotReach, Forwarder, FrameKey>;
+                 CannotReach, Forwarder, FrameKey, Chat, ChatAsk, ChatTold>;
 
 /// The message for `message`. Precondition: an Announce carries a description,
-/// a PresenceUpdate a presence, for which is_valid() holds; a PlayoutNeed or a
+/// a PresenceUpdate a presence, a ChatTold a message — and a Chat what would
+/// be one — for which is_valid() holds; a PlayoutNeed or a
 /// PlayoutDelay says no more than kMaxPlayout, and nothing below zero; a
 /// Forward names no more than kMaxForwarded viewers; a RelayedPath's durations
 /// are not below zero.
@@ -176,7 +198,7 @@ Buffer encode_control(const ControlMessage& message);
 
 /// The control message in `message`. Fails with Unsupported for a stream of a
 /// media kind this build does not know, and Malformed for an announced
-/// description or a presence that is not valid, a latency or delay past
+/// description, a presence or a message that is not valid, a latency or delay past
 /// kMaxPlayout, or more than kMaxForwarded viewers.
 Result<ControlMessage> decode_control(std::span<const uint8_t> message);
 

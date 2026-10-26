@@ -42,6 +42,9 @@ enum class MessageKind : uint8_t {
     CannotReach = 16,     ///< I am not connected to this viewer you would have me pass on to
     Forwarder = 17,       ///< I watch nothing and pass on what I am handed: a server
     FrameKey = 18,        ///< the key my frames are sealed under (SFrame)
+    Chat = 19,            ///< I say this, in writing
+    ChatAsk = 20,         ///< what was said?
+    ChatTold = 21,        ///< this was said, as I know it
 };
 
 constexpr uint8_t message_prefix(MessageKind kind) noexcept {
@@ -73,7 +76,10 @@ inline Result<MessageKind> read_prefix(Reader& in) noexcept {
         case MessageKind::Uplink:
         case MessageKind::CannotReach:
         case MessageKind::Forwarder:
-        case MessageKind::FrameKey: return kind;
+        case MessageKind::FrameKey:
+        case MessageKind::Chat:
+        case MessageKind::ChatAsk:
+        case MessageKind::ChatTold: return kind;
     }
     return fail(Errc::UnknownKind);
 }

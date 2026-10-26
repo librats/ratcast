@@ -662,6 +662,7 @@ MediaSession::MediaSession(MediaNetwork& network, Clock& clock, SessionHandlers 
       clock_(clock),
       handlers_(std::move(handlers)),
       config_(config),
+      chat_(config.chat_kept),
       capture_clock_(config.capture_clock ? *config.capture_clock : clock),
       sealing_(std::make_unique<Sealing>()) {
     if (config_.seal) sealing_->current = sealing_->make(clock_.now());
@@ -1057,10 +1058,15 @@ void MediaSession::announce_all(const PeerId& peer) {
         network_.send_reliable(peer, wire::encode_control(wire::Uplink{uplink}));
     }
     if (config_.forwarder) network_.send_reliable(peer, wire::encode_control(wire::Forwarder{}));
-    std::lock_guard lock(presence_mutex_);
-    if (presence_) {
-        network_.send_reliable(peer, wire::encode_control(wire::PresenceUpdate{*presence_}));
+    {
+        std::lock_guard lock(presence_mutex_);
+        if (presence_) {
+            network_.send_reliable(peer, wire::encode_control(wire::PresenceUpdate{*presence_}));
+        }
     }
+    // Asked of a server too, which does not answer: who is one may not be
+    // known yet.
+    if (!config_.forwarder) network_.send_reliable(peer, wire::encode_control(wire::ChatAsk{}));
 }
 
 Result<void> MediaSession::set_presence(const Presence& presence) {
@@ -1086,6 +1092,67 @@ void MediaSession::on_presence(const PeerId& peer, Presence presence) {
         presences_[peer] = presence;
     }
     notify(handlers_.presence_changed, peer, presence);
+}
+
+bool MediaSession::entitled(const PeerId& peer) const {
+    const std::shared_ptr<PeerState> state = find_peer(peer);
+    if (state && state->is_forwarder()) return false;
+    return !config_.entitled || config_.entitled(peer);
+}
+
+// ── What is said ────────────────────────────────────────────────────────────
+
+Result<ChatMessage> MediaSession::say(std::string text, WallTime now) {
+    if (config_.forwarder) return fail(Errc::Unsupported);
+    ChatMessage message{.author = network_.local_id(), .text = std::move(text)};
+    if (message.author.is_zero()) return fail(Errc::Unavailable);
+    {
+        std::lock_guard lock(presence_mutex_);
+        if (presence_) message.name = presence_->name;
+    }
+    // Stamped, kept and sent under the lock: two said at once go in the order
+    // they were said.
+    std::lock_guard lock(chat_mutex_);
+    message.sent = std::max(now, last_said_ + WallTime::duration{1});
+    if (!is_valid(message)) return fail(Errc::InvalidArgument);
+    last_said_ = message.sent;
+    chat_.add(message);
+    const Buffer said = wire::encode_control(wire::Chat{message.sent, message.text});
+    for (const PeerId& peer : connected_peers()) {
+        if (entitled(peer)) network_.send_reliable(peer, said);
+    }
+    return message;
+}
+
+std::vector<ChatMessage> MediaSession::chat() const {
+    std::lock_guard lock(chat_mutex_);
+    return {chat_.messages().begin(), chat_.messages().end()};
+}
+
+void MediaSession::on_chat(const PeerId& peer, ChatMessage message, bool told) {
+    if (config_.forwarder || !find_peer(peer) || !entitled(peer)) return;
+    if (!told) {
+        message.author = peer;
+        if (std::optional<Presence> said = presence(peer)) message.name = std::move(said->name);
+    }
+    {
+        std::lock_guard lock(chat_mutex_);
+        if (!chat_.add(message)) return;
+    }
+    notify(handlers_.said, message);
+}
+
+void MediaSession::tell_chat(const PeerId& peer) {
+    if (config_.forwarder || !entitled(peer)) return;
+    std::vector<Buffer> told;
+    {
+        std::lock_guard lock(chat_mutex_);
+        told.reserve(chat_.messages().size());
+        for (const ChatMessage& message : chat_.messages()) {
+            told.push_back(wire::encode_control(wire::ChatTold{message}));
+        }
+    }
+    for (const Buffer& message : told) network_.send_reliable(peer, message);
 }
 
 void MediaSession::on_peer_disconnected(const PeerId& peer) {
@@ -1350,6 +1417,13 @@ void MediaSession::on_message(const PeerId& peer, std::span<const uint8_t> messa
             } else if constexpr (std::is_same_v<Message, wire::FrameKey>) {
                 // From the sender itself: never passed on.
                 if (find_peer(peer)) sealing_->keep(peer, m.kid, m.key);
+            } else if constexpr (std::is_same_v<Message, wire::Chat>) {
+                on_chat(peer, ChatMessage{.sent = m.sent, .text = std::move(m.text)},
+                        /*told=*/false);
+            } else if constexpr (std::is_same_v<Message, wire::ChatAsk>) {
+                tell_chat(peer);
+            } else if constexpr (std::is_same_v<Message, wire::ChatTold>) {
+                on_chat(peer, std::move(m.message), /*told=*/true);
             } else {
                 static_assert(std::is_same_v<Message, wire::KeyframeRequest>);
                 on_keyframe_request(peer, m.stream);
@@ -1809,12 +1883,7 @@ void MediaSession::on_forward(const PeerId& sender, const wire::Forward& forward
 
 void MediaSession::give_key(const PeerId& peer, bool again) {
     if (!config_.seal) return;
-    if (!again) {
-        const std::shared_ptr<PeerState> state = find_peer(peer);
-        const bool entitled =
-            config_.entitled ? config_.entitled(peer) : !(state && state->is_forwarder());
-        if (!entitled) return;
-    }
+    if (!again && !entitled(peer)) return;
     std::vector<Buffer> messages;
     {
         std::lock_guard lock(sealing_->mutex);

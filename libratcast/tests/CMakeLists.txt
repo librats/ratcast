@@ -1,8 +1,9 @@
 ratcast_add_test(libratcast_tests
     SOURCES
         test_buffer.cpp
-        test_common_delay.cpp
         test_capi.cpp
+        test_chat.cpp
+        test_common_delay.cpp
         test_control_codec.cpp
         test_frame_codec.cpp
         test_frame_tracker.cpp

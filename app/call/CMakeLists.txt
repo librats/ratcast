@@ -5,6 +5,8 @@
 qt_add_library(ratcast_call STATIC
     call_controller.cpp
     call_controller.h
+    chat_model.cpp
+    chat_model.h
     members_model.cpp
     members_model.h
 )

@@ -303,3 +303,54 @@ TEST(ControlCodec, RefusesAForwardToTooManyOrAPathWithFlagsItDoesNotKnow) {
     bytes[2 + PeerId::kSize] = 64;  // the flags, past the last known
     EXPECT_EQ(decode_error(bytes), Errc::Malformed);
 }
+
+TEST(ControlCodec, RoundTripsChat) {
+    const WallTime noon{std::chrono::hours(482'000)};
+    const Chat chat = round_trip(Chat{noon, "Привет 👋\nhttps://example.com"});
+    EXPECT_EQ(chat.sent, noon);
+    EXPECT_EQ(chat.text, "Привет 👋\nhttps://example.com");
+    EXPECT_TRUE(
+        std::holds_alternative<ChatAsk>(*decode_control(encode_control(ChatAsk{}).bytes())));
+    const ChatMessage message{peer(5), "Анна", noon, std::string(ChatMessage::kMaxTextSize, 'x')};
+    EXPECT_EQ(round_trip(ChatTold{message}).message, message);
+}
+
+TEST(ControlCodec, EveryCutOfAChatIsTruncated) {
+    const WallTime noon{std::chrono::hours(482'000)};
+    for (const ControlMessage& message :
+         {ControlMessage{Chat{noon, "hello"}},
+          ControlMessage{ChatTold{ChatMessage{peer(5), "Анна", noon, "hi"}}}}) {
+        const auto bytes = bytes_of(encode_control(message));
+        for (size_t cut = 0; cut < bytes.size(); ++cut) {
+            EXPECT_EQ(decode_error({bytes.begin(), bytes.begin() + static_cast<ptrdiff_t>(cut)}),
+                      Errc::Truncated)
+                << "kind " << int(bytes[0]) << ", cut at " << cut;
+        }
+    }
+}
+
+TEST(ControlCodec, RefusesAChatThatIsNoMessage) {
+    const auto chat = [](std::vector<uint8_t> text) {
+        std::vector<uint8_t> bytes = {message_prefix(MessageKind::Chat), 1};  // sent
+        const size_t size = text.size();
+        bytes.push_back(static_cast<uint8_t>(size < 0x80 ? size : (size & 0x7F) | 0x80));
+        if (size >= 0x80) bytes.push_back(static_cast<uint8_t>(size >> 7));
+        bytes.insert(bytes.end(), text.begin(), text.end());
+        return bytes;
+    };
+    EXPECT_TRUE(decode_control(chat({'o', 'k'})));
+    EXPECT_EQ(decode_error(chat({})), Errc::Malformed);                // nothing said
+    EXPECT_EQ(decode_error(chat({'a', 0xFF})), Errc::Malformed);       // not UTF-8
+    EXPECT_EQ(decode_error(chat({'a', 0x1B, '['})), Errc::Malformed);  // a control
+    EXPECT_EQ(decode_error(chat(std::vector<uint8_t>(ChatMessage::kMaxTextSize + 1, 'x'))),
+              Errc::Malformed);
+    // Sent past what a wall time holds.
+    std::vector<uint8_t> late = {message_prefix(MessageKind::Chat)};
+    for (int i = 0; i < 9; ++i) late.push_back(0xFF);
+    late.insert(late.end(), {0x01, 2, 'o', 'k'});
+    EXPECT_EQ(decode_error(late), Errc::Malformed);
+
+    auto told = bytes_of(encode_control(ChatTold{ChatMessage{peer(5), "Анна", {}, "hi"}}));
+    told[1 + PeerId::kSize + 1 + 1] = '\n';  // the name's first byte
+    EXPECT_EQ(decode_error(told), Errc::Malformed);
+}

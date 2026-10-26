@@ -1,6 +1,7 @@
 #include "ratcast/client/call.h"
 
 #include <algorithm>
+#include <chrono>
 #include <type_traits>
 #include <utility>
 
@@ -331,6 +332,15 @@ bool Call::relayed(const PeerId& peer) const {
     return info != peers.end() && info->transport == librats::TransportKind::Relay;
 }
 
+// ── What is said ────────────────────────────────────────────────────────────
+
+Result<ChatMessage> Call::say(std::string text) {
+    const auto now = std::chrono::floor<WallTime::duration>(std::chrono::system_clock::now());
+    return session().say(std::move(text), now);
+}
+
+std::vector<ChatMessage> Call::chat() const { return media_->session().chat(); }
+
 MediaSession& Call::session() noexcept { return media_->session(); }
 
 SessionHandlers Call::session_handlers() {
@@ -362,6 +372,7 @@ SessionHandlers Call::session_handlers() {
                 }
                 notify(handlers_.presence, peer, presence);
             },
+        .said = [this](const ChatMessage& message) { notify(handlers_.said, message); },
     };
 }
 

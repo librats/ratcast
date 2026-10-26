@@ -211,6 +211,50 @@ TEST_F(CallControllerTest, EachListsTheOthersByTheNamesTheyGive) {
     EXPECT_LE(told.toUtf8().size(), qsizetype(Presence::kMaxNameSize));
 }
 
+TEST_F(CallControllerTest, WhatIsSaidIsListedByEachAndReadByOneWhoComesLater) {
+    both_in();
+    const auto at = [](CallController& side, int row, ChatModel::Role role) {
+        ChatModel& chat = *side.chat();
+        return chat.data(chat.index(row), role);
+    };
+    EXPECT_TRUE(ann_.say("  hi <b>Bob</b>\r\nsee https://example.com.\x07 "));
+    ASSERT_EQ(ann_.chat()->rowCount(), 1);
+    EXPECT_TRUE(at(ann_, 0, ChatModel::MineRole).toBool());
+    EXPECT_EQ(ann_.chat()->unread(), 0) << "one's own is read";
+
+    ASSERT_TRUE(wait_for([&] { return bob_.chat()->rowCount() == 1; }));
+    EXPECT_EQ(at(bob_, 0, ChatModel::TextRole), "hi <b>Bob</b>\nsee https://example.com.");
+    EXPECT_EQ(at(bob_, 0, ChatModel::NameRole), "Ann");
+    EXPECT_EQ(at(bob_, 0, ChatModel::AuthorRole), id_of(bob_, "Ann"));
+    EXPECT_FALSE(at(bob_, 0, ChatModel::MineRole).toBool());
+    EXPECT_EQ(bob_.chat()->unread(), 1);
+    bob_.chat()->setReading(true);
+    EXPECT_EQ(bob_.chat()->unread(), 0);
+
+    EXPECT_TRUE(bob_.say("hello"));
+    ASSERT_TRUE(wait_for([&] { return ann_.chat()->rowCount() == 2; }));
+    EXPECT_EQ(at(ann_, 1, ChatModel::NameRole), "Bob");
+    EXPECT_FALSE(at(ann_, 1, ChatModel::ContinuedRole).toBool()) << "another's";
+
+    // Carl comes later, and reads it all.
+    carl_.join(bob_.invites().value(0));
+    ASSERT_TRUE(wait_for([&] { return carl_.chat()->rowCount() == 2; }));
+    EXPECT_EQ(at(carl_, 0, ChatModel::NameRole), "Ann");
+    EXPECT_EQ(at(carl_, 1, ChatModel::TextRole), "hello");
+    EXPECT_EQ(carl_.chat()->unread(), 2);
+
+    EXPECT_FALSE(ann_.say(" \n\t "));
+    EXPECT_TRUE(ann_.notice().isEmpty()) << "nothing said is no news";
+    EXPECT_FALSE(ann_.say(QString(qsizetype(ChatMessage::kMaxTextSize) / 2 + 1, QChar(0x044F))));
+    EXPECT_FALSE(ann_.notice().isEmpty()) << "too long for its bytes";
+    EXPECT_EQ(ann_.chat()->rowCount(), 2);
+
+    // A new room starts with nothing said.
+    ann_.leave();
+    ann_.create();
+    EXPECT_EQ(ann_.chat()->rowCount(), 0);
+}
+
 TEST_F(CallControllerTest, EveryoneTalksAndIsSeenSpeakingUntilMutedOrDeafened) {
     both_in();
     const auto bob = [&] { return member(ann_, "Bob"); };

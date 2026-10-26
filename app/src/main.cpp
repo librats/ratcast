@@ -5,10 +5,12 @@
 #include "ratcast/version.h"
 
 #include <QtQml/qqmlextensionplugin.h>
+#include <QColor>
 #include <QCommandLineParser>
 #include <QDir>
 #include <QGuiApplication>
 #include <QIcon>
+#include <QPalette>
 #include <QQmlApplicationEngine>
 #include <QString>
 #include <QSysInfo>
@@ -57,6 +59,11 @@ int main(int argc, char* argv[]) {
 #ifndef Q_OS_WIN
     QGuiApplication::setWindowIcon(QIcon(QStringLiteral(":/ratcast/ratcast.png")));
 #endif
+    // Links in rich text (the chat's) are drawn in the palette's colour as
+    // they are read: one the dark window shows.
+    QPalette palette = QGuiApplication::palette();
+    palette.setColor(QPalette::Link, QColor(0x81, 0xd4, 0xfa));  // Material Light Blue 200
+    QGuiApplication::setPalette(palette);
     // An update an earlier run downloaded, put in place before anything else
     // is loaded: the new version then starts in this one's place.
     if (ratcast::app::update::start_updated()) return EXIT_SUCCESS;

@@ -30,6 +30,12 @@ std::span<const uint8_t> as_bytes(const std::string& text) noexcept {
 }
 
 template <typename Out>
+void write_text(Out& out, const std::string& text) {
+    out.varint(text.size());
+    out.bytes(as_bytes(text));
+}
+
+template <typename Out>
 void write(Out& out, const Announce& announce) {
     const StreamDescription& d = announce.description;
     out.u8(message_prefix(MessageKind::Announce));
@@ -37,8 +43,7 @@ void write(Out& out, const Announce& announce) {
     out.u8(static_cast<uint8_t>(d.codec));
     out.u8(static_cast<uint8_t>(d.kind()));
     out.varint(static_cast<uint64_t>(d.lifetime.count()));
-    out.varint(d.label.size());
-    out.bytes(as_bytes(d.label));
+    write_text(out, d.label);
     if (const VideoFormat* video = d.video()) {
         out.varint(video->width);
         out.varint(video->height);
@@ -58,8 +63,7 @@ template <typename Out>
 void write(Out& out, const PresenceUpdate& update) {
     const Presence& p = update.presence;
     out.u8(message_prefix(MessageKind::Presence));
-    out.varint(p.name.size());
-    out.bytes(as_bytes(p.name));
+    write_text(out, p.name);
     out.u8(static_cast<uint8_t>((p.muted ? kMuted : 0) | (p.deafened ? kDeafened : 0)));
 }
 
@@ -170,6 +174,32 @@ void write(Out& out, const FrameKey& key) {
     out.bytes(key.key);
 }
 
+uint64_t bits_of(WallTime time) noexcept {
+    return static_cast<uint64_t>(time.time_since_epoch().count());
+}
+
+template <typename Out>
+void write(Out& out, const Chat& chat) {
+    out.u8(message_prefix(MessageKind::Chat));
+    out.varint(bits_of(chat.sent));
+    write_text(out, chat.text);
+}
+
+template <typename Out>
+void write(Out& out, const ChatAsk&) {
+    out.u8(message_prefix(MessageKind::ChatAsk));
+}
+
+template <typename Out>
+void write(Out& out, const ChatTold& told) {
+    const ChatMessage& m = told.message;
+    out.u8(message_prefix(MessageKind::ChatTold));
+    out.bytes(m.author.bytes());
+    out.varint(bits_of(m.sent));
+    write_text(out, m.name);
+    write_text(out, m.text);
+}
+
 template <typename Out, typename Message>
 void write(Out& out, const Message& message) {
     constexpr MessageKind kind = [] {
@@ -188,6 +218,22 @@ uint32_t read_u32(Reader& in) noexcept {
     return static_cast<uint32_t>(value);
 }
 
+std::string read_text(Reader& in, size_t most) {
+    const uint64_t size = in.varint();
+    if (size > most) in.fail(Errc::Malformed);
+    const std::span<const uint8_t> text = in.bytes(static_cast<size_t>(size));
+    if (!in.ok()) return {};
+    return {text.begin(), text.end()};
+}
+
+WallTime read_wall_time(Reader& in) {
+    const uint64_t us = in.varint();
+    if (us > static_cast<uint64_t>(std::numeric_limits<WallTime::rep>::max())) {
+        in.fail(Errc::Malformed);
+    }
+    return WallTime{WallTime::duration{static_cast<WallTime::rep>(us)}};
+}
+
 Result<ControlMessage> read_announce(Reader& in) {
     StreamDescription d;
     d.id = read_u32(in);
@@ -200,10 +246,7 @@ Result<ControlMessage> read_announce(Reader& in) {
     }
     d.lifetime = Duration{static_cast<Duration::rep>(lifetime)};
 
-    const uint64_t label_size = in.varint();
-    if (label_size > StreamDescription::kMaxLabelSize) in.fail(Errc::Malformed);
-    const std::span<const uint8_t> label = in.bytes(static_cast<size_t>(label_size));
-    d.label.assign(label.begin(), label.end());
+    d.label = read_text(in, StreamDescription::kMaxLabelSize);
 
     switch (kind) {
         case MediaKind::Video: {
@@ -305,16 +348,33 @@ Result<ControlMessage> read_frame_key(Reader& in) {
 
 Result<ControlMessage> read_presence(Reader& in) {
     Presence p;
-    const uint64_t name_size = in.varint();
-    if (name_size > Presence::kMaxNameSize) in.fail(Errc::Malformed);
-    const std::span<const uint8_t> name = in.bytes(static_cast<size_t>(name_size));
+    p.name = read_text(in, Presence::kMaxNameSize);
     const uint8_t flags = in.u8();
     if (!in.ok()) return fail(in.error());
-    p.name.assign(name.begin(), name.end());
     p.muted = flags & kMuted;
     p.deafened = flags & kDeafened;
     if (!is_valid(p)) return fail(Errc::Malformed);
     return ControlMessage{PresenceUpdate{std::move(p)}};
+}
+
+Result<ControlMessage> read_chat(Reader& in) {
+    ChatMessage m;
+    m.sent = read_wall_time(in);
+    m.text = read_text(in, ChatMessage::kMaxTextSize);
+    if (!in.ok()) return fail(in.error());
+    if (!is_valid(m)) return fail(Errc::Malformed);
+    return ControlMessage{Chat{m.sent, std::move(m.text)}};
+}
+
+Result<ControlMessage> read_chat_told(Reader& in) {
+    ChatMessage m;
+    m.author = read_peer(in);
+    m.sent = read_wall_time(in);
+    m.name = read_text(in, Presence::kMaxNameSize);
+    m.text = read_text(in, ChatMessage::kMaxTextSize);
+    if (!in.ok()) return fail(in.error());
+    if (!is_valid(m)) return fail(Errc::Malformed);
+    return ControlMessage{ChatTold{std::move(m)}};
 }
 
 Result<ControlMessage> read_clock_probe(Reader& in) {
@@ -373,6 +433,10 @@ Buffer encode_control(const ControlMessage& message) {
             } else if constexpr (std::is_same_v<std::decay_t<decltype(m)>, RelayedPath>) {
                 assert(m.signal.queue_delay >= Duration::zero() &&
                        m.signal.rtt >= Duration::zero() && m.signal.queue_rise >= Duration::zero());
+            } else if constexpr (std::is_same_v<std::decay_t<decltype(m)>, Chat>) {
+                assert(is_valid(ChatMessage{.sent = m.sent, .text = m.text}));
+            } else if constexpr (std::is_same_v<std::decay_t<decltype(m)>, ChatTold>) {
+                assert(is_valid(m.message));
             }
             Sizer sizer;
             write(sizer, m);
@@ -407,6 +471,9 @@ Result<ControlMessage> decode_control(std::span<const uint8_t> message) {
         case MessageKind::CannotReach: return read_cannot_reach(in);
         case MessageKind::Forwarder: return ControlMessage{Forwarder{}};
         case MessageKind::FrameKey: return read_frame_key(in);
+        case MessageKind::Chat: return read_chat(in);
+        case MessageKind::ChatAsk: return ControlMessage{ChatAsk{}};
+        case MessageKind::ChatTold: return read_chat_told(in);
         case MessageKind::Frame:
         case MessageKind::RelayedFrame: break;
     }

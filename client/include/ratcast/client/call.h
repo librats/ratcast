@@ -46,6 +46,9 @@
  * that two joining at once meet too. A member listens, for those who come
  * later.
  *
+ * What members write (say()) goes to every member, and the last of it is
+ * told to each that comes, or comes back (chat.h): a server is told nothing.
+ *
  * Threads: every method may be called from any thread. Handlers run on the
  * network's, a publisher's or a player's threads, never under the call's
  * locks, and must not block or destroy the call; source_ended must not
@@ -77,6 +80,7 @@
 #include "ratcast/engine/audio_mixer.h"
 #include "ratcast/engine/ts_io.h"
 #include "ratcast/ratcast.h"
+#include "ratcast/session/chat.h"
 #include "ratcast/session/media_session.h"
 
 #include "librats/node/node.h"
@@ -195,6 +199,9 @@ struct CallHandlers {
     std::function<void(const PeerId& peer, const StreamDescription& stream)> ended = {};
     /// A peer said who it is, or that something of it changed (Presence).
     std::function<void(const PeerId& peer, const Presence& presence)> presence = {};
+    /// A message new here: a member said it, or one told what was said before
+    /// this side came or while it was away. Not what say() said.
+    std::function<void(const ChatMessage& message)> said = {};
     /// A published stream stopped by itself: its source ran out (success),
     /// or the source or its encoder failed. It stays published until
     /// unpublish().
@@ -263,6 +270,16 @@ public:
     /// Whether that path goes through a relay — a server carrying the
     /// connection, no punch having got through — rather than straight.
     bool relayed(const PeerId& peer) const;
+
+    // ── What is said ────────────────────────────────────────────────────────
+
+    /// Say `text` to every member, under the name set_presence() gave, as of
+    /// now by this host's clock: kept, and told to whoever comes later
+    /// (MediaSession::say(); never to a server). Fails with InvalidArgument
+    /// for a text no message has (is_valid()).
+    Result<ChatMessage> say(std::string text);
+    /// What this side knows was said, oldest first: the last 100 messages.
+    std::vector<ChatMessage> chat() const;
 
     // ── What this side sends ────────────────────────────────────────────────
 

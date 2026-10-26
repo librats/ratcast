@@ -15,7 +15,7 @@ ratcast is two things built together:
 | Transport | librats live messages (deadline-bound, FEC, BBRv3, `PathStats`), extended in-tree as needed |
 | UI | Qt 6 / QML (QRhi for zero-copy video), same code for Android later |
 | Servers | Optional SFU / relay nodes are allowed; P2P stays the default for small rooms |
-| Scope, first stages | Calls and streams. Text chat is designed for (room protocol has a place for it), built later |
+| Scope, first stages | Calls and streams; text chat in a room (7.1) |
 | License | MIT, open source. No GPL dependencies (no x264) |
 | Language | C++20 for ratcast, librats stays C++17 |
 
@@ -92,7 +92,7 @@ ratcast/
 │   ├── src/              private sources
 │   └── tests/
 ├── engine/               media I/O
-├── client/               UI-agnostic client core: media pipelines now, rooms and chat later
+├── client/               UI-agnostic client core: media pipelines, rooms, chat
 ├── app/                  Qt 6 / QML desktop application    → ratcast
 ├── server/               headless SFU / relay node         (stage 5)
 ├── tools/                ratcast-send / ratcast-recv
@@ -103,8 +103,9 @@ ratcast/
 Modules are added when their stage starts; each follows the libratcast shape
 (`include/ratcast/<module>/`, `src/`, `tests/`).
 
-Text chat lives in `client/` as one more room channel next to the call control channel: GossipSub
-per room for delivery, librats storage for history when it is built.
+Text chat goes on the session's control lane, beside presence (7.1): each message from its
+author to every member over their Noise connection, the last hundred kept by every member and
+told to whoever connects.
 
 ## Dependencies
 
@@ -160,7 +161,7 @@ final place and shape: stage 0 is a walking skeleton, not a throwaway prototype.
 | **4. Platforms** — in part | GPU paths and hardware codecs; Windows ✅ (its GPU path too) and macOS capture; netsim ✅ | — |
 | **5. Watch together** ✅ | one-to-many: a sender's budget, synchronised playout, forwarding tree, SFU and E2EE; simulcast and cinema put off | L5 ✅ |
 | **6. App** ✅ | Qt app MVP, one to one: invites, voice with AEC / NS, screen / window / app-audio share, camera; on Linux first, the other OSes as stage 4 reaches them | — |
-| **7. Conferences** — in part | text chat, a link that holds ✅, each member heard as loud as the listener sets ✅, active speaker, last-N, grid, moderation | — |
+| **7. Conferences** — in part | text chat ✅, a link that holds ✅, each member heard as loud as the listener sets ✅, active speaker, last-N, grid, moderation | — |
 | **8. Beyond** | Android, cinema mode, HDR, polish | — |
 | **9. Call monitor** ✅ | what a call does, as it does it: quality, bitrate, size, frame time, whether each end keeps up — a line a second in the console, a panel in the app | — |
 | **10. Room** ✅ | a voice lobby for a few, as Discord's: everyone with everyone, all talking from the start, who is there and who speaks, mute and deafen, anyone's screen or camera on and off while the room goes on | — |
@@ -1244,9 +1245,43 @@ said), one loses its network for ten seconds and comes back by itself, each hear
 as loud as they set, the cameras are a grid with whoever speaks shown, and the room's maker
 sends one out. Steps are taken in the order the user picks, not their numbers'.
 
-- **7.1 Text chat**: messages over the session's control lane (a wire message of their own),
+- **7.1 Text chat** ✅: messages over the session's control lane (a wire message of their own),
   from the peer that sent them over its Noise connection; a late joiner given the last ones by
   any member; a panel in the app, shown as plain text, links opened on a click, a count unread.
+  Done so: `MediaSession::say()` sends a `Chat` (its time by the sayer's wall clock, its text:
+  UTF-8 of up to 4000 bytes, no control characters but line breaks and tabs — `chat.h`) to every
+  peer entitled to its frames (`SessionConfig::entitled`; never a forwarder, so the Call's
+  servers are told nothing); the author is the connection's, its name the one its presence
+  gives. Every member keeps what it knows was said, the last 100 (`ChatLog`, `chat_kept`), in
+  the order it was said — by time, then author, so that members who know the same list it
+  alike — each message once, known by author and time. A peer that connects asks
+  (`ChatAsk`, on connect and again after a lost race, with what else is said once) and each
+  member tells it what it knows, a `ChatTold` a message, author and name in it: one who comes
+  later reads what was said before, and one back after its link was lost (7.2) what was said
+  while it was away; told by several, it is kept once. A server never asks and never answers,
+  and one not yet known for one is asked for nothing it can answer. `MediaNetwork::local_id()`
+  is new: the session names itself as the author of what it tells. `Call::say()` stamps by the
+  host's clock, `Call::chat()`, `CallHandlers::said` (what is new here, not one's own);
+  `ratcast-room` prints what is said. The app: `ChatModel` (rows in the order said, a message
+  told late put in its place; `html`: the text escaped, its http(s):// and www. links made
+  links, nothing else; `continued`: by the author of the one before within 5 minutes, shown
+  under it; `unread`, counted while nobody reads — the pane hidden or the window behind),
+  `CallController::say()` (ends trimmed, line breaks kept, other control characters dropped; a
+  notice for too long), a new room's chat empty; `Main.qml`: a pane on the right on a "Chat"
+  button that counts the unread, names in plain text, a text selectable, links opened in the
+  browser, Enter sends, Shift+Enter breaks the line; the palette's link colour one the dark
+  window shows. Not here: what one member says another said is taken on its word — a message
+  is not signed by its author; two members of a room who cannot reach each other read each
+  other only when one comes again through a third; the C API has no chat. Tested: the log
+  (order, once, the last kept), what a message may be, the wire's (round trips, every cut,
+  what is no message); the session in virtual time — said to every peer by its author and
+  name, two at once told apart and in order, a late joiner told by two and keeping each once
+  under the name it was said by, what was said while away told on coming back and a race lost
+  asking again, the last kept, nothing said to nor heard from a server or a peer not entitled,
+  what is no message refused; a call on real nodes — said to every member, read by a late
+  joiner through another, told on coming back after a link was lost; the app — the model's
+  order, continuing and unread, its html showing any text as written and making links of web
+  links alone, two controllers and a third coming later.
 - **7.2 A link that holds** ✅: a member whose link is lost without leaving is dialed again (stage
   10 left it to rejoin), shown as coming back meanwhile, through a server where no punch gets
   through. librats: **needs** L22 ✅.
