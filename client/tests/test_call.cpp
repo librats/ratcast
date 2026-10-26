@@ -551,7 +551,9 @@ TEST_F(CallTest, OnlyTheCamerasOfTheLastToSpeakPlayWhenSoFewAre) {
     bob.publish_voice();
     ASSERT_TRUE(wait_for([&] { return host->cameras() == std::vector{bob->id()}; }));
     EXPECT_TRUE(receives(bob));
-    EXPECT_FALSE(receives(ann)) << "let go";
+    // Ann's player is stopped — and unsubscribed — just after the choice,
+    // outside the call's lock.
+    EXPECT_TRUE(wait_for([&] { return !receives(ann); })) << "let go";
     EXPECT_TRUE(wait_for([&] {
         return host.told_times("ended camera") == 1 && host.told_times("playing camera") == 2;
     })) << ::testing::PrintToString(host.events());
