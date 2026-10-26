@@ -1366,7 +1366,15 @@ sends one out. Steps are taken in the order the user picks, not their numbers'.
   stops; two controllers' cameras at one shown, the shown one muted and the other in its place.
 - **7.5 Order** (put off to stage 8): the room's maker (its peer id in the link) asks a member to mute, sends one
   out and keeps them out — each member drops them — and invites that let in only who has one;
-  who keeps order when the maker leaves.
+  who keeps order when the maker leaves. First of it, a room's key: today a member is anyone
+  connected but a server (`Call`'s `joined`, `entitled` — `FrameKey` included), and a
+  `rats://PEER-ID` link is the maker's lasting identity, the same for every room it makes, its
+  members' addresses found in the DHT by anyone who knows that id. A link `rats://ROOM-ID#SECRET`
+  instead — a room id drawn for each room (a lasting one by choice), the meeting key (DHT,
+  `Rendezvous`) from both, an address link carrying the secret too — and a peer a member only
+  once it has proven the secret (`HMAC(secret, "join" ‖ its id ‖ ours)`: Noise already binds
+  the ids, so librats changes nothing), before `joined` and any `FrameKey`, named by no peer
+  exchange until then and dropped if it does not in a few seconds.
 - **7.6 Rooms past a mesh** (when there are such; put off to stage 8): sound through a server, the top speakers by
   level (5.6's); simulcast (5.4); Forward's 64.
 - **7.7 Settings** ✅: a place for what the user sets, laid out for more to come; the
@@ -1408,8 +1416,9 @@ sends one out. Steps are taken in the order the user picks, not their numbers'.
 Closed with every test passing (682), on what a room of friends needs: the done-when's last
 part, the room's maker sending one out, went with 7.5. Left for later, in stage 8:
 - 7.3: push-to-talk; sounds as members come, go and share.
-- 7.5: order — the maker muting a member, sending one out and keeping them out, invites that
-  let in only who has one.
+- 7.5: order — a room's key (a secret in the link, proven before a peer is a member), the
+  maker muting a member, sending one out and keeping them out, invites that let in only who has
+  one.
 - 7.6: rooms past a mesh — sound through a server, the top speakers by level, simulcast (5.4),
   more than `Forward`'s 64.
 
