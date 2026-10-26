@@ -143,10 +143,10 @@ Call::Call(CallConfig config, CallHandlers handlers)
     : config_(std::move(config)),
       handlers_(std::move(handlers)),
       node_(node_config(config_)),
-      known_servers_(
-          config_.data_dir.empty()
-              ? std::string()
-              : (std::filesystem::path(config_.data_dir) / KnownServers::kFile).string()),
+      known_servers_(!config_.known_servers_file.empty() || config_.data_dir.empty()
+                         ? config_.known_servers_file
+                         : (std::filesystem::path(config_.data_dir) / KnownServers::kFile).string(),
+                     config_.built_in_servers),
       sync_(SteadyClock::instance(), config_.playback.sync) {
     if (config_.playback.sound) mixer_.emplace(*config_.playback.sound);
     // What it sends is sealed end to end, its key given to members alone: a
@@ -176,6 +176,12 @@ Call::Call(CallConfig config, CallHandlers handlers)
             node_.add_subsystem(std::make_unique<librats::DhtDiscovery>(std::move(discovery)));
         }
         meeting.keys = {key};
+        // And the servers of the key: the same at every member that knows
+        // much the same ones.
+        if (config_.chosen_servers > 0) {
+            meeting.candidates = known_servers_.all();
+            meeting.choose = config_.chosen_servers;
+        }
     }
     if (meets || config_.mesh) {
         // A room's members met by address are carried by a server they all
@@ -280,10 +286,11 @@ std::vector<std::string> Call::invites() const {
     std::vector<std::string> links;
     // A room joined by peer id is found under that id: its members announce
     // themselves there too.
+    // With the servers it meets at named, for whoever does not know them.
     if (const PeerId* dialed = dialed_peer(config_); dialed && config_.mesh) {
-        links.push_back(to_string(RatsUrl{*dialed}));
+        links.push_back(to_string(RatsLink{*dialed, config_.servers}));
     } else if (config_.discoverable && !dialed) {
-        links.push_back(to_string(RatsUrl{id()}));
+        links.push_back(to_string(RatsLink{id(), config_.servers}));
     }
     const uint16_t listening = port();
     if (listening == 0) return links;

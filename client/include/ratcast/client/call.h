@@ -38,7 +38,11 @@
  * A server is no member: never among peers(), nor joined, nor given the key
  * this side's frames are sealed under end to end — what it carries or
  * forwards, it cannot read. A server tells of the others it knows, which the
- * call keeps in its data directory (known_servers(), KnownServers).
+ * call keeps in its data directory (known_servers(), KnownServers); of those,
+ * a call met by peer id meets at a few chosen by its key, the same at every
+ * member (CallConfig::chosen_servers), and at the ones the link named
+ * (RatsLink's via, given as CallConfig::servers) — which invites() name in
+ * turn.
  *
  * A call may be a room (CallConfig::mesh): everyone with everyone, whoever
  * joins by whichever member's link. Each peer connected is asked whom it has,
@@ -166,6 +170,16 @@ struct CallConfig {
     /// A call met by peer id is looked for, and announced, through the DHT as
     /// well as at the servers; false: at the servers alone.
     bool dht = true;
+    /// A call met by peer id meets, besides `servers`, at so many of the
+    /// servers it knows (known_servers()): the same ones at every member,
+    /// chosen by the key it is met under (librats' Rendezvous::choose()), so
+    /// that members who named no server meet at one all the same. 0: none.
+    size_t chosen_servers = 0;
+    /// The servers known from the start (KnownServers::built_in(): the
+    /// build's), and where those servers tell of are kept from one run to the
+    /// next — "": `servers` in the data directory, if there is one.
+    std::vector<librats::HostEndpoint> built_in_servers = KnownServers::built_in();
+    std::string known_servers_file = {};
     /// Nodes of another protocol never connect: another version, or a test.
     std::string protocol = RATCAST_PROTOCOL;
     /// Follow the host's network changes (interfaces, addresses, sleep).
@@ -255,8 +269,10 @@ public:
     uint16_t port() const noexcept;
     /// rats:// links the other side can call this one by: a peer id the DHT
     /// finds the call under — this call's, if it is discoverable, or, in a
-    /// room, the one it dialed — then each of the host's addresses (or the one
-    /// it listens on) with the port. None for a call that does not listen.
+    /// room, the one it dialed — with the servers of CallConfig::servers
+    /// named after it (RatsLink's via), then each of the host's addresses (or
+    /// the one it listens on) with the port. None for a call that does not
+    /// listen.
     std::vector<std::string> invites() const;
     std::vector<PeerId> peers() const;
     /// The peers lost and dialed again (CallConfig::redial_for): none of

@@ -94,6 +94,7 @@ CallController::Environment environment() {
     environment.call.protocol =
         std::string("ratcast-test/") + test->test_suite_name() + "." + test->name();
     environment.call.watch_network = false;
+    environment.call.built_in_servers = {};
     environment.open_share = [](const ScreenShareConfig& config,
                                 std::stop_token) -> Result<ScreenShareSources> {
         ScreenShareSources sources{.pictures = std::make_unique<PatternSource>(
@@ -774,6 +775,29 @@ TEST_F(CallControllerTest, ARoomIsMetAtTheServerNamedWhichIsNoMember) {
     std::this_thread::sleep_for(300ms);
     EXPECT_EQ(members(ann_), 1);
     EXPECT_EQ(members(bob_), 1);
+    bob_.leave();
+    ann_.leave();
+    server.stop();
+}
+
+// A link that names a server has whoever joins by it meet there, though it
+// named none itself; one whose server is no server is no link.
+TEST_F(CallControllerTest, ALinksServerIsMetAtByWhoeverJoinsByIt) {
+    librats::NodeConfig node;
+    node.bind_address = "127.0.0.1";
+    node.protocol = environment().call.protocol;
+    librats::Node server(node);
+    librats::Rendezvous::Config serving;
+    serving.serve = true;
+    server.add_subsystem(std::make_unique<librats::Rendezvous>(serving));
+    ASSERT_TRUE(server.start());
+
+    const QString room = make_room();
+    bob_.join(room + "?via=not a server:");
+    EXPECT_EQ(bob_.state(), State::Idle);
+    EXPECT_FALSE(bob_.notice().isEmpty());
+    bob_.join(room + QString("?via=127.0.0.1:%1").arg(server.listen_port()));
+    ASSERT_TRUE(wait_for([&] { return members(ann_) == 1 && server.peer_count() == 1; }));
     bob_.leave();
     ann_.leave();
     server.stop();

@@ -141,7 +141,12 @@ std::optional<Options> parse(int argc, char** argv) {
         std::cerr << "ratcast-room: one room at a time\n";
         ok = false;
     } else if (links.size() == 1) {
-        o.room = parse_rats_url(links[0]);
+        // A link's servers are met at too (?via=).
+        std::optional<RatsLink> link = parse_rats_link(links[0]);
+        if (link) {
+            o.room = std::move(link->url);
+            o.servers.insert(o.servers.end(), link->via.begin(), link->via.end());
+        }
         if (!o.room) {
             std::cerr << "ratcast-room: '" << links[0] << "' is no rats:// link\n";
             ok = false;

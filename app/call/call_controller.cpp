@@ -127,7 +127,11 @@ CallController::Environment CallController::Environment::system() {
     environment.call.discoverable = true;
     environment.call.playback.most_cameras = kMostCameras;
     environment.call.lost_after = kLostAfter;
+    environment.call.chosen_servers = kChosenServers;
     environment.data_dir = data_folder().toStdString();
+    // One list for the room made here and the one joined as a guest.
+    environment.call.known_servers_file =
+        (std::filesystem::path(environment.data_dir) / KnownServers::kFile).string();
     environment.open_share = [](const ScreenShareConfig& config, std::stop_token cancel) {
         return open_screen_share(config, std::move(cancel));
     };
@@ -239,7 +243,8 @@ bool CallController::meet_at_server(CallConfig& config) {
         set_notice(tr("'%1' is no server: HOST or HOST:PORT, please.").arg(server_.trimmed()));
         return false;
     }
-    config.servers = {*parsed};
+    if (std::ranges::find(config.servers, *parsed) == config.servers.end())
+        config.servers.push_back(*parsed);
     return true;
 }
 
@@ -253,7 +258,7 @@ void CallController::create() {
 
 void CallController::join(const QString& link) {
     if (state_ != State::Idle) return;
-    const std::optional<RatsUrl> url = parse_rats_url(link.trimmed().toStdString());
+    const std::optional<RatsLink> url = parse_rats_link(link.trimmed().toStdString());
     if (!url) {
         set_notice(tr("That is not a rats:// link."));
         return;
@@ -264,7 +269,9 @@ void CallController::join(const QString& link) {
         config.data_dir = (std::filesystem::path(environment_.data_dir) / "guest").string();
     }
     config.discoverable = false;
-    config.dial = *url;
+    config.dial = url->url;
+    // The room's servers first: they are what its invites name on.
+    config.servers = url->via;
     if (!meet_at_server(config)) return;
     start(std::move(config), State::Joining);
 }

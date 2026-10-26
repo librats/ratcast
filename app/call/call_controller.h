@@ -178,6 +178,10 @@ public:
     /// link no way round brings back is looked for again soon, and long enough
     /// that a network gone for a few seconds is waited out.
     static constexpr std::chrono::seconds kLostAfter{15};
+    /// The servers a room is met at of those known, besides the one named
+    /// (CallConfig::chosen_servers): two, so that members whose lists differ
+    /// by one meet all the same.
+    static constexpr size_t kChosenServers = 2;
 
     /// What the controller takes from the system; tests stand in for it.
     struct Environment {
@@ -219,7 +223,8 @@ public:
 
         /// This computer's: its desktop, its speaker, the user's data
         /// directory, settings and name, discoverable through the DHT, the
-        /// build's server (RATCAST_DEFAULT_SERVER), kMostCameras, kLostAfter.
+        /// build's server (RATCAST_DEFAULT_SERVER), kMostCameras, kLostAfter,
+        /// kChosenServers of the servers known, kept in the data directory.
         static Environment system();
     };
 

@@ -138,7 +138,12 @@ std::optional<Options> parse(int argc, char** argv) {
     o.data_dir = args.text("data-dir").value_or("");
     o.verbose = args.flag("verbose");
     o.output = args.text("output").value_or("");
-    for (const std::string& url : args.positional()) sender(parse_rats_url(url), url);
+    for (const std::string& url : args.positional()) {
+        // A link's servers are met at too (?via=).
+        std::optional<RatsLink> link = parse_rats_link(url);
+        if (link) o.servers.insert(o.servers.end(), link->via.begin(), link->via.end());
+        sender(link ? std::optional<RatsUrl>(std::move(link->url)) : std::nullopt, url);
+    }
     for (const std::string& e : args.errors()) {
         std::cerr << "ratcast-recv: " << e << "\n";
         ok = false;

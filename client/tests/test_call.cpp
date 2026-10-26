@@ -57,6 +57,7 @@ CallConfig config(std::optional<RatsUrl> dial = std::nullopt) {
     return CallConfig{
         .bind_address = "127.0.0.1",
         .dial = std::move(dial),
+        .built_in_servers = {},
         .protocol = std::string("ratcast-test/") + test->test_suite_name() + "." + test->name(),
         .watch_network = false,
     };
@@ -1059,6 +1060,59 @@ TEST_F(CallTest, ACallKeepsTheServersItIsToldOfForTheNext) {
     EXPECT_TRUE(knows_other(next));
     next.hang_up();
     std::filesystem::remove_all(folder);
+}
+
+// Two that named no server meet at one of those they know, chosen alike by
+// the call's key though their lists differ. On loopback every server is one
+// host, whose first given is the one chosen.
+TEST_F(CallTest, CallsMeetAtAServerTheyChoseOfThoseTheyKnow) {
+    StandInServer only_host, both, only_guest;
+    const auto knowing = [](CallConfig config, std::vector<librats::HostEndpoint> servers) {
+        config.dht = false;
+        config.chosen_servers = 2;
+        config.built_in_servers = std::move(servers);
+        return config;
+    };
+    Side host;
+    CallConfig hosting = config();
+    hosting.discoverable = true;
+    host.start(knowing(hosting, {both.address(), only_host.address()}), false, false);
+    host.publish_voice();
+    Side guest;
+    guest.start(knowing(config(RatsUrl{host->id()}), {both.address(), only_guest.address()}), false,
+                false);
+
+    ASSERT_TRUE(wait_for([&] { return guest.heard_from(host->id()) > 0; }))
+        << ::testing::PrintToString(guest.events());
+    EXPECT_EQ(host->servers(), std::vector<PeerId>{both.id()});
+    EXPECT_EQ(guest->servers(), std::vector<PeerId>{both.id()});
+    EXPECT_EQ(guest->peers(), std::vector<PeerId>{host->id()});
+}
+
+// A room's link names the servers its members meet at, which whoever joins by
+// it meets at too, and names in its own.
+TEST_F(CallTest, AnInviteNamesTheServersTheRoomIsMetAt) {
+    StandInServer server;
+    Side host;
+    CallConfig hosting = room();
+    hosting.discoverable = true;
+    hosting.dht = false;
+    hosting.servers = {server.address()};
+    host.start(hosting, false, false);
+    const std::vector<std::string> invites = host->invites();
+    ASSERT_FALSE(invites.empty());
+    const std::optional<RatsLink> link = parse_rats_link(invites.front());
+    ASSERT_TRUE(link);
+    EXPECT_EQ(link->url, RatsUrl{host->id()});
+    EXPECT_EQ(link->via, std::vector{server.address()});
+
+    Side guest;
+    CallConfig joining = room(link->url);
+    joining.dht = false;
+    joining.servers = link->via;
+    guest.start(joining, false, false);
+    ASSERT_TRUE(wait_for([&] { return guest->peers() == std::vector<PeerId>{host->id()}; }));
+    EXPECT_EQ(guest->invites().front(), invites.front());
 }
 
 TEST_F(CallTest, AScreenShareThatCannotPublishLeavesNothing) {

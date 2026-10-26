@@ -4,6 +4,7 @@ namespace ratcast {
 namespace {
 
 constexpr std::string_view kScheme = "rats://";
+constexpr std::string_view kVia = "via=";
 
 }  // namespace
 
@@ -21,6 +22,37 @@ std::string to_string(const RatsUrl& url) {
         return std::string(kScheme) + endpoint->to_string();
     }
     return std::string(kScheme) + std::get<PeerId>(url).to_hex();
+}
+
+std::optional<RatsLink> parse_rats_link(std::string_view link) {
+    const size_t query = link.find('?');
+    std::optional<RatsUrl> url = parse_rats_url(link.substr(0, query));
+    if (!url) return std::nullopt;
+    RatsLink parsed{std::move(*url)};
+    if (query == std::string_view::npos) return parsed;
+    std::string_view rest = link.substr(query + 1);
+    while (!rest.empty()) {
+        const size_t amp = rest.find('&');
+        const std::string_view parameter = rest.substr(0, amp);
+        rest = amp == std::string_view::npos ? std::string_view() : rest.substr(amp + 1);
+        if (!parameter.starts_with(kVia)) continue;
+        std::optional<librats::HostEndpoint> server = parse_server(parameter.substr(kVia.size()));
+        if (!server) return std::nullopt;
+        parsed.via.push_back(std::move(*server));
+    }
+    return parsed;
+}
+
+std::string to_string(const RatsLink& link) {
+    std::string text = to_string(link.url);
+    char separator = '?';
+    for (const librats::HostEndpoint& server : link.via) {
+        text += separator;
+        text += kVia;
+        text += server.to_string();
+        separator = '&';
+    }
+    return text;
 }
 
 std::optional<librats::HostEndpoint> parse_server(std::string_view text) {

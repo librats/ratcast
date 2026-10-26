@@ -165,7 +165,7 @@ final place and shape: stage 0 is a walking skeleton, not a throwaway prototype.
 | **8. Beyond** | Android, cinema mode, HDR, moderation, push-to-talk, rooms past a mesh, polish | — |
 | **9. Call monitor** ✅ | what a call does, as it does it: quality, bitrate, size, frame time, whether each end keeps up — a line a second in the console, a panel in the app | — |
 | **10. Room** ✅ | a voice lobby for a few, as Discord's: everyone with everyone, all talking from the start, who is there and who speaks, mute and deafen, anyone's screen or camera on and off while the room goes on | — |
-| **12. Getting through** — in part | a call that holds as a member's address changes (a VPN, another network); servers found without being typed in, the room's met at by all its members alike; joining fast and seen to be | L23 ✅, L24 ✅ |
+| **12. Getting through** — in part | a call that holds as a member's address changes (a VPN, another network); servers found without being typed in, the room's met at by all its members alike; joining fast and seen to be | L23 ✅, L24 ✅, L25 ✅ |
 | **11. Full screen** ✅ | a share watched on the whole screen with nothing else on it, the controls and the cursor there while the mouse moves; the picture pixel-exact; the screen kept awake while watching | — |
 
 ### Stage 0 — Skeleton ✅
@@ -1467,10 +1467,22 @@ it is.
   read past a bad line; a call keeping what it is told for the next. Left: the list is not used
   to meet yet (12.3); a server is known by the address it is seen at, so the build's
   `degitx.com` and its IP are two entries until 12.3 resolves them.
-- **12.3 The room's server, the same for all**: of the servers a client knows, the first k by a
-  hash of the room's key and the server (rendezvous hashing: one by IP, weighted by what a
-  server says it can carry in its Hello), registered with all k — two members with lists that
-  differ in part still meet; and `rats://…?via=HOST` naming one, for a room that wants its own.
+- **12.3 The room's server, the same for all** ✅: of the servers a member knows (12.2), the
+  first two by a hash of the room's key and each server's IP (librats L25: rendezvous hashing,
+  one server by IP), registered with both — two members whose lists differ by a server each
+  still meet (`CallConfig::chosen_servers`, the app's `kChosenServers`; the creator and a guest
+  keep one list, `CallConfig::known_servers_file`). And a link names the servers a room is met
+  at that a member may not know of — `rats://PEER-ID?via=HOST[:PORT]` (`RatsLink`,
+  `parse_rats_link()`): the ones the maker named (the app's setting, the tools' `--server`) go
+  into its invites, and whoever joins by one meets there too and names them on; the app's and
+  the tools' links take them. Tested: the same choice whatever the order, the keys spread
+  evenly over the servers, one by IP, two lists that differ in part sharing a server for every
+  key; nodes and two calls that named no server meeting at the one they chose; an invite naming
+  the room's server, a guest joining by it meeting there and naming it on; the app joining by a
+  link's server. Left: weights (a server's capacity in its Hello: compatible, see L25); a
+  chosen server that does not answer is not swapped for the next (the second chosen covers
+  it); a dual-stack server told of at its IPv6 address by one server and its IPv4 by another is
+  two to the hash.
 - **12.4 Joining seen**: what the joining screen says while it lasts — servers, found, through
   the server — and a hint when nobody is found.
 - Later: servers trusted by key and a guard against one who runs many (Sybil), a room's key
@@ -1508,6 +1520,7 @@ and the list is in priority order:
 | | L22 | A lost peer dialed again; a node that leaves says so | needed | 7.2 | ✅ |
 | | L23 | A peer that moves: told of by the server, its dead link replaced | needed | 12.1 | ✅ |
 | | L24 | Servers that know each other, and tell their peers of the others | needed | 12.2 | ✅ |
+| | L25 | A key's servers chosen alike of many known: rendezvous hashing | needed | 12.3 | ✅ |
 | 2 | L2 (a) | A live flow's start: the initial window | needed | 1.2 (long paths) | put off; eased by (b) |
 | 3 | L15 | Fewer system calls per reactor turn | improves | 3.2 (CPU) | |
 | 4 | L16 | ProbeRTT that does not starve a live flow | improves | 3.2 (`reorder`) | |
@@ -1727,6 +1740,17 @@ relayed one), while `Relay` refused a circuit to a peer connected at all. Now:
 - `DhtDiscovery`: a peer found connected is, once its link goes, dialed as though found for the
   first time (`Redials::connected`) — before, one first found more than `redial_for` (2 min)
   ago was never dialed again, so two servers up for long that lost their link stayed apart.
+
+**L25 — A key's servers chosen alike of many known: rendezvous hashing.** ✅ *Needed by 12.3.*
+`Rendezvous::Config::candidates` (any number, names or addresses) and `choose` (2): the
+worker, as it starts, resolves them and adds to the servers it dials and keeps the `choose` that
+rank first for each key by SHA-256(the key's hash ‖ the server's IP) — `Rendezvous::choose()`,
+the same ranking wherever the same servers are known, whatever the order; a server is one by its
+IP, the first listed of two at one address; one also of `Config::servers` dialed once.
+`Rendezvous::chosen()`. Two nodes whose lists differ in fewer than `choose` servers each both
+choose the first of those both know. Unweighted: a weight a server says it can carry would
+rank by `weight / −ln(hash)`, which with weights all alike is this ranking — so weights can come
+later without moving any room.
 
 **L13 — Fewer ACKs for live data.** *Optional; tried, put off.* An ACK every second packet
 (RFC 9000) is ~440 a second for an 8 Mbit/s feed in full frames — 0.22 Mbit/s back (2.7% of the

@@ -135,7 +135,10 @@ the firewall. Enter it in the app's *Settings*, under *Network* (`HOST` or `HOST
 
 With `--announce` the server is found by the other servers that announce themselves in the
 DHT, and finds them. Each tells the calls it helps about the others, and a call remembers them
-in its data folder. A build starts from the servers it is given with `-DRATCAST_SERVERS=HOST;…`
+in its data folder. The members of a room all pick the same two of the servers they know, by a
+hash of the room's link, so a room needs no server named to meet at one. A room that wants its
+own names it in its link: `rats://PEER-ID?via=HOST`, which the app adds when its settings name
+a server. A build starts from the servers it is given with `-DRATCAST_SERVERS=HOST;…`
 (`degitx.com` by default). The DHT runs on a UDP port of its own, so let outgoing UDP and its
 answers through.
 
