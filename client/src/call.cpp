@@ -5,6 +5,7 @@
 #include <type_traits>
 #include <utility>
 
+#include "ratcast/client/camera_choice.h"
 #include "ratcast/session/media_service.h"
 
 #include "librats/subsystems/dht_discovery.h"
@@ -122,6 +123,18 @@ Result<std::unique_ptr<Call>> Call::start(CallConfig config, CallHandlers handle
             call->node_.connect(endpoint->host, endpoint->port);
         }
     }
+    const CallPlayback& playback = call->config_.playback;
+    if (playback.cameras && playback.most_cameras != 0) {
+        call->speakers_ = std::jthread([raw = call.get()](std::stop_token stop) {
+            std::unique_lock lock(raw->speakers_mutex_);
+            while (!raw->speakers_wake_.wait_for(lock, stop, std::chrono::milliseconds(200),
+                                                 [&] { return stop.stop_requested(); })) {
+                lock.unlock();
+                raw->follow_speakers();
+                lock.lock();
+            }
+        });
+    }
     return call;
 }
 
@@ -221,6 +234,8 @@ Call::Call(CallConfig config, CallHandlers handlers)
 
 Call::~Call() {
     closing_ = true;
+    speakers_.request_stop();
+    if (speakers_.joinable()) speakers_.join();
     std::map<StreamId, std::unique_ptr<Published>> published;
     {
         std::lock_guard lock(publishing_);
@@ -517,6 +532,13 @@ void Call::offer(const PeerId& peer, const StreamDescription& description,
         case MediaKind::Video:
             if (description.label == kCameraLabel) {
                 if (!playback.cameras) return;
+                // Past the most, follow_speakers() decides.
+                const size_t most = playback.most_cameras;
+                if (most != 0 && std::ranges::count_if(members_, [](const auto& member) {
+                                     return bool(member.second.camera);
+                                 }) >= ptrdiff_t(most)) {
+                    return;
+                }
                 Member& member = members_[peer];
                 if (!member.camera) play(member.camera, peer, description, events);
                 if (member.empty()) members_.erase(peer);
@@ -594,6 +616,54 @@ void Call::play_watched() {
             offer(offered.peer, description, events);
         }
     }
+    for (const auto& event : events) event();
+}
+
+void Call::follow_speakers() {
+    // Stopped outside the lock, as in the destructor.
+    std::vector<Playing<VideoPlayer>> stopped;
+    std::vector<std::pair<PeerId, StreamDescription>> ended;
+    std::vector<std::function<void()>> events;
+    {
+        std::lock_guard lock(playing_);
+        if (closing_) return;
+        std::vector<OfferedStream> cameras = session().offered();
+        std::erase_if(cameras, [](const OfferedStream& offered) {
+            return offered.description.kind() != MediaKind::Video ||
+                   offered.description.label != kCameraLabel;
+        });
+        std::sort(cameras.begin(), cameras.end(),
+                  [](const OfferedStream& a, const OfferedStream& b) { return a.peer < b.peer; });
+        std::vector<CameraOffer> offers;
+        offers.reserve(cameras.size());
+        for (const OfferedStream& offered : cameras) {
+            CameraOffer& offer = offers.emplace_back(CameraOffer{.peer = offered.peer});
+            const auto member = members_.find(offered.peer);
+            if (member == members_.end()) continue;
+            offer.shown = bool(member->second.camera);
+            if (member->second.voice) offer.spoke = member->second.voice.player->stats().heard;
+        }
+        const std::vector<PeerId> chosen = choose_cameras(offers, config_.playback.most_cameras);
+        const auto is_chosen = [&](const PeerId& peer) {
+            return std::ranges::find(chosen, peer) != chosen.end();
+        };
+        for (auto it = members_.begin(); it != members_.end();) {
+            Playing<VideoPlayer>& camera = it->second.camera;
+            if (camera && !is_chosen(it->first)) {
+                ended.emplace_back(it->first, camera.description);
+                stopped.push_back(std::move(camera));
+            }
+            it = it->second.empty() ? members_.erase(it) : std::next(it);
+        }
+        for (const OfferedStream& offered : cameras) {
+            if (!is_chosen(offered.peer)) continue;
+            Member& member = members_[offered.peer];
+            if (!member.camera) play(member.camera, offered.peer, offered.description, events);
+            if (member.empty()) members_.erase(offered.peer);
+        }
+    }
+    for (Playing<VideoPlayer>& camera : stopped) camera.reset();
+    for (const auto& [peer, description] : ended) notify(handlers_.ended, peer, description);
     for (const auto& event : events) event();
 }
 
@@ -749,6 +819,15 @@ std::vector<PeerId> Call::speaking(Duration hold) const {
         if (heard && now - *heard < hold) speaking.push_back(peer);
     }
     return speaking;
+}
+
+std::vector<PeerId> Call::cameras() const {
+    std::vector<PeerId> peers;
+    std::lock_guard lock(playing_);
+    for (const auto& [peer, member] : members_) {
+        if (member.camera) peers.push_back(peer);
+    }
+    return peers;
 }
 
 std::map<PeerId, AudioPlayerStats> Call::voice_stats() const {

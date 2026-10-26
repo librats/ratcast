@@ -4,6 +4,7 @@ ratcast_add_test(client_tests
         test_audio_pipeline.cpp
         test_call.cpp
         test_call_monitor.cpp
+        test_camera_choice.cpp
         test_data_pipeline.cpp
         test_log_file.cpp
         test_playback_meter.cpp

@@ -25,7 +25,10 @@ struct Member {
     bool muted = false;
     bool deafened = false;
     bool speaking = false;
-    bool camera = false;   ///< its camera on
+    bool camera = false;  ///< its camera on
+    /// Its camera's pictures received here: on, and among the last to speak
+    /// where only so many are (role `cameraShown`; CallPlayback::most_cameras).
+    bool camera_shown = false;
     bool sharing = false;  ///< a screen or a window shared
     /// Its link cut — lost and dialed again, or gone quiet — and maybe back in
     /// a moment (Call::interrupted()).
@@ -48,6 +51,7 @@ public:
         DeafenedRole,
         SpeakingRole,
         CameraRole,
+        CameraShownRole,
         SharingRole,
         ReconnectingRole,
         VolumeRole,

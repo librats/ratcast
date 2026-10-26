@@ -512,6 +512,58 @@ TEST_F(CallTest, EveryonesVoiceAndCameraPlay) {
     EXPECT_EQ(host->speaking(), std::vector{ann->id()});
 }
 
+TEST_F(CallTest, OnlyTheCamerasOfTheLastToSpeakPlayWhenSoFewAre) {
+    VideoEncoderConfig probe;
+    probe.width = 160;
+    probe.height = 120;
+    if (!open_video_encoder(probe)) GTEST_SKIP() << "no AV1 encoder here";
+
+    Side host;
+    CallConfig one_camera = room();
+    one_camera.playback.most_cameras = 1;
+    host.start(one_camera, false);
+    Side ann;
+    ann.start(room(RatsUrl{host.address()}), false, false);
+    Side bob;
+    bob.start(room(RatsUrl{host.address()}), false, false);
+    const auto camera = [](Side& side) {
+        ASSERT_TRUE(publish_camera(*side, std::make_unique<PatternSource>(
+                                              PatternConfig{PixelFormat::NV12, 160, 120, 30, 1})));
+    };
+    const auto receives = [&](Side& from) {
+        const std::optional<IncomingStreamStats> stats =
+            host->session().incoming_stats(from->id(), kCameraStream);
+        return stats && stats->subscribed;
+    };
+
+    // Nobody spoke: the first offered plays, the other is not received.
+    camera(ann);
+    ASSERT_TRUE(wait_for([&] { return host->cameras() == std::vector{ann->id()}; }));
+    camera(bob);
+    ASSERT_TRUE(wait_for([&] { return host->session().offered().size() == 2; }));
+    std::this_thread::sleep_for(500ms);
+    EXPECT_EQ(host->cameras(), std::vector{ann->id()}) << "one that never spoke takes no place";
+    EXPECT_FALSE(receives(bob));
+
+    // Bob speaks: his camera in Ann's place.
+    bob.publish_voice();
+    ASSERT_TRUE(wait_for([&] { return host->cameras() == std::vector{bob->id()}; }));
+    EXPECT_TRUE(receives(bob));
+    EXPECT_FALSE(receives(ann)) << "let go";
+    EXPECT_TRUE(wait_for([&] {
+        return host.told_times("ended camera") == 1 && host.told_times("playing camera") == 2;
+    })) << ::testing::PrintToString(host.events());
+    const size_t pictures = host.camera_pictures();
+    EXPECT_TRUE(wait_for([&] { return host.camera_pictures() >= pictures + 10; }));
+
+    // Ann speaks too, and Bob stops: Ann's again.
+    ann.publish_voice();
+    std::this_thread::sleep_for(500ms);
+    EXPECT_EQ(host->cameras(), std::vector{bob->id()}) << "heard at once: kept";
+    bob->unpublish(4);
+    EXPECT_TRUE(wait_for([&] { return host->cameras() == std::vector{ann->id()}; }));
+}
+
 TEST_F(CallTest, EachVoicePlaysAsLoudAsThisSideSets) {
     Side host;
     host.start(config(), false, false);

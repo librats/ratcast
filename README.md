@@ -36,7 +36,9 @@ ratcast is built on [librats](https://github.com/librats/librats). It comes in t
   never the call's own voices.
 - **Voice that is easy to listen to.** Echo cancellation, noise suppression and automatic gain
   (WebRTC AudioProcessing) are built in. You can mute or deafen yourself and see who is speaking.
-- **Camera.** Each side can show itself next to the share.
+- **Camera.** Each side can show itself next to the share. Without a share, everyone is a tile
+  in a grid, and whoever speaks is ringed. In a room of more than seven, you see the cameras of
+  the last six to speak.
 - **Text chat.** Write to the room next to the call. Links open in the browser, and whoever
   joins later sees the last hundred messages.
 - **Hardware encoding.** AV1, HEVC and H.264 run on NVENC, AMF or Quick Sync when a GPU has

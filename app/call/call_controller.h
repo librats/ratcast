@@ -101,7 +101,8 @@ class CallController : public QObject {
     /// What is said in the room (ChatModel), from the start of this side's
     /// time in it.
     Q_PROPERTY(ratcast::app::ChatModel* chat READ chat CONSTANT)
-    /// How many of the others have their camera on.
+    /// How many of the others' cameras are shown here: those on, or past
+    /// kMostCameras, of the last to speak.
     Q_PROPERTY(int cameras READ cameras NOTIFY camerasChanged)
     /// The microphone silenced, as the user says; kept from one room to the
     /// next. Deafened silences it as well, whatever this says.
@@ -145,6 +146,9 @@ public:
 
     /// The loudest a member is heard: twice the amplitude, +6 dB.
     static constexpr double kMaxVolume = 2.0;
+    /// The most of the others' cameras shown at once; past it, those of the
+    /// last to speak (CallPlayback::most_cameras): a room of seven sees all.
+    static constexpr size_t kMostCameras = 6;
 
     /// What the controller takes from the system; tests stand in for it.
     struct Environment {
@@ -177,7 +181,7 @@ public:
 
         /// This computer's: its desktop, its speaker, the user's data
         /// directory, settings and name, discoverable through the DHT, the
-        /// build's server (RATCAST_DEFAULT_SERVER).
+        /// build's server (RATCAST_DEFAULT_SERVER), kMostCameras.
         static Environment system();
     };
 

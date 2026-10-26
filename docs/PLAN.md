@@ -161,7 +161,7 @@ final place and shape: stage 0 is a walking skeleton, not a throwaway prototype.
 | **4. Platforms** — in part | GPU paths and hardware codecs; Windows ✅ (its GPU path too) and macOS capture; netsim ✅ | — |
 | **5. Watch together** ✅ | one-to-many: a sender's budget, synchronised playout, forwarding tree, SFU and E2EE; simulcast and cinema put off | L5 ✅ |
 | **6. App** ✅ | Qt app MVP, one to one: invites, voice with AEC / NS, screen / window / app-audio share, camera; on Linux first, the other OSes as stage 4 reaches them | — |
-| **7. Conferences** — in part | text chat ✅, a link that holds ✅, each member heard as loud as the listener sets ✅, active speaker, last-N, grid, moderation | — |
+| **7. Conferences** — in part | text chat ✅, a link that holds ✅, each member heard as loud as the listener sets ✅, active speaker ✅, last-N ✅, grid ✅, moderation | — |
 | **8. Beyond** | Android, cinema mode, HDR, polish | — |
 | **9. Call monitor** ✅ | what a call does, as it does it: quality, bitrate, size, frame time, whether each end keeps up — a line a second in the console, a panel in the app | — |
 | **10. Room** ✅ | a voice lobby for a few, as Discord's: everyone with everyone, all talking from the start, who is there and who speaks, mute and deafen, anyone's screen or camera on and off while the room goes on | — |
@@ -1341,9 +1341,28 @@ sends one out. Steps are taken in the order the user picks, not their numbers'.
   `Settings`), a slider over the share and among full screen's controls. Tested: a call's
   share sound silent from before it plays, then up and down, the voices as they come whatever
   it is; Bob's speaker with Ann's share silent from before the room, then at full and half.
-- **7.4 Active speaker and a grid**: the cameras a grid, whoever speaks marked or made larger;
+- **7.4 Active speaker and a grid** ✅: the cameras a grid, whoever speaks marked or made larger;
   last-N — only the cameras of the last N to speak received, the rest a name — once rooms pass
   five or six.
+  Done so: `CallPlayback::most_cameras` (0: every one) — past it, the cameras of the last to
+  speak play and the rest are not received (only what plays is). Who that is, `choose_cameras()`
+  (`camera_choice.h`): the most recently heard (a voice's `AudioPlayerStats::heard`), a camera
+  shown keeping its place against one that never spoke, and for `kKeepCamera` (2 s) after its
+  member last did — two talking at once, the one shown stays, and nothing flickers; ties as
+  offered, by peer id. `Call` looks a few times a second (a thread of its own, run while cameras
+  are limited, stopped first as it hangs up), a camera offered while there is room plays at once;
+  one let go is `ended`, its place's `playing`; `Call::cameras()` says whose play. The app:
+  `CallController::kMostCameras` = 6 (a room of seven sees all), each member's `cameraShown`,
+  `cameras` the shown; the stage without a share a grid of everyone — a tile a member and one
+  for this side, its camera or its name's first letter ("camera hidden" for one on and not
+  shown), ringed green while it speaks, as many columns as make the tiles largest; with a share,
+  the cameras shown in a column beside it, as before. Not here: made larger — the speaker is
+  ringed, the grid stays even; a room's cameras come at one size each, a tile larger only scaled
+  (simulcast, 5.4). Tested: the choice (all when few, the last to speak, the first offered while
+  nobody speaks, kept against the silent and through the moment, taken by one heard past it); a
+  call on real nodes showing one camera of two — the first offered, kept against one never heard,
+  given up to the other as it speaks (received no more), kept while both speak, back as the other
+  stops; two controllers' cameras at one shown, the shown one muted and the other in its place.
 - **7.5 Order**: the room's maker (its peer id in the link) asks a member to mute, sends one
   out and keeps them out — each member drops them — and invites that let in only who has one;
   who keeps order when the maker leaves.

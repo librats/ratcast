@@ -635,60 +635,130 @@ ApplicationWindow {
             opacity: 0.6
             text: qsTr("Everyone here hears everyone. Share a screen or turn a camera on, " +
                        "and the others see it.")
-            visible: !root.watching && root.cameraTiles === 0
+            visible: !root.watching && memberTiles.count === 0 && !call.camera
         }
 
-        component CameraFrame: Rectangle {
-            id: frame
+        // A member's place on the stage: its camera, or its name until there
+        // is one to show; ringed while it speaks.
+        component Tile: Rectangle {
+            id: tile
             default property alias content: holder.data
             property string caption
+            /// Whose first letter stands for the pictures not shown.
+            property string named: caption
+            /// Its member speaking.
+            property bool ringed
+            /// Its pictures shown.
+            property bool showing
+            /// A word in its corner.
+            property string note
             color: "#111214"
             radius: 6
-            border.color: "#4e5058"
+            border.color: ringed ? Material.color(Material.Green) : "#4e5058"
+            border.width: ringed ? 3 : 1
             clip: true
 
+            Rectangle {
+                anchors.centerIn: parent
+                width: Math.min(parent.width, parent.height) * 0.4
+                height: width
+                radius: width / 2
+                color: "#2b2d31"
+                visible: !tile.showing
+
+                Label {
+                    anchors.centerIn: parent
+                    text: tile.named.length > 0 ? tile.named[0].toUpperCase() : "?"
+                    textFormat: Text.PlainText
+                    font.pixelSize: parent.width * 0.45
+                }
+            }
             Item {
                 id: holder
                 anchors.fill: parent
-                anchors.margins: 2
+                anchors.margins: 3
+                visible: tile.showing
             }
             Label {
                 anchors.left: parent.left
+                anchors.right: parent.right
                 anchors.bottom: parent.bottom
                 anchors.margins: 6
-                text: frame.caption
+                text: tile.caption
                 textFormat: Text.PlainText
+                elide: Text.ElideRight
                 font.pixelSize: 11
                 style: Text.Outline
                 styleColor: "#000000"
             }
+            Label {
+                anchors.right: parent.right
+                anchors.top: parent.top
+                anchors.margins: 6
+                text: tile.note
+                visible: text.length > 0
+                opacity: 0.7
+                font.pixelSize: 11
+            }
         }
 
-        // Beside the share a column of small ones; without one, a grid.
+        // Beside the share a column of the cameras shown; without one, a grid
+        // of everyone, each as large as the stage lets them all be.
         Flow {
             id: cameras
-            readonly property real tileWidth: root.watching ? 240 : 360
-            anchors.right: parent.right
-            anchors.top: parent.top
-            width: root.watching ? tileWidth : parent.width
-            spacing: 8
-            visible: !root.fullScreen
 
-            // A tile a member, shown while its camera is on: the view stays
-            // as long as the member does.
+            readonly property int tiles: memberTiles.count + 1
+            /// The grid's columns: those that make the tiles largest.
+            readonly property int columns: {
+                let best = 1
+                let widest = 0
+                for (let c = 1; c <= tiles; ++c) {
+                    const rows = Math.ceil(tiles / c)
+                    const across = (stage.width - (c - 1) * spacing) / c
+                    const down = (stage.height - (rows - 1) * spacing) / rows * 4 / 3
+                    if (Math.min(across, down) > widest) {
+                        widest = Math.min(across, down)
+                        best = c
+                    }
+                }
+                return best
+            }
+            readonly property real tileWidth: root.watching
+                ? 240
+                : Math.min((stage.width - (columns - 1) * spacing) / columns,
+                           (stage.height - (Math.ceil(tiles / columns) - 1) * spacing)
+                           / Math.ceil(tiles / columns) * 4 / 3)
+
+            anchors.right: root.watching ? parent.right : undefined
+            anchors.top: root.watching ? parent.top : undefined
+            anchors.horizontalCenter: root.watching ? undefined : parent.horizontalCenter
+            anchors.verticalCenter: root.watching ? undefined : parent.verticalCenter
+            width: root.watching ? tileWidth : columns * tileWidth + (columns - 1) * spacing
+            spacing: 8
+            visible: !root.fullScreen && (root.watching ? root.cameraTiles > 0
+                                                        : memberTiles.count > 0 || call.camera)
+
+            // A tile a member: the view stays as long as the member does.
             Repeater {
+                id: memberTiles
                 model: call.members
 
-                CameraFrame {
+                Tile {
                     id: tile
                     required property string peerId
                     required property string peer
                     required property string name
                     required property bool camera
+                    required property bool cameraShown
+                    required property bool speaking
                     width: cameras.tileWidth
                     height: width * 3 / 4
-                    visible: camera
+                    visible: !root.watching || cameraShown
                     caption: root.memberName(name, peer)
+                    ringed: tile.speaking
+                    showing: cameraShown
+                    // On, but not among the last to speak.
+                    note: camera && !cameraShown ? qsTr("camera hidden") : ""
 
                     VideoView {
                         id: theirCamera
@@ -699,11 +769,14 @@ ApplicationWindow {
                 }
             }
 
-            CameraFrame {
+            Tile {
                 width: cameras.tileWidth
                 height: width * 3 / 4
-                visible: call.camera
+                visible: !root.watching || call.camera
                 caption: qsTr("You")
+                named: call.name
+                ringed: call.speaking
+                showing: call.camera
 
                 // As a mirror shows one: what is left of the user is on the left.
                 VideoView {

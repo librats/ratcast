@@ -9,6 +9,7 @@ add_library(ratcast_client STATIC
     src/call.cpp
     src/call_monitor.cpp
     src/camera.cpp
+    src/camera_choice.cpp
     src/cpu_meter.cpp
     src/data_player.cpp
     src/data_publisher.cpp

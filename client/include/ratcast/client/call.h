@@ -56,6 +56,8 @@
  */
 
 #include <atomic>
+#include <condition_variable>
+#include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <map>
@@ -63,7 +65,9 @@
 #include <mutex>
 #include <optional>
 #include <set>
+#include <stop_token>
 #include <string>
+#include <thread>
 #include <variant>
 #include <vector>
 
@@ -110,6 +114,10 @@ struct CallPlayback {
     /// played), then called on its player's thread; `video`'s config. Asked
     /// under the call's lock: it must not call back into the call.
     std::function<VideoPlayer::Sink(const PeerId& peer)> cameras = {};
+    /// The most cameras played at once: those of the last to speak, the
+    /// rest not received (last-N, camera_choice.h), looked at a few times a
+    /// second; 0, every one offered.
+    size_t most_cameras = 0;
     /// The device the sound and the voices play into; must outlive the call.
     AudioOutput* sound = nullptr;
     /// Each frame of sound from `peer` — a voice, or the watched's — captured
@@ -195,7 +203,8 @@ struct CallHandlers {
     std::function<void(const PeerId& peer, const StreamDescription& stream, Result<void> outcome)>
         playing = {};
     /// A stream that played ended: `peer` withdrew it, or left, or another
-    /// is watched.
+    /// is watched — or, a camera, made room for one whose member spoke later
+    /// (CallPlayback::most_cameras).
     std::function<void(const PeerId& peer, const StreamDescription& stream)> ended = {};
     /// A peer said who it is, or that something of it changed (Presence).
     std::function<void(const PeerId& peer, const Presence& presence)> presence = {};
@@ -321,6 +330,9 @@ public:
     /// The peers whose voice was heard within `hold`: who is speaking, held a
     /// moment after they stop so that a UI showing it does not flicker.
     std::vector<PeerId> speaking(Duration hold = std::chrono::milliseconds(300)) const;
+    /// The peers whose cameras play: every one offered, or the last to speak
+    /// (CallPlayback::most_cameras).
+    std::vector<PeerId> cameras() const;
     /// Each peer's camera and voice playing, by peer.
     std::map<PeerId, ReceivedVideoStats> camera_stats() const;
     std::map<PeerId, AudioPlayerStats> voice_stats() const;
@@ -367,6 +379,9 @@ private:
     /// Play what the one watched offers where nothing plays: after what
     /// played ended, or another is watched.
     void play_watched();
+    /// The cameras of the last to speak played, the rest let go
+    /// (CallPlayback::most_cameras); a few times a second, on speakers_.
+    void follow_speakers();
     // Under playing_; what came of it are events for after the lock.
     /// Play what `peer` offers if it is to play and nothing plays in its place.
     void offer(const PeerId& peer, const StreamDescription& description,
@@ -419,6 +434,11 @@ private:
     float share_volume_ = 1.0f;
     Playing<DataPlayer> feed_;
     std::unique_ptr<DataPlayer> ended_feed_;  ///< writing out what it held
+
+    /// Follows who speaks, while cameras are limited; stopped first.
+    std::mutex speakers_mutex_;
+    std::condition_variable_any speakers_wake_;
+    std::jthread speakers_;
 };
 
 }  // namespace ratcast

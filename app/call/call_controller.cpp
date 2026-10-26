@@ -118,6 +118,7 @@ CallController::Environment CallController::Environment::system() {
     environment.name = user_name();
     environment.server = QStringLiteral(RATCAST_DEFAULT_SERVER);
     environment.call.discoverable = true;
+    environment.call.playback.most_cameras = kMostCameras;
     environment.data_dir = data_folder().toStdString();
     environment.open_share = [](const ScreenShareConfig& config, std::stop_token cancel) {
         return open_screen_share(config, std::move(cancel));
@@ -394,6 +395,7 @@ void CallController::update_members() {
     std::vector<Member> members;
     if (call_) {
         const std::vector<PeerId> speaking = call_->speaking();
+        const std::vector<PeerId> shown = call_->cameras();
         const std::vector<OfferedStream> offered = call_->session().offered();
         const auto offers = [&](const PeerId& peer, bool camera) {
             return std::ranges::any_of(offered, [&](const OfferedStream& stream) {
@@ -416,6 +418,7 @@ void CallController::update_members() {
                 .deafened = presence.deafened,
                 .speaking = std::ranges::find(speaking, peer) != speaking.end(),
                 .camera = offers(peer, true),
+                .camera_shown = std::ranges::find(shown, peer) != shown.end(),
                 .sharing = offers(peer, false),
                 .reconnecting = call_->interrupted(peer),
                 .volume = hearing.volume,
@@ -423,7 +426,7 @@ void CallController::update_members() {
             });
         }
     }
-    const int cameras = int(std::ranges::count_if(members, &Member::camera));
+    const int cameras = int(std::ranges::count_if(members, &Member::camera_shown));
     members_.set(std::move(members));
     update_watched();
     if (cameras == cameras_on_) return;

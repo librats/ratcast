@@ -514,6 +514,39 @@ TEST_F(CallControllerTest, EachSeesEveryCameraInAViewOfItsOwnAndItsOwn) {
     EXPECT_TRUE(ann_.camera()) << "kept on, as the user left it";
 }
 
+TEST_F(CallControllerTest, PastTheMostCamerasThoseOfTheLastToSpeakAreShown) {
+    CallController::Environment one_camera = environment();
+    one_camera.call.playback.most_cameras = 1;
+    ann_.setEnvironment(std::move(one_camera));
+    ann_.setName("Ann");
+    // Everyone's microphone a tone: Bob and Carl both talk.
+    bob_.setCamera(true);
+    carl_.setCamera(true);
+    both_in();
+    carl_.join(ann_.invites().value(0));
+    const auto shown = [&] {
+        QStringList names;
+        for (int row = 0; row < members(ann_); ++row) {
+            const QVariantMap member = ann_.memberList().get(row);
+            if (member.value("cameraShown").toBool()) names << member.value("name").toString();
+        }
+        return names;
+    };
+    ASSERT_TRUE(wait_for([&] {
+        return member(ann_, "Bob").value("camera").toBool() &&
+               member(ann_, "Carl").value("camera").toBool() && shown().size() == 1;
+    })) << shown().join(", ").toStdString();
+    EXPECT_EQ(ann_.cameras(), 1) << "of the two on, one shown";
+
+    // The one shown falls silent: the other, talking on, is shown after a moment.
+    const QString first = shown().value(0);
+    (first == "Bob" ? bob_ : carl_).setMuted(true);
+    const QString other = first == "Bob" ? "Carl" : "Bob";
+    EXPECT_TRUE(wait_for([&] { return shown() == QStringList{other}; }))
+        << shown().join(", ").toStdString();
+    EXPECT_TRUE(member(ann_, first).value("camera").toBool()) << "on, not shown";
+}
+
 TEST_F(CallControllerTest, WithoutACameraItIsTurnedOffAndTheRoomGoesOn) {
     CallController::Environment blind = environment();
     blind.open_camera = [] { return std::unique_ptr<VideoSource>{}; };
