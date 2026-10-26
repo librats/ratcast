@@ -7,6 +7,7 @@ ratcast_add_test(engine_tests
         test_frame_pacer.cpp
         test_pattern.cpp
         test_audio_source.cpp
+        test_switchable_output.cpp
         test_video_codec.cpp
         test_video_convert.cpp
         test_video_frame.cpp
@@ -37,6 +38,8 @@ endif()
 if(RATCAST_PIPEWIRE_FOUND)
     target_sources(engine_tests PRIVATE
         linux/fake_portal.cpp
+        linux/test_audio_devices.cpp
+        linux/test_audio_node.cpp
         linux/test_camera_capture.cpp
         linux/test_pipewire_audio.cpp
         linux/test_pipewire_capture.cpp

@@ -12,6 +12,7 @@ add_library(ratcast_engine STATIC
     src/capture/camera_capture.cpp
     src/audio/audio_frame.cpp
     src/audio/audio_mixer.cpp
+    src/audio/switchable_output.cpp
     src/pattern/pattern.cpp
     src/pattern/pattern_source.cpp
     src/pattern/tone_source.cpp
@@ -71,6 +72,7 @@ if(RATCAST_PIPEWIRE_FOUND)
         src/linux/pipewire_applications.cpp
         src/linux/pipewire_audio.cpp
         src/linux/pipewire_capture.cpp
+        src/linux/pipewire_registry.cpp
         src/linux/pipewire_stream.cpp
         src/linux/portal.cpp
         src/linux/screen_awake.cpp

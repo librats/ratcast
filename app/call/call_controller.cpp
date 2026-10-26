@@ -7,6 +7,7 @@
 #include <QVariantMap>
 
 #include <algorithm>
+#include <array>
 #include <cstdio>
 #include <filesystem>
 #include <iterator>
@@ -51,6 +52,12 @@ QString user_name() {
     QString name = qEnvironmentVariable("USER");
     if (name.isEmpty()) name = qEnvironmentVariable("USERNAME");  // Windows
     return name;
+}
+
+/// What was listed; nothing if it could not be.
+template <typename Info>
+std::vector<Info> or_none(Result<std::vector<Info>> listed) {
+    return listed ? std::move(*listed) : std::vector<Info>{};
 }
 
 /// A report's sections as QML reads them.
@@ -123,23 +130,33 @@ CallController::Environment CallController::Environment::system() {
     environment.open_share = [](const ScreenShareConfig& config, std::stop_token cancel) {
         return open_screen_share(config, std::move(cancel));
     };
-    environment.open_speaker = [format = environment.voice.speaker] {
-        Result<std::unique_ptr<AudioOutput>> speaker = open_audio_output({.format = format});
+    environment.open_speaker = [format = environment.voice.speaker](const std::string& device) {
+        Result<std::unique_ptr<AudioOutput>> speaker =
+            open_audio_output({.format = format, .device = device});
         return speaker ? std::move(*speaker) : nullptr;
     };
-    environment.open_microphone = [format = environment.voice.microphone] {
-        Result<std::unique_ptr<AudioSource>> microphone = open_audio_capture({.format = format});
+    environment.open_microphone = [format =
+                                       environment.voice.microphone](const std::string& device) {
+        Result<std::unique_ptr<AudioSource>> microphone =
+            open_audio_capture({.format = format, .device = device});
         return microphone ? std::move(*microphone) : nullptr;
     };
-    environment.open_camera = []() -> std::unique_ptr<VideoSource> {
-        Result<std::unique_ptr<VideoSource>> camera = ratcast::open_camera(call_camera_options());
+    environment.open_camera = [](const std::string& device) -> std::unique_ptr<VideoSource> {
+        CameraOptions options = call_camera_options();
+        options.id = device;
+        Result<std::unique_ptr<VideoSource>> camera = ratcast::open_camera(options);
         return camera ? std::move(*camera) : nullptr;
     };
-    environment.open_system_sound = [format = environment.voice.speaker] {
-        Result<std::unique_ptr<AudioSource>> sound =
-            open_audio_capture({.format = format, .source = AudioCaptureSource::SystemSound});
+    environment.open_system_sound = [format =
+                                         environment.voice.speaker](const std::string& device) {
+        Result<std::unique_ptr<AudioSource>> sound = open_audio_capture(
+            {.format = format, .source = AudioCaptureSource::SystemSound, .device = device});
         return sound ? std::move(*sound) : nullptr;
     };
+    // None listed is no reason to say so: the defaults are there all the same.
+    environment.list_microphones = [] { return or_none(list_audio_inputs()); };
+    environment.list_speakers = [] { return or_none(list_audio_outputs()); };
+    environment.list_cameras = [] { return or_none(ratcast::list_cameras()); };
     environment.keep_screen_awake = [] { return ratcast::keep_screen_awake("Watching a share"); };
     environment.settings = [] { return std::make_unique<QSettings>(); };
     return environment;
@@ -162,6 +179,7 @@ CallController::CallController(QObject* parent)
     connect(&reporting_, &QTimer::timeout, this, &CallController::update_stats);
     connect(&printing_, &QTimer::timeout, this, &CallController::print_stats);
     load_hearing();
+    load_devices();
 }
 
 CallController::~CallController() {
@@ -180,6 +198,7 @@ void CallController::setEnvironment(Environment environment) {
     setName(environment_.name);
     setServer(environment_.server);
     load_hearing();
+    load_devices();
 }
 
 bool CallController::attach(QPointer<VideoView>& slot, Pictures& pictures, VideoView* view) {
@@ -255,8 +274,9 @@ void CallController::start(CallConfig config, State state) {
     const uint64_t generation = ++generation_;
     voice_ = std::make_unique<VoiceChannel>(environment_.voice);
     std::unique_ptr<AudioOutput> device =
-        environment_.open_speaker ? environment_.open_speaker() : nullptr;
-    speaker_ = device ? voice_->speaker(std::move(device)) : nullptr;
+        environment_.open_speaker ? environment_.open_speaker(chosen_id(Speaker)) : nullptr;
+    speaker_ =
+        device ? std::make_unique<SwitchableOutput>(voice_->speaker(std::move(device))) : nullptr;
     apply_voice();
 
     config.mesh = true;  // whoever joins meets everyone
@@ -323,15 +343,21 @@ void CallController::end(QString notice) {
 void CallController::talk() {
     levels_.start();
     if (camera_) start_camera();
-    std::unique_ptr<AudioSource> device =
-        environment_.open_microphone ? environment_.open_microphone() : nullptr;
+    start_microphone();
+}
+
+void CallController::start_microphone() {
+    std::unique_ptr<AudioSource> device = environment_.open_microphone
+                                              ? environment_.open_microphone(chosen_id(Microphone))
+                                              : nullptr;
     // Not heard is no reason to leave: said, and the room goes on.
     if (!device) {
         set_notice(tr("There is no microphone: the others will not hear you."));
         return;
     }
-    std::unique_ptr<AudioSource> echo =
-        environment_.open_system_sound ? environment_.open_system_sound() : nullptr;
+    std::unique_ptr<AudioSource> echo = environment_.open_system_sound
+                                            ? environment_.open_system_sound(chosen_id(Speaker))
+                                            : nullptr;
     if (Result<AudioPublisher*> published =
             publish_voice(*call_, voice_->microphone(std::move(device), std::move(echo)));
         !published) {
@@ -550,6 +576,133 @@ void CallController::tell_hearing(const QString& id, const Hearing& hearing) {
     if (call_ && peer) call_->set_volume(*peer, hearing.muted ? 0.0f : float(hearing.volume));
 }
 
+// ── The devices ─────────────────────────────────────────────────────────────
+//
+// Kept in the settings as devices/<device>/id and devices/<device>/name, for
+// those not the default.
+
+namespace {
+
+/// Where the settings keep the choice of each device.
+QString device_group(int device) {
+    static constexpr std::array kGroups{"devices/microphone", "devices/speaker", "devices/camera"};
+    return QString::fromLatin1(kGroups[size_t(device)]);
+}
+
+/// `devices` as QML lists them.
+template <typename Info>
+QVariantList to_variant(const std::vector<Info>& devices) {
+    QVariantList list;
+    for (const Info& device : devices) {
+        list.push_back(QVariantMap{{QStringLiteral("id"), QString::fromStdString(device.id)},
+                                   {QStringLiteral("name"), QString::fromStdString(device.name)}});
+    }
+    return list;
+}
+
+}  // namespace
+
+std::string CallController::chosen_id(Device device) const {
+    return chosen_[device].id.toStdString();
+}
+
+void CallController::listDevices() {
+    const auto listed = [](const auto& list) { return list ? to_variant(list()) : QVariantList{}; };
+    listed_ = {listed(environment_.list_microphones), listed(environment_.list_speakers),
+               listed(environment_.list_cameras)};
+    // The one chosen, while it is not there: shown all the same, as it was.
+    for (int device = 0; device < kDevices; ++device) {
+        const Chosen& chosen = chosen_[device];
+        QVariantList& list = listed_[device];
+        if (chosen.id.isEmpty() || std::ranges::any_of(list, [&](const QVariant& listed) {
+                return listed.toMap().value(QStringLiteral("id")) == chosen.id;
+            })) {
+            continue;
+        }
+        list.push_back(QVariantMap{{QStringLiteral("id"), chosen.id},
+                                   {QStringLiteral("name"), chosen.name},
+                                   {QStringLiteral("missing"), true}});
+    }
+    Q_EMIT devicesChanged();
+}
+
+void CallController::load_devices() {
+    chosen_ = {};
+    if (environment_.settings) {
+        const std::unique_ptr<QSettings> settings = environment_.settings();
+        for (int device = 0; device < kDevices; ++device) {
+            const QString group = device_group(device);
+            chosen_[device] = {settings->value(group + QStringLiteral("/id")).toString(),
+                               settings->value(group + QStringLiteral("/name")).toString()};
+        }
+    }
+    Q_EMIT microphoneDeviceChanged();
+    Q_EMIT speakerDeviceChanged();
+    Q_EMIT cameraDeviceChanged();
+}
+
+void CallController::choose(Device device, const QString& id) {
+    if (id == chosen_[device].id) return;
+    QString name;
+    for (const QVariant& listed : std::as_const(listed_[device])) {
+        const QVariantMap map = listed.toMap();
+        if (map.value(QStringLiteral("id")) == id)
+            name = map.value(QStringLiteral("name")).toString();
+    }
+    chosen_[device] = {id, name.isEmpty() ? id : name};
+    if (environment_.settings) {
+        const std::unique_ptr<QSettings> settings = environment_.settings();
+        const QString group = device_group(device);
+        if (id.isEmpty()) {
+            settings->remove(group);
+        } else {
+            settings->setValue(group + QStringLiteral("/id"), id);
+            settings->setValue(group + QStringLiteral("/name"), chosen_[device].name);
+        }
+    }
+    switch (device) {
+        case Microphone:
+            Q_EMIT microphoneDeviceChanged();
+            // Sent anew from the one chosen; the others hear a moment's gap.
+            if (call_) {
+                call_->unpublish(kVoiceStream);
+                start_microphone();
+            }
+            break;
+        case Speaker:
+            Q_EMIT speakerDeviceChanged();
+            if (call_) switch_speaker();
+            break;
+        case Camera:
+            Q_EMIT cameraDeviceChanged();
+            if (call_ && camera_) {
+                call_->unpublish(kCameraStream);
+                start_camera();
+            }
+            break;
+        case kDevices: break;
+    }
+}
+
+void CallController::switch_speaker() {
+    std::unique_ptr<AudioOutput> device =
+        environment_.open_speaker ? environment_.open_speaker(chosen_id(Speaker)) : nullptr;
+    if (!device || !speaker_) {
+        set_notice(tr("That speaker cannot be used."));
+        return;
+    }
+    if (Result<void> switched = speaker_->switch_to(voice_->speaker(std::move(device)));
+        !switched) {
+        set_notice(tr("That speaker cannot be used (%1).").arg(describe(switched.error())));
+        return;
+    }
+    // The echo the microphone is cleaned of is what this one plays now.
+    if (environment_.open_system_sound) {
+        call_->unpublish(kVoiceStream);
+        start_microphone();
+    }
+}
+
 // ── The camera ──────────────────────────────────────────────────────────────
 
 void CallController::setCamera(bool on) {
@@ -565,7 +718,7 @@ void CallController::setCamera(bool on) {
 
 void CallController::start_camera() {
     std::unique_ptr<VideoSource> device =
-        environment_.open_camera ? environment_.open_camera() : nullptr;
+        environment_.open_camera ? environment_.open_camera(chosen_id(Camera)) : nullptr;
     if (!device) {
         camera_off(tr("There is no camera."));
         return;

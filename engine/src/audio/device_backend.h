@@ -10,11 +10,15 @@
  */
 
 #include <memory>
+#include <vector>
 
 #include "ratcast/core/result.h"
 #include "ratcast/engine/audio_device.h"
 
 namespace ratcast::backend {
+
+Result<std::vector<AudioDeviceInfo>> list_audio_inputs();
+Result<std::vector<AudioDeviceInfo>> list_audio_outputs();
 
 /// Precondition: `options` passed open_audio_capture()'s checks.
 Result<std::unique_ptr<AudioSource>> open_audio_capture(const AudioCaptureOptions& options);

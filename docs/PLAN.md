@@ -161,7 +161,7 @@ final place and shape: stage 0 is a walking skeleton, not a throwaway prototype.
 | **4. Platforms** — in part | GPU paths and hardware codecs; Windows ✅ (its GPU path too) and macOS capture; netsim ✅ | — |
 | **5. Watch together** ✅ | one-to-many: a sender's budget, synchronised playout, forwarding tree, SFU and E2EE; simulcast and cinema put off | L5 ✅ |
 | **6. App** ✅ | Qt app MVP, one to one: invites, voice with AEC / NS, screen / window / app-audio share, camera; on Linux first, the other OSes as stage 4 reaches them | — |
-| **7. Conferences** — in part | text chat ✅, a link that holds ✅, each member heard as loud as the listener sets ✅, active speaker ✅, last-N ✅, grid ✅, moderation | — |
+| **7. Conferences** — in part | text chat ✅, a link that holds ✅, each member heard as loud as the listener sets ✅, active speaker ✅, last-N ✅, grid ✅, settings ✅, moderation | — |
 | **8. Beyond** | Android, cinema mode, HDR, polish | — |
 | **9. Call monitor** ✅ | what a call does, as it does it: quality, bitrate, size, frame time, whether each end keeps up — a line a second in the console, a panel in the app | — |
 | **10. Room** ✅ | a voice lobby for a few, as Discord's: everyone with everyone, all talking from the start, who is there and who speaks, mute and deafen, anyone's screen or camera on and off while the room goes on | — |
@@ -1368,6 +1368,41 @@ sends one out. Steps are taken in the order the user picks, not their numbers'.
   who keeps order when the maker leaves.
 - **7.6 Rooms past a mesh** (when there are such): sound through a server, the top speakers by
   level (5.6's); simulcast (5.4); Forward's 64.
+- **7.7 Settings** ✅: a place for what the user sets, laid out for more to come; the
+  microphone, the speaker and the camera chosen where the defaults will not do; the window
+  kept in the tray.
+  Done so: the engine lists the devices — `list_audio_inputs()`, `list_audio_outputs()`
+  (`AudioDeviceInfo`: an id that lasts from one run to the next, a name), `CameraInfo::id` — and
+  opens the one of an id: `AudioCaptureOptions::device` / `AudioOutputOptions::device`, the
+  default followed as before with none, and in its place while the one chosen is not there (a
+  system sound capture hears what the output of its id plays: the echo of the speaker chosen);
+  `CameraOptions::id`, the first camera in its place. On Linux a PipeWire node's name, which
+  the stream asks the session manager for (`target.object`), the nodes listed by
+  `pipewire::list_nodes()` (`pipewire_registry.h`, the cameras' lister made general); on
+  Windows an endpoint's id from MMDevice's enumerator, activated by it (`IMMDevice::Activate`,
+  a loopback too), and a camera's symbolic link. `SwitchableOutput`: an output whose device
+  changes while it plays, the one before stopped and the same pull started on the next. The
+  app: `CallController`'s `microphoneDevice`, `speakerDevice`, `cameraDevice` ("" the default),
+  kept in the settings (`devices/<device>/id` and `name`) and chosen among `listDevices()`'s
+  (one chosen and not there listed as it was, `missing`); in a room the speaker switched with
+  no gap in what plays, the echo captured from it, the microphone and the camera sent anew.
+  `SettingsDialog.qml` (a section a page: Devices, Network — the server, moved from the
+  start — and Window), on a button on the start and in the room; the window minimized or
+  closed to the tray if set (Qt Labs Platform's `SystemTrayIcon`, kept by QML's `Settings`): its
+  icon shows it again, its menu mutes, leaves and quits (Qt closes the windows to quit: closing
+  then closes). Not here: minimized to the tray on Wayland, which never tells a window it was
+  minimized (closed to it works there); devices as they come and go told without a look
+  (the dialog looks as it opens, and on "Look again").
+  Tested: on PipeWire, against stand-in devices (a source sending a tone, a sink hearing),
+  each listed with the system's own, a microphone chosen heard rather than the default,
+  speakers chosen played to and what they play heard, one not there the default; a camera
+  chosen by its id whatever its node; on Windows the endpoints listed, one played to and one
+  heard (one not there, the default); `SwitchableOutput` by hand (what plays goes on to the
+  next, a switch while stopped waits for the start, one of another format or that will not
+  start leaves the one before playing, the device's end heard); the controller's choices
+  listed, kept for the next run (one gone listed as it was) and opened, and in a room the
+  headset played on at once with the echo from it, the microphone and the camera opened anew,
+  heard and seen as before.
 
 ### Stage 8 — Beyond
 

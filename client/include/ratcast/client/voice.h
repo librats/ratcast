@@ -74,10 +74,13 @@ private:
     std::shared_ptr<State> state_;
 };
 
+/// The stream a side's voice goes as, unless it says another.
+inline constexpr StreamId kVoiceStream = 4;
+
 /// Publish `microphone` — VoiceChannel::microphone()'s — on `call` as this
 /// side's voice: a stream labelled kVoiceLabel, coded as speech with DTX and
 /// FEC for some loss. Fails as Call::publish does.
 Result<AudioPublisher*> publish_voice(Call& call, std::unique_ptr<AudioSource> microphone,
-                                      StreamId stream = 4);
+                                      StreamId stream = kVoiceStream);
 
 }  // namespace ratcast

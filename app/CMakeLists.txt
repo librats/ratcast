@@ -59,17 +59,17 @@ set_target_properties(ratcast_app PROPERTIES
     MACOSX_BUNDLE_SHORT_VERSION_STRING ${PROJECT_VERSION}
 )
 
-# Its icon: on Windows the executable's, with its version (resources/ratcast.rc.in);
-# elsewhere the windows' (the menu's comes from the desktop entry).
+# Its icon: the tray's, and elsewhere than on Windows the windows' (the menu's
+# comes from the desktop entry); on Windows the executable's, with its version
+# (resources/ratcast.rc.in).
+qt_add_resources(ratcast_app ratcast_icon
+    PREFIX /ratcast
+    BASE   resources
+    FILES  resources/ratcast.png
+)
 if(WIN32)
     configure_file(resources/ratcast.rc.in ratcast.rc @ONLY)
     target_sources(ratcast_app PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/ratcast.rc")
-else()
-    qt_add_resources(ratcast_app ratcast_icon
-        PREFIX /ratcast
-        BASE   resources
-        FILES  resources/ratcast.png
-    )
 endif()
 
 qt_add_qml_module(ratcast_app
@@ -77,6 +77,7 @@ qt_add_qml_module(ratcast_app
     VERSION 1.0
     QML_FILES
         qml/Main.qml
+        qml/SettingsDialog.qml
 )
 
 # The QML import scan exists to link QML plugins into a static Qt. A shared Qt

@@ -14,14 +14,18 @@
  * and convert to and from the format asked for: rate, channels and sample
  * format are the system's to match, never the caller's. On Linux they are
  * PipeWire streams, which need no permission beyond the session's; on Windows
- * WASAPI streams, which follow the default device as the user changes it and
- * need the user's leave for the microphone.
+ * WASAPI streams, which need the user's leave for the microphone. Either
+ * follows the default device as the user changes it, or plays to, or hears,
+ * one device the user chose from those listed (`device`): by an id that lasts
+ * from one run to the next, the default in its place while it is not there.
  */
 
 #include <cstdint>
 #include <functional>
 #include <memory>
 #include <span>
+#include <string>
+#include <vector>
 
 #include "ratcast/core/result.h"
 #include "ratcast/core/time.h"
@@ -30,12 +34,28 @@
 
 namespace ratcast {
 
+// ── Devices ─────────────────────────────────────────────────────────────────
+
+/// A sound device, as the system lists it.
+struct AudioDeviceInfo {
+    /// What `device` takes: the same from one run to the next (on Linux a
+    /// PipeWire node's name; on Windows an endpoint's id).
+    std::string id;
+    std::string name;  ///< as the system names it, for a UI
+};
+
+/// The inputs there are now — microphones, and anything else the system
+/// lists as one — and the outputs. Fail with Unavailable where this system
+/// has no way to reach them; none there is an empty list.
+Result<std::vector<AudioDeviceInfo>> list_audio_inputs();
+Result<std::vector<AudioDeviceInfo>> list_audio_outputs();
+
 // ── Capture ─────────────────────────────────────────────────────────────────
 
 /// What a capture of no particular node hears.
 enum class AudioCaptureSource : uint8_t {
     Microphone,   ///< the default input
-    SystemSound,  ///< what the default output plays, this process's sound too
+    SystemSound,  ///< what an output plays, this process's sound too
     /// What the applications play — each one's sound, added up as the output
     /// would — other than one process's: what to share beside a screen while
     /// a call's voices play, which must not go back out. Applications that
@@ -51,6 +71,10 @@ struct AudioCaptureOptions {
     /// and its children's), whose sound the capture ends with.
     uint32_t node = 0;
     AudioCaptureSource source = AudioCaptureSource::Microphone;
+    /// With Microphone, the input of this id (AudioDeviceInfo::id); with
+    /// SystemSound, what the output of this id plays. "" for the default,
+    /// followed as it changes; not there, the default is heard.
+    std::string device = {};
     /// With Applications: the process whose sound is left out; 0 for this one.
     int excluded_process = 0;
     Duration latency = std::chrono::milliseconds(10);
@@ -66,10 +90,12 @@ Result<std::unique_ptr<AudioSource>> open_audio_capture(const AudioCaptureOption
 
 struct AudioOutputOptions {
     AudioFormat format{48'000, 2};
-    /// Where to play: 0 for the default output, which it follows as that
-    /// changes, or a device's node (on Linux; Windows plays to the default
-    /// only, and fails to start with another).
+    /// Where to play: 0 for `device`, or a device's node (on Linux; Windows
+    /// fails to start with one).
     uint32_t node = 0;
+    /// The output of this id (AudioDeviceInfo::id); "" for the default,
+    /// followed as it changes. Not there, it plays to the default.
+    std::string device = {};
     Duration latency = std::chrono::milliseconds(10);
 };
 

@@ -1,8 +1,8 @@
 // Cameras against stand-ins on the user's PipeWire daemon: listed by their
-// role (a screen is not one), captured in what cameras send — YUY2, NV12 and
-// I420, planes in one block or a block each — into 4:2:0 exactly, a camera
-// with only larger modes than asked taken as it is, and the capture ending
-// when the camera goes. Skipped where there is no PipeWire (CI).
+// role (a screen is not one) with an id that lasts, chosen by it, captured in what cameras send —
+// YUY2, NV12 and I420, planes in one block or a block each — into 4:2:0 exactly, a camera with only
+// larger modes than asked taken as it is, and the capture ending when the camera goes. Skipped
+// where there is no PipeWire (CI).
 
 #include "ratcast/engine/camera_capture.h"
 
@@ -112,11 +112,12 @@ bool same_planes(const VideoFrame& a, const VideoFrame& b) {
 }
 
 std::unique_ptr<TestVideoNode> camera(PixelFormat format, uint32_t width = 320,
-                                      uint32_t height = 240, bool block_per_plane = false) {
+                                      uint32_t height = 240, bool block_per_plane = false,
+                                      std::string name = camera_name()) {
     return TestVideoNode::create(width, height,
                                  {.format = format,
                                   .camera = true,
-                                  .name = camera_name(),
+                                  .name = std::move(name),
                                   .block_per_plane = block_per_plane});
 }
 
@@ -136,9 +137,24 @@ TEST(CameraCapture, ListsCamerasButNotScreens) {
         if (info.node == node->node_id()) {
             listed = true;
             EXPECT_EQ(info.name, camera_name());
+            EXPECT_EQ(info.id, camera_name()) << "its node's name, which lasts";
         }
     }
     EXPECT_TRUE(listed);
+}
+
+TEST(CameraCapture, ACameraIsChosenByItsIdWhateverItsNode) {
+    auto first = camera(PixelFormat::NV12);
+    if (!first) GTEST_SKIP() << "no PipeWire daemon here";
+    const std::string id = camera_name() + " chosen";
+    auto chosen = camera(PixelFormat::NV12, 320, 240, false, id);
+    ASSERT_TRUE(chosen);
+    Result<std::unique_ptr<VideoSource>> source = open_camera({.id = id});
+    ASSERT_TRUE(source);
+    Received received;
+    ASSERT_TRUE((*source)->start(received.sink(), received.ended()));
+    EXPECT_TRUE(received.first(*chosen, picture(PixelFormat::NV12, 320, 240, Timestamp{1s})))
+        << "another camera taken";
 }
 
 TEST(CameraCapture, TakesWhatCamerasSendInto420Exactly) {

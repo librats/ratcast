@@ -4,7 +4,9 @@
 // and ends when its process exits, or when there never was one; a capture of
 // the default output, which hears the playback too; and a capture of the
 // applications, which hears the playback unless it leaves this process out,
-// and goes on without it. Skipped where there is no sound output (CI).
+// and goes on without it; the devices listed, and one chosen played to or
+// heard — one not there, the default in its place. Skipped where there is no
+// sound output (CI).
 
 #include "windows/wasapi_audio.h"
 
@@ -233,5 +235,54 @@ TEST(WasapiMicrophoneTest, HandsOutBlocksThatFollowOn) {
     for (size_t i = 1; i < blocks.size(); ++i) {
         const Timestamp follows_on = blocks[i - 1].capture_time() + blocks[i - 1].duration();
         EXPECT_LE(std::chrono::abs(blocks[i].capture_time() - follows_on), 2ms) << "block " << i;
+    }
+}
+
+TEST(WasapiDevicesTest, AreListedByIdAndName) {
+    const Result<std::vector<AudioDeviceInfo>> outputs = wasapi::list_devices(false);
+    const Result<std::vector<AudioDeviceInfo>> inputs = wasapi::list_devices(true);
+    ASSERT_TRUE(outputs);
+    ASSERT_TRUE(inputs);
+    if (outputs->empty()) GTEST_SKIP() << "no sound output here";
+    for (const AudioDeviceInfo& output : *outputs) {
+        EXPECT_FALSE(output.id.empty());
+        EXPECT_FALSE(output.name.empty());
+        for (const AudioDeviceInfo& input : *inputs) EXPECT_NE(input.id, output.id);
+    }
+}
+
+TEST_F(WasapiAudioTest, APlaybackToADeviceChosenIsHeard) {
+    playback_.stop();
+    const Result<std::vector<AudioDeviceInfo>> outputs = wasapi::list_devices(false);
+    ASSERT_TRUE(outputs);
+    ASSERT_FALSE(outputs->empty());
+    wasapi::AudioPlayback chosen({.format = kMono, .device = outputs->back().id});
+    uint64_t played = 0;  // on the playback's thread
+    ASSERT_TRUE(chosen.start(
+        [&](std::span<float> out, Timestamp play_time) {
+            const AudioFrame tone = draw_tone(kTone, played, out.size(), play_time);
+            std::copy(tone.samples().begin(), tone.samples().end(), out.begin());
+            played += out.size();
+        },
+        {}));
+    // This process's sound, whichever device it goes to.
+    wasapi::AudioCapture capture({.format = kMono, .node = this_process()});
+    Heard heard;
+    ASSERT_TRUE(capture.start(heard.sink(), heard.ended()));
+    EXPECT_FALSE(heard.wait_for_tone(200ms).empty()) << "nothing played";
+    capture.stop();
+    chosen.stop();
+}
+
+TEST(WasapiMicrophoneTest, OneChosenOrOneNotThereHandsOutBlocks) {
+    const Result<std::vector<AudioDeviceInfo>> inputs = wasapi::list_devices(true);
+    if (!inputs || inputs->empty()) GTEST_SKIP() << "no microphone here";
+    for (const std::string& id :
+         {inputs->front().id, std::string("{0.0.1.00000000}.{ratcast-not-there}")}) {
+        wasapi::AudioCapture capture({.format = kMono, .device = id});
+        Heard heard;
+        if (!capture.start(heard.sink(), heard.ended()))
+            GTEST_SKIP() << "the microphone is not ours to use";
+        EXPECT_FALSE(heard.wait_for_more(100ms).empty()) << id;
     }
 }

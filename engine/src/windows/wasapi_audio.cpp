@@ -16,6 +16,7 @@
 #include <functional>
 #include <future>
 #include <optional>
+#include <string>
 #include <thread>
 #include <utility>
 
@@ -111,6 +112,41 @@ Result<ComPtr<IAudioClient>> activate(const wchar_t* path, PROPVARIANT* params) 
     if (!client) LOG_WARN("engine", "cannot open the sound device: " << to_string(client.error()));
     return client;
 }
+
+/// An audio client on the endpoint of `id` (IMMDevice::GetId's), if it is
+/// there and on.
+Result<ComPtr<IAudioClient>> activate_endpoint(const std::string& id) {
+    ComPtr<IMMDeviceEnumerator> enumerator;
+    HRESULT result = CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL,
+                                      IID_PPV_ARGS(&enumerator));
+    ComPtr<IMMDevice> device;
+    if (SUCCEEDED(result)) result = enumerator->GetDevice(win::wide(id).c_str(), &device);
+    DWORD state = 0;
+    if (SUCCEEDED(result)) result = device->GetState(&state);
+    if (SUCCEEDED(result) && state != DEVICE_STATE_ACTIVE)
+        result = HRESULT_FROM_WIN32(ERROR_NOT_FOUND);
+    ComPtr<IAudioClient> client;
+    if (SUCCEEDED(result))
+        result = device->Activate(__uuidof(IAudioClient), CLSCTX_ALL, nullptr,
+                                  reinterpret_cast<void**>(client.GetAddressOf()));
+    if (FAILED(result)) return fail(win::errc_of(result));
+    return client;
+}
+
+/// An audio client on the device of `id`, or — none chosen, or not there —
+/// on the default at `default_path`, which it follows as that changes.
+Result<ComPtr<IAudioClient>> activate_device(const std::string& id, const wchar_t* default_path) {
+    if (!id.empty()) {
+        Result<ComPtr<IAudioClient>> client = activate_endpoint(id);
+        if (client) return client;
+        LOG_WARN("engine", "sound device " << id << " is not there: the default in its place");
+    }
+    return activate(default_path, nullptr);
+}
+
+/// PKEY_Device_FriendlyName, which would otherwise need its own library.
+constexpr PROPERTYKEY kFriendlyName = {
+    {0xa45c254e, 0xdf1c, 0x4efd, {0x80, 0x20, 0x67, 0xd1, 0x46, 0xa8, 0x50, 0xe0}}, 14};
 
 /// A loopback of one process's sound and its children's — or, excluding, of
 /// everything but theirs.
@@ -252,8 +288,10 @@ private:
     Result<ComPtr<IAudioClient>> activate_client() const {
         if (options_.node != 0) return activate_process_loopback(options_.node, false);
         switch (options_.source) {
-            case AudioCaptureSource::Microphone: return activate(kDefaultCapture, nullptr);
-            case AudioCaptureSource::SystemSound: return activate(kDefaultRender, nullptr);
+            case AudioCaptureSource::Microphone:
+                return activate_device(options_.device, kDefaultCapture);
+            case AudioCaptureSource::SystemSound:
+                return activate_device(options_.device, kDefaultRender);
             case AudioCaptureSource::Applications:
                 return activate_process_loopback(options_.excluded_process != 0
                                                      ? DWORD(options_.excluded_process)
@@ -400,7 +438,7 @@ private:
     Result<void> open() override {
         if (!ready_) return fail(Errc::Internal);
         if (options_.node != 0) return fail(Errc::Unavailable);
-        Result<ComPtr<IAudioClient>> client = activate(kDefaultRender, nullptr);
+        Result<ComPtr<IAudioClient>> client = activate_device(options_.device, kDefaultRender);
         if (!client) return fail(client.error());
         client_ = std::move(*client);
         const Duration buffer = std::max<Duration>(options_.latency * 2, 20ms);
@@ -515,6 +553,42 @@ Result<void> AudioPlayback::start(Pull pull, EndHandler ended) {
 void AudioPlayback::stop() {
     std::lock_guard lock(mutex_);
     stream_.reset();
+}
+
+// ── Devices ─────────────────────────────────────────────────────────────────
+
+Result<std::vector<AudioDeviceInfo>> list_devices(bool capture) {
+    const win::ComApartment com;
+    if (!com.ok()) return fail(Errc::Unavailable);
+    ComPtr<IMMDeviceEnumerator> enumerator;
+    HRESULT result = CoCreateInstance(__uuidof(MMDeviceEnumerator), nullptr, CLSCTX_ALL,
+                                      IID_PPV_ARGS(&enumerator));
+    ComPtr<IMMDeviceCollection> endpoints;
+    if (SUCCEEDED(result))
+        result = enumerator->EnumAudioEndpoints(capture ? eCapture : eRender, DEVICE_STATE_ACTIVE,
+                                                &endpoints);
+    UINT count = 0;
+    if (SUCCEEDED(result)) result = endpoints->GetCount(&count);
+    if (FAILED(result)) return fail(win::errc_of(result));
+    std::vector<AudioDeviceInfo> devices;
+    for (UINT i = 0; i < count; ++i) {
+        ComPtr<IMMDevice> device;
+        LPWSTR id = nullptr;
+        if (FAILED(endpoints->Item(i, &device)) || FAILED(device->GetId(&id))) continue;
+        AudioDeviceInfo info{.id = win::utf8(id)};
+        CoTaskMemFree(id);
+        ComPtr<IPropertyStore> properties;
+        PROPVARIANT name;
+        PropVariantInit(&name);
+        if (SUCCEEDED(device->OpenPropertyStore(STGM_READ, &properties)) &&
+            SUCCEEDED(properties->GetValue(kFriendlyName, &name)) && name.vt == VT_LPWSTR) {
+            info.name = win::utf8(name.pwszVal);
+        }
+        PropVariantClear(&name);
+        if (info.name.empty()) info.name = capture ? "Microphone" : "Speakers";
+        devices.push_back(std::move(info));
+    }
+    return devices;
 }
 
 }  // namespace ratcast::wasapi

@@ -104,8 +104,9 @@ private:
             core_, options_.name.c_str(),
             pw_properties_new(PW_KEY_MEDIA_CLASS, "Video/Source", PW_KEY_MEDIA_TYPE, "Video",
                               PW_KEY_MEDIA_CATEGORY, "Source", PW_KEY_MEDIA_ROLE,
-                              options_.camera ? "Camera" : "Screen", PW_KEY_NODE_DESCRIPTION,
-                              options_.name.c_str(), nullptr));
+                              options_.camera ? "Camera" : "Screen", PW_KEY_NODE_NAME,
+                              options_.name.c_str(), PW_KEY_NODE_DESCRIPTION, options_.name.c_str(),
+                              nullptr));
         if (!stream_) return false;
 
         static constexpr pw_stream_events kEvents = [] {

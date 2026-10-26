@@ -41,6 +41,9 @@ ratcast is built on [librats](https://github.com/librats/librats). It comes in t
   the last six to speak.
 - **Text chat.** Write to the room next to the call. Links open in the browser, and whoever
   joins later sees the last hundred messages.
+- **Settings.** Pick the microphone, speaker and camera if the system's defaults are not the
+  ones, even in the middle of a call. The window can go to the tray when minimized or closed,
+  and the room goes on.
 - **Hardware encoding.** AV1, HEVC and H.264 run on NVENC, AMF or Quick Sync when a GPU has
   them. Otherwise SVT-AV1, libaom or OpenH264 encode on the CPU. On Windows the screen goes to the
   encoder without leaving the GPU.
@@ -126,7 +129,7 @@ journalctl -u ratcast-server -f             # its id, then what it does each min
 ```
 
 The server listens on port **7700, both UDP and TCP** (change it with `--port`), so open both in
-the firewall. Enter it in the app as *A server to meet at* (`HOST` or `HOST:PORT`), or pass
+the firewall. Enter it in the app's *Settings*, under *Network* (`HOST` or `HOST:PORT`), or pass
 `--server HOST` to the tools. A build can name a default server with
 `-DRATCAST_DEFAULT_SERVER=HOST`. `ratcast-server --help` lists the limits you can set.
 

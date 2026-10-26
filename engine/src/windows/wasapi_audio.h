@@ -10,9 +10,11 @@
  * device, raised to the multimedia scheduler's "Pro Audio" class, and never
  * blocks there.
  *
- * Every stream is activated by the system's default device rather than by a
+ * A stream is activated by the system's default device rather than by a
  * device of its own, so it follows the default as the user changes it, from
- * one headset to another, with no gap the caller sees. A capture of what
+ * one headset to another, with no gap the caller sees — unless it is given a
+ * device (`device`, an endpoint's id), which it then keeps to while it is
+ * there, ending when it goes. A capture of what
  * the computer plays — the whole of it, one process's, or all but one
  * process's — is a loopback, which hears nothing while nothing plays; the
  * capture fills that in with silence, so its blocks run on as a device's do.
@@ -21,12 +23,16 @@
 #include <cstdint>
 #include <memory>
 #include <mutex>
+#include <vector>
 
 #include "ratcast/core/time.h"
 #include "ratcast/engine/audio_device.h"
 #include "ratcast/engine/audio_source.h"
 
 namespace ratcast::wasapi {
+
+/// The capture endpoints that are on now, or the render ones.
+Result<std::vector<AudioDeviceInfo>> list_devices(bool capture);
 
 class AudioCapture final : public AudioSource {
 public:
@@ -63,7 +69,7 @@ public:
     const AudioFormat& format() const noexcept override { return options_.format; }
 
     /// Fails with Unavailable when there is no output, or for a node: on
-    /// Windows the default output is the only one played to.
+    /// Windows outputs are chosen by `device`.
     Result<void> start(Pull pull, EndHandler ended) override;
     void stop() override;
 

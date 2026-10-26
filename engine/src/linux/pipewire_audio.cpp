@@ -9,6 +9,7 @@
 #include <cstdio>
 #include <cstring>
 #include <optional>
+#include <string>
 
 #include <spa/param/audio/format-utils.h>
 #include <spa/pod/builder.h>
@@ -46,6 +47,14 @@ pw_properties* audio_properties(const char* category, const AudioFormat& format,
 
 size_t bytes_per_sample_time(const AudioFormat& format) { return sizeof(float) * format.channels; }
 
+/// Pointed at the device of `id` (a node's name), which the session manager
+/// links the stream to — to the default in its place while it is not there.
+/// The key is PW_KEY_TARGET_OBJECT, spelled out for headers older than
+/// PipeWire 0.3.64; a daemon that old links to the default.
+void target_device(pw_properties* properties, const std::string& id) {
+    if (!id.empty()) pw_properties_set(properties, "target.object", id.c_str());
+}
+
 }  // namespace
 
 // ── Capture ─────────────────────────────────────────────────────────────────
@@ -65,9 +74,10 @@ public:
         spa_pod_builder_init(&b, storage, sizeof storage);
         const spa_pod* params[] = {audio_format(b, format_)};
         pw_properties* properties = audio_properties("Capture", format_, options.latency);
-        // What the default output plays: the monitor of its sink.
+        // What an output plays: the monitor of its sink.
         if (options.node == 0 && options.source == AudioCaptureSource::SystemSound)
             pw_properties_set(properties, PW_KEY_STREAM_CAPTURE_SINK, "true");
+        if (options.node == 0) target_device(properties, options.device);
         StreamThread::Config config;
         config.node = options.node;
         config.name = "ratcast-audio-capture";
@@ -149,7 +159,9 @@ public:
         config.name = "ratcast-audio-playback";
         config.direction = PW_DIRECTION_OUTPUT;
         config.flags = PW_STREAM_FLAG_RT_PROCESS;
-        return thread_.open(config, audio_properties("Playback", format_, options.latency), params);
+        pw_properties* properties = audio_properties("Playback", format_, options.latency);
+        if (options.node == 0) target_device(properties, options.device);
+        return thread_.open(config, properties, params);
     }
 
     uint32_t node_id() const { return thread_.node_id(); }

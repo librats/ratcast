@@ -3,14 +3,16 @@
 /**
  * @file com.h
  * @brief What every Windows backend here needs of COM and Win32: an apartment
- * for the thread it runs on, kernel handles closed when they go, and how a
- * failed HRESULT reads as an Errc.
+ * for the thread it runs on, kernel handles closed when they go, how a failed
+ * HRESULT reads as an Errc, and Windows' strings in UTF-8 and back.
  */
 
 #include <objbase.h>
 #include <windows.h>
 #include <wrl/client.h>
 
+#include <string>
+#include <string_view>
 #include <utility>
 
 #include "ratcast/core/result.h"
@@ -92,6 +94,26 @@ inline Errc errc_of(HRESULT result) noexcept {
         case E_INVALIDARG: return Errc::InvalidArgument;
         default: return Errc::Unavailable;
     }
+}
+
+/// `wide`, as Windows spells it (UTF-16), in UTF-8.
+inline std::string utf8(std::wstring_view wide) {
+    if (wide.empty()) return {};
+    const int size = WideCharToMultiByte(CP_UTF8, 0, wide.data(), int(wide.size()), nullptr, 0,
+                                         nullptr, nullptr);
+    std::string out(size_t(size), '\0');
+    WideCharToMultiByte(CP_UTF8, 0, wide.data(), int(wide.size()), out.data(), size, nullptr,
+                        nullptr);
+    return out;
+}
+
+/// `text`, in UTF-8, as Windows spells it.
+inline std::wstring wide(std::string_view text) {
+    if (text.empty()) return {};
+    const int size = MultiByteToWideChar(CP_UTF8, 0, text.data(), int(text.size()), nullptr, 0);
+    std::wstring out(size_t(size), L'\0');
+    MultiByteToWideChar(CP_UTF8, 0, text.data(), int(text.size()), out.data(), size);
+    return out;
 }
 
 }  // namespace ratcast::win

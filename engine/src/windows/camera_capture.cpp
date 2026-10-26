@@ -29,20 +29,11 @@ namespace mf {
 namespace {
 
 using win::ComPtr;
+using win::utf8;
 
 /// A camera mode at fewer pictures a second than this is taken only if there
 /// is no other.
 constexpr double kSmoothRate = 15;
-
-std::string utf8(std::wstring_view wide) {
-    if (wide.empty()) return {};
-    const int size = WideCharToMultiByte(CP_UTF8, 0, wide.data(), int(wide.size()), nullptr, 0,
-                                         nullptr, nullptr);
-    std::string out(size_t(size), '\0');
-    WideCharToMultiByte(CP_UTF8, 0, wide.data(), int(wide.size()), out.data(), size, nullptr,
-                        nullptr);
-    return out;
-}
 
 std::wstring string_attribute(IMFAttributes& attributes, const GUID& key) {
     UINT32 length = 0;
@@ -70,6 +61,7 @@ private:
 
 struct Device {
     uint32_t node = 0;
+    std::string id;  ///< its symbolic link
     std::string name;
     ComPtr<IMFActivate> activate;
 };
@@ -93,8 +85,8 @@ Result<std::vector<Device>> devices() {
             *activate.Get(), MF_DEVSOURCE_ATTRIBUTE_SOURCE_TYPE_VIDCAP_SYMBOLIC_LINK);
         std::string name =
             utf8(string_attribute(*activate.Get(), MF_DEVSOURCE_ATTRIBUTE_FRIENDLY_NAME));
-        devices.push_back(
-            {node_of(link), name.empty() ? std::string("Camera") : std::move(name), activate});
+        devices.push_back({node_of(link), utf8(link),
+                           name.empty() ? std::string("Camera") : std::move(name), activate});
     }
     CoTaskMemFree(found);
     return devices;
@@ -466,7 +458,8 @@ Result<std::vector<CameraInfo>> list_cameras() {
     Result<std::vector<mf::Device>> found = mf::devices();
     if (!found) return fail(found.error());
     std::vector<CameraInfo> cameras;
-    for (const mf::Device& device : *found) cameras.push_back({device.node, device.name});
+    for (const mf::Device& device : *found)
+        cameras.push_back({device.node, device.id, device.name});
     return cameras;
 }
 

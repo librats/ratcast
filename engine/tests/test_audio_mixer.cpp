@@ -12,58 +12,13 @@
 #include <thread>
 #include <vector>
 
+#include "hand_output.h"
+
 using namespace ratcast;
+using ratcast::test::HandOutput;
 using namespace std::chrono_literals;
 
 namespace {
-
-/// A device the test drives: pull() as its thread would.
-class HandOutput final : public AudioOutput {
-public:
-    const AudioFormat& format() const noexcept override { return format_; }
-    Result<void> start(Pull pull, EndHandler ended) override {
-        std::lock_guard lock(mutex_);
-        if (pull_) return fail(Errc::InvalidArgument);
-        pull_ = std::move(pull);
-        ended_ = std::move(ended);
-        ++starts;
-        return {};
-    }
-    void stop() override {
-        std::lock_guard lock(mutex_);
-        pull_ = {};
-        ended_ = {};
-    }
-
-    bool running() {
-        std::lock_guard lock(mutex_);
-        return static_cast<bool>(pull_);
-    }
-    /// One pull of `frames` sample times; empty if the device is stopped.
-    std::vector<float> pull(size_t frames = 4) {
-        std::lock_guard lock(mutex_);
-        if (!pull_) return {};
-        std::vector<float> out(frames * format_.channels, -9.0f);  // garbage to be overwritten
-        pull_(out, Timestamp{1s});
-        return out;
-    }
-    void end() {
-        EndHandler ended;
-        {
-            std::lock_guard lock(mutex_);
-            ended = ended_;
-        }
-        ended(fail(Errc::Unavailable));
-    }
-
-    int starts = 0;
-
-private:
-    const AudioFormat format_{48'000, 2};
-    std::mutex mutex_;
-    AudioOutput::Pull pull_;
-    AudioOutput::EndHandler ended_;
-};
 
 /// A player's pull: every sample `value`.
 AudioOutput::Pull constant(float value) {

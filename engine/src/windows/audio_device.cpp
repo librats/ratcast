@@ -6,6 +6,10 @@
 
 namespace ratcast::backend {
 
+Result<std::vector<AudioDeviceInfo>> list_audio_inputs() { return wasapi::list_devices(true); }
+
+Result<std::vector<AudioDeviceInfo>> list_audio_outputs() { return wasapi::list_devices(false); }
+
 Result<std::unique_ptr<AudioSource>> open_audio_capture(const AudioCaptureOptions& options) {
     return std::unique_ptr<AudioSource>(std::make_unique<wasapi::AudioCapture>(options));
 }

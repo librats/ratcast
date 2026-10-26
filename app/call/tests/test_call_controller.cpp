@@ -3,9 +3,9 @@
 // talking and seen speaking, muted, deafened; anyone sharing (the test
 // pattern and a tone standing in for the desktop's screen and sound) and
 // stopping while the room goes on, the others watching it or not; cameras,
-// each member's in a view of its own; each listing the others by the names
-// they give; each reporting how the call goes; and the ways a share or a
-// join ends without the user.
+// each member's in a view of its own; the devices chosen, kept and used at
+// once; each listing the others by the names they give; each reporting how
+// the call goes; and the ways a share or a join ends without the user.
 
 #include "call_controller.h"
 
@@ -103,13 +103,13 @@ CallController::Environment environment() {
         }
         return sources;
     };
-    environment.open_speaker = [] {
+    environment.open_speaker = [](const std::string&) {
         return std::make_unique<VirtualOutput>(VirtualOutputConfig{});
     };
-    environment.open_microphone = [] {
+    environment.open_microphone = [](const std::string&) {
         return std::make_unique<ToneSource>(ToneConfig{.frequency = 300, .level = 0.3f});
     };
-    environment.open_camera = [] {
+    environment.open_camera = [](const std::string&) {
         return std::make_unique<PatternSource>(PatternConfig{PixelFormat::NV12, 160, 120, 30, 1});
     };
     environment.keep_screen_awake = [] { return std::make_unique<KeptAwake>(); };
@@ -286,7 +286,7 @@ TEST_F(CallControllerTest, EachMemberIsHeardAsLoudAsSetAndItIsKept) {
     // Ann's speaker, listened to: the loudest it played over a while.
     auto loudest = std::make_shared<std::atomic<float>>(0.0f);
     CallController::Environment ann = environment();
-    ann.open_speaker = [loudest] {
+    ann.open_speaker = [loudest](const std::string&) {
         return std::make_unique<VirtualOutput>(
             VirtualOutputConfig{}, [loudest](std::span<const float> samples, Timestamp) {
                 float block = 0.0f;
@@ -374,7 +374,7 @@ TEST_F(CallControllerTest, AMemberCutOffIsListedByNameReconnectingUntilBack) {
 
 TEST_F(CallControllerTest, WithoutAMicrophoneTheRoomGoesOn) {
     CallController::Environment mute = environment();
-    mute.open_microphone = [] { return std::unique_ptr<AudioSource>{}; };
+    mute.open_microphone = [](const std::string&) { return std::unique_ptr<AudioSource>{}; };
     bob_.setEnvironment(mute);
     bob_.setName("Bob");
     both_in();
@@ -415,7 +415,7 @@ TEST_F(CallControllerTest, TheShareIsHeardAsLoudAsSetBesideTheVoices) {
     // Bob's speaker, listened to: the loudest it played over a while.
     auto loudest = std::make_shared<std::atomic<float>>(0.0f);
     CallController::Environment bob = environment();
-    bob.open_speaker = [loudest] {
+    bob.open_speaker = [loudest](const std::string&) {
         return std::make_unique<VirtualOutput>(
             VirtualOutputConfig{}, [loudest](std::span<const float> samples, Timestamp) {
                 float block = 0.0f;
@@ -547,9 +547,151 @@ TEST_F(CallControllerTest, PastTheMostCamerasThoseOfTheLastToSpeakAreShown) {
     EXPECT_TRUE(member(ann_, first).value("camera").toBool()) << "on, not shown";
 }
 
+/// What a side opened, by the device ids it was given; on the GUI thread.
+struct Opened {
+    std::vector<std::string> microphones;
+    std::vector<std::string> speakers;
+    std::vector<std::string> echoes;
+    std::vector<std::string> cameras;
+};
+
+/// The test's environment, with devices to choose from, kept in `settings_file`,
+/// and what it opens told in `opened`.
+CallController::Environment with_devices(const QString& settings_file,
+                                         std::shared_ptr<Opened> opened) {
+    CallController::Environment devices = environment();
+    devices.list_microphones = [] {
+        return std::vector<AudioDeviceInfo>{{"built-in", "Built-in microphone"},
+                                            {"usb", "USB microphone"}};
+    };
+    devices.list_speakers = [] {
+        return std::vector<AudioDeviceInfo>{{"built-in", "Speakers"}, {"headset", "Headset"}};
+    };
+    devices.list_cameras = [] { return std::vector<CameraInfo>{{1, "front", "Front camera"}}; };
+    const auto open_microphone = devices.open_microphone;
+    devices.open_microphone = [opened, open_microphone](const std::string& device) {
+        opened->microphones.push_back(device);
+        return open_microphone(device);
+    };
+    const auto open_speaker = devices.open_speaker;
+    devices.open_speaker = [opened, open_speaker](const std::string& device) {
+        opened->speakers.push_back(device);
+        return open_speaker(device);
+    };
+    devices.open_system_sound = [opened](const std::string& device) {
+        opened->echoes.push_back(device);
+        return std::make_unique<ToneSource>(ToneConfig{.format = {48'000, 2}, .level = 0.0f});
+    };
+    const auto open_camera = devices.open_camera;
+    devices.open_camera = [opened, open_camera](const std::string& device) {
+        opened->cameras.push_back(device);
+        return open_camera(device);
+    };
+    devices.settings = [settings_file] {
+        return std::make_unique<QSettings>(settings_file, QSettings::IniFormat);
+    };
+    return devices;
+}
+
+TEST_F(CallControllerTest, TheDevicesChosenAreKeptAndUsed) {
+    QTemporaryDir kept;
+    ASSERT_TRUE(kept.isValid());
+    const QString settings_file = kept.filePath("ratcast.conf");
+    auto opened = std::make_shared<Opened>();
+    ann_.setEnvironment(with_devices(settings_file, opened));
+    EXPECT_TRUE(ann_.microphoneDevice().isEmpty()) << "the default";
+
+    ann_.listDevices();
+    ASSERT_EQ(ann_.microphoneDevices().size(), 2);
+    EXPECT_EQ(ann_.microphoneDevices()[1].toMap().value("name"), "USB microphone");
+    EXPECT_EQ(ann_.speakerDevices().size(), 2);
+    EXPECT_EQ(ann_.cameraDevices().value(0).toMap().value("id"), "front");
+    ann_.setMicrophoneDevice("usb");
+    ann_.setSpeakerDevice("headset");
+    ann_.setCameraDevice("front");
+
+    // Another run: the same choices, and the camera chosen not there now —
+    // listed all the same, by the name it had.
+    CallController::Environment later = with_devices(settings_file, opened);
+    later.list_cameras = [] { return std::vector<CameraInfo>{{2, "back", "Back camera"}}; };
+    carl_.setEnvironment(later);
+    EXPECT_EQ(carl_.microphoneDevice(), "usb");
+    EXPECT_EQ(carl_.speakerDevice(), "headset");
+    EXPECT_EQ(carl_.cameraDevice(), "front");
+    carl_.listDevices();
+    ASSERT_EQ(carl_.cameraDevices().size(), 2);
+    const QVariantMap missing = carl_.cameraDevices()[1].toMap();
+    EXPECT_EQ(missing.value("id"), "front");
+    EXPECT_EQ(missing.value("name"), "Front camera");
+    EXPECT_TRUE(missing.value("missing").toBool());
+
+    carl_.setCamera(true);
+    carl_.create();
+    ASSERT_EQ(carl_.state(), State::InRoom);
+    EXPECT_EQ(opened->microphones, std::vector<std::string>{"usb"});
+    EXPECT_EQ(opened->speakers, std::vector<std::string>{"headset"});
+    EXPECT_EQ(opened->echoes, std::vector<std::string>{"headset"}) << "what it plays, the echo";
+    EXPECT_EQ(opened->cameras, std::vector<std::string>{"front"});
+
+    // The default again: nothing kept.
+    carl_.setMicrophoneDevice("");
+    carl_.setSpeakerDevice("");
+    carl_.setCameraDevice("");
+    EXPECT_TRUE(QSettings(settings_file, QSettings::IniFormat).childGroups().isEmpty());
+}
+
+TEST_F(CallControllerTest, ADeviceChosenInARoomIsUsedAtOnce) {
+    QTemporaryDir kept;
+    ASSERT_TRUE(kept.isValid());
+    auto opened = std::make_shared<Opened>();
+    CallController::Environment ann = with_devices(kept.filePath("ratcast.conf"), opened);
+    // The headset, listened to: the loudest it played over a while.
+    auto loudest = std::make_shared<std::atomic<float>>(0.0f);
+    ann.open_speaker = [opened, loudest](const std::string& device) {
+        opened->speakers.push_back(device);
+        VirtualOutput::Tap tap;
+        if (device == "headset") {
+            tap = [loudest](std::span<const float> samples, Timestamp) {
+                float block = 0.0f;
+                for (const float sample : samples) block = std::max(block, std::abs(sample));
+                float most = loudest->load();
+                while (block > most && !loudest->compare_exchange_weak(most, block)) {}
+            };
+        }
+        return std::make_unique<VirtualOutput>(VirtualOutputConfig{}, tap);
+    };
+    ann_.setEnvironment(ann);
+    ann_.setName("Ann");
+    ann_.setCamera(true);
+    both_in();
+    ASSERT_TRUE(wait_for([&] {
+        return member(bob_, "Ann").value("speaking").toBool() &&
+               member(bob_, "Ann").value("camera").toBool();
+    }));
+
+    ann_.setSpeakerDevice("headset");
+    EXPECT_EQ(opened->speakers, (std::vector<std::string>{"", "headset"}));
+    EXPECT_EQ(opened->echoes, (std::vector<std::string>{"", "headset"})) << "the echo follows";
+    EXPECT_TRUE(wait_for([&] { return loudest->load() > 0.1f; })) << "Bob heard on the headset";
+
+    ann_.setMicrophoneDevice("usb");
+    ann_.setCameraDevice("front");
+    EXPECT_EQ(opened->microphones.back(), "usb");
+    EXPECT_EQ(opened->cameras, (std::vector<std::string>{"", "front"}));
+    EXPECT_TRUE(ann_.camera());
+    EXPECT_TRUE(ann_.notice().isEmpty()) << ann_.notice().toStdString();
+    // Heard and seen as before, from the devices chosen: once what was
+    // heard from the ones before has gone by.
+    wait_for([] { return false; }, 1500ms);
+    EXPECT_TRUE(wait_for([&] {
+        return member(bob_, "Ann").value("speaking").toBool() &&
+               member(bob_, "Ann").value("camera").toBool();
+    }));
+}
+
 TEST_F(CallControllerTest, WithoutACameraItIsTurnedOffAndTheRoomGoesOn) {
     CallController::Environment blind = environment();
-    blind.open_camera = [] { return std::unique_ptr<VideoSource>{}; };
+    blind.open_camera = [](const std::string&) { return std::unique_ptr<VideoSource>{}; };
     bob_.setEnvironment(blind);
     bob_.setName("Bob");
     bob_.setCamera(true);

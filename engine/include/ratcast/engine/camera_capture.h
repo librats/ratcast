@@ -31,13 +31,19 @@
 namespace ratcast {
 
 struct CameraInfo {
-    uint32_t node = 0;  ///< what CameraOptions::node takes
-    std::string name;   ///< as the system names it, for a UI
+    uint32_t node = 0;  ///< what CameraOptions::node takes, while the camera is there
+    /// What CameraOptions::id takes: the same from one run to the next (on
+    /// Linux a PipeWire node's name; on Windows the device's path).
+    std::string id;
+    std::string name;  ///< as the system names it, for a UI
 };
 
 struct CameraOptions {
-    /// Which camera: one list_cameras() gave, or 0 for the first it gives.
+    /// Which camera: one list_cameras() gave, or 0 for `id`.
     uint32_t node = 0;
+    /// With no node, the camera of this id; "", or one not there: the first
+    /// list_cameras() gives.
+    std::string id = {};
     PixelFormat format = PixelFormat::NV12;  ///< 4:2:0
     /// The largest picture to take, and the most pictures a second.
     uint32_t max_width = 1280;

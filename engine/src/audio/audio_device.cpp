@@ -13,6 +13,10 @@ bool is_valid(const AudioFormat& format, Duration latency) {
 
 }  // namespace
 
+Result<std::vector<AudioDeviceInfo>> list_audio_inputs() { return backend::list_audio_inputs(); }
+
+Result<std::vector<AudioDeviceInfo>> list_audio_outputs() { return backend::list_audio_outputs(); }
+
 Result<std::unique_ptr<AudioSource>> open_audio_capture(const AudioCaptureOptions& options) {
     if (!is_valid(options.format, options.latency)) return fail(Errc::InvalidArgument);
     if (options.node == 0 && options.source == AudioCaptureSource::Applications &&

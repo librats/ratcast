@@ -42,6 +42,7 @@ namespace {
 namespace capture = winrt::Windows::Graphics::Capture;
 namespace directx = winrt::Windows::Graphics::DirectX;
 using win::ComPtr;
+using win::utf8;
 
 constexpr std::string_view kMonitor = "monitor:";
 constexpr std::string_view kWindow = "window:";
@@ -50,16 +51,6 @@ constexpr auto kPixels = directx::DirectXPixelFormat::B8G8R8A8UIntNormalized;
 constexpr int32_t kFrames = 2;
 /// How often a window captured is looked at, to tell when it closes.
 constexpr DWORD kWatchPeriodMs = 200;
-
-std::string utf8(std::wstring_view wide) {
-    if (wide.empty()) return {};
-    const int size = WideCharToMultiByte(CP_UTF8, 0, wide.data(), int(wide.size()), nullptr, 0,
-                                         nullptr, nullptr);
-    std::string out(size_t(size), '\0');
-    WideCharToMultiByte(CP_UTF8, 0, wide.data(), int(wide.size()), out.data(), size, nullptr,
-                        nullptr);
-    return out;
-}
 
 std::wstring window_text(HWND window) {
     std::wstring text(size_t(GetWindowTextLengthW(window)) + 1, L'\0');

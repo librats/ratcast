@@ -2,6 +2,7 @@ import QtCore
 import QtQuick
 import QtQuick.Controls.Material
 import QtQuick.Layouts
+import Qt.labs.platform as Platform
 import Ratcast.Call
 import Ratcast.Update
 import Ratcast.Video
@@ -18,7 +19,9 @@ import Ratcast.Video
 // black, its controls and the cursor there while the mouse moves.
 // The start also says what the updater does: a new version on its way, or in
 // place and to restart into. The start and the panel open the folder the log
-// is kept in.
+// is kept in. The settings (SettingsDialog), from the start and the room; the
+// window goes to the tray, if they say so, as it is minimized or closed —
+// the room going on — and comes back from its icon.
 ApplicationWindow {
     id: root
 
@@ -46,6 +49,12 @@ ApplicationWindow {
     property int windowedVisibility: Window.Windowed
     /// Said over the stage a few seconds: a share that ended full screen.
     property string stageNotice: ""
+    /// How the window was shown last, to come back so from the tray.
+    property int shownVisibility: Window.Windowed
+    /// The tray has said once this run that the window went to it.
+    property bool trayTold: false
+    /// Quitting from the tray: the window closes for good.
+    property bool quitting: false
 
     width: 1100
     height: 680
@@ -109,11 +118,85 @@ ApplicationWindow {
         }
     }
 
-    // The desktop may take the window out of full screen itself.
+    // The desktop may take the window out of full screen itself. Minimized,
+    // it may go to the tray (a desktop that tells: Wayland's do not).
     onVisibilityChanged: {
         if (root.fullScreen && root.visibility !== Window.FullScreen
                 && root.visibility !== Window.Minimized && root.visibility !== Window.Hidden)
             root.fullScreen = false
+        if (root.visibility === Window.Windowed || root.visibility === Window.Maximized
+                || root.visibility === Window.FullScreen)
+            root.shownVisibility = root.visibility
+        if (root.visibility === Window.Minimized && settingsDialog.minimizeToTray && tray.available)
+            Qt.callLater(root.toTray)
+    }
+
+    onClosing: close => {
+        if (settingsDialog.closeToTray && tray.available && !root.quitting) {
+            close.accepted = false
+            root.toTray()
+        }
+    }
+
+    /// The window hidden, its icon in the tray: the room goes on.
+    function toTray() {
+        root.hide()
+        if (root.trayTold)
+            return
+        root.trayTold = true
+        tray.showMessage("ratcast", root.inRoom ? qsTr("Still in the room, here in the tray.")
+                                                : qsTr("Still here, in the tray."))
+    }
+
+    /// Back from the tray, as it was shown.
+    function fromTray() {
+        root.visibility = root.shownVisibility
+        root.raise()
+        root.requestActivate()
+    }
+
+    Platform.SystemTrayIcon {
+        id: tray
+        visible: available && (settingsDialog.minimizeToTray || settingsDialog.closeToTray)
+        icon.source: "qrc:/ratcast/ratcast.png"
+        tooltip: root.inRoom ? qsTr("ratcast: in a room") : "ratcast"
+        onActivated: reason => {
+            if (reason !== Platform.SystemTrayIcon.Context)
+                root.fromTray()
+        }
+
+        menu: Platform.Menu {
+            Platform.MenuItem {
+                text: qsTr("Show ratcast")
+                onTriggered: root.fromTray()
+            }
+            Platform.MenuItem {
+                text: call.muted ? qsTr("Unmute") : qsTr("Mute")
+                visible: root.inRoom
+                onTriggered: call.muted = !call.muted
+            }
+            Platform.MenuItem {
+                text: qsTr("Leave the room")
+                visible: root.inRoom
+                onTriggered: call.leave()
+            }
+            Platform.MenuSeparator {}
+            Platform.MenuItem {
+                text: qsTr("Quit")
+                onTriggered: {
+                    root.quitting = true  // Qt closes the windows first
+                    Qt.quit()
+                }
+            }
+        }
+    }
+
+    SettingsDialog {
+        id: settingsDialog
+        call: call
+        trayAvailable: tray.available
+        // Wayland does not tell a window it was minimized.
+        minimizedKnown: Qt.platform.pluginName !== "wayland"
     }
 
     Timer {
@@ -122,11 +205,16 @@ ApplicationWindow {
         onTriggered: root.stageNotice = ""
     }
 
-    // What is kept from one run to the next.
+    // What is kept from one run to the next; the devices, by the controller.
     Settings {
         property alias name: call.name
         property alias server: call.server
         property alias shareVolume: call.shareVolume
+    }
+    Settings {
+        category: "window"
+        property alias minimizeToTray: settingsDialog.minimizeToTray
+        property alias closeToTray: settingsDialog.closeToTray
     }
 
     /// What a member is called: its own name, or, until it says one, a
@@ -212,6 +300,11 @@ ApplicationWindow {
                 flat: true
                 onClicked: Qt.openUrlExternally(root.dataFolder)
             }
+            Button {
+                text: qsTr("Settings")
+                flat: true
+                onClicked: settingsDialog.open()
+            }
         }
 
         ColumnLayout {
@@ -280,17 +373,6 @@ ApplicationWindow {
             text: call.name
             maximumLength: 32
             onTextEdited: call.name = text
-        }
-
-        TextField {
-            Layout.alignment: Qt.AlignHCenter
-            Layout.preferredWidth: 280
-            placeholderText: qsTr("A server to meet at (optional)")
-            text: call.server
-            onTextEdited: call.server = text
-            ToolTip.text: qsTr("A ratcast-server, HOST or HOST:PORT: rooms get through any NAT")
-            ToolTip.visible: hovered
-            ToolTip.delay: 600
         }
 
         Button {
@@ -1153,6 +1235,10 @@ ApplicationWindow {
                 checked: chatPane.shown
                 highlighted: call.chat.unread > 0
                 onToggled: chatPane.shown = checked
+            }
+            Button {
+                text: qsTr("Settings")
+                onClicked: settingsDialog.open()
             }
             Button {
                 Layout.leftMargin: 8

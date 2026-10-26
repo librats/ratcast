@@ -24,6 +24,11 @@
  * `preview`. What is said in writing is `chat` (ChatModel): said with say(),
  * and what the others said, what was said before this side came among it.
  *
+ * The microphone, the speaker and the camera are the system's defaults until
+ * the user chooses others among those listed (listDevices()): kept from one
+ * run to the next, and changed in a room at once — the speaker without a gap
+ * in what plays (SwitchableOutput), the microphone and the camera sent anew.
+ *
  * What went wrong, or ended without the user, is the notice: a share the
  * desktop could not make or that stopped, a link that is none, a camera
  * gone. The user calling off the desktop's dialog is no news.
@@ -50,12 +55,14 @@
 #include <QVariantList>
 #include <QVariantMap>
 
+#include <array>
 #include <cstdint>
 #include <functional>
 #include <memory>
 #include <stop_token>
 #include <string>
 #include <thread>
+#include <vector>
 
 #include "chat_model.h"
 #include "members_model.h"
@@ -65,7 +72,9 @@
 #include "ratcast/client/screen_share.h"
 #include "ratcast/client/voice.h"
 #include "ratcast/engine/audio_device.h"
+#include "ratcast/engine/camera_capture.h"
 #include "ratcast/engine/screen_awake.h"
+#include "ratcast/engine/switchable_output.h"
 #include "video_view.h"
 
 namespace ratcast::app {
@@ -114,6 +123,20 @@ class CallController : public QObject {
     Q_PROPERTY(double shareVolume READ shareVolume WRITE setShareVolume NOTIFY shareVolumeChanged)
     /// This side's voice on the microphone.
     Q_PROPERTY(bool speaking READ speaking NOTIFY speakingChanged)
+    /// The devices there are, as listDevices() last found them: lists of
+    /// maps of `id` and `name`, and `missing` for the one chosen when it is
+    /// not there now.
+    Q_PROPERTY(QVariantList microphoneDevices READ microphoneDevices NOTIFY devicesChanged)
+    Q_PROPERTY(QVariantList speakerDevices READ speakerDevices NOTIFY devicesChanged)
+    Q_PROPERTY(QVariantList cameraDevices READ cameraDevices NOTIFY devicesChanged)
+    /// The devices used, by id: "" for the system's default (the camera: the
+    /// first there is). Kept from one run to the next; in a room, used at once.
+    Q_PROPERTY(QString microphoneDevice READ microphoneDevice WRITE setMicrophoneDevice NOTIFY
+                   microphoneDeviceChanged)
+    Q_PROPERTY(
+        QString speakerDevice READ speakerDevice WRITE setSpeakerDevice NOTIFY speakerDeviceChanged)
+    Q_PROPERTY(
+        QString cameraDevice READ cameraDevice WRITE setCameraDevice NOTIFY cameraDeviceChanged)
     /// This side's camera on: sent while in a room, and with the next one;
     /// kept from one room to the next. Off again if there is none.
     Q_PROPERTY(bool camera READ camera WRITE setCamera NOTIFY cameraChanged)
@@ -158,15 +181,23 @@ public:
         std::string data_dir = {};
         std::function<Result<ScreenShareSources>(const ScreenShareConfig&, std::stop_token)>
             open_share = {};
+        /// Each opens the device of the id it is given — "" for the
+        /// default — or, not there, the default.
         /// The speaker; null: nothing is played.
-        std::function<std::unique_ptr<AudioOutput>()> open_speaker = {};
+        std::function<std::unique_ptr<AudioOutput>(const std::string& device)> open_speaker = {};
         /// The microphone; null: this side is not heard.
-        std::function<std::unique_ptr<AudioSource>()> open_microphone = {};
-        /// What the computer plays, in the speaker's format: the echo the
-        /// microphone is cleaned of, a shared film's too; null: the speaker's.
-        std::function<std::unique_ptr<AudioSource>()> open_system_sound = {};
+        std::function<std::unique_ptr<AudioSource>(const std::string& device)> open_microphone = {};
+        /// What the computer plays on the speaker of `device`, in its format:
+        /// the echo the microphone is cleaned of, a shared film's too; null:
+        /// the speaker's.
+        std::function<std::unique_ptr<AudioSource>(const std::string& device)> open_system_sound =
+            {};
         /// The camera; null: there is none.
-        std::function<std::unique_ptr<VideoSource>()> open_camera = {};
+        std::function<std::unique_ptr<VideoSource>(const std::string& device)> open_camera = {};
+        /// The devices there are, for the user to choose from; null: none.
+        std::function<std::vector<AudioDeviceInfo>()> list_microphones = {};
+        std::function<std::vector<AudioDeviceInfo>()> list_speakers = {};
+        std::function<std::vector<CameraInfo>()> list_cameras = {};
         /// How the voice is cleaned: its devices' formats and what is done.
         VoiceConfig voice = {};
         /// What the others call this side until the user says otherwise.
@@ -175,8 +206,9 @@ public:
         QString server = {};
         /// The screen kept on while a share is watched; null: left alone.
         std::function<std::unique_ptr<ScreenAwake>()> keep_screen_awake = {};
-        /// Where how each member is heard — how loud, muted here — is kept
-        /// from one run to the next; null: while the controller lives.
+        /// Where how each member is heard — how loud, muted here — and the
+        /// devices chosen are kept from one run to the next; null: while the
+        /// controller lives.
         std::function<std::unique_ptr<QSettings>()> settings = {};
 
         /// This computer's: its desktop, its speaker, the user's data
@@ -217,6 +249,8 @@ public:
     Q_INVOKABLE bool say(const QString& text);
     /// Put `text` on the clipboard: an invite, for the user to send.
     Q_INVOKABLE void copy(const QString& text);
+    /// Look at what devices there are now, for the user to choose from.
+    Q_INVOKABLE void listDevices();
 
     State state() const { return state_; }
     QStringList invites() const { return invites_; }
@@ -237,6 +271,15 @@ public:
     double shareVolume() const { return share_volume_; }
     void setShareVolume(double volume);
     bool speaking() const { return speaking_; }
+    QVariantList microphoneDevices() const { return listed_[Microphone]; }
+    QVariantList speakerDevices() const { return listed_[Speaker]; }
+    QVariantList cameraDevices() const { return listed_[Camera]; }
+    QString microphoneDevice() const { return chosen_[Microphone].id; }
+    void setMicrophoneDevice(const QString& id) { choose(Microphone, id); }
+    QString speakerDevice() const { return chosen_[Speaker].id; }
+    void setSpeakerDevice(const QString& id) { choose(Speaker, id); }
+    QString cameraDevice() const { return chosen_[Camera].id; }
+    void setCameraDevice(const QString& id) { choose(Camera, id); }
     bool camera() const { return camera_; }
     void setCamera(bool on);
     bool sharing() const { return sharing_; }
@@ -264,6 +307,10 @@ Q_SIGNALS:
     void deafenedChanged();
     void shareVolumeChanged();
     void speakingChanged();
+    void devicesChanged();
+    void microphoneDeviceChanged();
+    void speakerDeviceChanged();
+    void cameraDeviceChanged();
     void cameraChanged();
     void sharingChanged();
     void choosingChanged();
@@ -299,6 +346,9 @@ private:
     /// This side's voice on the call just started, if there is a microphone,
     /// and its camera if on.
     void talk();
+    /// The microphone, cleaned of the echo, sent as this side's voice; a
+    /// notice if it cannot be.
+    void start_microphone();
     /// The microphone and the speaker as muted and deafened say, and the
     /// others told.
     void apply_voice();
@@ -314,6 +364,24 @@ private:
     void update_members();
     /// `watched` anew, from the row of the member watched.
     void update_watched();
+    /// The devices the user chooses among.
+    enum Device { Microphone, Speaker, Camera, kDevices };
+    /// One chosen: its id, and its name as it was listed then, to show
+    /// while it is not there.
+    struct Chosen {
+        QString id;
+        QString name;
+    };
+    /// What the settings keep.
+    void load_devices();
+    /// The id of the device chosen, "" for the default: what the
+    /// environment opens.
+    std::string chosen_id(Device device) const;
+    /// `device` as `id` from now on: kept, saved, and used at once.
+    void choose(Device device, const QString& id);
+    /// The speaker of the room switched to the one chosen, and the echo
+    /// heard from it.
+    void switch_speaker();
     /// How a member is heard on this side, as the user set it.
     struct Hearing {
         double volume = 1.0;
@@ -344,6 +412,8 @@ private:
     MembersModel members_;
     ChatModel chat_;
     QMap<QString, Hearing> hearing_;  ///< the members not heard as they come, by id
+    std::array<QVariantList, kDevices> listed_;
+    std::array<Chosen, kDevices> chosen_;
     int cameras_on_ = 0;
     bool muted_ = false;
     bool deafened_ = false;
@@ -375,9 +445,9 @@ private:
     uint64_t generation_ = 0;
     std::jthread dialog_;  ///< the desktop's
     std::unique_ptr<VoiceChannel> voice_;
-    std::unique_ptr<ScreenAwake> awake_;    ///< while a share is watched
-    std::unique_ptr<AudioOutput> speaker_;  ///< the voice channel's
-    std::unique_ptr<Call> call_;            ///< after the speaker: it plays into it
+    std::unique_ptr<ScreenAwake> awake_;         ///< while a share is watched
+    std::unique_ptr<SwitchableOutput> speaker_;  ///< the voice channel's, of the device chosen
+    std::unique_ptr<Call> call_;                 ///< after the speaker: it plays into it
     /// After the call, which they watch: the panel's and standard output's.
     std::unique_ptr<CallMonitor> monitor_;
     std::unique_ptr<CallMonitor> printer_;
