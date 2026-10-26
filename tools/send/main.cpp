@@ -78,6 +78,8 @@ Network:
   --server HOST[:PORT] and at a ratcast-server, met there through NATs (with
                        --announce; port 7700 by default)
   --no-dht             at the server alone, not through the DHT
+  --lost-after S       a peer whose link stays silent S seconds is lost, and dialed
+                       again (default: librats' 45; the app's is 15)
   --no-relay           send every copy from here: no viewer passes it on, nor a server
   --data-dir DIR       keep the peer id, and the screen choice, across runs
   --verbose            library logs
@@ -102,6 +104,7 @@ struct Options {
     bool announce = false;
     std::vector<librats::HostEndpoint> servers;
     bool dht = true;
+    Duration lost_after{};  ///< zero: librats' own
     bool relays = true;
     std::string data_dir;
     bool verbose = false;
@@ -166,6 +169,7 @@ std::optional<Options> parse(int argc, char** argv) {
         }
     }
     o.dht = !args.flag("no-dht");
+    o.lost_after = std::chrono::seconds(args.number("lost-after", 1, 3600).value_or(0));
     o.relays = !args.flag("no-relay");
     o.data_dir = args.text("data-dir").value_or("");
     o.verbose = args.flag("verbose");
@@ -399,7 +403,8 @@ int main(int argc, char** argv) {
                      .servers = o.servers,
                      .dht = o.dht,
                      .capture_clock = o.source == "pattern" ? &WallClock::instance() : nullptr,
-                     .relays = o.relays},
+                     .relays = o.relays,
+                     .lost_after = o.lost_after},
                     {.source_ended = [&](StreamId, Result<void> outcome) {
                         failed = !outcome;
                         ended = true;

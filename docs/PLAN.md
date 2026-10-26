@@ -165,6 +165,7 @@ final place and shape: stage 0 is a walking skeleton, not a throwaway prototype.
 | **8. Beyond** | Android, cinema mode, HDR, moderation, push-to-talk, rooms past a mesh, polish | — |
 | **9. Call monitor** ✅ | what a call does, as it does it: quality, bitrate, size, frame time, whether each end keeps up — a line a second in the console, a panel in the app | — |
 | **10. Room** ✅ | a voice lobby for a few, as Discord's: everyone with everyone, all talking from the start, who is there and who speaks, mute and deafen, anyone's screen or camera on and off while the room goes on | — |
+| **12. Getting through** — in part | a call that holds as a member's address changes (a VPN, another network); servers found without being typed in, the room's met at by all its members alike; joining fast and seen to be | L23 ✅ |
 | **11. Full screen** ✅ | a share watched on the whole screen with nothing else on it, the controls and the cursor there while the mouse moves; the picture pixel-exact; the screen kept awake while watching | — |
 
 ### Stage 0 — Skeleton ✅
@@ -1422,6 +1423,50 @@ part, the room's maker sending one out, went with 7.5. Left for later, in stage 
 - 7.6: rooms past a mesh — sound through a server, the top speakers by level, simulcast (5.4),
   more than `Forward`'s 64.
 
+### Stage 12 — Getting through
+
+A room met by a link, over the internet, as people use it: someone switches a VPN on, a laptop
+goes from Wi-Fi to a phone, an ISP hands out another address — and the call goes on; the
+servers that help members meet and carry what no punch gets through found without anyone
+typing them in, and many of them; joining in a second or two, and showing what it is doing
+meanwhile. *Done when* a member's address changing mid-call costs a few seconds, not a minute;
+a room is met at a server nobody named, the same one for every member; and joining says where
+it is.
+
+- **12.1 A link that holds as a member moves** ✅: a member whose address changes keeps its
+  server connection (librats' migration) but lost its straight links to members behind NATs of
+  their own until they timed out, 45 s, and were dialed again (7.2) — 58 s without a picture
+  measured. Now (librats L23): the server, seeing a registered member move, tells the others
+  where it is now and it where they are (Moved); both dial; a link that still does not answer
+  1 s on is replaced by a circuit through the server, held beside the dead link as its standby
+  and taking over from it at both ends, with no member lost; a member whose link to another goes
+  dead speaks to its servers at once, which is how they see it moved; and the app's
+  `lost_after` is 15 s (`CallController::kLostAfter`), not 45. `bench/nat.py --move S`
+  (`--mover`) changes a NAT's address mid-run. Measured (`docs/bench.md`, "A peer that
+  moves"): 2–3 s without a picture between two cone NATs, against 58; 0 through the server, as
+  before. Met by address with no server (`--no-server`: the sender's port forwarded): the viewer
+  moving costs nothing (its link follows it), the sender moving is never got over — nothing
+  says where it went; the same before as after. Tested in librats: the standby at both ends over a link cut both ways and one way,
+  one that answers kept and the standby closed in time, one gone with its peer; the server's
+  Moved; a moved peer dialed though connected, relayed only if its link is dead; a dead link
+  re-registering; a circuit replacing a dead direct link end to end; the peer table's two new
+  rules. Left: the circuit is not given up for a direct link afterwards within a run (the NAT
+  state that blocks the dials outlives it); without a server, the DHT's 10 s rounds are all a
+  move has.
+- **12.2 Servers that know each other**: a server announces itself in the DHT under a key of
+  the protocol (`ratcast-server --announce`, as relaying spends its owner's bandwidth), finds
+  the others there and tells a client the ones it knows; a client keeps them in its data
+  directory, starts from a list the build carries (degitx.com) and refreshes it in the
+  background — joining never waits for the DHT.
+- **12.3 The room's server, the same for all**: of the servers a client knows, the first k by a
+  hash of the room's key and the server (rendezvous hashing: one by IP, weighted by what a
+  server says it can carry in its Hello), registered with all k — two members with lists that
+  differ in part still meet; and `rats://…?via=HOST` naming one, for a room that wants its own.
+- **12.4 Joining seen**: what the joining screen says while it lasts — servers, found, through
+  the server — and a hint when nobody is found.
+- Later: servers trusted by key and a guard against one who runs many (Sybil), a room's key
+  (7.5) making the hash unguessable; connections to a server or two made as the app opens.
+
 ### Stage 8 — Beyond
 
 Android, cinema mode (5.5), HDR, polish; from stage 7, moderation (7.5), push-to-talk and the
@@ -1452,6 +1497,7 @@ and the list is in priority order:
 | | L21 (b) | The same: the shared socket's own external port, by STUN | needed | 6, 10 (over the internet) | ✅ |
 | | L21 (c) | The same: a node both reach to meet and relay through | needed | 6, 10 (over the internet) | ✅ |
 | | L22 | A lost peer dialed again; a node that leaves says so | needed | 7.2 | ✅ |
+| | L23 | A peer that moves: told of by the server, its dead link replaced | needed | 12.1 | ✅ |
 | 2 | L2 (a) | A live flow's start: the initial window | needed | 1.2 (long paths) | put off; eased by (b) |
 | 3 | L15 | Fewer system calls per reactor turn | improves | 3.2 (CPU) | |
 | 4 | L16 | ProbeRTT that does not starve a live flow | improves | 3.2 (`reorder`) | |
@@ -1634,6 +1680,32 @@ over on `NetworkChanged`; `NodeConfig::udp_idle_timeout` (45 s by default, keep-
 times within it); `PathStats::heard_at` and `unanswered_since` (since when what the peer
 answers has gone unanswered); the C ABI's `udp_idle_timeout_ms` and
 `rats_enable_reconnect_lost()`.
+
+**L23 — A peer that moves: told of by the server, its dead link replaced.** ✅ *Needed by
+12.1.* A peer whose address changes (a VPN, another network, a NAT's new port) keeps a link to a
+public node, which follows it there, but not one to a peer behind a NAT that lets in only what
+comes from where it sent: that link stayed dead until the idle timeout. And a fresh link dialed
+beside it lost to it in `PeerTable::add` and was closed, a circuit too (a direct link beats a
+relayed one), while `Relay` refused a circuit to a peer connected at all. Now:
+- `PeerNetwork::on_peer_moved` (fired by `Node::on_moved` for a peer's live link) and
+  `PeerNetwork::answers()` (`PathStats::answers`: nothing sent gone unanswered for 1 s, or four
+  round trips on a longer path; where there are no path samples, connected).
+- `Rendezvous`: a server tells those registered under a moved peer's keys where it is now and
+  it where they are (op Moved, as Peers; within the registration budget); a client dials a peer
+  told of so whether connected or not, and hands one whose link still does not answer to the
+  relay `punch_after_move` (1 s) on; a client whose link goes dead — a peer's or a server's —
+  registers again at once (at most every 2 s), so a server hears from it if it is the one that
+  moved. A punch after a move seldom gets through a Linux NAT: the moved side's packets on the
+  old link make an inbound flow there, and this side's dial is given another port so as not to
+  collide.
+- `Relay` asks for, and the far end accepts, a circuit to a peer connected over a link that
+  does not answer.
+- `Node`: a duplicate `PeerTable::add` turns down is held 5 s as the peer's standby instead of
+  closed; the live link unanswered for a second (looked at every 250 ms on its reactor) or
+  dying (idle timeout, reset) hands over to it (`PeerTable::supersede`, `on_peer_rerouted`,
+  identify) with no disconnect; an end whose link the other closed for a standby hears a reset
+  and hands over too; of two standbys, `PeerTable::prevails` — the table's own rules — as at
+  the other end; a peer that leaves takes its standby with it. `Node::standbys()`.
 
 **L13 — Fewer ACKs for live data.** *Optional; tried, put off.* An ACK every second packet
 (RFC 9000) is ~440 a second for an 8 Mbit/s feed in full frames — 0.22 Mbit/s back (2.7% of the

@@ -1588,3 +1588,54 @@ a voice: the cut, and how long the room took to be whole again.
   known — again and again, 8 s apart at most, while the network is down — and the room is
   whole 0.1–0.5 s after the network is back.
 
+
+## A peer that moves (librats L23, 12.1)
+
+`bench/nat.py --move 5 --duration 45`: as "Behind NATs" above, a sender and a viewer each
+behind a NAT of its own, meeting at a server (no DHT); 5 s into the watching one NAT's address
+on the internet changes — the old one gone with every mapping made through it, a new one in its
+place: what switching a VPN on, or a new address from the ISP, does to a host (`--mover`: whose).
+"Without a picture" is the longest run of seconds the viewer reported none, to the end of the
+run if they never came back.
+
+| NATs | who moves | before L23: without a picture, s | after, s | connected after |
+|---|---|---:|---:|---|
+| cone-cone | the sender | 58 (back at 63 s, through the server) | 2 | through the server |
+| cone-cone | the viewer | — | 3 | through the server |
+| cone-symmetric | either | 0 | 0 | through the server |
+| symmetric-symmetric | either | 0 | 0 | through the server |
+
+- Through the server nothing breaks: every connection to a public node follows its peer to its
+  new address (librats' migration), and the server is all a symmetric NAT's pair has.
+- Straight between two cone NATs, the link broke and stayed broken: each NAT lets in only what
+  comes from where its host sent, and the one that moved now sends from somewhere else. The
+  link was found dead only by librats' idle timeout, 45 s, and only then dialed again (7.2) —
+  through the server, as the dials crossed no better then.
+- Why the dials do not cross after a move: Linux's NAT (as home routers run) takes the moved
+  side's packets on the old link — which go on — for an inbound flow, and, as this side then
+  dials, gives the dial another port so as not to collide with it. Tried with bare sockets in the
+  same namespaces: after the move nothing gets through either way, dial or not, for as long as
+  the moved side keeps sending. So after a move it is a circuit through the server that takes
+  over, and soon: the old link found unanswered (1 s), the server told by the side that finds it
+  so (it registers again at once, and the server sees where it comes from now), the others told
+  where it moved (Moved), a dial each way, and 1 s on a circuit, which takes the dead link's
+  place at both ends (the standby). 2–3 s in all, against 58.
+- The circuit is not given up for a direct link within the run: the upgrade `HolePunch` tries
+  over it meets the same NAT state while the old flow's entry lives.
+
+Without a server (`--no-server`): the sender's NAT forwards its port to it, as UPnP has a
+router do, and the viewer dials that address — a call met by address, nothing to say where a
+peer went; `--lost-after 15`, as the app (`--duration 60`).
+
+| NATs | who moves | without a picture, s | how |
+|---|---|---:|---|
+| cone-cone, cone-symmetric | the viewer | 0 (stalls of 0.4–0.6 s) | the sender's port takes it from anywhere: the link follows it (migration) |
+| cone-cone, cone-symmetric | the sender | 54, to the end | nothing: the viewer knows only the address it dialed, which is gone |
+
+- The same before L23 and after: neither the server's word nor a standby has anything to do
+  here. A peer whose address is all the other has and which changes is not found again by
+  anything but a server or the DHT (its re-announce on a network change) — which a call met by
+  peer id, as the app's rooms are, has.
+- `move()` makes the internet forget the old address at once: a forwarded port's flow is not
+  flushed as the address goes, and the hosts on the bridge reached it by its MAC until their
+  neighbour entries went stale, half a minute on.

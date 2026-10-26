@@ -126,6 +126,7 @@ CallController::Environment CallController::Environment::system() {
     environment.server = QStringLiteral(RATCAST_DEFAULT_SERVER);
     environment.call.discoverable = true;
     environment.call.playback.most_cameras = kMostCameras;
+    environment.call.lost_after = kLostAfter;
     environment.data_dir = data_folder().toStdString();
     environment.open_share = [](const ScreenShareConfig& config, std::stop_token cancel) {
         return open_screen_share(config, std::move(cancel));

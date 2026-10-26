@@ -61,6 +61,8 @@ constexpr const char* kUsage = R"(usage: ratcast-recv rats://HOST:PORT | rats://
   --server HOST[:PORT] meet the sender (rats://PEER-ID) at a ratcast-server too,
                        through NATs (port 7700 by default)
   --no-dht             at the server alone, not through the DHT
+  --lost-after S       a peer whose link stays silent S seconds is lost, and dialed
+                       again (default: librats' 45; the app's is 15)
   --data-dir DIR       keep the peer id across runs
   --verbose            library logs
 
@@ -82,6 +84,7 @@ struct Options {
     uint32_t duration = 0;
     std::vector<librats::HostEndpoint> servers;
     bool dht = true;
+    Duration lost_after{};  ///< zero: librats' own
     std::string data_dir;
     bool verbose = false;
 };
@@ -131,6 +134,7 @@ std::optional<Options> parse(int argc, char** argv) {
         }
     }
     o.dht = !args.flag("no-dht");
+    o.lost_after = std::chrono::seconds(args.number("lost-after", 1, 3600).value_or(0));
     o.data_dir = args.text("data-dir").value_or("");
     o.verbose = args.flag("verbose");
     o.output = args.text("output").value_or("");
@@ -439,6 +443,7 @@ int main(int argc, char** argv) {
                                                          .dial = o.sender,
                                                          .servers = o.servers,
                                                          .dht = o.dht,
+                                                         .lost_after = o.lost_after,
                                                          .playback = playback},
                                                         handlers);
     if (!started) {

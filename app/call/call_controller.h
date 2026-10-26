@@ -56,6 +56,7 @@
 #include <QVariantMap>
 
 #include <array>
+#include <chrono>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -172,6 +173,11 @@ public:
     /// The most of the others' cameras shown at once; past it, those of the
     /// last to speak (CallPlayback::most_cameras): a room of seven sees all.
     static constexpr size_t kMostCameras = 6;
+    /// A member whose link stays silent this long is lost, and dialed again
+    /// (CallConfig::lost_after): short of librats' 45 s, so that one whose
+    /// link no way round brings back is looked for again soon, and long enough
+    /// that a network gone for a few seconds is waited out.
+    static constexpr std::chrono::seconds kLostAfter{15};
 
     /// What the controller takes from the system; tests stand in for it.
     struct Environment {
@@ -213,7 +219,7 @@ public:
 
         /// This computer's: its desktop, its speaker, the user's data
         /// directory, settings and name, discoverable through the DHT, the
-        /// build's server (RATCAST_DEFAULT_SERVER), kMostCameras.
+        /// build's server (RATCAST_DEFAULT_SERVER), kMostCameras, kLostAfter.
         static Environment system();
     };
 
