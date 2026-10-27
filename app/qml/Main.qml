@@ -1,5 +1,8 @@
 import QtCore
 import QtQuick
+// Qt makes every ToolTip from this module, in the style main() names: imported
+// so that it is deployed with the app (windeployqt brings what is imported).
+import QtQuick.Controls
 import QtQuick.Controls.Material
 import QtQuick.Layouts
 import Qt.labs.platform as Platform
@@ -811,10 +814,11 @@ ApplicationWindow {
                            (stage.height - (Math.ceil(tiles / columns) - 1) * spacing)
                            / Math.ceil(tiles / columns) * 4 / 3)
 
-            anchors.right: root.watching ? parent.right : undefined
-            anchors.top: root.watching ? parent.top : undefined
-            anchors.horizontalCenter: root.watching ? undefined : parent.horizontalCenter
-            anchors.verticalCenter: root.watching ? undefined : parent.verticalCenter
+            // Placed, not anchored: anchors swapped by bindings meet for a
+            // moment (right and horizontalCenter), which stretches the column
+            // over the whole stage and leaves the share no room.
+            x: root.watching ? stage.width - width : (stage.width - width) / 2
+            y: root.watching ? 0 : (stage.height - height) / 2
             width: root.watching ? tileWidth : columns * tileWidth + (columns - 1) * spacing
             spacing: 8
             visible: !root.fullScreen && (root.watching ? root.cameraTiles > 0

@@ -1,6 +1,10 @@
 // Windows.Graphics.Capture through C++/WinRT. Its exceptions stop here: every
 // entry point catches winrt::hresult_error and answers with an Errc.
 //
+// Everything is made and used in COM's multithreaded apartment, whatever the
+// thread that asks is in (a UI's is single-threaded): on Windows 10 an item
+// the picker hands out answers in no other (RPC_E_WRONG_THREAD).
+//
 // The frame pool is free-threaded: it hands frames out on the thread pool,
 // one at a time. Everything a frame needs lives in a Stream the handlers hold
 // only weakly, under its mutex, so that stop() — which closes the stream under
@@ -24,7 +28,6 @@
 #include <chrono>
 #include <mutex>
 #include <optional>
-#include <thread>
 #include <utility>
 
 #include "capture/frame_pacer.h"
@@ -429,21 +432,21 @@ public:
     Result<void> start(Sink sink, EndHandler ended) override {
         std::lock_guard lock(mutex_);
         if (stream_) return fail(Errc::InvalidArgument);
-        win::keep_multithreaded_apartment();
         auto stream = std::make_shared<Stream>(item_, window_, options_, clock_, std::move(sink),
                                                std::move(ended));
-        if (Result<void> opened = stream->open(); !opened) {
-            stream->close();
-            return opened;
-        }
-        stream_ = std::move(stream);
-        return {};
+        Result<void> opened = win::in_multithreaded_apartment([&] {
+            Result<void> made = stream->open();
+            if (!made) stream->close();
+            return made;
+        });
+        if (opened) stream_ = std::move(stream);
+        return opened;
     }
 
     void stop() override {
         std::lock_guard lock(mutex_);
         if (!stream_) return;
-        stream_->close();
+        win::in_multithreaded_apartment([&] { stream_->close(); });
         stream_.reset();
     }
 
@@ -461,7 +464,6 @@ private:
 
 Result<std::unique_ptr<ScreenCapture>> pick_here(const ScreenCaptureOptions& options,
                                                  const std::stop_token& stop, Clock& clock) {
-    win::keep_multithreaded_apartment();
     try {
         capture::GraphicsCapturePicker picker;
         // Shown over whatever window asked for it: the app's, or the console's.
@@ -529,35 +531,33 @@ HWND find_window(std::string_view token) {
 Result<std::unique_ptr<ScreenCapture>> capture_monitor(HMONITOR monitor,
                                                        const ScreenCaptureOptions& options,
                                                        Clock& clock) {
-    win::keep_multithreaded_apartment();
-    try {
-        return std::unique_ptr<ScreenCapture>(std::make_unique<GraphicsCapture>(
-            item_for(monitor), nullptr, options, restore_token(monitor), clock));
-    } catch (const winrt::hresult_error& error) {
-        return fail(errc_of(error));
-    }
+    return win::in_multithreaded_apartment([&]() -> Result<std::unique_ptr<ScreenCapture>> {
+        try {
+            return std::unique_ptr<ScreenCapture>(std::make_unique<GraphicsCapture>(
+                item_for(monitor), nullptr, options, restore_token(monitor), clock));
+        } catch (const winrt::hresult_error& error) {
+            return fail(errc_of(error));
+        }
+    });
 }
 
 Result<std::unique_ptr<ScreenCapture>> capture_window(HWND window,
                                                       const ScreenCaptureOptions& options,
                                                       Clock& clock) {
-    win::keep_multithreaded_apartment();
-    try {
-        return std::unique_ptr<ScreenCapture>(std::make_unique<GraphicsCapture>(
-            item_for(window), window, options, restore_token(window), clock));
-    } catch (const winrt::hresult_error& error) {
-        return fail(errc_of(error));
-    }
+    return win::in_multithreaded_apartment([&]() -> Result<std::unique_ptr<ScreenCapture>> {
+        try {
+            return std::unique_ptr<ScreenCapture>(std::make_unique<GraphicsCapture>(
+                item_for(window), window, options, restore_token(window), clock));
+        } catch (const winrt::hresult_error& error) {
+            return fail(errc_of(error));
+        }
+    });
 }
 
 Result<std::unique_ptr<ScreenCapture>> pick(const ScreenCaptureOptions& options,
                                             std::stop_token stop, Clock& clock) {
     if (stop.stop_requested()) return fail(Errc::Cancelled);
-    // Waited for on a thread of its own, in COM's multithreaded apartment,
-    // whatever the thread that asks is in (a UI's is single-threaded).
-    Result<std::unique_ptr<ScreenCapture>> picked = fail(Errc::Internal);
-    std::thread([&] { picked = pick_here(options, stop, clock); }).join();
-    return picked;
+    return win::in_multithreaded_apartment([&] { return pick_here(options, stop, clock); });
 }
 
 }  // namespace ratcast::wgc

@@ -46,6 +46,10 @@ void log_qt_message(QtMsgType type, const QMessageLogContext& context, const QSt
 }  // namespace
 
 int main(int argc, char* argv[]) {
+    // What Qt itself makes of "import QtQuick.Controls" — every ToolTip —
+    // drawn in the style of the rest of the window.
+    if (!qEnvironmentVariableIsSet("QT_QUICK_CONTROLS_STYLE"))
+        qputenv("QT_QUICK_CONTROLS_STYLE", "Material");
     QGuiApplication app(argc, argv);
     // Qt takes the user's locale on Unix; numbers written and read below Qt —
     // the call's stats, codecs' options — keep the C one, as Qt advises.

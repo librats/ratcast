@@ -11,8 +11,11 @@
 #include <windows.h>
 #include <wrl/client.h>
 
+#include <optional>
 #include <string>
 #include <string_view>
+#include <thread>
+#include <type_traits>
 #include <utility>
 
 #include "ratcast/core/result.h"
@@ -49,6 +52,32 @@ inline void keep_multithreaded_apartment() noexcept {
         return SUCCEEDED(CoIncrementMTAUsage(&cookie));  // never given back
     }();
     (void)kept;
+}
+
+/// Whether this thread is in COM's multithreaded apartment, having chosen it
+/// or no apartment at all.
+inline bool multithreaded_here() noexcept {
+    APTTYPE type{};
+    APTTYPEQUALIFIER qualifier{};
+    return SUCCEEDED(CoGetApartmentType(&type, &qualifier)) && type == APTTYPE_MTA;
+}
+
+/// `run()` in COM's multithreaded apartment: on this thread if it is in it,
+/// else on a thread of its own, waited for. For objects that answer only in
+/// the apartment they were made in — RPC_E_WRONG_THREAD from any other —
+/// used from a thread a UI made single-threaded.
+template <typename Run>
+std::invoke_result_t<Run&> in_multithreaded_apartment(Run run) {
+    using Value = std::invoke_result_t<Run&>;
+    keep_multithreaded_apartment();
+    if (multithreaded_here()) return run();
+    if constexpr (std::is_void_v<Value>) {
+        std::thread(run).join();
+    } else {
+        std::optional<Value> value;
+        std::thread([&] { value.emplace(run()); }).join();
+        return std::move(*value);
+    }
 }
 
 /// A kernel handle, closed when it goes.

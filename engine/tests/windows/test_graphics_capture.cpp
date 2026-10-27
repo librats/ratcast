@@ -23,6 +23,7 @@
 
 #include "ratcast/engine/screen_capture.h"
 #include "ratcast/engine/video_convert.h"
+#include "windows/com.h"
 
 using namespace ratcast;
 using namespace std::chrono_literals;
@@ -337,6 +338,39 @@ TEST_F(GraphicsCaptureTest, StopsAndStartsAgain) {
         EXPECT_TRUE(seen.wait_for_any()) << "round " << round;
         source->stop();
     }
+}
+
+// Made on one thread and started and stopped on a UI's, single-threaded, as
+// the app does with what the picker handed out: on Windows 10 the capture's
+// objects answer only in the apartment they were made in.
+TEST_F(GraphicsCaptureTest, StartsAndStopsOnAUisThread) {
+    TestWindow window(RGB(120, 200, 40));
+    auto source = capture(window.get());
+    ASSERT_TRUE(source);
+    Seen seen;
+    std::thread([&] {
+        ASSERT_TRUE(SUCCEEDED(CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED)));
+        EXPECT_TRUE(source->start(seen.sink(), seen.ended()));
+        EXPECT_TRUE(seen.wait_for_any());
+        source.reset();  // stopped
+        CoUninitialize();
+    }).join();
+}
+
+TEST(ComTest, RunsInTheMultithreadedApartmentFromAUisThread) {
+    win::keep_multithreaded_apartment();
+    const std::thread::id here = std::this_thread::get_id();
+    EXPECT_EQ(win::in_multithreaded_apartment([] { return std::this_thread::get_id(); }), here)
+        << "this thread is in it already";
+    std::thread([] {
+        ASSERT_TRUE(SUCCEEDED(CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED)));
+        EXPECT_FALSE(win::multithreaded_here());
+        EXPECT_TRUE(win::in_multithreaded_apartment([] { return win::multithreaded_here(); }));
+        bool ran = false;
+        win::in_multithreaded_apartment([&] { ran = true; });
+        EXPECT_TRUE(ran);
+        CoUninitialize();
+    }).join();
 }
 
 TEST_F(GraphicsCaptureTest, ARestoreTokenFindsTheWindowUnasked) {
