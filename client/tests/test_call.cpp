@@ -1020,7 +1020,11 @@ TEST_F(CallTest, AServerAMemberNamesIsNoMemberEither) {
     hosting.dht = false;
     hosting.servers = {server.address()};
     host.start(hosting, false, false);
-    ASSERT_TRUE(wait_for([&] { return host->peers().empty() && !host.told("joined"); }));
+    // Met before the guest asks the host whom it knows: asked once, as it
+    // connects, the host names only the peers it has then.
+    ASSERT_TRUE(wait_for([&] { return host->servers() == std::vector<PeerId>{server.id()}; }));
+    EXPECT_TRUE(host->peers().empty());
+    EXPECT_FALSE(host.told("joined"));
     Side guest;
     CallConfig joining = room(RatsUrl{host.address()});
     guest.start(joining, false, false);
