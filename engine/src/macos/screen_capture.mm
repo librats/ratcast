@@ -8,7 +8,9 @@
 //
 // Pictures come as the stream's pixel buffers, NV12 in the colour space asked
 // (or BGRA), each held by the frame that carries it (pixel_buffer.h) — no
-// copy; I420 is converted from NV12. A window's capture follows its size. Built with ARC.
+// copy; asked for GPU pictures, NV12 ones as the IOSurfaces they are, which
+// VideoToolbox reads where they are. I420 is converted from NV12. A window's
+// capture follows its size. Built with ARC.
 
 #include "ratcast/engine/screen_capture.h"
 
@@ -316,7 +318,11 @@ public:
             captured = std::min(now, at_host_time(clock_, shown.unsignedLongLongValue));
         if (window_) follow_size(info);
 
-        VideoFrame picture = frame_of(pixels, captured, options_.color_space);
+        // Left on its IOSurface where it may be, for VideoToolbox to read there.
+        VideoFrame picture;
+        if (options_.gpu && options_.format == PixelFormat::NV12)
+            picture = gpu_frame_of(pixels, captured, options_.color_space);
+        if (picture.empty()) picture = frame_of(pixels, captured, options_.color_space);
         const PixelFormat sent =
             options_.format == PixelFormat::BGRA ? PixelFormat::BGRA : PixelFormat::NV12;
         if (picture.empty() || picture.format() != sent) return;

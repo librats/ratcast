@@ -103,8 +103,15 @@ VideoFrame MutableVideoFrame::freeze(Timestamp capture_time, ColorSpace color_sp
     return frame;
 }
 
+VideoFrame GpuPicture::mapped() const { return {}; }
+
 Result<VideoFrame> download_frame(const VideoFrame& picture, BufferPool& pool) {
     if (!picture.gpu()) return picture;
+    if (VideoFrame in_place = picture.gpu()->mapped(); !in_place.empty()) {
+        in_place.set_capture_time(picture.capture_time());
+        in_place.set_color_space(picture.color_space());
+        return in_place;
+    }
     MutableVideoFrame copy =
         MutableVideoFrame::allocate(picture.format(), picture.width(), picture.height(), pool);
     if (Result<void> read = picture.gpu()->read(copy); !read) return fail(read.error());

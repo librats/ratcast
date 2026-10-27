@@ -43,8 +43,9 @@ struct ScreenCaptureOptions {
     PixelFormat format = PixelFormat::NV12;
     ColorSpace color_space;  ///< of YUV pictures
     /// NV12 pictures may stay in GPU memory (VideoFrame::gpu()), for an
-    /// encoder that reads them there; where the GPU cannot convert them
-    /// (Windows' software device; Linux, until DMA-BUF) they come in memory.
+    /// encoder that reads them there (macOS: the capture's own IOSurfaces);
+    /// where the GPU cannot convert them (Windows' software device; Linux,
+    /// until DMA-BUF) they come in memory.
     bool gpu = false;
     uint32_t max_frame_rate = 60;  ///< 0 for as many as the screen sends
 

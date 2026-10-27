@@ -1,8 +1,10 @@
-// VideoToolbox's compression session, one picture at a time: each is copied
-// into a buffer of the session's pool, encoded, and waited for
-// (VTCompressionSessionCompleteFrames), so its frame is handed out by the call
-// that took it. Frames leave in Annex B, a keyframe's parameter sets ahead of
-// it, as FFmpeg's encoders give them and its decoders take them.
+// VideoToolbox's compression session, one picture at a time: each is encoded
+// and waited for (VTCompressionSessionCompleteFrames), so its frame is handed
+// out by the call that took it. A capture's IOSurface (macos/pixel_buffer.h)
+// goes in as it is, read by the GPU where it is; a picture in memory is copied
+// into a buffer of the session's pool first. Frames leave in Annex B, a
+// keyframe's parameter sets ahead of it, as FFmpeg's encoders give them and
+// its decoders take them.
 
 #include "macos/videotoolbox_encoder.h"
 
@@ -19,6 +21,7 @@
 #include <utility>
 #include <vector>
 
+#include "macos/pixel_buffer.h"
 #include "ratcast/engine/video_convert.h"
 #include "ratcast/stream/frame.h"
 
@@ -88,7 +91,8 @@ public:
     explicit VideoToolboxEncoder(const VideoEncoderConfig& config)
         : config_(config),
           info_{config.codec == Codec::H265 ? "hevc_videotoolbox" : "h264_videotoolbox",
-                config.codec, true, PixelFormat::NV12, false} {}
+                config.codec, true, PixelFormat::NV12,
+                config.device && config.device->api() == GpuApi::CoreVideo} {}
 
     ~VideoToolboxEncoder() override { close(); }
 
@@ -106,8 +110,10 @@ public:
             picture.height() != config_.height || picture.color_space() != config_.color_space) {
             return fail(Errc::InvalidArgument);
         }
-        if (picture.gpu() || picture.format() != PixelFormat::NV12) {
-            // In GPU memory, or in the other 4:2:0 layout.
+        CfPtr<CVPixelBufferRef> buffer = surface_of(picture);
+        if (!buffer && (picture.gpu() || picture.format() != PixelFormat::NV12)) {
+            // In GPU memory the session does not take as it is, or in the
+            // other 4:2:0 layout.
             Result<VideoFrame> converted = convert_frame(picture, PixelFormat::NV12);
             if (!converted) return fail(converted.error());
             return encode(*converted, keyframe, sink);
@@ -116,9 +122,11 @@ public:
             if (Result<void> opened = open(); !opened) return opened;
             keyframe_owed_ = true;
         }
-
-        Result<CfPtr<CVPixelBufferRef>> buffer = copy_in(picture);
-        if (!buffer) return fail(buffer.error());
+        if (!buffer) {
+            Result<CfPtr<CVPixelBufferRef>> copied = copy_in(picture);
+            if (!copied) return fail(copied.error());
+            buffer = std::move(*copied);
+        }
 
         // Sessions insist on increasing times; two pictures stamped alike are a
         // microsecond apart.
@@ -137,7 +145,7 @@ public:
                                  kCFBooleanTrue);
         }
         OSStatus status = VTCompressionSessionEncodeFrame(
-            session_.get(), buffer->get(), time, duration, options.get(), nullptr, nullptr);
+            session_.get(), buffer.get(), time, duration, options.get(), nullptr, nullptr);
         // The frame of this picture, and of none after it: out of this call.
         if (status == noErr) status = VTCompressionSessionCompleteFrames(session_.get(), time);
         return hand_out(status, sink);
@@ -277,6 +285,14 @@ private:
         return config_.color_space.matrix == ColorMatrix::BT601
                    ? kCVImageBufferYCbCrMatrix_ITU_R_601_4
                    : kCVImageBufferYCbCrMatrix_ITU_R_709_2;
+    }
+
+    /// `picture`'s own pixel buffer, held, if it is one the session takes as
+    /// it is: a capture's IOSurface in the session's format.
+    CfPtr<CVPixelBufferRef> surface_of(const VideoFrame& picture) const {
+        CVPixelBufferRef pixels = pixel_buffer_of(picture);
+        if (!pixels || CVPixelBufferGetPixelFormatType(pixels) != pixel_format()) return nullptr;
+        return CfPtr<CVPixelBufferRef>(CVPixelBufferRetain(pixels));
     }
 
     /// `picture` (NV12, in memory) in a buffer of the session's pool.

@@ -62,6 +62,8 @@ elseif(APPLE)
     target_sources(engine_tests PRIVATE
         macos/test_camera_capture.cpp
         macos/test_core_audio.cpp
+        macos/test_gpu_pictures.cpp
         macos/test_screen_capture.cpp
     )
+    target_link_libraries(engine_tests PRIVATE "-framework CoreFoundation" "-framework CoreVideo")
 endif()

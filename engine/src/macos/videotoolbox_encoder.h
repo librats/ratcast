@@ -8,7 +8,9 @@
  * whatever the session had finished by then, so each frame comes out a call
  * late. Here the call waits for the picture it took, as every encoder here
  * must; the encoder table (ffmpeg/video_encoder.cpp) opens it under FFmpeg's
- * names, h264_videotoolbox and hevc_videotoolbox.
+ * names, h264_videotoolbox and hevc_videotoolbox. Opened for the device of
+ * Core Video's pixel buffers (GpuApi::CoreVideo), it takes a capture's
+ * IOSurfaces as they are (VideoEncoderInfo::gpu_input).
  */
 
 #include <memory>

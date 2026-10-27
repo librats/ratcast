@@ -195,8 +195,8 @@ allocates nothing per frame beyond the payload.
 joining mid-stream, the sender leaving.
 
 **0.3 engine: media model and codecs.** ✅
-- `VideoFrame`: CPU planes (NV12, I420, BGRA) or a GPU handle (D3D11 since 4.3; DMA-BUF, IOSurface,
-  VA surface later) behind one refcounted type.
+- `VideoFrame`: CPU planes (NV12, I420, BGRA) or a GPU handle (D3D11 since 4.3, IOSurface since
+  4.4; DMA-BUF, VA surface later) behind one refcounted type.
 - Interfaces: `VideoSource`, `VideoEncoder` (runtime bitrate, forced keyframe), `VideoDecoder`.
 - FFmpeg backend: hardware encoders first (NVENC, VAAPI, QSV, AMF, VideoToolbox), then SVT-AV1 /
   OpenH264; low-latency settings (no B-frames, ~1-frame VBV); decoding with hwaccel when available.
@@ -721,8 +721,22 @@ encoding, and a 1440p60 game is captured and encoded without a CPU copy.
     `.update` and put in place at the next start, the program found by its path within the
     folder (`Contents/MacOS/ratcast`). Each update is signed anew, ad hoc: macOS asks its leave
     for the microphone, the camera and the screen again after one.
-  - **(f) The GPU path:** ScreenCaptureKit's IOSurfaces into VideoToolbox with no copy through
-    the CPU.
+  - **(f) The GPU path:** ✅ written, to be tried on a Mac — ScreenCaptureKit's IOSurfaces into
+    VideoToolbox with no copy through the CPU. ScreenCaptureKit already converts on the GPU,
+    into NV12 in the colour space asked, so all that was left was the copy into the encoder's
+    pool. Asked for GPU pictures (`ScreenCaptureOptions::gpu`, as on Windows), the capture hands
+    its NV12 pixel buffers out unlocked as pictures in GPU memory (`GpuApi::CoreVideo`, one
+    device: `macos::core_video_device()`; `gpu_frame_of()` in `pixel_buffer.h`), and
+    VideoToolbox's encoder, opened for that device, takes each buffer into its session as it is
+    (`VideoEncoderInfo::gpu_input`); one not in the session's format is copied in as before.
+    The GPU's memory is the CPU's on Apple's machines, so anything else — FFmpeg's software
+    encoders, `convert_frame()` — reads such a picture where it is: `download_frame()` asks the
+    picture for a frame over its memory first (`GpuPicture::mapped()`: the buffer locked for
+    reading), and copies only where there is none (D3D11). Tested against pixel buffers the test
+    puts on IOSurfaces: read in place and copied out as they were, converted as the same picture
+    in memory is, and every encoder's round trip from them (`engine/tests/macos/
+    test_gpu_pictures.cpp`); the screen's GPU pictures where the runner lets it record.
+    Left out, as on Windows: hardware decoding into textures for the app to draw.
 - **4.5 netsim** ✅ (from stage 3): `ratcast-netsim`, a UDP proxy whose two directions are
   emulated links following netem's rules — loss at random or in Gilbert-Elliott bursts, a queue
   of `limit` packets, a delay with each packet's own jitter or, with a `rate`, in order at it,

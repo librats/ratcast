@@ -1,6 +1,7 @@
 // Screen capture on macOS, as a test process has it: with no application to
 // show the picker in, the main screen — in each format asked, of even sizes,
-// no faster than asked — named by a restore token that finds it again; and
+// no faster than asked, NV12 left on its IOSurfaces when GPU pictures are
+// asked — named by a restore token that finds it again; and
 // the options that offer nothing, or a stop already asked, refused. Skipped
 // without the leave to record the screen (CI's runner).
 
@@ -89,6 +90,31 @@ TEST(MacScreenCaptureTest, TheMainScreenInEachFormat) {
         }
         EXPECT_LE(picture.capture_time(), SteadyClock::instance().now());
         EXPECT_GE(picture.capture_time(), SteadyClock::instance().now() - 5s);
+    }
+}
+
+TEST(MacScreenCaptureTest, GpuPicturesStayOnTheirSurfaces) {
+    for (const PixelFormat format : {PixelFormat::NV12, PixelFormat::I420}) {
+        std::unique_ptr<ScreenCapture> capture = main_screen({.format = format, .gpu = true});
+        if (!capture) GTEST_SKIP() << "no leave to record the screen";
+        Seen seen;
+        ASSERT_TRUE(capture->start(seen.sink(), {}));
+        const std::vector<VideoFrame> pictures = seen.wait_for(1);
+        capture->stop();
+        ASSERT_FALSE(pictures.empty()) << int(format);
+        const VideoFrame& picture = pictures.front();
+        EXPECT_EQ(picture.format(), format);
+        if (format != PixelFormat::NV12) {  // only NV12 stays where it is
+            EXPECT_FALSE(picture.gpu());
+            continue;
+        }
+        ASSERT_TRUE(picture.gpu());
+        EXPECT_EQ(picture.gpu()->device()->api(), GpuApi::CoreVideo);
+        const Result<VideoFrame> read = download_frame(picture);
+        ASSERT_TRUE(read);
+        EXPECT_EQ(read->width(), picture.width());
+        EXPECT_EQ(read->height(), picture.height());
+        EXPECT_NE(read->plane(1).data, nullptr);
     }
 }
 

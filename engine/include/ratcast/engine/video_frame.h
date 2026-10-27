@@ -17,7 +17,8 @@
  * A third kind of frame is a picture in GPU memory (gpu()): a texture of one
  * device's, which only code of the same graphics API reads where it is — an
  * encoder that takes that device's textures. It has no planes the CPU reads;
- * anything else asks download_frame() for a copy in memory.
+ * anything else asks download_frame() for them: a copy in memory, or, where
+ * the GPU's memory is the CPU's (Apple's), the picture where it is.
  *
  * A YUV picture also says how its numbers map to colour (ColorSpace), which an
  * encoder signals in the stream so that the far side shows the same colours.
@@ -83,10 +84,14 @@ size_t plane_row_bytes(PixelFormat format, size_t plane, uint32_t width) noexcep
 size_t plane_rows(PixelFormat format, size_t plane, uint32_t height) noexcept;
 
 class MutableVideoFrame;
+class VideoFrame;
 
 /// The graphics API a GPU's pictures are seen through.
 enum class GpuApi : uint8_t {
     D3D11,  ///< Windows: what Windows.Graphics.Capture gives and encoders take
+    /// macOS: Core Video's pixel buffers on IOSurfaces, what ScreenCaptureKit
+    /// gives and VideoToolbox takes.
+    CoreVideo,
 };
 
 /// A GPU as a graphics API sees it: what pictures in its memory belong to.
@@ -108,6 +113,11 @@ public:
     /// Copy the picture into `into`, of its format and size, waiting for the
     /// GPU to finish what it draws into it first.
     virtual Result<void> read(MutableVideoFrame& into) const = 0;
+
+    /// The picture as a frame over the memory it is in, kept by that frame,
+    /// where the CPU reads that memory as it is; empty where it does not.
+    /// Its capture time and colour space are left to the caller.
+    virtual VideoFrame mapped() const;
 };
 
 class VideoFrame {
@@ -202,8 +212,8 @@ private:
     MutableBuffer storage_;
 };
 
-/// `picture` in memory the CPU reads: itself, or a copy of a picture in GPU
-/// memory, from `pool`.
+/// `picture` in memory the CPU reads: itself, a picture in GPU memory the CPU
+/// reads where it is (GpuPicture::mapped()), or a copy of one, from `pool`.
 Result<VideoFrame> download_frame(const VideoFrame& picture, BufferPool& pool);
 Result<VideoFrame> download_frame(const VideoFrame& picture);
 
