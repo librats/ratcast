@@ -648,7 +648,28 @@ encoding, and a 1440p60 game is captured and encoded without a CPU copy.
     Left out: hardware decoding into textures for the app to draw, and a
     choice of adapter — the device is the default adapter's, and on a machine whose screens are
     on another GPU an encoder that will not open on it opens from memory.
-- **4.4 macOS:** ScreenCaptureKit + VideoToolbox.
+- **4.4 macOS:** as 4.3 (a) and (b) on Windows, every backend Linux has on the system's own
+  APIs (`engine/src/macos/`, Objective-C++ where the API is Objective-C), macOS 14 at least
+  (ScreenCaptureKit's picker came with it), Apple Silicon first. No Mac at hand: built and tested
+  by CI's runner (`macos-media`), which has no sound device, camera or screen recording leave,
+  so those tests skip there and a Mac must try them by hand. In steps:
+  - **(a) The build:** ✅ in part — the deployment target, Objective-C++ in the build and in
+    clang-format, the app a bundle (`ratcast.app`: its `Info.plist` with the usage descriptions
+    the system asks the user's leave with — without one, a process that opens the microphone or a
+    camera is killed — and its icon), the screen kept awake by a power assertion; CI's
+    `macos-media` builds the engine with FFmpeg (VideoToolbox's encoders), Opus, WebRTC's
+    AudioProcessing (vcpkg's overlay port) and the app, and runs every test.
+  - **(b) Sound:** Core Audio — the microphone and the speaker through AUHAL, the default followed
+    as it changes or a device by its UID; the system's and the applications' sound through Core
+    Audio's process taps (macOS 14.2): a global tap, one that leaves out a process, one of a
+    process's own.
+  - **(c) Screens and windows:** ScreenCaptureKit — the system's picker
+    (`SCContentSharingPicker`), NV12 pictures at the rate asked, the cursor drawn in.
+  - **(d) Cameras:** AVFoundation, by the device's unique id.
+  - **(e) The package:** a DMG of the bundle, Qt and FFmpeg (LGPL, VideoToolbox) inside,
+    signed ad hoc; the updater.
+  - **(f) The GPU path:** ScreenCaptureKit's IOSurfaces into VideoToolbox with no copy through
+    the CPU.
 - **4.5 netsim** ✅ (from stage 3): `ratcast-netsim`, a UDP proxy whose two directions are
   emulated links following netem's rules — loss at random or in Gilbert-Elliott bursts, a queue
   of `limit` packets, a delay with each packet's own jitter or, with a `rate`, in order at it,

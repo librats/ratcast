@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- The app's bundle as macOS reads it. The usage descriptions are what the
+     system shows as it asks the user's leave: without one, a process that
+     opens the microphone, a camera or another application's sound is killed. -->
+<plist version="1.0">
+<dict>
+    <key>CFBundleDevelopmentRegion</key>
+    <string>en</string>
+    <key>CFBundleExecutable</key>
+    <string>ratcast</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.librats.ratcast</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>CFBundleName</key>
+    <string>ratcast</string>
+    <key>CFBundleDisplayName</key>
+    <string>ratcast</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>@PROJECT_VERSION@</string>
+    <key>CFBundleVersion</key>
+    <string>@PROJECT_VERSION@</string>
+    <key>CFBundleIconFile</key>
+    <string>ratcast.icns</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>@CMAKE_OSX_DEPLOYMENT_TARGET@</string>
+    <key>LSApplicationCategoryType</key>
+    <string>public.app-category.social-networking</string>
+    <key>NSHumanReadableCopyright</key>
+    <string>Copyright (c) librats contributors. MIT License.</string>
+    <key>NSPrincipalClass</key>
+    <string>NSApplication</string>
+    <key>NSHighResolutionCapable</key>
+    <true/>
+    <key>NSSupportsAutomaticGraphicsSwitching</key>
+    <true/>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>ratcast sends your voice to the room you are in.</string>
+    <key>NSCameraUsageDescription</key>
+    <string>ratcast shows your camera to the room you are in.</string>
+    <key>NSAudioCaptureUsageDescription</key>
+    <string>ratcast shares what your applications play along with your screen.</string>
+</dict>
+</plist>

@@ -54,9 +54,6 @@ set_target_properties(ratcast_app PROPERTIES
     ARCHIVE_OUTPUT_NAME ratcast_app
     WIN32_EXECUTABLE    ON
     MACOSX_BUNDLE       ON
-    MACOSX_BUNDLE_GUI_IDENTIFIER com.librats.ratcast
-    MACOSX_BUNDLE_BUNDLE_VERSION ${PROJECT_VERSION}
-    MACOSX_BUNDLE_SHORT_VERSION_STRING ${PROJECT_VERSION}
 )
 
 # Its icon: the tray's, and elsewhere than on Windows the windows' (the menu's
@@ -70,6 +67,17 @@ qt_add_resources(ratcast_app ratcast_icon
 if(WIN32)
     configure_file(resources/ratcast.rc.in ratcast.rc @ONLY)
     target_sources(ratcast_app PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/ratcast.rc")
+endif()
+
+# On macOS a bundle, ratcast.app: its Info.plist — what the system asks the
+# user's leave with — and the Finder's and the Dock's icon.
+if(APPLE)
+    configure_file(resources/Info.plist.in Info.plist @ONLY)
+    set_target_properties(ratcast_app PROPERTIES
+        MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_BINARY_DIR}/Info.plist")
+    target_sources(ratcast_app PRIVATE resources/ratcast.icns)
+    set_source_files_properties(resources/ratcast.icns
+        PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
 endif()
 
 qt_add_qml_module(ratcast_app

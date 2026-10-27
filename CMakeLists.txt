@@ -19,6 +19,12 @@ if(NOT RATCAST_VERSION MATCHES "^v?([0-9]+\\.[0-9]+\\.[0-9]+)(-.*)?$")
     message(FATAL_ERROR "RATCAST_VERSION \"${RATCAST_VERSION}\" is not a version like v1.2.3")
 endif()
 
+# macOS 14 (Sonoma) at least: ScreenCaptureKit's picker of screens and windows
+# came with it. Set before project(), which reads it.
+if(CMAKE_HOST_APPLE AND NOT CMAKE_OSX_DEPLOYMENT_TARGET)
+    set(CMAKE_OSX_DEPLOYMENT_TARGET "14.0" CACHE STRING "The oldest macOS the build runs on")
+endif()
+
 project(ratcast
     VERSION ${CMAKE_MATCH_1}
     DESCRIPTION "P2P calls and screen streaming on top of librats"
@@ -28,6 +34,14 @@ project(ratcast
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+# The engine's macOS backends are Objective-C++ (.mm): the system's media APIs
+# (ScreenCaptureKit, AVFoundation) are Objective-C.
+if(APPLE)
+    enable_language(OBJCXX)
+    set(CMAKE_OBJCXX_STANDARD 20)
+    set(CMAKE_OBJCXX_STANDARD_REQUIRED ON)
+    set(CMAKE_OBJCXX_EXTENSIONS OFF)
+endif()
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 

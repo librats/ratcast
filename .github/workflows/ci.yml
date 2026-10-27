@@ -87,6 +87,55 @@ jobs:
       - name: Test
         run: ctest --test-dir build --build-config Release --output-on-failure
 
+  # The engine's macOS backends with the media libraries, and the app: Apple
+  # Silicon. FFmpeg (VideoToolbox's encoders among its own), Opus and SDL3 from
+  # Homebrew; WebRTC's AudioProcessing, which Homebrew has not, through vcpkg's
+  # overlay port. The runner has no sound device, camera or screen recording
+  # leave: those tests skip.
+  macos-media:
+    name: macos-latest · Release · media and app
+    runs-on: macos-latest
+    env:
+      VCPKG_BINARY_SOURCES: clear;files,${{ github.workspace }}/vcpkg-cache,readwrite
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: actions/cache@v4
+        with:
+          path: vcpkg-cache
+          key: vcpkg-arm64-osx-${{ hashFiles('cmake/vcpkg-ports/**') }}
+
+      - name: Install media libraries
+        run: |
+          brew install ffmpeg opus sdl3
+          mkdir -p vcpkg-cache
+          vcpkg="${VCPKG_INSTALLATION_ROOT:-/usr/local/share/vcpkg}"
+          "$vcpkg/vcpkg" install webrtc-audio-processing --overlay-ports=cmake/vcpkg-ports \
+            --triplet arm64-osx --x-install-root="$GITHUB_WORKSPACE/vcpkg-installed"
+          echo "PKG_CONFIG_PATH=$GITHUB_WORKSPACE/vcpkg-installed/arm64-osx/lib/pkgconfig" \
+            >> "$GITHUB_ENV"
+
+      - uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.8.*'
+          modules: 'qtshadertools'
+          cache: true
+
+      - name: Configure
+        run: >
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_PREFIX_PATH="$QT_ROOT_DIR"
+          -DRATCAST_BUILD_APP=ON -DRATCAST_BUILD_TESTS=ON
+          -DRATCAST_WITH_FFMPEG=ON -DRATCAST_WITH_OPUS=ON -DRATCAST_WITH_WEBRTC_APM=ON
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
+
   sanitizers:
     name: ${{ matrix.preset }}
     runs-on: ubuntu-24.04
@@ -139,5 +188,5 @@ jobs:
       - run: pipx install clang-format==20.1.8
       - name: Check formatting
         run: |
-          git ls-files -- '*.h' '*.hpp' '*.cpp' '*.c' ':!:external/**' \
+          git ls-files -- '*.h' '*.hpp' '*.cpp' '*.c' '*.mm' ':!:external/**' \
             | xargs --no-run-if-empty clang-format --dry-run --Werror

@@ -92,6 +92,14 @@ elseif(WIN32)
     )
     target_link_libraries(ratcast_engine PRIVATE
         avrt d3d11 dwmapi dxgi mf mfplat mfreadwrite mfuuid mmdevapi ole32 windowsapp)
+elseif(APPLE)
+    target_sources(ratcast_engine PRIVATE
+        src/audio/audio_device_unavailable.cpp
+        src/capture/camera_capture_unavailable.cpp
+        src/capture/screen_capture_unavailable.cpp
+        src/macos/screen_awake.cpp
+    )
+    target_link_libraries(ratcast_engine PRIVATE "-framework CoreFoundation" "-framework IOKit")
 else()
     target_sources(ratcast_engine PRIVATE
         src/audio/audio_device_unavailable.cpp

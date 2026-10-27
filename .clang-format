@@ -1,7 +1,8 @@
 # Formatting for ratcast's own code (external/ is never reformatted).
 # CI checks it with the clang-format version pinned in .github/workflows/ci.yml.
+# The first section is every language's; C++ and Objective-C++ (the engine's
+# macOS backends, .mm) take it as it is.
 ---
-Language: Cpp
 BasedOnStyle: Google
 Standard: c++20
 
@@ -38,4 +39,9 @@ AlignConsecutiveAssignments: false
 # kept as written, one blank line between groups.
 IncludeBlocks: Preserve
 SortIncludes: CaseSensitive
+ObjCBlockIndentWidth: 4
+---
+Language: Cpp
+---
+Language: ObjC
 ...

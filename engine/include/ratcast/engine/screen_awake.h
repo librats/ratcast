@@ -8,8 +8,9 @@
  * input, and nobody watching a film touches anything. While a ScreenAwake
  * lives, the desktop is asked not to: on Linux through xdg-desktop-portal's
  * Inhibit (the session's idleness), on Windows by a power request that the
- * display is needed. Elsewhere, or where the system says no, a warning is
- * logged and the screen is left to the system.
+ * display is needed, on macOS by a power assertion that the display must not
+ * sleep. Elsewhere, or where the system says no, a warning is logged and the
+ * screen is left to the system.
  *
  * Making and destroying one never waits on the desktop: it is asked on a
  * thread of the ScreenAwake's own.
