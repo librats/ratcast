@@ -1,5 +1,5 @@
-// Sound devices where the engine has no backend yet (macOS until its own
-// lands; Linux built without PipeWire).
+// Sound devices where the engine has no backend: Linux built without
+// PipeWire.
 
 #include "audio/device_backend.h"
 

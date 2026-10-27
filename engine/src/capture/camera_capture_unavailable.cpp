@@ -1,5 +1,4 @@
-// Cameras where the engine has none yet (macOS until its backend lands;
-// Linux built without PipeWire).
+// Cameras where the engine has none: Linux built without PipeWire.
 
 #include "capture/camera_backend.h"
 

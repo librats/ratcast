@@ -698,7 +698,16 @@ encoding, and a 1440p60 game is captured and encoded without a CPU copy.
     minimum frame interval and the frame pacer keep to the rate; only complete pictures are
     handed on. The capture ends with success when the user stops it from the menu bar or the
     content goes, with a failure on any other error.
-  - **(d) Cameras:** AVFoundation, by the device's unique id.
+  - **(d) Cameras:** ✅ written, to be tried on a Mac — AVFoundation
+    (`engine/src/macos/camera_capture.mm`): the built-in, external and Continuity cameras, a
+    node a hash of the device's unique id (the id). The mode by the rule Linux and Windows
+    keep, of those in a format read here (4:2:0, YUY2, UYVY, BGRA; compressed ones not taken),
+    set with the device locked until the session runs, at the rate asked where the range
+    allows. The session hands out NV12 in the camera's own colour space (its matrix
+    attachment; BT.601 without one), each buffer held by its frame (`pixel_buffer.h`, shared
+    with the screen's), stamped by the session's clock turned to the host's. The user's leave
+    asked the first time, start() waiting for the answer. Unplugged, the capture ends with
+    success; the session's error ends it with a failure.
   - **(e) The package:** a DMG of the bundle, Qt and FFmpeg (LGPL, VideoToolbox) inside,
     signed ad hoc; the updater.
   - **(f) The GPU path:** ScreenCaptureKit's IOSurfaces into VideoToolbox with no copy through

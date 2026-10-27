@@ -7,8 +7,8 @@
 // the picker: it captures the main screen, as a token would.
 //
 // Pictures come as the stream's pixel buffers, NV12 in the colour space asked
-// (or BGRA), each locked and held by the frame that carries it — no copy; I420
-// is converted from NV12. A window's capture follows its size. Built with ARC.
+// (or BGRA), each held by the frame that carries it (pixel_buffer.h) — no
+// copy; I420 is converted from NV12. A window's capture follows its size. Built with ARC.
 
 #include "ratcast/engine/screen_capture.h"
 
@@ -32,6 +32,7 @@
 
 #include "capture/frame_pacer.h"
 #include "macos/host_time.h"
+#include "macos/pixel_buffer.h"
 #include "ratcast/engine/video_convert.h"
 
 #include "librats/util/logger.h"
@@ -315,8 +316,10 @@ public:
             captured = std::min(now, at_host_time(clock_, shown.unsignedLongLongValue));
         if (window_) follow_size(info);
 
-        VideoFrame picture = wrap(pixels, captured);
-        if (picture.empty()) return;
+        VideoFrame picture = frame_of(pixels, captured, options_.color_space);
+        const PixelFormat sent =
+            options_.format == PixelFormat::BGRA ? PixelFormat::BGRA : PixelFormat::NV12;
+        if (picture.empty() || picture.format() != sent) return;
         if (options_.format == PixelFormat::I420) {
             Result<VideoFrame> converted =
                 convert_frame(picture, PixelFormat::I420, options_.color_space);
@@ -379,49 +382,6 @@ private:
         width_ = width;
         height_ = height;
         [stream_ updateConfiguration:configuration(width, height) completionHandler:nil];
-    }
-
-    /// `pixels` as a frame, locked for as long as the frame is held.
-    VideoFrame wrap(CVPixelBufferRef pixels, Timestamp captured) const {
-        if (CVPixelBufferLockBaseAddress(pixels, kCVPixelBufferLock_ReadOnly) != kCVReturnSuccess)
-            return {};
-        CVPixelBufferRetain(pixels);
-        std::shared_ptr<const void> owner(static_cast<const void*>(pixels), [](const void* held) {
-            auto* buffer = static_cast<CVPixelBufferRef>(const_cast<void*>(held));
-            CVPixelBufferUnlockBaseAddress(buffer, kCVPixelBufferLock_ReadOnly);
-            CVPixelBufferRelease(buffer);
-        });
-        const bool bgra = options_.format == PixelFormat::BGRA;
-        const PixelFormat format = bgra ? PixelFormat::BGRA : PixelFormat::NV12;
-        if (CVPixelBufferGetPixelFormatType(pixels) !=
-            (bgra ? kCVPixelFormatType_32BGRA : configured_yuv())) {
-            return {};
-        }
-        uint32_t width = uint32_t(CVPixelBufferGetWidth(pixels));
-        uint32_t height = uint32_t(CVPixelBufferGetHeight(pixels));
-        VideoFrame::Plane planes[2];
-        if (bgra) {
-            planes[0] = {static_cast<const uint8_t*>(CVPixelBufferGetBaseAddress(pixels)),
-                         CVPixelBufferGetBytesPerRow(pixels)};
-        } else {
-            width &= ~1u;
-            height &= ~1u;
-            for (size_t i = 0; i < 2; ++i)
-                planes[i] = {
-                    static_cast<const uint8_t*>(CVPixelBufferGetBaseAddressOfPlane(pixels, i)),
-                    CVPixelBufferGetBytesPerRowOfPlane(pixels, i)};
-        }
-        if (width == 0 || height == 0 || !planes[0].data) return {};
-        return VideoFrame(
-            format, width, height, std::span(planes, plane_count(format)), std::move(owner),
-            captured,
-            bgra ? ColorSpace{ColorMatrix::BT709, ColorRange::Full} : options_.color_space);
-    }
-
-    OSType configured_yuv() const {
-        return options_.color_space.range == ColorRange::Full
-                   ? kCVPixelFormatType_420YpCbCr8BiPlanarFullRange
-                   : kCVPixelFormatType_420YpCbCr8BiPlanarVideoRange;
     }
 
     /// On the queue: the end, said once.

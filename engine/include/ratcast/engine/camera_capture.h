@@ -8,7 +8,8 @@
  * Linux PipeWire's nodes of a camera's role, which V4L2 and libcamera
  * devices both appear as; on Windows Media Foundation's video capture
  * devices, whose node is a hash of the device's path, the same from one
- * listing to the next. A camera sends pictures at its own pace in one of
+ * listing to the next; on macOS AVFoundation's, whose node is a hash of the
+ * device's unique id. A camera sends pictures at its own pace in one of
  * its modes: the first it lists that is no larger than asked and runs at 15
  * pictures a second or more, else the first no larger, else its first. What
  * it sends — packed 4:2:2 (YUY2), 4:2:0, or RGB — comes converted into the
@@ -33,7 +34,8 @@ namespace ratcast {
 struct CameraInfo {
     uint32_t node = 0;  ///< what CameraOptions::node takes, while the camera is there
     /// What CameraOptions::id takes: the same from one run to the next (on
-    /// Linux a PipeWire node's name; on Windows the device's path).
+    /// Linux a PipeWire node's name; on Windows the device's path; on macOS
+    /// its unique id).
     std::string id;
     std::string name;  ///< as the system names it, for a UI
 };

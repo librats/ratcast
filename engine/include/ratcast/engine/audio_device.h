@@ -14,7 +14,9 @@
  * and convert to and from the format asked for: rate, channels and sample
  * format are the system's to match, never the caller's. On Linux they are
  * PipeWire streams, which need no permission beyond the session's; on Windows
- * WASAPI streams, which need the user's leave for the microphone. Either
+ * WASAPI streams, which need the user's leave for the microphone; on macOS
+ * Core Audio's, which need it for the microphone and for what other
+ * applications play (process taps, macOS 14.2). Each
  * follows the default device as the user changes it, or plays to, or hears,
  * one device the user chose from those listed (`device`): by an id that lasts
  * from one run to the next, the default in its place while it is not there.
@@ -39,7 +41,8 @@ namespace ratcast {
 /// A sound device, as the system lists it.
 struct AudioDeviceInfo {
     /// What `device` takes: the same from one run to the next (on Linux a
-    /// PipeWire node's name; on Windows an endpoint's id).
+    /// PipeWire node's name; on Windows an endpoint's id; on macOS a device's
+    /// UID).
     std::string id;
     std::string name;  ///< as the system names it, for a UI
 };
@@ -68,7 +71,8 @@ struct AudioCaptureOptions {
     AudioFormat format{48'000, 1};
     /// What to capture: 0 for `source`, or a device's or an application's
     /// node (on Linux a PipeWire node id; on Windows a process id: its sound
-    /// and its children's), whose sound the capture ends with.
+    /// and its children's; on macOS a process id: its own), whose sound the
+    /// capture ends with.
     uint32_t node = 0;
     AudioCaptureSource source = AudioCaptureSource::Microphone;
     /// With Microphone, the input of this id (AudioDeviceInfo::id); with
