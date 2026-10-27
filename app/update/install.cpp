@@ -49,6 +49,12 @@ std::optional<Target> this_target() {
     if (appimage.isEmpty()) return std::nullopt;
     const fs::path file = to_path(appimage);
     return Target{Target::Kind::File, file, file, QStringLiteral("-linux-x86_64.AppImage")};
+#elif defined(RATCAST_UPDATES) && defined(Q_OS_MACOS) && defined(Q_PROCESSOR_ARM_64)
+    // The bundle, a folder: the program in its Contents/MacOS.
+    const fs::path program = to_path(QCoreApplication::applicationFilePath());
+    const fs::path bundle = program.parent_path().parent_path().parent_path();
+    if (bundle.extension() != ".app") return std::nullopt;
+    return Target{Target::Kind::Folder, bundle, program, QStringLiteral("-macos-arm64.zip")};
 #else
     return std::nullopt;
 #endif

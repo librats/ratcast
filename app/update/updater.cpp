@@ -21,7 +21,7 @@ const QString kAutomaticKey = QStringLiteral("updates/automatic");
 /// Of a request that has stopped moving.
 constexpr int kCheckTimeoutMs = 30'000;
 constexpr int kDownloadTimeoutMs = 60'000;
-/// Unpacking the Windows zip (its own tar, Windows 10 1803 and later).
+/// Unpacking the zip: Windows' own tar (Windows 10 1803 and later), macOS's ditto.
 constexpr int kUnpackTimeoutMs = 5 * 60'000;
 
 QNetworkRequest request_to(const QUrl& url, int timeout_ms) {
@@ -203,18 +203,24 @@ void Updater::install() {
         installed();
         return;
     }
-    // The zip unpacked beside it, by the tar Windows has.
+    // The zip unpacked beside it: by the tar Windows has, or by ditto, which
+    // keeps a bundle's links as it packed them.
     const QString files = update::to_qstring(update::staging(target.path) / "files");
     QDir().mkpath(files);
     QProcess* const unpack = new QProcess(this);
     unpack_ = unpack;
+#ifdef Q_OS_MACOS
+    unpack_->setProgram(QStringLiteral("/usr/bin/ditto"));
+    unpack_->setArguments({QStringLiteral("-x"), QStringLiteral("-k"), file_.fileName(), files});
+#else
     unpack_->setProgram(QDir(qEnvironmentVariable("SystemRoot")).filePath("System32/tar.exe"));
     unpack_->setArguments({QStringLiteral("-xf"), QDir::toNativeSeparators(file_.fileName()),
                            QStringLiteral("-C"), QDir::toNativeSeparators(files)});
+#endif
     unpack_->setProcessChannelMode(QProcess::MergedChannels);
     connect(unpack, &QProcess::finished, this, [this](int code, QProcess::ExitStatus status) {
         if (code != 0 || status != QProcess::NormalExit) {
-            qCWarning(update_log) << "tar:" << unpack_->readAll();
+            qCWarning(update_log) << "unpacking:" << unpack_->readAll();
         }
         unpacked(code == 0 && status == QProcess::NormalExit);
     });
@@ -232,7 +238,8 @@ void Updater::unpacked(bool ok) {
     const update::Target& target = *environment_.target;
     const update::fs::path files = update::staging(target.path) / "files";
     const std::optional<update::fs::path> root =
-        ok ? update::find_root(files, target.executable.filename()) : std::nullopt;
+        ok ? update::find_root(files, target.executable.lexically_relative(target.path))
+           : std::nullopt;
     if (!root || !update::stage(target.path, *root)) {
         std::error_code ignored;
         update::fs::remove_all(update::staging(target.path), ignored);
@@ -250,7 +257,7 @@ void Updater::installed() {
 
 void Updater::restart() {
     if (state_ != State::Installed) return;
-    // On Windows the program there is still this one: it puts the new one in
+    // In a folder the program there is still this one: it puts the new one in
     // place as it starts (start_updated()), and starts that.
     if (!QProcess::startDetached(update::to_qstring(environment_.target->executable), {})) {
         setNotice(tr("Could not start ratcast again: start it yourself."));

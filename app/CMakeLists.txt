@@ -91,8 +91,8 @@ qt_add_qml_module(ratcast_app
 # The QML import scan exists to link QML plugins into a static Qt. A shared Qt
 # loads them at run time, and distribution packages do not ship the plugin
 # targets the scan looks for, so it would only warn about each of them. On
-# Windows it stays: the install deploys the QML modules it finds.
-if(QT6_IS_SHARED_LIBS_BUILD AND NOT WIN32)
+# Windows and macOS it stays: the install deploys the QML modules it finds.
+if(QT6_IS_SHARED_LIBS_BUILD AND NOT WIN32 AND NOT APPLE)
     set_target_properties(ratcast_app PROPERTIES QT_QML_MODULE_NO_IMPORT_SCAN TRUE)
 endif()
 
@@ -110,7 +110,8 @@ ratcast_target_defaults(ratcast_app)
 ratcast_install_programs(ratcast_app)
 
 # Qt's libraries, plugins and the QML modules Main.qml imports, beside the app
-# (windeployqt). The compiler's runtime is ratcast_install_runtime()'s.
+# (windeployqt) or in its bundle (macdeployqt). The compiler's runtime is
+# ratcast_install_runtime()'s.
 if(WIN32)
     qt_generate_deploy_qml_app_script(
         TARGET ratcast_app
@@ -120,7 +121,27 @@ if(WIN32)
         EXCLUDE_PLUGIN_TYPES qmltooling  # the QML debugger's
     )
     install(SCRIPT "${deploy_script}")
-elseif(UNIX AND NOT APPLE)
+elseif(APPLE)
+    # Into the bundle (macdeployqt): Qt's frameworks, plugins and QML modules,
+    # and the libraries the app links — FFmpeg's and the codecs', found where
+    # vcpkg or the prefixes searched keep them, as they are linked by @rpath.
+    set(library_paths)
+    if(VCPKG_INSTALLED_DIR AND VCPKG_TARGET_TRIPLET)
+        list(APPEND library_paths "-libpath=${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/lib")
+    endif()
+    foreach(prefix IN LISTS CMAKE_PREFIX_PATH)
+        if(IS_DIRECTORY "${prefix}/lib")
+            list(APPEND library_paths "-libpath=${prefix}/lib")
+        endif()
+    endforeach()
+    qt_generate_deploy_qml_app_script(
+        TARGET ratcast_app
+        OUTPUT_SCRIPT deploy_script
+        NO_TRANSLATIONS
+        DEPLOY_TOOL_OPTIONS ${library_paths}
+    )
+    install(SCRIPT "${deploy_script}")
+elseif(UNIX)
     # The desktop's menu entry and icon; Qt and the libraries are bundled into
     # the AppImage by linuxdeploy (.github/workflows/release.yml).
     install(FILES resources/ratcast.desktop DESTINATION "${CMAKE_INSTALL_DATADIR}/applications")

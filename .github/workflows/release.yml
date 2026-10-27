@@ -1,7 +1,8 @@
 name: Release
 
 # The app as people get it: on Windows a folder that runs on a bare system,
-# zipped; on Linux an AppImage. Every push to main leaves them as artifacts (and
+# zipped; on Linux an AppImage; on macOS (Apple Silicon) the bundle in a DMG,
+# and zipped for the updater. Every push to main leaves them as artifacts (and
 # keeps vcpkg's caches warm for the tags, which may read only main's); a v* tag
 # makes them a GitHub release.
 
@@ -322,9 +323,168 @@ jobs:
             ${{ steps.version.outputs.name }}-symbols.tar.gz
           retention-days: 30
 
+  macos:
+    name: macOS arm64
+    # The bundle runs on macOS 14 and later (CMAKE_OSX_DEPLOYMENT_TARGET), on
+    # Apple Silicon. Signed ad hoc, not notarized: a first start is opened from
+    # the Finder's menu (README's "Download").
+    runs-on: macos-latest
+    permissions:
+      contents: read
+    env:
+      VCPKG_TRIPLET: arm64-osx-dynamic-release
+      VCPKG_BINARY_SOURCES: clear;files,${{ github.workspace }}/vcpkg-cache,readwrite
+      # FFmpeg as on the other systems, but the GPU encoders of PCs: on macOS
+      # VideoToolbox's are opened on its own API (engine/src/macos).
+      FFMPEG_MACOS: ffmpeg[core,avcodec,avformat,swscale,dav1d,svt-av1,aom,openh264]
+      CODECS_MACOS: libsvtav1 libaom-av1 libopenh264 libdav1d
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          persist-credentials: false
+
+      - name: Version
+        id: version
+        run: |
+          if [[ "$GITHUB_REF" =~ ^refs/tags/v(.+)$ ]]; then
+            version="${BASH_REMATCH[1]}"
+            # The binaries say the tag's version (CMakeLists.txt, RATCAST_VERSION).
+            echo "version=$version" >> "$GITHUB_OUTPUT"
+          else
+            version="dev-${GITHUB_SHA::8}"
+          fi
+          # The updater finds the package by this name (app/update/release.h).
+          echo "name=ratcast-$version-macos-arm64" >> "$GITHUB_OUTPUT"
+
+      - name: Restore vcpkg's packages
+        uses: actions/cache/restore@v4
+        with:
+          path: vcpkg-cache
+          key: vcpkg-${{ env.VCPKG_TRIPLET }}-
+          restore-keys: vcpkg-${{ env.VCPKG_TRIPLET }}-
+
+      # Qt first: its action sets up Python, which would change what vcpkg's
+      # meson builds run with.
+      - uses: jurplel/install-qt-action@v4
+        with:
+          version: ${{ env.QT_VERSION }}
+          modules: qtshadertools
+          cache: true
+
+      - name: Install media libraries
+        run: |
+          mkdir -p vcpkg-cache
+          vcpkg="${VCPKG_INSTALLATION_ROOT:-/usr/local/share/vcpkg}"
+          echo "VCPKG_ROOT=$vcpkg" >> "$GITHUB_ENV"
+          "$vcpkg/vcpkg" install "$FFMPEG_MACOS" opus webrtc-audio-processing \
+            --overlay-ports=cmake/vcpkg-ports --overlay-triplets=cmake/vcpkg-triplets \
+            --triplet "$VCPKG_TRIPLET" --host-triplet "$VCPKG_TRIPLET"
+          hash=$(find vcpkg-cache -type f -exec basename {} \; | sort | shasum -a 256 | cut -c1-16)
+          echo "VCPKG_CACHE_KEY=vcpkg-$VCPKG_TRIPLET-$hash" >> "$GITHUB_ENV"
+
+      - name: Save vcpkg's packages
+        uses: actions/cache/save@v4
+        with:
+          path: vcpkg-cache
+          key: ${{ env.VCPKG_CACHE_KEY }}
+
+      - name: Configure
+        run: >
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=RelWithDebInfo
+          -DCMAKE_TOOLCHAIN_FILE="$VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake"
+          -DVCPKG_TARGET_TRIPLET="$VCPKG_TRIPLET"
+          -DCMAKE_PREFIX_PATH="$QT_ROOT_DIR"
+          -DRATCAST_VERSION="${{ steps.version.outputs.version }}"
+          -DRATCAST_BUILD_TESTS=OFF -DRATCAST_BUILD_TOOLS=OFF -DRATCAST_BUILD_APP=ON
+          -DRATCAST_WITH_FFMPEG=ON -DRATCAST_WITH_OPUS=ON -DRATCAST_WITH_WEBRTC_APM=ON
+          -DRATCAST_UPDATES=ON
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      # The bundle with Qt and the libraries it links inside (macdeployqt,
+      # through Qt's deploy script in app/), its symbols aside, the licenses
+      # in its Resources, signed ad hoc as a whole: Apple Silicon runs nothing
+      # unsigned, and what macdeployqt rewrote is signed anew.
+      - name: Bundle
+        run: |
+          name="${{ steps.version.outputs.name }}"
+          # Absolute: Qt's deploy script refuses a relative prefix.
+          cmake --install build --prefix "$GITHUB_WORKSPACE/package"
+          app=package/ratcast.app
+          dsymutil "$app/Contents/MacOS/ratcast" -o ratcast.dSYM
+          strip -S "$app/Contents/MacOS/ratcast"
+          tar -czf "$name-symbols.tar.gz" ratcast.dSYM
+
+          licenses="$app/Contents/Resources/licenses"
+          mkdir -p "$licenses"
+          cp LICENSE "$licenses/ratcast.txt"
+          for copyright in "$VCPKG_ROOT/installed/$VCPKG_TRIPLET"/share/*/copyright; do
+            cp "$copyright" "$licenses/$(basename "$(dirname "$copyright")").txt"
+          done
+
+          codesign --force --deep --sign - "$app"
+          codesign --verify --deep --strict "$app"
+
+      # What the bundle must do on a Mac with nothing installed: load nothing
+      # from where it was built, carry every codec, and start.
+      - name: Check the package
+        run: |
+          app=package/ratcast.app
+          # The updater fetches from GitHub over TLS: the system's, through Qt's plugin.
+          ls "$app"/Contents/PlugIns/tls/libqsecuretransportbackend.dylib > /dev/null ||
+            { echo "::error::Qt's TLS plugin is not in the bundle"; exit 1; }
+          # Every library linked from the system's places or the bundle's own.
+          outside=$(find "$app/Contents" -type f \( -perm -u+x -o -name '*.dylib' \) -print0 |
+            xargs -0 otool -L 2> /dev/null |
+            grep -E '^\s+/' | grep -vE '^\s+(/System/|/usr/lib/)' | sort -u || true)
+          if [[ -n "$outside" ]]; then echo "::error::Linked from outside:"; echo "$outside"; exit 1; fi
+
+          avcodec=$(ls "$app"/Contents/Frameworks/libavcodec*.dylib | head -n 1)
+          strings -n 4 "$avcodec" > avcodec.strings
+          grep -qF "LGPL version 2.1 or later" avcodec.strings ||
+            { echo "::error::$avcodec is not LGPL 2.1"; exit 1; }
+          missing=""
+          for codec in $CODECS_MACOS; do
+            grep -qxF "$codec" avcodec.strings || missing="$missing $codec"
+          done
+          if [[ -n "$missing" ]]; then echo "::error::Missing from $avcodec:$missing"; exit 1; fi
+
+          # The app quits if its QML fails to load; still up, it found it all.
+          unset QT_PLUGIN_PATH QML2_IMPORT_PATH DYLD_LIBRARY_PATH DYLD_FRAMEWORK_PATH
+          "$app/Contents/MacOS/ratcast" &
+          pid=$!
+          sleep 10
+          if ! kill -0 "$pid" 2> /dev/null; then
+            wait "$pid"; echo "::error::ratcast quit at start: exit code $?"; exit 1
+          fi
+          kill "$pid"
+
+      # A DMG to drag the app from into Applications; the same bundle zipped
+      # for the updater, by ditto, which keeps the frameworks' links.
+      - name: Package
+        run: |
+          name="${{ steps.version.outputs.name }}"
+          mkdir dmg
+          cp -R package/ratcast.app dmg/
+          ln -s /Applications dmg/Applications
+          hdiutil create -volname ratcast -srcfolder dmg -format UDZO -ov "$name.dmg"
+          ditto -c -k --keepParent package/ratcast.app "$name.zip"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.version.outputs.name }}
+          path: |
+            ${{ steps.version.outputs.name }}.dmg
+            ${{ steps.version.outputs.name }}.zip
+            ${{ steps.version.outputs.name }}-symbols.tar.gz
+          compression-level: 0  # compressed already
+          retention-days: 30
+
   release:
     name: GitHub release
-    needs: [windows, linux]
+    needs: [windows, linux, macos]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     permissions:

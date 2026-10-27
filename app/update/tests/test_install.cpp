@@ -139,6 +139,11 @@ TEST_F(InstallTest, TheArchivesFolderIsFound) {
     write(root_ / "two" / "a" / "ratcast.exe", "");
     write(root_ / "two" / "b" / "ratcast.exe", "");
     EXPECT_FALSE(find_root(root_ / "two", "ratcast.exe")) << "which one?";
+
+    // A macOS bundle: its program within it.
+    const fs::path program = fs::path("Contents") / "MacOS" / "ratcast";
+    write(root_ / "bundle" / "ratcast.app" / program, "");
+    EXPECT_EQ(find_root(root_ / "bundle", program), root_ / "bundle" / "ratcast.app");
 }
 
 TEST_F(InstallTest, AFileIsReplacedAndMadeExecutable) {

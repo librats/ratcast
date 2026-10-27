@@ -708,8 +708,19 @@ encoding, and a 1440p60 game is captured and encoded without a CPU copy.
     with the screen's), stamped by the session's clock turned to the host's. The user's leave
     asked the first time, start() waiting for the answer. Unplugged, the capture ends with
     success; the session's error ends it with a failure.
-  - **(e) The package:** a DMG of the bundle, Qt and FFmpeg (LGPL, VideoToolbox) inside,
-    signed ad hoc; the updater.
+  - **(e) The package:** ✅ written, to be tried on a Mac — `release.yml`'s `macos` job:
+    FFmpeg (LGPL: dav1d, SVT-AV1, libaom, OpenH264; VideoToolbox's encoders are the engine's
+    own), Opus and WebRTC's AudioProcessing from vcpkg (`arm64-osx-dynamic-release`, libraries
+    by @rpath), the bundle filled by macdeployqt through Qt's deploy script (`-libpath=` vcpkg's
+    and the prefixes' libraries), its symbols aside (dSYM), the licenses in its Resources, and
+    signed ad hoc as a whole — Apple Silicon runs nothing unsigned; not notarized, so a first
+    start is opened from the Finder's menu. Checked: Qt's TLS plugin there, nothing linked from
+    outside the system and the bundle, FFmpeg LGPL with every codec, the app up after 10 s. A
+    DMG for people, the bundle zipped by ditto for the updater (`-macos-arm64.zip`): the bundle
+    is a folder as Windows' is, unpacked by ditto (which keeps the frameworks' links) into its
+    `.update` and put in place at the next start, the program found by its path within the
+    folder (`Contents/MacOS/ratcast`). Each update is signed anew, ad hoc: macOS asks its leave
+    for the microphone, the camera and the screen again after one.
   - **(f) The GPU path:** ScreenCaptureKit's IOSurfaces into VideoToolbox with no copy through
     the CPU.
 - **4.5 netsim** ✅ (from stage 3): `ratcast-netsim`, a UDP proxy whose two directions are

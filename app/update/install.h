@@ -9,7 +9,8 @@
  * open) never notices; it starts with the next launch.
  *
  * On Windows the app is a folder, and files in use can be renamed but not
- * overwritten. The release is unpacked into the folder's `.update` and staged
+ * overwritten; on macOS a bundle, ratcast.app, a folder too, which the release
+ * zip holds. The release is unpacked into the folder's `.update` and staged
  * there; the next start, before anything else, moves each of its files in
  * place of the old one — renamed aside with kOldSuffix, each move undone if
  * one fails — and starts the new program in its own place. What is left aside
@@ -41,18 +42,18 @@ inline constexpr char kOldSuffix[] = ".ratcast-old";
 /// What this process updates, and how.
 struct Target {
     enum class Kind {
-        Folder,  ///< the folder the Windows zip unpacks to
+        Folder,  ///< the folder the Windows zip unpacks to, or the macOS bundle
         File,    ///< the AppImage
     };
     Kind kind = Kind::Folder;
     fs::path path;        ///< the folder, or the file
-    fs::path executable;  ///< what starts the app again
+    fs::path executable;  ///< what starts the app again: in the folder, or the file
     QString suffix;       ///< of its package's name (release.h)
 };
 
 /// This process's, or none: a build that is no release package
 /// (RATCAST_UPDATES), or one that cannot replace itself — not started from an
-/// AppImage on Linux; macOS, which has no package yet.
+/// AppImage on Linux, or from a bundle on macOS.
 std::optional<Target> this_target();
 
 fs::path to_path(const QString& path);
@@ -67,8 +68,9 @@ fs::path download_path(const Target& target, const QString& asset);
 /// Where an update of `folder` is unpacked and waits for the next start.
 fs::path staging(const fs::path& folder);
 
-/// Of what `extracted` holds, the folder with `executable` in it: itself, or
-/// the one folder the archive put it in.
+/// Of what `extracted` holds, the folder with `executable` (a path within the
+/// folder: ratcast.exe, Contents/MacOS/ratcast) in it: itself, or the one
+/// folder the archive put it in.
 std::optional<fs::path> find_root(const fs::path& extracted, const fs::path& executable);
 
 /// Says the files under `root` (in staging(folder)) are to replace the

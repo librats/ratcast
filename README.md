@@ -24,7 +24,8 @@ the picture goes straight from the sharer to each viewer, encrypted end to end.
 
 ratcast is built on [librats](https://github.com/librats/librats). It comes in two parts:
 
-- **ratcast**: the desktop app for Windows and Linux. macOS and Android are planned.
+- **ratcast**: the desktop app for Windows and Linux, with macOS (Apple Silicon) in preview.
+  Android is planned.
 - **libratcast**: the media transport underneath it. You can use it on its own, much like SRT
   or librist.
 
@@ -65,6 +66,7 @@ Get the latest build from [Releases](https://github.com/librats/ratcast/releases
 |---|---|---|
 | Windows 10/11 x64 | `ratcast-<version>-windows-x64.zip` | Unzip and run `ratcast.exe` |
 | Linux x86_64 | `ratcast-<version>-linux-x86_64.AppImage` | glibc 2.39+ and PipeWire 1.0+ (Ubuntu 24.04, Debian 13, Fedora 40 or newer) |
+| macOS 14+ Apple Silicon (preview) | `ratcast-<version>-macos-arm64.dmg` | Drag `ratcast` into Applications. It is not notarized: open it the first time with right-click → **Open** |
 
 ## Using it
 
@@ -81,8 +83,9 @@ it. **Ctrl+I** shows how the call is going: bitrate, latency and losses.
   <img alt="A ratcast room with its links and the stats panel open" src="docs/ratcast-screen.png" width="720">
 </p>
 
-The app keeps its identity and log (`ratcast.log`) in `%LOCALAPPDATA%\ratcast` on Windows and in
-`~/.local/share/ratcast` on Linux. To find them, use **Open log folder**.
+The app keeps its identity and log (`ratcast.log`) in `%LOCALAPPDATA%\ratcast` on Windows, in
+`~/.local/share/ratcast` on Linux and in `~/Library/Application Support/ratcast` on macOS. To find
+them, use **Open log folder**.
 
 ## Network topology
 
@@ -205,15 +208,47 @@ DLLs, Qt and MSVC's runtime.
 </details>
 
 <details>
+<summary><b>macOS</b></summary>
+
+You need macOS 14 or newer and Xcode's command-line tools. FFmpeg, Opus and SDL3 come from
+Homebrew. WebRTC's AudioProcessing isn't in Homebrew, so it comes from the overlay port in this
+repository through [vcpkg](https://vcpkg.io):
+
+```bash
+brew install ffmpeg opus sdl3 pkgconf
+vcpkg install webrtc-audio-processing --overlay-ports=cmake/vcpkg-ports --triplet arm64-osx \
+    --x-install-root=$PWD/vcpkg-installed
+export PKG_CONFIG_PATH=$PWD/vcpkg-installed/arm64-osx/lib/pkgconfig
+cmake --preset debug -DCMAKE_PREFIX_PATH=~/Qt/6.10.3/macos
+```
+
+Homebrew's FFmpeg is fine for building, but it includes GPL encoders. The release bundles an
+LGPL build from vcpkg instead (`ffmpeg[core,avcodec,avformat,swscale,dav1d,svt-av1,aom,openh264]`
+with the `arm64-osx-dynamic-release` triplet in `cmake/vcpkg-triplets`).
+
+The app is a bundle, `ratcast.app`. It captures screens and windows through ScreenCaptureKit and
+the system's picker, sound through Core Audio and cameras through AVFoundation. H.264 and HEVC
+are encoded on VideoToolbox. Sharing the applications' sound uses Core Audio's process taps,
+which need macOS 14.2. macOS asks for permission to use the microphone, the camera and the
+applications' sound the first time each is used. The command-line tools capture the main screen,
+which needs the Screen Recording permission for the terminal they run in.
+
+`cmake --install` puts Qt and the libraries the app links into the bundle (macdeployqt).
+
+</details>
+
+<details>
 <summary><b>Releases</b></summary>
 
-[`release.yml`](.github/workflows/release.yml) builds the Windows zip and the Linux AppImage on
-every push to `main` and publishes them as a GitHub release for each `v*` tag. Both packages
-carry the same FFmpeg encoders. The version comes from `-DRATCAST_VERSION`, or else from the last
+[`release.yml`](.github/workflows/release.yml) builds the Windows zip, the Linux AppImage and
+the macOS DMG (with the same bundle zipped for the updater) on every push to `main` and
+publishes them as a GitHub release for each `v*` tag. The Windows and Linux packages carry the
+same FFmpeg encoders; on macOS the GPU's encoders are VideoToolbox's. The bundle is signed ad
+hoc, not notarized. The version comes from `-DRATCAST_VERSION`, or else from the last
 `v*` tag. Only release builds update themselves (`-DRATCAST_UPDATES=ON`). They check GitHub
 shortly after start and then every six hours, and verify each download against its SHA-256. The
-AppImage is replaced at once. The Windows folder is replaced at the next start, or at once
-with **Restart now**.
+AppImage is replaced at once. The Windows folder and the macOS bundle are replaced at the next
+start, or at once with **Restart now**.
 
 </details>
 
