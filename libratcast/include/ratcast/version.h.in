@@ -15,7 +15,9 @@ namespace ratcast {
 /// RATCAST_VERSION_STRING when the library is loaded as a shared object.
 RATCAST_EXPORT const char* version() noexcept;
 
-/// Version of the librats this libratcast was built against.
+/// The librats this libratcast was built against, as git describes it: its
+/// tag and commit, or the commit alone where the clone has no tags (a CI's
+/// shallow one).
 RATCAST_EXPORT const char* librats_version() noexcept;
 
 }  // namespace ratcast

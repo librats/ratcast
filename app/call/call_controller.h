@@ -182,6 +182,9 @@ public:
     /// (CallConfig::chosen_servers): two, so that members whose lists differ
     /// by one meet all the same.
     static constexpr size_t kChosenServers = 2;
+    /// How often how the call goes is written to the log while in a room: the
+    /// monitor's report of the time since, a line a part.
+    static constexpr std::chrono::seconds kLogStatsEvery{60};
 
     /// What the controller takes from the system; tests stand in for it.
     struct Environment {
@@ -411,6 +414,7 @@ private:
     void stop_monitoring();
     void update_stats();
     void print_stats();
+    void log_stats();
     /// Back to Idle; `notice` says why, if it was not the user.
     void end(QString notice = {});
 
@@ -438,6 +442,7 @@ private:
     QTimer levels_;
     QTimer reporting_;
     QTimer printing_;
+    QTimer logging_;
     QVariantList stats_;
     QString quality_;
     QString quality_reason_;
@@ -459,9 +464,11 @@ private:
     std::unique_ptr<ScreenAwake> awake_;         ///< while a share is watched
     std::unique_ptr<SwitchableOutput> speaker_;  ///< the voice channel's, of the device chosen
     std::unique_ptr<Call> call_;                 ///< after the speaker: it plays into it
-    /// After the call, which they watch: the panel's and standard output's.
+    /// After the call, which they watch: the panel's, standard output's and
+    /// the log's.
     std::unique_ptr<CallMonitor> monitor_;
     std::unique_ptr<CallMonitor> printer_;
+    std::unique_ptr<CallMonitor> logger_;
 };
 
 }  // namespace ratcast::app

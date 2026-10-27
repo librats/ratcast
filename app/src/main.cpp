@@ -7,6 +7,7 @@
 #include <QtQml/qqmlextensionplugin.h>
 #include <QColor>
 #include <QCommandLineParser>
+#include <QDateTime>
 #include <QDir>
 #include <QGuiApplication>
 #include <QIcon>
@@ -80,6 +81,13 @@ int main(int argc, char* argv[]) {
                                << ", Qt " << qVersion() << ", "
                                << QSysInfo::prettyProductName().toStdString() << " "
                                << QSysInfo::currentCpuArchitecture().toStdString());
+    // The times logged are this computer's own: told against UTC, so that two
+    // members' logs line up.
+    const int offset = QDateTime::currentDateTime().offsetFromUtc() / 60;
+    LOG_INFO("app",
+             "times are UTC" << QString::asprintf("%c%02d:%02d", offset < 0 ? '-' : '+',
+                                                  std::abs(offset) / 60, std::abs(offset) % 60)
+                                    .toStdString());
 
     QCommandLineParser options;
     options.setApplicationDescription(

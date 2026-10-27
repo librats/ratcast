@@ -13,7 +13,10 @@
 #include <iterator>
 #include <map>
 #include <mutex>
+#include <string>
 #include <utility>
+
+#include "librats/util/logger.h"
 
 namespace ratcast::app {
 namespace {
@@ -21,6 +24,12 @@ namespace {
 QString describe(Errc error) { return QString::fromLatin1(to_string(error)); }
 
 QString id_of(const PeerId& peer) { return QString::fromStdString(peer.to_hex()); }
+
+/// A device chosen as the log names it: by its name, or the system's default.
+std::string device_named(const QString& id, const QString& name) {
+    if (id.isEmpty()) return "the default";
+    return '"' + (name.isEmpty() ? id : name).toStdString() + '"';
+}
 
 /// `name` as a presence may carry it: whitespace runs made one space, control
 /// characters dropped, and cut to whole characters within kMaxNameSize bytes.
@@ -183,6 +192,8 @@ CallController::CallController(QObject* parent)
     reporting_.setInterval(1000);
     connect(&reporting_, &QTimer::timeout, this, &CallController::update_stats);
     connect(&printing_, &QTimer::timeout, this, &CallController::print_stats);
+    logging_.setInterval(std::chrono::milliseconds(kLogStatsEvery));
+    connect(&logging_, &QTimer::timeout, this, &CallController::log_stats);
     load_hearing();
     load_devices();
 }
@@ -193,6 +204,7 @@ CallController::~CallController() {
     if (dialog_.joinable()) dialog_.join();
     monitor_.reset();
     printer_.reset();
+    logger_.reset();
     call_.reset();
     speaker_.reset();
     voice_.reset();
@@ -253,6 +265,7 @@ void CallController::create() {
     CallConfig config = environment_.call;
     config.data_dir = environment_.data_dir;
     if (!meet_at_server(config)) return;
+    LOG_INFO("app", "making a room");
     start(std::move(config), State::InRoom);
 }
 
@@ -263,6 +276,7 @@ void CallController::join(const QString& link) {
         set_notice(tr("That is not a rats:// link."));
         return;
     }
+    LOG_INFO("app", "joining " << to_string(*url));
     CallConfig config = environment_.call;
     // An identity of its own, so that one host can be in a room twice.
     if (!environment_.data_dir.empty()) {
@@ -303,6 +317,11 @@ void CallController::start(CallConfig config, State state) {
         return;
     }
     call_ = std::move(*started);
+    const auto named = [this](Device device) {
+        return device_named(chosen_[device].id, chosen_[device].name);
+    };
+    LOG_INFO("app", "microphone " << named(Microphone) << ", speaker " << named(Speaker)
+                                  << ", camera " << named(Camera));
     for (auto it = hearing_.cbegin(); it != hearing_.cend(); ++it)
         tell_hearing(it.key(), it.value());
     call_->set_share_volume(float(share_volume_));
@@ -319,6 +338,7 @@ void CallController::start(CallConfig config, State state) {
 void CallController::leave() { end(); }
 
 void CallController::end(QString notice) {
+    if (call_) LOG_INFO("app", "leaving the room");
     ++generation_;
     dialog_.request_stop();
     if (dialog_.joinable()) dialog_.join();
@@ -658,6 +678,8 @@ void CallController::choose(Device device, const QString& id) {
             name = map.value(QStringLiteral("name")).toString();
     }
     chosen_[device] = {id, name.isEmpty() ? id : name};
+    LOG_INFO("app", device_group(device).toStdString()
+                        << " chosen: " << device_named(id, chosen_[device].name));
     if (environment_.settings) {
         const std::unique_ptr<QSettings> settings = environment_.settings();
         const QString group = device_group(device);
@@ -767,6 +789,8 @@ void CallController::start_monitoring() {
     monitor_ = std::make_unique<CallMonitor>(*call_);
     reporting_.start();
     printed_seconds_ = 0;
+    logger_ = std::make_unique<CallMonitor>(*call_);
+    logging_.start();
     if (stats_every_ > 0) {
         printer_ = std::make_unique<CallMonitor>(*call_);
         printing_.start(stats_every_ * 1000);
@@ -776,8 +800,10 @@ void CallController::start_monitoring() {
 void CallController::stop_monitoring() {
     reporting_.stop();
     printing_.stop();
+    logging_.stop();
     monitor_.reset();
     printer_.reset();
+    logger_.reset();
     if (stats_.isEmpty() && quality_.isEmpty()) return;
     stats_.clear();
     quality_.clear();
@@ -799,6 +825,11 @@ void CallController::print_stats() {
     printed_seconds_ += unsigned(stats_every_);
     std::fputs(report_text(printer_->report(), printed_seconds_).c_str(), stdout);
     std::fflush(stdout);
+}
+
+void CallController::log_stats() {
+    if (!logger_) return;
+    for (const std::string& line : report_lines(logger_->report())) LOG_INFO("stats", line);
 }
 
 // ── What is said ────────────────────────────────────────────────────────────
@@ -829,7 +860,10 @@ CallHandlers CallController::handlers(uint64_t generation) {
         .joined =
             [this, generation](const PeerId&) {
                 post(generation, [this] {
-                    if (state_ == State::Joining) set_state(State::InRoom);
+                    if (state_ == State::Joining) {
+                        LOG_INFO("app", "in the room");
+                        set_state(State::InRoom);
+                    }
                     update_members();
                 });
             },
@@ -917,6 +951,8 @@ void CallController::set_state(State state) {
 
 void CallController::set_notice(QString notice) {
     if (notice == notice_) return;
+    // What the user is told went wrong, as they were told it.
+    if (!notice.isEmpty()) LOG_WARN("app", notice.toStdString());
     notice_ = std::move(notice);
     Q_EMIT noticeChanged();
 }

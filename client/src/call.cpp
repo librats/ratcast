@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <chrono>
 #include <filesystem>
+#include <sstream>
+#include <string>
 #include <type_traits>
 #include <utility>
 
@@ -16,6 +18,7 @@
 #include "librats/subsystems/reconnection.h"
 #include "librats/subsystems/relay.h"
 #include "librats/subsystems/rendezvous.h"
+#include "librats/util/logger.h"
 #include "librats/util/network_utils.h"
 
 namespace ratcast {
@@ -70,6 +73,31 @@ bool invitable(std::string_view address) {
 
 bool is_ipv6(std::string_view address) { return address.find(':') != std::string_view::npos; }
 
+const char* codec_name(Codec codec) {
+    switch (codec) {
+        case Codec::H264: return "H.264";
+        case Codec::H265: return "H.265";
+        case Codec::AV1: return "AV1";
+        case Codec::Opus: return "Opus";
+        case Codec::MpegTs: return "MPEG-TS";
+    }
+    return "an unknown codec";
+}
+
+/// A stream as the log names it: its label, number, codec and size.
+std::string described(const StreamDescription& description) {
+    std::string text = (description.label.empty() ? "stream" : description.label) + " " +
+                       std::to_string(description.id) + " (" + codec_name(description.codec);
+    if (const VideoFormat* video = description.video()) {
+        text += ", " + std::to_string(video->width) + "x" + std::to_string(video->height);
+    }
+    return text + ")";
+}
+
+void log_ended(const PeerId& peer, const StreamDescription& description) {
+    LOG_INFO("call", "stopped playing " << described(description) << " of " << peer.short_hex());
+}
+
 }  // namespace
 
 // ── Published streams ───────────────────────────────────────────────────────
@@ -118,7 +146,22 @@ void Call::notify(const Handler& handler, const Args&... args) const {
 
 Result<std::unique_ptr<Call>> Call::start(CallConfig config, CallHandlers handlers) {
     std::unique_ptr<Call> call(new Call(std::move(config), std::move(handlers)));
-    if (!call->node_.start()) return fail(Errc::Unavailable);
+    if (!call->node_.start()) {
+        LOG_WARN("call", "the node did not start");
+        return fail(Errc::Unavailable);
+    }
+    const CallConfig& made = call->config_;
+    std::ostringstream servers;
+    for (const librats::HostEndpoint& server : made.servers) servers << " " << server.to_string();
+    LOG_INFO("call", (made.mesh ? "room" : "call")
+                         << " started as " << call->id().short_hex() << ", port " << call->port()
+                         << (made.dht ? "" : ", no DHT")
+                         << (made.servers.empty() ? "" : ", servers") << servers.str());
+    if (const PeerId* dialed = dialed_peer(made)) {
+        LOG_INFO("call", "looking for " << dialed->short_hex());
+    } else if (made.dial) {
+        LOG_INFO("call", "dialing " << std::get<librats::HostEndpoint>(*made.dial).to_string());
+    }
     if (call->config_.dial) {
         if (const auto* endpoint = std::get_if<librats::HostEndpoint>(&*call->config_.dial)) {
             call->node_.connect(endpoint->host, endpoint->port);
@@ -190,12 +233,15 @@ Call::Call(CallConfig config, CallHandlers handlers)
         rendezvous_ = node_.add_subsystem(std::make_unique<librats::Rendezvous>(meeting));
         // A server learnt of from a member was taken for a member as it came.
         rendezvous_->on_server_found([this](const PeerId& peer) { notify(handlers_.left, peer); });
-        rendezvous_->on_servers([this](const PeerId&, const std::vector<librats::Address>& told) {
-            std::vector<librats::HostEndpoint> servers;
-            for (const librats::Address& at : told)
-                servers.emplace_back(at.ip.to_string(), at.port);
-            known_servers_.told(servers);
-        });
+        rendezvous_->on_servers(
+            [this](const PeerId& server, const std::vector<librats::Address>& told) {
+                LOG_DEBUG("call", "server " << server.short_hex() << " told of " << told.size()
+                                            << " other server(s)");
+                std::vector<librats::HostEndpoint> servers;
+                for (const librats::Address& at : told)
+                    servers.emplace_back(at.ip.to_string(), at.port);
+                known_servers_.told(servers);
+            });
         node_.add_subsystem(std::make_unique<librats::HolePunch>());
         node_.add_subsystem(std::make_unique<librats::Relay>());
     }
@@ -223,15 +269,20 @@ Call::Call(CallConfig config, CallHandlers handlers)
                 was_away = away_.erase(peer) > 0;
                 if (was_away) said_.erase(peer);
             }
-            if (was_away) notify(handlers_.left, peer);
+            if (was_away) {
+                LOG_INFO("call", peer.short_hex() << " did not come back");
+                notify(handlers_.left, peer);
+            }
         });
     }
     node_.on_peer_connected([this](const librats::Peer& peer) {
         if (is_server(peer.id())) return;
+        bool back = false;
         {
             std::lock_guard lock(members_mutex_);
-            away_.erase(peer.id());
+            back = away_.erase(peer.id()) > 0;
         }
+        LOG_INFO("call", peer.id().short_hex() << (back ? " is back" : " joined"));
         notify(handlers_.joined, peer.id());
     });
     node_.on_peer_disconnected([this, redials](const PeerId& peer, librats::CloseReason reason) {
@@ -245,6 +296,9 @@ Call::Call(CallConfig config, CallHandlers handlers)
                 said_.erase(peer);
             }
         }
+        LOG_INFO("call", peer.short_hex()
+                             << (lost ? " lost (" : " left (") << librats::to_string(reason) << ")"
+                             << (lost ? "; dialed again" : ""));
         notify(lost ? handlers_.lost : handlers_.left, peer);
     });
 }
@@ -401,10 +455,16 @@ SessionHandlers Call::session_handlers() {
             },
         .presence_changed =
             [this](const PeerId& peer, const Presence& presence) {
+                bool renamed = false;
                 {
                     std::lock_guard lock(members_mutex_);
-                    said_[peer] = presence;
+                    Presence& was = said_[peer];
+                    renamed = was.name != presence.name;
+                    was = presence;
                 }
+                // The name alone: muting and deafening come and go too often.
+                if (renamed)
+                    LOG_INFO("call", peer.short_hex() << " is \"" << presence.name << "\"");
                 notify(handlers_.presence, peer, presence);
             },
         .said = [this](const ChatMessage& message) { notify(handlers_.said, message); },
@@ -433,6 +493,7 @@ Result<Publisher*> Call::add(std::unique_ptr<Source> source, Config config) {
     const StreamId stream = config.stream;
     auto published = std::make_unique<PublishedAs<Source, Publisher>>(std::move(source), session(),
                                                                       std::move(config));
+    const std::string label = published->label;
     Publisher& publisher = published->publisher;
     Source& input = *published->source;
     {
@@ -441,13 +502,22 @@ Result<Publisher*> Call::add(std::unique_ptr<Source> source, Config config) {
             return fail(Errc::InvalidArgument);
         }
     }
-    const Result<void> started = publisher.start(input, [this, stream](Result<void> outcome) {
+    const Result<void> started = publisher.start(input, [this, stream,
+                                                         label](Result<void> outcome) {
+        if (outcome) {
+            LOG_INFO("call", label << " " << stream << " ended");
+        } else {
+            LOG_WARN("call", label << " " << stream << " failed: " << to_string(outcome.error()));
+        }
         notify(handlers_.source_ended, stream, outcome);
     });
     if (!started) {
+        LOG_WARN("call",
+                 "cannot send " << label << " " << stream << ": " << to_string(started.error()));
         unpublish(stream);
         return fail(started.error());
     }
+    LOG_INFO("call", "sending " << label << " " << stream);
     return &publisher;
 }
 
@@ -460,6 +530,7 @@ void Call::unpublish(StreamId stream) {
         published = std::move(it->second);
         published_.erase(it);
     }
+    LOG_INFO("call", "no longer sending " << published->label << " " << stream);
     published->stop();
 }
 
@@ -520,7 +591,13 @@ void Call::play(Playing<Player>& slot, const PeerId& peer, const StreamDescripti
                                               playback.feed_config);
     }
     Result<void> started = player->start();
-    if (started) slot = {std::move(output), std::move(player), description};
+    if (started) {
+        LOG_INFO("call", "playing " << described(description) << " of " << peer.short_hex());
+        slot = {std::move(output), std::move(player), description};
+    } else {
+        LOG_WARN("call", "cannot play " << described(description) << " of " << peer.short_hex()
+                                        << ": " << to_string(started.error()));
+    }
     events.push_back([this, peer, description, started] {
         notify(handlers_.playing, peer, description, started);
     });
@@ -602,6 +679,7 @@ void Call::watch(std::optional<PeerId> peer) {
         if (closing_) return;
         chosen_ = true;
         watched_ = std::move(peer);
+        LOG_INFO("call", "watching " << (watched_ ? watched_->short_hex() : std::string("nobody")));
         if (video_ && !watches(video_.player->peer())) {
             ended.emplace_back(video_.player->peer(), video_.description);
             video = std::move(video_);
@@ -614,6 +692,7 @@ void Call::watch(std::optional<PeerId> peer) {
     video.reset();
     sound.reset();
     for (const auto& [from, description] : ended) {
+        log_ended(from, description);
         notify(handlers_.ended, from, description);
         leave_together(from);
     }
@@ -683,7 +762,10 @@ void Call::follow_speakers() {
         }
     }
     for (Playing<VideoPlayer>& camera : stopped) camera.reset();
-    for (const auto& [peer, description] : ended) notify(handlers_.ended, peer, description);
+    for (const auto& [peer, description] : ended) {
+        log_ended(peer, description);
+        notify(handlers_.ended, peer, description);
+    }
     for (const auto& event : events) event();
 }
 
@@ -724,7 +806,10 @@ void Call::withdrawn(const PeerId& peer, StreamId stream) {
     video.reset();
     sound.reset();
     replaced.reset();
-    if (ended) notify(handlers_.ended, peer, *ended);
+    if (ended) {
+        log_ended(peer, *ended);
+        notify(handlers_.ended, peer, *ended);
+    }
     if (watched) {
         leave_together(peer);
         sync_.forget();  // for whoever's next
