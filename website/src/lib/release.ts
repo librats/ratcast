@@ -109,7 +109,14 @@ export function useStars(): number | null {
   return stars;
 }
 
-export function detectPlatform(): Platform {
+/** The visitor's system, known once the page is in a browser (null while it is prerendered). */
+export function usePlatform(): Platform | null {
+  const [platform, setPlatform] = useState<Platform | null>(null);
+  useEffect(() => setPlatform(detectPlatform()), []);
+  return platform;
+}
+
+function detectPlatform(): Platform {
   const nav = navigator as Navigator & { userAgentData?: { platform?: string } };
   const name = (nav.userAgentData?.platform || navigator.userAgent).toLowerCase();
   if (name.includes("android")) return "android";

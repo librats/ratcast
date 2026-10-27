@@ -65,7 +65,10 @@ export function Topology() {
   const [touched, setTouched] = useState(false);
   const box = useRef<HTMLDivElement>(null);
   const inView = useInView(box, { margin: "-100px" });
-  const still = useReducedMotion();
+  // After hydration: the prerendered page cannot know the visitor's setting.
+  const reduced = useReducedMotion();
+  const [still, setStill] = useState(false);
+  useEffect(() => setStill(reduced ?? false), [reduced]);
 
   // Show both shapes of the room in turn until the visitor picks one.
   useEffect(() => {

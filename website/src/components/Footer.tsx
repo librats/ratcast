@@ -59,7 +59,7 @@ export function Footer() {
           ))}
         </div>
         <div className="flex flex-col justify-between gap-2 border-t border-white/5 py-6 text-xs text-fog/35 sm:flex-row">
-          <span>© {new Date().getFullYear()} ratcast contributors · MIT License</span>
+          <span suppressHydrationWarning>© {new Date().getFullYear()} ratcast contributors · MIT License</span>
           <span>Built on librats · no accounts, no tracking</span>
         </div>
       </div>

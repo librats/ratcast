@@ -1,0 +1,55 @@
+<!doctype html>
+<!-- The link preview (public/og.png): this page captured at 1200 x 630 in any browser.
+     Opened from the file system, it takes the logo and the font from the repository. -->
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <style>
+      @font-face {
+        font-family: Geist;
+        src: url("../node_modules/@fontsource-variable/geist/files/geist-latin-wght-normal.woff2") format("woff2");
+        font-weight: 100 900;
+      }
+      html, body { margin: 0; width: 1200px; height: 630px; overflow: hidden; }
+      body {
+        position: relative;
+        background: #07080c;
+        font-family: Geist, sans-serif;
+        color: #e5ecf2;
+      }
+      .glow { position: absolute; border-radius: 50%; filter: blur(120px); }
+      .grid {
+        position: absolute; inset: 0;
+        background-image:
+          linear-gradient(to right, rgb(229 236 242 / .05) 1px, transparent 1px),
+          linear-gradient(to bottom, rgb(229 236 242 / .05) 1px, transparent 1px);
+        background-size: 56px 56px;
+        mask-image: radial-gradient(ellipse 80% 80% at 30% 40%, black 30%, transparent 100%);
+      }
+      .text { position: absolute; left: 80px; top: 120px; width: 640px; }
+      .name { display: flex; align-items: center; gap: 14px; font-size: 30px; font-weight: 600; }
+      .dot { width: 14px; height: 14px; border-radius: 50%; background: #34d399; box-shadow: 0 0 20px #34d399; }
+      h1 { margin: 36px 0 0; font-size: 92px; line-height: 1.02; letter-spacing: -0.045em; font-weight: 600; }
+      .gradient {
+        background: linear-gradient(100deg, #c4b5fd, #22d3ee 50%, #34d399);
+        -webkit-background-clip: text; background-clip: text; color: transparent;
+      }
+      p { margin: 30px 0 0; font-size: 26px; line-height: 1.4; color: rgb(229 236 242 / .6); }
+      img { position: absolute; right: -40px; top: 110px; width: 560px; filter: drop-shadow(0 0 60px rgb(139 92 246 / .45)); }
+      .url { position: absolute; left: 80px; bottom: 56px; font-size: 22px; color: rgb(229 236 242 / .45); letter-spacing: .02em; }
+    </style>
+  </head>
+  <body>
+    <div class="glow" style="left: -120px; top: -200px; width: 640px; height: 640px; background: rgb(139 92 246 / .35)"></div>
+    <div class="glow" style="right: -100px; top: 120px; width: 560px; height: 560px; background: rgb(34 211 238 / .22)"></div>
+    <div class="glow" style="left: 380px; bottom: -260px; width: 480px; height: 480px; background: rgb(52 211 153 / .16)"></div>
+    <div class="grid"></div>
+    <img src="../../docs/logo-dark.png" alt="" />
+    <div class="text">
+      <div class="name"><span class="dot"></span>ratcast</div>
+      <h1>Watch together.<br /><span class="gradient">Peer to peer.</span></h1>
+      <p>Share a screen with its sound and talk, straight to your friends, encrypted end to end.</p>
+    </div>
+    <div class="url">ratcast.app · free &amp; open source · Windows &amp; Linux</div>
+  </body>
+</html>

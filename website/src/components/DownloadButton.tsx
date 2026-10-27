@@ -1,6 +1,5 @@
 import { ArrowDownToLine } from "lucide-react";
-import { useMemo } from "react";
-import { detectPlatform, formatSize, RELEASES_URL, useLatestRelease } from "../lib/release";
+import { formatSize, RELEASES_URL, useLatestRelease, usePlatform } from "../lib/release";
 import { LinuxIcon, WindowsIcon } from "./ui";
 
 const NAMES = { windows: "Windows", linux: "Linux" } as const;
@@ -8,7 +7,7 @@ const NAMES = { windows: "Windows", linux: "Linux" } as const;
 /** The big button: the package for the visitor's system, straight from the latest release. */
 export function DownloadButton() {
   const release = useLatestRelease();
-  const platform = useMemo(detectPlatform, []);
+  const platform = usePlatform();
   const target = platform === "windows" || platform === "linux" ? platform : null;
   const pkg = target ? release?.packages.find((p) => p.platform === target) : undefined;
 

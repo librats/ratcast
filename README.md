@@ -16,7 +16,7 @@
   <a href="https://isocpp.org/"><img alt="C++20" src="https://img.shields.io/badge/C%2B%2B-20-blue.svg"></a>
 </p>
 
-<p align="center"><b>Peer-to-peer calls and screen sharing for watching things together.</b></p>
+<p align="center"><b>Peer-to-peer calls and screen sharing for watching things together.</b><br><a href="https://ratcast.app">ratcast.app</a></p>
 
 One person shares a movie, a game or a desktop, and the others watch it live while everyone talks.
 There is no account to create and no service in the middle. You make a room, send the link, and
@@ -258,7 +258,7 @@ To try the transport on one machine, run `ratcast-send --source pattern --audio 
 ## More
 
 - [librats](https://github.com/librats/librats): the P2P layer underneath.
-- [`website/`](website): the project's site
+- [`website/`](website): the project's site, [ratcast.app](https://ratcast.app)
 
 ## License
 

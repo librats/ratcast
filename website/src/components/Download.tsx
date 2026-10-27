@@ -1,6 +1,6 @@
 import { Apple, ArrowDownToLine, Smartphone } from "lucide-react";
-import { useMemo, type ReactNode } from "react";
-import { detectPlatform, formatSize, RELEASES_URL, useLatestRelease, type Package } from "../lib/release";
+import type { ReactNode } from "react";
+import { formatSize, RELEASES_URL, useLatestRelease, usePlatform, type Package } from "../lib/release";
 import { CodeWindow } from "./Developers";
 import { LinuxIcon, Reveal, SectionHeading, SpotlightCard, WindowsIcon } from "./ui";
 
@@ -39,7 +39,7 @@ sudo systemctl enable --now ratcast-server`;
 
 export function Download() {
   const release = useLatestRelease();
-  const mine = useMemo(detectPlatform, []);
+  const mine = usePlatform();
 
   return (
     <section id="download" className="relative scroll-mt-24 overflow-hidden py-24">
