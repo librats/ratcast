@@ -107,6 +107,14 @@ jobs:
           path: vcpkg-cache
           key: vcpkg-arm64-osx-${{ hashFiles('cmake/vcpkg-ports/**') }}
 
+      # Qt first: its action sets up Python, which replaces PKG_CONFIG_PATH,
+      # so vcpkg's folder is added to what it leaves.
+      - uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.8.*'
+          modules: 'qtshadertools'
+          cache: true
+
       - name: Install media libraries
         run: |
           brew install ffmpeg opus sdl3
@@ -114,14 +122,8 @@ jobs:
           vcpkg="${VCPKG_INSTALLATION_ROOT:-/usr/local/share/vcpkg}"
           "$vcpkg/vcpkg" install webrtc-audio-processing --overlay-ports=cmake/vcpkg-ports \
             --triplet arm64-osx --x-install-root="$GITHUB_WORKSPACE/vcpkg-installed"
-          echo "PKG_CONFIG_PATH=$GITHUB_WORKSPACE/vcpkg-installed/arm64-osx/lib/pkgconfig" \
+          echo "PKG_CONFIG_PATH=$GITHUB_WORKSPACE/vcpkg-installed/arm64-osx/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}" \
             >> "$GITHUB_ENV"
-
-      - uses: jurplel/install-qt-action@v4
-        with:
-          version: '6.8.*'
-          modules: 'qtshadertools'
-          cache: true
 
       - name: Configure
         run: >
