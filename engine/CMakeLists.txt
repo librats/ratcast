@@ -101,12 +101,17 @@ elseif(WIN32)
         avrt d3d11 dwmapi dxgi mf mfplat mfreadwrite mfuuid mmdevapi ole32 windowsapp)
 elseif(APPLE)
     target_sources(ratcast_engine PRIVATE
-        src/audio/audio_device_unavailable.cpp
         src/capture/camera_capture_unavailable.cpp
         src/capture/screen_capture_unavailable.cpp
+        src/macos/audio_device.cpp
+        src/macos/core_audio.mm
         src/macos/screen_awake.cpp
     )
-    target_link_libraries(ratcast_engine PRIVATE "-framework CoreFoundation" "-framework IOKit")
+    # Objective-C's objects counted by the compiler (ARC), as Apple's own code is.
+    set_source_files_properties(src/macos/core_audio.mm PROPERTIES COMPILE_OPTIONS -fobjc-arc)
+    target_link_libraries(ratcast_engine PRIVATE
+        "-framework AudioToolbox" "-framework CoreAudio" "-framework CoreFoundation"
+        "-framework Foundation" "-framework IOKit")
 else()
     target_sources(ratcast_engine PRIVATE
         src/audio/audio_device_unavailable.cpp

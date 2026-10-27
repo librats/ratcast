@@ -666,10 +666,22 @@ encoding, and a 1440p60 game is captured and encoded without a CPU copy.
     (`VTCompressionSessionCompleteFrames`); frames leave in Annex B, a keyframe's parameter sets
     ahead of it; the bitrate changes in flight; low-latency rate control for H.264 where the
     encoder has it.
-  - **(b) Sound:** Core Audio — the microphone and the speaker through AUHAL, the default followed
-    as it changes or a device by its UID; the system's and the applications' sound through Core
-    Audio's process taps (macOS 14.2): a global tap, one that leaves out a process, one of a
-    process's own.
+  - **(b) Sound:** ✅ written, to be tried on a Mac — Core Audio (`engine/src/macos/core_audio.h`).
+    A capture is an IOProc on a device: the microphone's — the one chosen by its UID, or the
+    default, opened anew as the default changes — or, for what the computer plays, a private
+    aggregate device of a process tap alone (macOS 14.2; as Chromium hears it): a global tap
+    (the system's sound, or one output's by its UID), one that leaves a process out (the
+    applications'), or one process's own (a node is a process id; one that has never played has
+    no tap and fails, one that exits ends the capture). The device's float samples are mapped to
+    the channels asked (one is all mixed; one of the device's heard on each) and converted to the
+    rate asked by an AudioConverter; each block stamped by the device's host time less its
+    latency, through the SampleClock. Playback is the default output's unit, which follows the
+    default by itself, or AUHAL on a device chosen, which ends as it goes; the unit converts
+    from the format asked, the play time its stamp plus the device's and the unit's latency.
+    Changes are handled on a serial queue of the stream's own. Every program of ours outside a
+    bundle carries an Info.plist in itself (`cmake/program.plist.in`, linked into `__TEXT`) with
+    the usage descriptions. CI installs BlackHole, a loopback device, for the tests to play to and
+    hear from; the leave to hear other applications the runner may not give, and those skip.
   - **(c) Screens and windows:** ScreenCaptureKit — the system's picker
     (`SCContentSharingPicker`), NV12 pictures at the rate asked, the cursor drawn in.
   - **(d) Cameras:** AVFoundation, by the device's unique id.

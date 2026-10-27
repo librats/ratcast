@@ -22,4 +22,17 @@ function(ratcast_target_defaults target)
     if(MSVC AND type STREQUAL "EXECUTABLE")
         target_sources(${target} PRIVATE "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/utf8.manifest")
     endif()
+
+    # On macOS a program outside a bundle carries its Info.plist in itself:
+    # the usage descriptions the system asks the user's leave with.
+    if(APPLE AND type STREQUAL "EXECUTABLE")
+        get_target_property(bundle ${target} MACOSX_BUNDLE)
+        if(NOT bundle)
+            set(RATCAST_PROGRAM ${target})
+            set(plist "${CMAKE_CURRENT_BINARY_DIR}/${target}.plist")
+            configure_file("${CMAKE_CURRENT_FUNCTION_LIST_DIR}/program.plist.in" "${plist}" @ONLY)
+            target_link_options(${target} PRIVATE "LINKER:-sectcreate,__TEXT,__info_plist,${plist}")
+            set_property(TARGET ${target} APPEND PROPERTY LINK_DEPENDS "${plist}")
+        endif()
+    endif()
 endfunction()

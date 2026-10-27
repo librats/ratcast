@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- What a program of ours outside a bundle carries in itself on macOS
+     (ratcast_target_defaults()): the usage descriptions the system shows as
+     it asks the user's leave, without which a process that opens the
+     microphone or a camera is killed. The app's own is
+     app/resources/Info.plist.in. -->
+<plist version="1.0">
+<dict>
+    <key>CFBundleIdentifier</key>
+    <string>com.librats.ratcast.@RATCAST_PROGRAM@</string>
+    <key>CFBundleName</key>
+    <string>@RATCAST_PROGRAM@</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>NSMicrophoneUsageDescription</key>
+    <string>It sends or tests the sound of your microphone.</string>
+    <key>NSCameraUsageDescription</key>
+    <string>It sends or tests the pictures of your camera.</string>
+    <key>NSAudioCaptureUsageDescription</key>
+    <string>It sends or tests what your applications play.</string>
+</dict>
+</plist>

@@ -90,8 +90,10 @@ jobs:
   # The engine's macOS backends with the media libraries, and the app: Apple
   # Silicon, VideoToolbox's encoders on its own API. FFmpeg, Opus and SDL3 from
   # Homebrew; WebRTC's AudioProcessing, which Homebrew has not, through vcpkg's
-  # overlay port. The runner has no sound device, camera or screen recording
-  # leave: those tests skip.
+  # overlay port. The runner has no sound device of its own: BlackHole, a
+  # loopback one, is installed, which the sound tests play to and hear from
+  # (the leave to hear other applications they may not have: those skip). No
+  # camera or screen recording leave: those tests skip.
   macos-media:
     name: macos-latest · Release · media and app
     runs-on: macos-latest
@@ -124,6 +126,13 @@ jobs:
             --triplet arm64-osx --x-install-root="$GITHUB_WORKSPACE/vcpkg-installed"
           echo "PKG_CONFIG_PATH=$GITHUB_WORKSPACE/vcpkg-installed/arm64-osx/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}" \
             >> "$GITHUB_ENV"
+
+      # Core Audio loads a device's driver as it starts.
+      - name: Install a loopback sound device
+        run: |
+          brew install --cask blackhole-2ch
+          sudo killall coreaudiod || true
+          sleep 2
 
       - name: Configure
         run: >
