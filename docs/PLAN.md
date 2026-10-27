@@ -682,8 +682,22 @@ encoding, and a 1440p60 game is captured and encoded without a CPU copy.
     bundle carries an Info.plist in itself (`cmake/program.plist.in`, linked into `__TEXT`) with
     the usage descriptions. CI installs BlackHole, a loopback device, for the tests to play to and
     hear from; the leave to hear other applications the runner may not give, and those skip.
-  - **(c) Screens and windows:** ScreenCaptureKit — the system's picker
-    (`SCContentSharingPicker`), NV12 pictures at the rate asked, the cursor drawn in.
+  - **(c) Screens and windows:** ✅ written, to be tried on a Mac — ScreenCaptureKit
+    (`engine/src/macos/screen_capture.mm`). The user chooses in the system's picker
+    (`SCContentSharingPicker`, macOS 14), which needs no leave to record the screen beyond the
+    choice; its observer's answer is waited for off the UI thread, the picker shown on the main
+    queue — an application's: a process with none (the command-line tools, tests) captures the
+    main screen instead, never waiting on a main queue nothing serves. A restore token names a
+    screen by its display's UUID (`display:`), a window by its application's bundle id
+    (`window:`, the largest of its windows), and is found again among what ScreenCaptureKit
+    lists, which does need that leave; a choice in the picker is told only from macOS 15.2, so
+    before it there is no token. Pictures come as the stream's pixel buffers, NV12 in the colour
+    space asked (its matrix and range) or BGRA, each locked and held by the frame that carries
+    it — no copy, the stream's queue six deep; I420 is converted from NV12. A window's capture
+    follows its size (the content rectangle by its scales, as OBS reads it); the source's
+    minimum frame interval and the frame pacer keep to the rate; only complete pictures are
+    handed on. The capture ends with success when the user stops it from the menu bar or the
+    content goes, with a failure on any other error.
   - **(d) Cameras:** AVFoundation, by the device's unique id.
   - **(e) The package:** a DMG of the bundle, Qt and FFmpeg (LGPL, VideoToolbox) inside,
     signed ad hoc; the updater.

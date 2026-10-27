@@ -27,6 +27,7 @@
 #include <utility>
 
 #include "audio/sample_clock.h"
+#include "macos/host_time.h"
 
 #include "librats/util/logger.h"
 
@@ -34,6 +35,7 @@ namespace ratcast::core_audio {
 namespace {
 
 using namespace std::chrono_literals;
+using macos::at_host_time;
 
 /// What the UIDs of this process's own aggregate devices start with: private,
 /// they are listed to it alone, and never as a device to choose.
@@ -148,15 +150,6 @@ Duration device_latency(AudioObjectID device, bool input) {
     if (!streams.empty())
         frames += get<UInt32>(streams.front(), address(kAudioStreamPropertyLatency)).value_or(0);
     return Duration{static_cast<int64_t>(frames * 1e6 / rate)};
-}
-
-/// The local clock's time at a host time (mach_absolute_time's ticks).
-Timestamp at_host_time(Clock& clock, uint64_t host) {
-    const Timestamp now = clock.now();
-    const uint64_t host_now = AudioGetCurrentHostTime();
-    const int64_t ns = host >= host_now ? int64_t(AudioConvertHostTimeToNanos(host - host_now))
-                                        : -int64_t(AudioConvertHostTimeToNanos(host_now - host));
-    return now + Duration{ns / 1000};
 }
 
 /// Interleaved 32-bit float samples.
