@@ -1,0 +1,124 @@
+@import "tailwindcss";
+@import "@fontsource-variable/geist";
+@import "@fontsource-variable/geist-mono";
+
+@theme {
+  --font-sans: "Geist Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Geist Mono Variable", ui-monospace, "Cascadia Code", monospace;
+
+  --color-ink: #07080c;
+  --color-ink-2: #0c0e15;
+  --color-fog: #e5ecf2; /* the logo's own colour */
+  --color-violet: #8b5cf6;
+  --color-cyan: #22d3ee;
+  --color-mint: #34d399; /* the app's "speaking" green */
+
+  --animate-marquee: marquee 40s linear infinite;
+  --animate-gradient: gradient-pan 8s ease infinite;
+  --animate-pulse-ring: pulse-ring 1.6s ease-out infinite;
+  --animate-float: float 6s ease-in-out infinite;
+  --animate-blink: blink 1s steps(1) infinite;
+  --animate-grid-run: grid-run 1.2s linear infinite;
+  --animate-spin-slow: spin 6s linear infinite;
+  --animate-aurora: aurora 18s ease-in-out infinite alternate;
+
+  @keyframes grid-run {
+    to {
+      background-position: 0 40px;
+    }
+  }
+  @keyframes aurora {
+    0% {
+      transform: translate(0, 0) scale(1);
+    }
+    50% {
+      transform: translate(8%, 6%) scale(1.15);
+    }
+    100% {
+      transform: translate(-6%, 2%) scale(0.95);
+    }
+  }
+
+  @keyframes marquee {
+    to {
+      transform: translateX(-50%);
+    }
+  }
+  @keyframes gradient-pan {
+    0%,
+    100% {
+      background-position: 0% 50%;
+    }
+    50% {
+      background-position: 100% 50%;
+    }
+  }
+  @keyframes pulse-ring {
+    0% {
+      box-shadow: 0 0 0 0 rgb(52 211 153 / 0.6);
+    }
+    100% {
+      box-shadow: 0 0 0 10px rgb(52 211 153 / 0);
+    }
+  }
+  @keyframes float {
+    0%,
+    100% {
+      transform: translateY(0);
+    }
+    50% {
+      transform: translateY(-10px);
+    }
+  }
+  @keyframes blink {
+    50% {
+      opacity: 0;
+    }
+  }
+}
+
+@layer base {
+  html {
+    scroll-behavior: smooth;
+    color-scheme: dark;
+  }
+  body {
+    @apply bg-ink font-sans text-fog antialiased;
+    overflow-x: hidden;
+  }
+  ::selection {
+    background: rgb(139 92 246 / 0.4);
+  }
+}
+
+@utility text-gradient {
+  background-image: linear-gradient(100deg, #c4b5fd, #22d3ee 45%, #34d399 70%, #c4b5fd);
+  background-size: 250% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* A faint grid that fades out at the edges. */
+@utility bg-grid {
+  background-image:
+    linear-gradient(to right, rgb(229 236 242 / 0.05) 1px, transparent 1px),
+    linear-gradient(to bottom, rgb(229 236 242 / 0.05) 1px, transparent 1px);
+  background-size: 56px 56px;
+  mask-image: radial-gradient(ellipse 70% 60% at 50% 0%, black 30%, transparent 100%);
+}
+
+/* Film grain over everything, so the gradients do not band. */
+@utility grain {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='.5'/%3E%3C/svg%3E");
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    scroll-behavior: auto !important;
+  }
+}

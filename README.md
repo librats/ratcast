@@ -258,6 +258,7 @@ To try the transport on one machine, run `ratcast-send --source pattern --audio 
 ## More
 
 - [librats](https://github.com/librats/librats): the P2P layer underneath.
+- [`website/`](website): the project's site
 
 ## License
 

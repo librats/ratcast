@@ -1,0 +1,58 @@
+name: Website
+
+# The site in website/ (Vite, React): built on every change to it, published to
+# GitHub Pages from main. It imports the logo and the app's icon from docs/ and
+# app/resources/, so changes to those rebuild it too. Pages must be set to
+# "GitHub Actions" in the repository's settings.
+
+on:
+  push:
+    branches: [main]
+    paths: ['website/**', 'docs/logo-dark.png', 'app/resources/ratcast.png', '.github/workflows/website.yml']
+  pull_request:
+    paths: ['website/**', 'docs/logo-dark.png', 'app/resources/ratcast.png', '.github/workflows/website.yml']
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions: {}
+
+jobs:
+  build:
+    name: Build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: website
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: website/package-lock.json
+      - run: npm ci
+      - run: npm run build
+      - uses: actions/upload-pages-artifact@v3
+        if: github.event_name != 'pull_request'
+        with:
+          path: website/dist
+
+  deploy:
+    name: Deploy
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
