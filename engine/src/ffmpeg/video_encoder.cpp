@@ -3,7 +3,8 @@
 // told to keep latency down, and whether it can change its bitrate in flight —
 // the candidate table below. Pictures come from memory, or — to an encoder
 // opened on a frames context of their GPU's (hw_frames.h) — from GPU memory
-// without passing through the CPU.
+// without passing through the CPU. VideoToolbox's encoders are the table's
+// too, but opened on the system's own API (macos/videotoolbox_encoder.h).
 
 #include <algorithm>
 #include <chrono>
@@ -26,6 +27,10 @@ extern "C" {
 #include "ratcast/engine/video_codec.h"
 #include "ratcast/engine/video_convert.h"
 #include "video/codec_backend.h"
+
+#ifdef __APPLE__
+#include "macos/videotoolbox_encoder.h"
+#endif
 
 #include "librats/util/logger.h"
 
@@ -60,6 +65,9 @@ struct Candidate {
     /// Some of its versions hold pictures back however tuned: checked once a
     /// process, by encoding one (hands_back_at_once()), and passed over if so.
     bool may_hold_back = false;
+    /// Opened on the system's own API rather than through FFmpeg, whose
+    /// wrapper of it holds every picture back a call; `tune` goes unused.
+    Result<std::unique_ptr<VideoEncoder>> (*open_native)(const VideoEncoderConfig&) = nullptr;
 };
 
 void tune_nvenc(const VideoEncoderConfig&, AVCodecContext&, av::Dictionary& options) {
@@ -82,11 +90,6 @@ void tune_amf(const VideoEncoderConfig&, AVCodecContext&, av::Dictionary& option
     options.set("usage", "ultralowlatency");
     options.set("rc", "cbr");
     options.set("quality", "speed");
-}
-
-void tune_videotoolbox(const VideoEncoderConfig&, AVCodecContext&, av::Dictionary& options) {
-    options.set("realtime", "1");
-    options.set("prio_speed", "1");
 }
 
 void tune_svtav1(const VideoEncoderConfig& config, AVCodecContext& context,
@@ -140,11 +143,17 @@ constexpr Candidate kCandidates[] = {
     {"hevc_nvenc", Codec::H265, true, true, tune_nvenc},
     {"hevc_qsv", Codec::H265, true, true, tune_qsv},
     {"hevc_amf", Codec::H265, true, false, tune_amf},
-    {"hevc_videotoolbox", Codec::H265, true, false, tune_videotoolbox},
+#ifdef __APPLE__
+    {"hevc_videotoolbox", Codec::H265, true, true, nullptr, false,
+     macos::open_videotoolbox_encoder},
+#endif
     {"h264_nvenc", Codec::H264, true, true, tune_nvenc},
     {"h264_qsv", Codec::H264, true, true, tune_qsv},
     {"h264_amf", Codec::H264, true, false, tune_amf},
-    {"h264_videotoolbox", Codec::H264, true, false, tune_videotoolbox},
+#ifdef __APPLE__
+    {"h264_videotoolbox", Codec::H264, true, true, nullptr, false,
+     macos::open_videotoolbox_encoder},
+#endif
     {"libopenh264", Codec::H264, false, false, tune_openh264},
 };
 
@@ -488,7 +497,8 @@ namespace backend {
 std::vector<std::string> video_encoder_candidates(Codec codec) {
     std::vector<std::string> names;
     for (const Candidate& candidate : kCandidates) {
-        if (candidate.codec == codec && avcodec_find_encoder_by_name(candidate.name)) {
+        if (candidate.codec == codec &&
+            (candidate.open_native || avcodec_find_encoder_by_name(candidate.name))) {
             names.emplace_back(candidate.name);
         }
     }
@@ -496,13 +506,16 @@ std::vector<std::string> video_encoder_candidates(Codec codec) {
 }
 
 Result<std::unique_ptr<VideoEncoder>> open_video_encoder(const VideoEncoderConfig& config) {
-    const auto opened = [&](std::unique_ptr<FfmpegVideoEncoder> encoder) {
-        if (!encoder->open()) return std::unique_ptr<VideoEncoder>();
+    const auto chosen = [&](std::unique_ptr<VideoEncoder> encoder) {
         LOG_INFO("engine",
                  "video encoder: " << encoder->info().name << " " << config.width << "x"
                                    << config.height << " at " << config.bitrate << " bit/s"
                                    << (encoder->info().gpu_input ? ", GPU pictures" : ""));
-        return std::unique_ptr<VideoEncoder>(std::move(encoder));
+        return encoder;
+    };
+    const auto opened = [&](std::unique_ptr<FfmpegVideoEncoder> encoder) {
+        if (!encoder->open()) return std::unique_ptr<VideoEncoder>();
+        return chosen(std::move(encoder));
     };
     // Made for the first candidate that takes the device's frames, and kept
     // for the next if that one will not open on them.
@@ -512,6 +525,11 @@ Result<std::unique_ptr<VideoEncoder>> open_video_encoder(const VideoEncoderConfi
         if (!config.encoder.empty() && config.encoder != candidate.name) continue;
         if (candidate.hardware ? !config.allow_hardware : !config.allow_software) continue;
 
+        if (candidate.open_native) {
+            if (Result<std::unique_ptr<VideoEncoder>> encoder = candidate.open_native(config))
+                return chosen(std::move(*encoder));
+            continue;
+        }
         const AVCodec* codec = avcodec_find_encoder_by_name(candidate.name);
         if (!codec) continue;
         const std::optional<PixelFormat> format = choose_input_format(*codec);

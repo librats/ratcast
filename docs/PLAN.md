@@ -657,8 +657,15 @@ encoding, and a 1440p60 game is captured and encoded without a CPU copy.
     clang-format, the app a bundle (`ratcast.app`: its `Info.plist` with the usage descriptions
     the system asks the user's leave with — without one, a process that opens the microphone or a
     camera is killed — and its icon), the screen kept awake by a power assertion; CI's
-    `macos-media` builds the engine with FFmpeg (VideoToolbox's encoders), Opus, WebRTC's
-    AudioProcessing (vcpkg's overlay port) and the app, and runs every test.
+    `macos-media` builds the engine with FFmpeg, Opus, WebRTC's AudioProcessing (vcpkg's overlay
+    port) and the app, and runs every test.
+  - **Video encoding:** VideoToolbox's H.264 and HEVC on its own API
+    (`engine/src/macos/videotoolbox_encoder.h`), under FFmpeg's names in the encoder table:
+    FFmpeg's wrapper takes a picture and returns what the session finished by then, so each frame
+    came out a call late. Each picture is copied into the session's pool, encoded and waited for
+    (`VTCompressionSessionCompleteFrames`); frames leave in Annex B, a keyframe's parameter sets
+    ahead of it; the bitrate changes in flight; low-latency rate control for H.264 where the
+    encoder has it.
   - **(b) Sound:** Core Audio — the microphone and the speaker through AUHAL, the default followed
     as it changes or a device by its UID; the system's and the applications' sound through Core
     Audio's process taps (macOS 14.2): a global tap, one that leaves out a process, one of a

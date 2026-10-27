@@ -58,7 +58,9 @@ struct VideoEncoderConfig {
 };
 
 struct VideoEncoderInfo {
-    std::string name;  ///< the FFmpeg encoder, e.g. "av1_nvenc"
+    /// The encoder by FFmpeg's name, e.g. "av1_nvenc" — VideoToolbox's too,
+    /// though opened on the system's own API.
+    std::string name;
     Codec codec = Codec::AV1;
     bool hardware = false;
     /// What the encoder works in. encode() takes the other 4:2:0 layout too,

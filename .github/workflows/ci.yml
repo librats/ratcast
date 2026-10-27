@@ -88,7 +88,7 @@ jobs:
         run: ctest --test-dir build --build-config Release --output-on-failure
 
   # The engine's macOS backends with the media libraries, and the app: Apple
-  # Silicon. FFmpeg (VideoToolbox's encoders among its own), Opus and SDL3 from
+  # Silicon, VideoToolbox's encoders on its own API. FFmpeg, Opus and SDL3 from
   # Homebrew; WebRTC's AudioProcessing, which Homebrew has not, through vcpkg's
   # overlay port. The runner has no sound device, camera or screen recording
   # leave: those tests skip.

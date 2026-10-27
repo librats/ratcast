@@ -43,6 +43,13 @@ if(RATCAST_FFMPEG_FOUND)
     else()
         target_sources(ratcast_engine PRIVATE src/ffmpeg/hw_frames_none.cpp)
     endif()
+    # VideoToolbox's encoders, in the encoder table, on the system's own API.
+    if(APPLE)
+        target_sources(ratcast_engine PRIVATE src/macos/videotoolbox_encoder.cpp)
+        target_link_libraries(ratcast_engine PRIVATE
+            "-framework CoreFoundation" "-framework CoreMedia" "-framework CoreVideo"
+            "-framework VideoToolbox")
+    endif()
     target_link_libraries(ratcast_engine PRIVATE ratcast::ffmpeg)
 else()
     target_sources(ratcast_engine PRIVATE src/ffmpeg_unavailable.cpp)
