@@ -177,8 +177,14 @@ protected:
             std::lock_guard lock(mutex_);
             return announced_.has_value();
         }));
-        std::lock_guard lock(mutex_);
-        player_ = std::make_unique<DataPlayer>(*receiver_, sender_id_, *announced_, output_,
+        // Not held past here: the loopback's thread takes it too — announced
+        // again where publishing crossed the connection — and would deliver
+        // nothing more, the subscription waited for included.
+        const StreamDescription announced = [&] {
+            std::lock_guard lock(mutex_);
+            return *announced_;
+        }();
+        player_ = std::make_unique<DataPlayer>(*receiver_, sender_id_, announced, output_,
                                                DataPlayerConfig{.latency = latency});
         ASSERT_TRUE(player_->start());
         player_ptr_ = player_.get();
