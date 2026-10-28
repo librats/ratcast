@@ -11,6 +11,12 @@
 set(QT_NO_PRIVATE_MODULE_WARNING ON)
 find_package(Qt6 6.6 QUIET COMPONENTS Quick ShaderTools GuiPrivate Network)
 
+# Before Qt 6.9 a private module is no CMake package of its own: Qt6Gui's
+# brings the target.
+if(NOT Qt6GuiPrivate_FOUND AND TARGET Qt6::GuiPrivate)
+    set(Qt6GuiPrivate_FOUND TRUE)
+endif()
+
 # Debian ships GuiPrivate's CMake package with qt6-base-dev and its headers with
 # qt6-base-private-dev: found, it may still have no QRhi header. It is among
 # the public headers or the private ones (under the version), in include/ or,
