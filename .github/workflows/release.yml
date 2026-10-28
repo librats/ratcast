@@ -398,16 +398,15 @@ jobs:
           -DRATCAST_VERSION="${{ steps.version.outputs.version }}"
           -DRATCAST_BUILD_TESTS=OFF -DRATCAST_BUILD_TOOLS=OFF -DRATCAST_BUILD_APP=ON
           -DRATCAST_WITH_FFMPEG=ON -DRATCAST_WITH_OPUS=ON -DRATCAST_WITH_WEBRTC_APM=ON
-          -DRATCAST_UPDATES=ON -DQT_ENABLE_VERBOSE_DEPLOYMENT=ON
+          -DRATCAST_UPDATES=ON
 
       - name: Build
         run: cmake --build build --parallel
 
       # The bundle with Qt and the libraries it links inside (macdeployqt,
-      # through Qt's deploy script in app/, its output in the log), its symbols
-      # aside, the licenses in its Resources, signed ad hoc as a whole: Apple
-      # Silicon runs nothing unsigned, and what macdeployqt rewrote is signed
-      # anew.
+      # through Qt's deploy script in app/), its symbols aside, the licenses
+      # in its Resources, signed ad hoc as a whole: Apple Silicon runs nothing
+      # unsigned, and what macdeployqt rewrote is signed anew.
       - name: Bundle
         run: |
           name="${{ steps.version.outputs.name }}"
@@ -459,10 +458,7 @@ jobs:
             done < <(otool -L "$binary" 2> /dev/null | tail -n +2)
           done < <(find "$app/Contents" -type f \( -perm -u+x -o -name '*.dylib' \) -print0)
           if [[ -n "$unresolved" ]]; then
-            echo "::error::Linked but not in the bundle:"; printf '%s' "$unresolved" | sort -u
-            echo "The app's run paths:"; otool -l "$app/Contents/MacOS/ratcast" | grep -A2 LC_RPATH
-            echo "Frameworks/:"; ls "$app/Contents/Frameworks"
-            exit 1
+            echo "::error::Linked but not in the bundle:"; printf '%s' "$unresolved" | sort -u; exit 1
           fi
           # Run paths the bundle's own: one left where it was built would load
           # what a Mac keeps there instead.
