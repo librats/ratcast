@@ -469,7 +469,7 @@ jobs:
           foreign=""
           while IFS= read -r -d '' binary; do
             while read -r rpath; do
-              [[ "$rpath" == @executable_path/* || "$rpath" == @loader_path/* ]] ||
+              [[ "$rpath" =~ ^@(executable|loader)_path(/|$) ]] ||
                 foreign+="${binary#"$app"/}: $rpath"$'\n'
             done < <(otool -l "$binary" 2> /dev/null | awk '/cmd LC_RPATH/ { getline; getline; print $2 }')
           done < <(find "$app/Contents" -type f \( -perm -u+x -o -name '*.dylib' \) -print0)

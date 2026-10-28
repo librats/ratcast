@@ -797,7 +797,13 @@ TEST_F(CallControllerTest, ALinksServerIsMetAtByWhoeverJoinsByIt) {
     EXPECT_EQ(bob_.state(), State::Idle);
     EXPECT_FALSE(bob_.notice().isEmpty());
     bob_.join(room + QString("?via=127.0.0.1:%1").arg(server.listen_port()));
-    ASSERT_TRUE(wait_for([&] { return members(ann_) == 1 && server.peer_count() == 1; }));
+    // Bob is met there; Ann may be too, by then, having heard of it from him.
+    const auto at_server = [&](const QString& id) {
+        for (const librats::PeerInfo& peer : server.peers())
+            if (QString::fromStdString(peer.id.to_hex()) == id) return true;
+        return false;
+    };
+    ASSERT_TRUE(wait_for([&] { return members(ann_) == 1 && at_server(id_of(ann_, "Bob")); }));
     bob_.leave();
     ann_.leave();
     server.stop();
