@@ -136,13 +136,10 @@ jobs:
         run: |
           for db in "$HOME/Library/Application Support/com.apple.TCC/TCC.db" \
                     "/Library/Application Support/com.apple.TCC/TCC.db"; do
-            echo "$db:"
             sudo sqlite3 "$db" "
               CREATE TEMP TABLE leave AS SELECT * FROM access WHERE service = 'kTCCServiceMicrophone';
               UPDATE leave SET service = 'kTCCServiceAudioCapture';
-              INSERT OR REPLACE INTO access SELECT * FROM leave;
-              SELECT service, client, auth_value FROM access
-                WHERE service IN ('kTCCServiceMicrophone', 'kTCCServiceAudioCapture');" ||
+              INSERT OR REPLACE INTO access SELECT * FROM leave;" ||
               echo "::warning::cannot change $db"
           done
           sudo killall tccd || true
@@ -166,6 +163,18 @@ jobs:
 
       - name: Test
         run: ctest --test-dir build --output-on-failure
+
+      # A test that crashed says nothing of where: the system's crash report,
+      # its threads' stacks, does.
+      - name: Crash reports
+        if: failure()
+        run: |
+          for report in ~/Library/Logs/DiagnosticReports/*.ips; do
+            [[ -e "$report" ]] || continue
+            echo "::group::$(basename "$report")"
+            cat "$report"
+            echo "::endgroup::"
+          done
 
   sanitizers:
     name: ${{ matrix.preset }}
