@@ -50,18 +50,21 @@ public:
         sink_(std::move(block).freeze(captured));
     }
 
-    /// 10 ms at `level`, alternating in sign: not a level the high-pass
-    /// filter takes out.
+    /// 10 ms of a tone peaking at `level`, on from the last: in the band of
+    /// a voice, which the high-pass filter and the processor's band split
+    /// leave as it is (a square wave at half the rate, macOS's arm64 build
+    /// all but takes out).
     void say(float level, Timestamp captured) {
-        MutableAudioFrame block = MutableAudioFrame::allocate(format_, format_.sample_rate / 100);
-        const std::span<float> samples = block.samples();
-        for (size_t i = 0; i < samples.size(); ++i) samples[i] = i % 2 ? level : -level;
-        sink_(std::move(block).freeze(captured));
+        const size_t length = format_.sample_rate / 100;
+        sink_(draw_tone({.format = format_, .frequency = 440.0f, .level = level}, said_, length,
+                        captured));
+        said_ += length;
     }
 
 private:
     const AudioFormat format_;
     Sink sink_;
+    uint64_t said_ = 0;  ///< samples said so far
 };
 
 /// A speaker the test pulls by hand.
