@@ -12,18 +12,27 @@ set(QT_NO_PRIVATE_MODULE_WARNING ON)
 find_package(Qt6 6.6 QUIET COMPONENTS Quick ShaderTools GuiPrivate Network)
 
 # Debian ships GuiPrivate's CMake package with qt6-base-dev and its headers with
-# qt6-base-private-dev: found, it may still have no QRhi header.
+# qt6-base-private-dev: found, it may still have no QRhi header. On macOS Qt's
+# modules are frameworks, their headers inside them rather than in include/.
 set(qt_headers "${QT6_INSTALL_PREFIX}/${QT6_INSTALL_HEADERS}/QtGui")
+set(qt_framework_headers "${QT6_INSTALL_PREFIX}/${QT6_INSTALL_LIBS}/QtGui.framework/Headers")
 if(NOT EXISTS "${qt_headers}/rhi/qrhi.h" AND
-   NOT EXISTS "${qt_headers}/${Qt6Gui_VERSION}/QtGui/rhi/qrhi.h")
+   NOT EXISTS "${qt_headers}/${Qt6Gui_VERSION}/QtGui/rhi/qrhi.h" AND
+   NOT EXISTS "${qt_framework_headers}/rhi/qrhi.h")
     set(Qt6GuiPrivate_FOUND FALSE)
 endif()
 
-if(NOT Qt6Quick_FOUND OR NOT Qt6ShaderTools_FOUND OR NOT Qt6GuiPrivate_FOUND OR
-   NOT Qt6Network_FOUND)
+set(qt_missing)
+foreach(component IN ITEMS Quick ShaderTools GuiPrivate Network)
+    if(NOT Qt6${component}_FOUND)
+        list(APPEND qt_missing ${component})
+    endif()
+endforeach()
+if(qt_missing)
+    list(JOIN qt_missing ", " qt_missing)
     message(WARNING
-        "Qt 6.6+ with Qt Quick, Qt Shader Tools and QtGui's private headers not found: "
-        "skipping the desktop app.\n"
+        "Qt 6.6+ with Qt Quick, Qt Shader Tools and QtGui's private headers not found "
+        "(${qt_missing}): skipping the desktop app.\n"
         "Install them (Debian/Ubuntu: qt6-declarative-dev qt6-shadertools-dev "
         "qt6-base-private-dev; the Qt installer: the Qt Shader Tools module) or configure "
         "with -DRATCAST_BUILD_APP=OFF to silence this.")
