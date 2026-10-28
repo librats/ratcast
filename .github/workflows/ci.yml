@@ -110,10 +110,11 @@ jobs:
           key: vcpkg-arm64-osx-${{ hashFiles('cmake/vcpkg-ports/**') }}
 
       # Qt first: its action sets up Python, which replaces PKG_CONFIG_PATH,
-      # so vcpkg's folder is added to what it leaves.
+      # so vcpkg's folder is added to what it leaves. The release's Qt (6.8
+      # links AGL, which Xcode 26's SDK has no longer).
       - uses: jurplel/install-qt-action@v4
         with:
-          version: '6.8.*'
+          version: '6.10.*'
           modules: 'qtshadertools'
           cache: true
 

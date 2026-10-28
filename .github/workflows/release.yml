@@ -464,6 +464,18 @@ jobs:
             echo "Frameworks/:"; ls "$app/Contents/Frameworks"
             exit 1
           fi
+          # Run paths the bundle's own: one left where it was built would load
+          # what a Mac keeps there instead.
+          foreign=""
+          while IFS= read -r -d '' binary; do
+            while read -r rpath; do
+              [[ "$rpath" == @executable_path/* || "$rpath" == @loader_path/* ]] ||
+                foreign+="${binary#"$app"/}: $rpath"$'\n'
+            done < <(otool -l "$binary" 2> /dev/null | awk '/cmd LC_RPATH/ { getline; getline; print $2 }')
+          done < <(find "$app/Contents" -type f \( -perm -u+x -o -name '*.dylib' \) -print0)
+          if [[ -n "$foreign" ]]; then
+            echo "::error::Run paths outside the bundle:"; printf '%s' "$foreign" | sort -u; exit 1
+          fi
 
           avcodec=$(ls "$app"/Contents/Frameworks/libavcodec*.dylib | head -n 1)
           [[ -n "$avcodec" ]] || { echo "::error::No libavcodec in the bundle"; exit 1; }

@@ -144,8 +144,11 @@ if(WIN32)
     install(SCRIPT "${deploy_script}")
 elseif(APPLE)
     # Into the bundle (macdeployqt): Qt's frameworks, plugins and QML modules,
-    # and the libraries the app links — FFmpeg's and the codecs', found where
-    # vcpkg or the prefixes searched keep them, as they are linked by @rpath.
+    # and the libraries the app links — FFmpeg's and the codecs', linked by
+    # @rpath. macdeployqt finds those through the binary's own run paths, which
+    # an install would strip: the installed app keeps the folders it linked
+    # from, and macdeployqt swaps each it used for the bundle's Frameworks/.
+    set_target_properties(ratcast_app PROPERTIES INSTALL_RPATH_USE_LINK_PATH TRUE)
     set(library_paths)
     if(VCPKG_INSTALLED_DIR AND VCPKG_TARGET_TRIPLET)
         list(APPEND library_paths "-libpath=${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/lib")
