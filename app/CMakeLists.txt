@@ -12,13 +12,19 @@ set(QT_NO_PRIVATE_MODULE_WARNING ON)
 find_package(Qt6 6.6 QUIET COMPONENTS Quick ShaderTools GuiPrivate Network)
 
 # Debian ships GuiPrivate's CMake package with qt6-base-dev and its headers with
-# qt6-base-private-dev: found, it may still have no QRhi header. On macOS Qt's
-# modules are frameworks, their headers inside them rather than in include/.
-set(qt_headers "${QT6_INSTALL_PREFIX}/${QT6_INSTALL_HEADERS}/QtGui")
-set(qt_framework_headers "${QT6_INSTALL_PREFIX}/${QT6_INSTALL_LIBS}/QtGui.framework/Headers")
-if(NOT EXISTS "${qt_headers}/rhi/qrhi.h" AND
-   NOT EXISTS "${qt_headers}/${Qt6Gui_VERSION}/QtGui/rhi/qrhi.h" AND
-   NOT EXISTS "${qt_framework_headers}/rhi/qrhi.h")
+# qt6-base-private-dev: found, it may still have no QRhi header. It is among
+# the public headers or the private ones (under the version), in include/ or,
+# on macOS, where Qt's modules are frameworks, inside QtGui's.
+set(qrhi_found FALSE)
+foreach(headers IN ITEMS
+        "${QT6_INSTALL_PREFIX}/${QT6_INSTALL_HEADERS}/QtGui"
+        "${QT6_INSTALL_PREFIX}/${QT6_INSTALL_LIBS}/QtGui.framework/Headers")
+    if(EXISTS "${headers}/rhi/qrhi.h" OR
+       EXISTS "${headers}/${Qt6Gui_VERSION}/QtGui/rhi/qrhi.h")
+        set(qrhi_found TRUE)
+    endif()
+endforeach()
+if(NOT qrhi_found)
     set(Qt6GuiPrivate_FOUND FALSE)
 endif()
 
