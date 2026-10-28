@@ -233,7 +233,8 @@ TEST_F(DataPipelineTest, TheFeedComesOutAsItWentInWhateverTheReads) {
         input_.read(std::span(feed).subspan(at, std::min<size_t>(1000, feed.size() - at)));
     }
     input_.quiet();  // the last four packets go
-    ASSERT_TRUE(eventually([&] { return output_.bytes().size() >= feed.size(); }));
+    // Counted once written: waiting for the output alone, the count may lag.
+    ASSERT_TRUE(eventually([&] { return player_->stats().bytes >= feed.size(); }));
     EXPECT_EQ(output_.bytes(), feed);
 
     const DataPublisherStats sent = publisher_->stats();
