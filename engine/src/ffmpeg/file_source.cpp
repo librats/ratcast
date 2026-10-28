@@ -21,6 +21,7 @@ extern "C" {
 }
 
 #include "librats/util/logger.h"
+#include "ratcast/engine/real_time.h"
 
 namespace ratcast {
 namespace {
@@ -99,6 +100,7 @@ public:
 
 private:
     void play(const std::stop_token& stop, const Sink& sink, const EndHandler& ended) {
+        keep_time_on_this_thread();
         Result<void> outcome = rewind();
         // Where file time `origin_pts` falls on the steady clock; every
         // picture is due that far after it.

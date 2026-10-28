@@ -134,6 +134,13 @@ else()
     target_sources(ratcast_engine PRIVATE src/sleeper.cpp)
 endif()
 
+# Threads that keep time: macOS lets other threads' timers end late.
+if(APPLE)
+    target_sources(ratcast_engine PRIVATE src/macos/real_time.cpp)
+else()
+    target_sources(ratcast_engine PRIVATE src/real_time.cpp)
+endif()
+
 if(UNIX)
     target_sources(ratcast_engine PRIVATE src/posix/ts_io.cpp)
 elseif(WIN32)

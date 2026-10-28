@@ -4,6 +4,7 @@
 #include <utility>
 
 #include "librats/util/logger.h"
+#include "ratcast/engine/real_time.h"
 
 namespace ratcast {
 
@@ -105,6 +106,8 @@ VideoPlayerStats VideoPlayer::stats() const {
 }
 
 void VideoPlayer::run() {
+    // Each picture is shown when it is due: the waits for it must end then.
+    keep_time_on_this_thread();
     for (;;) {
         std::optional<Arrival> arrival;
         std::optional<StreamDescription> description;

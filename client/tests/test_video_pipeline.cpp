@@ -19,6 +19,7 @@
 #include "ratcast/client/video_player.h"
 #include "ratcast/client/video_publisher.h"
 #include "ratcast/engine/pattern_source.h"
+#include "ratcast/engine/real_time.h"
 
 using namespace ratcast;
 using namespace std::chrono_literals;
@@ -317,6 +318,8 @@ TEST_F(VideoPipelineTest, PlaysEvenlyPastFramesThatCameLate) {
             encoded[i].push_back({v.info, Buffer::copy_of(v.payload.bytes())});
         }));
     }
+    // Fed in time, as the path would: these waits must end when due too.
+    keep_time_on_this_thread();
     const Timestamp start = SteadyClock::instance().now();
     Timestamp held_until{};
     for (uint64_t i = 0; i < encoded.size(); ++i) {

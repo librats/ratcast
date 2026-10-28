@@ -24,6 +24,7 @@
 #include <vector>
 
 #include "librats/util/logger.h"
+#include "sleeper.h"
 #include "ts/pcr_pacer.h"
 #include "ts/ts_url.h"
 
@@ -283,6 +284,7 @@ private:
         using std::chrono::steady_clock;
         constexpr size_t kBlock = kPacketsPerDatagram * kTsPacketSize;
         PcrPacer pacer;
+        Sleeper sleeper;
         std::array<uint8_t, kBlock> block{};
         const steady_clock::time_point start = steady_clock::now();
         std::optional<steady_clock::time_point> quiet_at;  // until the sink is told
@@ -316,7 +318,7 @@ private:
                     quiet_at.reset();
                 }
                 if (!running() || now >= when) break;
-                std::this_thread::sleep_until(std::min({when, quiet_at.value_or(when), now + 5ms}));
+                sleeper.until(std::min({when, quiet_at.value_or(when), now + 5ms}));
             }
             if (!running()) return {};
             // Quiet from when the block went, however long the sink kept it.
