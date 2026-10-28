@@ -91,9 +91,9 @@ jobs:
   # Silicon, VideoToolbox's encoders on its own API. FFmpeg, Opus and SDL3 from
   # Homebrew; WebRTC's AudioProcessing, which Homebrew has not, through vcpkg's
   # overlay port. The runner has no sound device of its own: BlackHole, a
-  # loopback one, is installed, which the sound tests play to and hear from
-  # (the leave to hear other applications they may not have: those skip). No
-  # camera or screen recording leave: those tests skip.
+  # loopback one, is installed, which the sound tests play to and hear from,
+  # the other applications' sound too (its leave given as the microphone's).
+  # No camera or screen recording leave: those tests skip.
   macos-media:
     name: macos-latest · Release · media and app
     runs-on: macos-latest
@@ -127,6 +127,25 @@ jobs:
             --triplet arm64-osx --x-install-root="$GITHUB_WORKSPACE/vcpkg-installed"
           echo "PKG_CONFIG_PATH=$GITHUB_WORKSPACE/vcpkg-installed/arm64-osx/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}" \
             >> "$GITHUB_ENV"
+
+      # The leave to hear other applications (a process tap, macOS 14.2) given
+      # where the image gives the microphone's: asked for instead, nobody
+      # answers, and each tap waits three minutes to be refused. The rows are
+      # copied whole, whatever columns this macOS's table has.
+      - name: Let the tests hear other applications
+        run: |
+          for db in "$HOME/Library/Application Support/com.apple.TCC/TCC.db" \
+                    "/Library/Application Support/com.apple.TCC/TCC.db"; do
+            echo "$db:"
+            sudo sqlite3 "$db" "
+              CREATE TEMP TABLE leave AS SELECT * FROM access WHERE service = 'kTCCServiceMicrophone';
+              UPDATE leave SET service = 'kTCCServiceAudioCapture';
+              INSERT OR REPLACE INTO access SELECT * FROM leave;
+              SELECT service, client, auth_value FROM access
+                WHERE service IN ('kTCCServiceMicrophone', 'kTCCServiceAudioCapture');" ||
+              echo "::warning::cannot change $db"
+          done
+          sudo killall tccd || true
 
       # Core Audio loads a device's driver as it starts.
       - name: Install a loopback sound device
