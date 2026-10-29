@@ -892,6 +892,17 @@ std::optional<double> MediaSession::Copies::per_most(std::optional<uint64_t> upl
     return double(*uplink) * SharedUplink::kCopies / weight;
 }
 
+std::vector<PeerId> MediaSession::viewers(StreamId stream_id) const {
+    std::vector<PeerId> viewers;
+    const std::shared_ptr<OutgoingStream> stream = find_outgoing(stream_id);
+    if (!stream) return viewers;
+    std::lock_guard lock(stream->mutex);
+    for (const Copy& copy : stream->fanout.copies) {
+        if (!copy.peer->is_forwarder()) viewers.push_back(copy.peer->id);
+    }
+    return viewers;
+}
+
 std::optional<OutgoingStreamStats> MediaSession::outgoing_stats(StreamId stream_id) const {
     const std::shared_ptr<OutgoingStream> stream = find_outgoing(stream_id);
     if (!stream) return std::nullopt;

@@ -142,6 +142,12 @@ public:
 /// FFmpeg has none.
 Result<std::unique_ptr<VideoDecoder>> open_video_decoder(const VideoDecoderConfig& config);
 
+/// The video codecs this device decodes a share of as it comes, best first:
+/// what its Presence tells senders (Presence::decodes). On Android those its
+/// hardware decodes — a phone's processors fall behind on 1080p60 in
+/// software; elsewhere every one there is a decoder for. Found once.
+std::vector<Codec> live_video_decoders();
+
 // ── Logging ─────────────────────────────────────────────────────────────────
 
 /// What the codec libraries print themselves: only fatal errors (the default

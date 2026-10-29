@@ -13,6 +13,9 @@ namespace {
 /// picture (a compositor sends only what changes).
 constexpr auto kStillAfter = std::chrono::milliseconds(100);
 
+/// How often the viewers are looked at between keyframes, for what they decode.
+constexpr auto kViewersEvery = std::chrono::seconds(1);
+
 /// The GPU whose memory `picture` is in, if any.
 std::shared_ptr<GpuDevice> device_of(const VideoFrame& picture) {
     return picture.gpu() ? picture.gpu()->device() : nullptr;
@@ -20,8 +23,22 @@ std::shared_ptr<GpuDevice> device_of(const VideoFrame& picture) {
 
 }  // namespace
 
+Codec codec_for_viewers(Codec preferred, std::span<const std::vector<Codec>> viewers,
+                        std::span<const Codec> unusable) {
+    const auto all_decode = [&](Codec codec) {
+        return std::ranges::find(unusable, codec) == unusable.end() &&
+               std::ranges::all_of(viewers, [&](const std::vector<Codec>& decodes) {
+                   return std::ranges::find(decodes, codec) != decodes.end();
+               });
+    };
+    for (const Codec codec : {preferred, Codec::AV1, Codec::H265, Codec::H264}) {
+        if (all_decode(codec)) return codec;
+    }
+    return preferred;
+}
+
 VideoPublisher::VideoPublisher(MediaSession& session, VideoPublisherConfig config, Clock& clock)
-    : session_(session), config_(std::move(config)), clock_(clock) {}
+    : session_(session), config_(std::move(config)), clock_(clock), codec_(config_.encoder.codec) {}
 
 VideoPublisher::~VideoPublisher() { stop(); }
 
@@ -167,11 +184,23 @@ void VideoPublisher::run() {
 }
 
 Result<void> VideoPublisher::publish(VideoFrame picture, bool keyframe) {
+    follow_viewers(keyframe);
     if (!encoder_ || picture.width() != encoder_config_.width ||
         picture.height() != encoder_config_.height ||
         picture.color_space() != encoder_config_.color_space ||
-        device_of(picture) != encoder_config_.device) {
-        if (Result<void> opened = open_encoder(picture); !opened) return opened;
+        device_of(picture) != encoder_config_.device || codec_ != encoder_config_.codec) {
+        Result<void> opened = open_encoder(picture);
+        if (!opened && codec_ != config_.encoder.codec) {
+            // No encoder of the codec the viewers decode: the configured one,
+            // decoded as each can, and never that codec again.
+            LOG_WARN("client", "stream " << config_.stream << ": no encoder for "
+                                         << to_string(codec_) << ", back to "
+                                         << to_string(config_.encoder.codec));
+            unusable_.push_back(codec_);
+            codec_ = config_.encoder.codec;
+            opened = open_encoder(picture);
+        }
+        if (!opened) return opened;
     }
     if (const uint32_t bitrate = bitrate_.load(std::memory_order_relaxed);
         bitrate != encoder_config_.bitrate) {
@@ -203,6 +232,27 @@ Result<void> VideoPublisher::publish(VideoFrame picture, bool keyframe) {
     return {};
 }
 
+/// The codec its viewers all decode as they come, looked for with a keyframe
+/// (`now`: a viewer joining asks for one) or once kViewersEvery has passed.
+void VideoPublisher::follow_viewers(bool now) {
+    if (!config_.follow_viewers || !config_.encoder.encoder.empty()) return;
+    const Timestamp at = clock_.now();
+    if (!now && viewers_seen_ && at - *viewers_seen_ < kViewersEvery) return;
+    viewers_seen_ = at;
+
+    std::vector<std::vector<Codec>> decodes;
+    for (const PeerId& viewer : session_.viewers(config_.stream)) {
+        std::optional<Presence> presence = session_.presence(viewer);
+        if (presence && !presence->decodes.empty()) decodes.push_back(std::move(presence->decodes));
+    }
+    if (decodes.empty()) return;  // nobody says: as it is
+    const Codec codec = codec_for_viewers(config_.encoder.codec, decodes, unusable_);
+    if (codec == codec_) return;
+    LOG_INFO("client", "stream " << config_.stream << ": " << to_string(codec)
+                                 << ", which its viewers all decode as it comes");
+    codec_ = codec;
+}
+
 Result<void> VideoPublisher::open_encoder(const VideoFrame& picture) {
     if (encoder_) {
         // What the old encoder still holds belongs before the new one's frames.
@@ -211,6 +261,7 @@ Result<void> VideoPublisher::open_encoder(const VideoFrame& picture) {
     }
 
     VideoEncoderConfig config = config_.encoder;
+    config.codec = codec_;
     config.width = picture.width();
     config.height = picture.height();
     config.color_space = picture.color_space();

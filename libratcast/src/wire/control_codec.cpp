@@ -65,6 +65,8 @@ void write(Out& out, const PresenceUpdate& update) {
     out.u8(message_prefix(MessageKind::Presence));
     write_text(out, p.name);
     out.u8(static_cast<uint8_t>((p.muted ? kMuted : 0) | (p.deafened ? kDeafened : 0)));
+    out.varint(p.decodes.size());
+    for (const Codec codec : p.decodes) out.u8(static_cast<uint8_t>(codec));
 }
 
 // Times go as the bits of their microseconds: a probe's comes back as it went.
@@ -353,6 +355,14 @@ Result<ControlMessage> read_presence(Reader& in) {
     if (!in.ok()) return fail(in.error());
     p.muted = flags & kMuted;
     p.deafened = flags & kDeafened;
+    const uint64_t codecs = in.varint();
+    if (!in.ok()) return fail(in.error());
+    for (uint64_t i = 0; i < codecs && in.ok(); ++i) {
+        // A codec a later build knows of and this one does not is left out.
+        const auto codec = static_cast<Codec>(in.u8());
+        if (media_kind_of(codec) == MediaKind::Video) p.decodes.push_back(codec);
+    }
+    if (!in.ok()) return fail(in.error());
     if (!is_valid(p)) return fail(Errc::Malformed);
     return ControlMessage{PresenceUpdate{std::move(p)}};
 }

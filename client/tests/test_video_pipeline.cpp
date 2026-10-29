@@ -241,6 +241,59 @@ TEST_F(VideoPipelineTest, FollowsTheSourceToANewSize) {
     EXPECT_EQ(announced_.back().video()->height, 360u);
 }
 
+TEST_F(VideoPipelineTest, CodesInWhatItsViewerDecodesAsItComes) {
+    VideoEncoderConfig probe;
+    probe.codec = Codec::H264;
+    probe.width = 320;
+    probe.height = 240;
+    if (!open_video_encoder(probe)) GTEST_SKIP() << "no H.264 encoder here";
+    // A phone: AV1 in software only.
+    ASSERT_TRUE(receiver_->set_presence({.decodes = {Codec::H265, Codec::H264}}));
+
+    ASSERT_TRUE(publisher_->start(pattern_));
+    play();
+    ASSERT_TRUE(eventually([&] {
+        std::lock_guard lock(mutex_);
+        return announced_.back().codec != Codec::AV1;
+    }));
+    const Codec codec = [&] {
+        std::lock_guard lock(mutex_);
+        return announced_.back().codec;
+    }();
+    // H.265 where there is an encoder for it, H.264 otherwise.
+    EXPECT_TRUE(codec == Codec::H265 || codec == Codec::H264) << to_string(codec);
+    const uint64_t before = player_->stats().pictures;
+    ASSERT_TRUE(eventually([&] { return player_->stats().pictures >= before + 10; }));
+    EXPECT_EQ(publisher_->stats().encoders, 2u) << "AV1 before the viewer, then its codec";
+}
+
+TEST(CodecForViewers, KeepsThePreferredWhereAllDecodeIt) {
+    const std::vector<std::vector<Codec>> desktops = {{Codec::AV1, Codec::H265, Codec::H264},
+                                                      {Codec::AV1, Codec::H264}};
+    EXPECT_EQ(codec_for_viewers(Codec::AV1, desktops), Codec::AV1);
+    EXPECT_EQ(codec_for_viewers(Codec::H264, desktops), Codec::H264);
+}
+
+TEST(CodecForViewers, TakesTheBestAllDecode) {
+    const std::vector<std::vector<Codec>> with_a_phone = {{Codec::AV1, Codec::H265, Codec::H264},
+                                                          {Codec::H265, Codec::H264}};
+    EXPECT_EQ(codec_for_viewers(Codec::AV1, with_a_phone), Codec::H265);
+    const std::vector<std::vector<Codec>> with_an_old_phone = {{Codec::H265, Codec::H264},
+                                                               {Codec::H264}};
+    EXPECT_EQ(codec_for_viewers(Codec::AV1, with_an_old_phone), Codec::H264);
+}
+
+TEST(CodecForViewers, PassesOverACodecNoEncoderOpenedFor) {
+    const std::vector<std::vector<Codec>> phone = {{Codec::H265, Codec::H264}};
+    EXPECT_EQ(codec_for_viewers(Codec::AV1, phone, std::vector{Codec::H265}), Codec::H264);
+}
+
+TEST(CodecForViewers, KeepsThePreferredWhereNoneIsDecodedByAll) {
+    const std::vector<std::vector<Codec>> apart = {{Codec::H265}, {Codec::H264}};
+    EXPECT_EQ(codec_for_viewers(Codec::AV1, apart), Codec::AV1);
+    EXPECT_EQ(codec_for_viewers(Codec::AV1, {}), Codec::AV1) << "nobody to follow";
+}
+
 TEST_F(VideoPipelineTest, KeepsOnlyTheNewestPictureWhenTheEncoderIsBusy) {
     std::vector<VideoFrame> burst;
     for (uint64_t i = 0; i < 40; ++i) burst.push_back(picture(i));

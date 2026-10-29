@@ -15,6 +15,17 @@ std::optional<MediaKind> media_kind_of(Codec codec) noexcept {
     return std::nullopt;
 }
 
+const char* to_string(Codec codec) noexcept {
+    switch (codec) {
+        case Codec::H264: return "H.264";
+        case Codec::H265: return "H.265";
+        case Codec::AV1: return "AV1";
+        case Codec::Opus: return "Opus";
+        case Codec::MpegTs: return "MPEG-TS";
+    }
+    return "an unknown codec";
+}
+
 bool operator==(const StreamDescription& a, const StreamDescription& b) noexcept {
     return a.id == b.id && a.codec == b.codec && a.format == b.format && a.lifetime == b.lifetime &&
            a.label == b.label && std::ranges::equal(a.codec_config.bytes(), b.codec_config.bytes());

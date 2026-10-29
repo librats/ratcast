@@ -51,6 +51,9 @@ enum class Codec : uint8_t {
 /// name.
 RATCAST_EXPORT std::optional<MediaKind> media_kind_of(Codec codec) noexcept;
 
+/// `codec` as people name it, e.g. "H.264".
+RATCAST_EXPORT const char* to_string(Codec codec) noexcept;
+
 struct VideoFormat {
     uint32_t width = 0;
     uint32_t height = 0;

@@ -50,8 +50,10 @@ What to send:
                        standard input, or a .ts file (played in real time)
 
 How:
-  --codec av1|h265|h264   default: av1
-  --encoder NAME       a particular FFmpeg encoder (default: the best there is)
+  --codec av1|h265|h264   default: av1; one the viewers all decode as it comes in its
+                       place where they do not (a phone: H.265 or H.264)
+  --encoder NAME       a particular FFmpeg encoder (default: the best there is), and
+                       its codec whatever the viewers decode
   --software           no hardware encoders
   --no-gpu             the screen's pictures through memory, converted on the CPU,
                        even where the GPU could hand them to the encoder itself

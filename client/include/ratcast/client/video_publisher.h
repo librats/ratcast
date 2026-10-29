@@ -15,7 +15,11 @@
  * one — the last picture again.
  *
  * A change of size or colour space starts a new encoder, with a keyframe;
- * frame numbers carry on, so receivers see one stream throughout.
+ * frame numbers carry on, so receivers see one stream throughout. So does a
+ * change of codec: the stream is coded in one its viewers all decode as it
+ * comes (what their Presence says) — a phone among them, which decodes AV1
+ * in software only, has it in H.265 or H.264 — looked at with every keyframe
+ * (a viewer joining asks for one) and every second.
  *
  * The stream is rate-controlled unless configured otherwise: the session
  * follows the paths to the viewers and the publisher hands the bitrate it
@@ -29,8 +33,10 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <span>
 #include <string>
 #include <thread>
+#include <vector>
 
 #include "ratcast/core/result.h"
 #include "ratcast/core/time.h"
@@ -56,7 +62,19 @@ struct VideoPublisherConfig {
     bool rate_control = true;
     uint32_t start_bitrate = 2'000'000;
     uint32_t min_bitrate = 250'000;
+    /// The codec follows the viewers (codec_for_viewers()), encoder.codec the
+    /// one they are held to when they allow it. False, or an encoder named:
+    /// encoder.codec always.
+    bool follow_viewers = true;
 };
+
+/// The codec to code a stream in for viewers who each decode `viewers[i]` as
+/// it comes: `preferred` if they all do, otherwise the first of AV1, H.265
+/// and H.264 that they all do, never one `unusable` (no encoder opened for
+/// it); `preferred` when none is decoded by all, as each then decodes as it
+/// can. A viewer that said nothing is not among them.
+Codec codec_for_viewers(Codec preferred, std::span<const std::vector<Codec>> viewers,
+                        std::span<const Codec> unusable = {});
 
 struct VideoPublisherStats {
     uint64_t pictures = 0;  ///< from the source
@@ -66,8 +84,8 @@ struct VideoPublisherStats {
     uint64_t keyframes = 0;
     uint64_t bytes = 0;           ///< of those frames
     uint64_t keyframe_bytes = 0;  ///< of the keyframes among them
-    uint64_t encoders = 0;        ///< opened: one, and one more per change of size or colours
-    uint64_t errors = 0;          ///< pictures the encoder failed on
+    uint64_t encoders = 0;  ///< opened: one, and one more per change of size, colours or codec
+    uint64_t errors = 0;    ///< pictures the encoder failed on
     Duration encode_time{};
     Duration max_encode_time{};
     uint32_t width = 0;  ///< of the pictures now
@@ -114,6 +132,7 @@ private:
     void run();
     Result<void> publish(VideoFrame picture, bool keyframe);
     Result<void> open_encoder(const VideoFrame& picture);
+    void follow_viewers(bool now);
     std::optional<BitrateLimits> bitrate_limits() const;
     void send(EncodedVideo&& frame);
 
@@ -143,7 +162,10 @@ private:
     Timestamp last_encoded_at_{};  ///< on clock_, when last_ went to the encoder
     std::optional<StreamDescription> announced_;
     FrameNumber next_number_ = 0;
-    FrameNumber number_offset_ = 0;  ///< added to the current encoder's frame numbers
+    FrameNumber number_offset_ = 0;          ///< added to the current encoder's frame numbers
+    Codec codec_;                            ///< what the viewers have it coded in
+    std::vector<Codec> unusable_;            ///< codecs no encoder opened for
+    std::optional<Timestamp> viewers_seen_;  ///< on clock_, when follow_viewers() last looked
 
     mutable std::mutex stats_mutex_;
     VideoPublisherStats stats_;

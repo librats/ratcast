@@ -19,7 +19,8 @@
  *   Unsubscribe       prefix, varint stream
  *   KeyframeRequest   prefix, varint stream
  *   PresenceUpdate    prefix, varint name length + name,
- *                     u8 flags (bit 0 muted, bit 1 deafened)
+ *                     u8 flags (bit 0 muted, bit 1 deafened),
+ *                     varint codecs + u8 each: the video codecs it decodes
  *   ClockProbe        prefix, varint sent (µs, the prober's clock)
  *   ClockEcho         prefix, varint the probe's sent, varint at (µs, the
  *                     echoer's capture clock)

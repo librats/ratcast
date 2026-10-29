@@ -1621,10 +1621,19 @@ a desktop, the call held while the app is in the background.
   `QDesktopServices`' handler, `app/src/main.cpp`), cold or while it runs; the screen kept on
   by a wake lock (`screen_awake.cpp`, through `ratcast::android::attach()`: the Java VM and
   the Context the app gives the engine as it starts); the data directory in the application's
-  own storage; the updater off (`RATCAST_UPDATES` is the release packages'). Left: a phone; a
-  share's codec chosen by what its viewers decode in hardware — a desktop shares AV1, which
-  most phones decode only in software; pictures handed out while the decoder works on the
-  next (one waited for at a time caps 1080p at ~69 fps here).
+  own storage; the updater off (`RATCAST_UPDATES` is the release packages'). A share coded in
+  what its viewers decode as it comes: each side's Presence says which video codecs it decodes
+  so (`Presence::decodes`, from `live_video_decoders()`: on Android its hardware's, elsewhere
+  every one there is a decoder for; told by a `Call` that plays pictures from the start), and
+  `VideoPublisher` codes in the configured codec while its viewers (`MediaSession::viewers()`)
+  all decode it, otherwise in the first of AV1, H.265 and H.264 they all do
+  (`codec_for_viewers()`), looked at with each keyframe — a viewer joining asks for one — and
+  every second, a new encoder with a keyframe when it changes; a codec no encoder opens for is
+  passed over; a viewer that says nothing (a server) holds it to nothing; `--encoder` or
+  `follow_viewers = false` keep it. A desktop sharing to the Android device above went from
+  av1_nvenc to hevc_nvenc as it joined: 60 fps in its hardware, against 21 in dav1d. Left: a
+  phone; viewers behind a forwarder (a server) are not seen by the sender; pictures handed out
+  while the decoder works on the next (one waited for at a time caps 1080p at ~69 fps here).
 - **13.3 Talking**: the microphone through AAudio (the voice-communication preset;
   `RECORD_AUDIO` asked for through Qt's `QPermission`), the AudioProcessor hearing the speaker
   as now (Android gives no other application's sound to cancel); the platform's own echo

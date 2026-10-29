@@ -304,7 +304,29 @@ private:
     uint64_t pictures_ = 0;
 };
 
+/// The name of the decoder the device picks for `mime`, made to be asked.
+std::string default_decoder(const char* mime) {
+    std::string name;
+    AMediaCodec* codec = AMediaCodec_createDecoderByType(mime);
+    if (!codec) return name;
+    if (char* own = nullptr; AMediaCodec_getName(codec, &own) == AMEDIA_OK && own) {
+        name = own;
+        AMediaCodec_releaseName(codec, own);
+    }
+    AMediaCodec_delete(codec);
+    return name;
+}
+
 }  // namespace
+
+std::vector<Codec> hardware_video_decoders() {
+    std::vector<Codec> codecs;
+    for (const Codec codec : {Codec::AV1, Codec::H265, Codec::H264}) {
+        const std::string name = default_decoder(mime_of(codec));
+        if (!name.empty() && !is_software(name)) codecs.push_back(codec);
+    }
+    return codecs;
+}
 
 Result<std::unique_ptr<VideoDecoder>> open_mediacodec_decoder(const VideoDecoderConfig& config) {
     const char* mime = mime_of(config.codec);

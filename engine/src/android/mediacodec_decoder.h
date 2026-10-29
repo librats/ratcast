@@ -14,6 +14,7 @@
  */
 
 #include <memory>
+#include <vector>
 
 #include "ratcast/core/result.h"
 #include "ratcast/engine/video_codec.h"
@@ -22,5 +23,8 @@ namespace ratcast::android {
 
 /// A hardware decoder of `config.codec`; Unavailable where the device has none.
 Result<std::unique_ptr<VideoDecoder>> open_mediacodec_decoder(const VideoDecoderConfig& config);
+
+/// The video codecs the device has a hardware decoder for, best first.
+std::vector<Codec> hardware_video_decoders();
 
 }  // namespace ratcast::android

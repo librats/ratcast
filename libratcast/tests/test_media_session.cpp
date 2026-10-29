@@ -976,6 +976,23 @@ TEST_F(MediaSessionTest, APresenceIsToldToEveryPeerNowAndAsTheyConnect) {
     EXPECT_EQ(receiver.presences.size(), 2u);
 }
 
+TEST_F(MediaSessionTest, APresenceTellsWhatItsPeerDecodes) {
+    const Presence phone{"Ann", false, false, {Codec::H265, Codec::H264}};
+    ASSERT_TRUE(receiver.session.set_presence(phone));
+    hub.deliver_all();
+    EXPECT_EQ(sender.session.presence(receiver.id), phone);
+}
+
+TEST_F(MediaSessionTest, AStreamsViewersAreItsSubscribers) {
+    EXPECT_TRUE(sender.session.viewers(2).empty()) << "not offered";
+    EXPECT_TRUE(sender.session.viewers(1).empty()) << "offered, watched by nobody";
+    subscribe(receiver);
+    EXPECT_EQ(sender.session.viewers(1), std::vector{receiver.id});
+    receiver.session.unsubscribe(sender.id, 1);
+    hub.deliver_all();
+    EXPECT_TRUE(sender.session.viewers(1).empty());
+}
+
 TEST_F(MediaSessionTest, APresenceIsToldAgainWhenALinkLostARace) {
     ASSERT_TRUE(sender.session.set_presence({"Ann"}));
     hub.queue.clear();  // went with the link that lost

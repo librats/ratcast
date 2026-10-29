@@ -766,6 +766,26 @@ TEST_F(CallTest, EachSaysWhoItIs) {
               Errc::InvalidArgument);
 }
 
+TEST_F(CallTest, ASideThatPlaysPicturesSaysWhatItDecodes) {
+    Side host;
+    host.start(room(), false, false);
+    Side guest;
+    CallConfig config = room(RatsUrl{host.address()});
+    config.playback.decodes = std::vector{Codec::H264};  // a phone's, of an older kind
+    guest.start(std::move(config));
+    ASSERT_TRUE(wait_for([&] {
+        const std::optional<Presence> said = host->presence(guest->id());
+        return said && said->decodes == std::vector{Codec::H264};
+    }));
+    // And keeps saying it under a name.
+    ASSERT_TRUE(guest->set_presence({"Bob"}));
+    ASSERT_TRUE(wait_for([&] {
+        const std::optional<Presence> said = host->presence(guest->id());
+        return said && said->name == "Bob";
+    }));
+    EXPECT_EQ(host->presence(guest->id())->decodes, std::vector{Codec::H264});
+}
+
 TEST_F(CallTest, InARoomEveryoneMeetsEveryoneWhoeverTheyJoinThrough) {
     Side host;
     host.start(room(), /*pictures=*/false, /*camera=*/false);

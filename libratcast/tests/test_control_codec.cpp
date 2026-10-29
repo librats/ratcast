@@ -135,8 +135,24 @@ TEST(ControlCodec, RoundTripsPresence) {
     }
 }
 
+TEST(ControlCodec, RoundTripsWhatAPresenceDecodes) {
+    const Presence phone{"Ann", false, false, {Codec::H265, Codec::H264}};
+    EXPECT_EQ(round_trip(PresenceUpdate{phone}).presence, phone);
+}
+
+TEST(ControlCodec, LeavesOutACodecAPresenceDecodesThatItDoesNotKnow) {
+    std::vector<uint8_t> bytes = {
+        message_prefix(MessageKind::Presence), 0, 0, 3, static_cast<uint8_t>(Codec::AV1), 99,
+        static_cast<uint8_t>(Codec::H264)};
+    const Result<ControlMessage> decoded = decode_control(bytes);
+    ASSERT_TRUE(decoded);
+    EXPECT_EQ(std::get<PresenceUpdate>(*decoded).presence.decodes,
+              (std::vector{Codec::AV1, Codec::H264}));
+}
+
 TEST(ControlCodec, EveryCutOfAPresenceIsTruncated) {
-    const auto bytes = bytes_of(encode_control(PresenceUpdate{{"Анна", true, false}}));
+    const auto bytes =
+        bytes_of(encode_control(PresenceUpdate{{"Анна", true, false, {Codec::H264}}}));
     for (size_t cut = 0; cut < bytes.size(); ++cut) {
         EXPECT_EQ(decode_error({bytes.begin(), bytes.begin() + static_cast<ptrdiff_t>(cut)}),
                   Errc::Truncated)
@@ -150,6 +166,7 @@ TEST(ControlCodec, RefusesANameThatIsNoName) {
                                       static_cast<uint8_t>(name.size())};
         bytes.insert(bytes.end(), name.begin(), name.end());
         bytes.push_back(0);  // flags
+        bytes.push_back(0);  // no codecs
         return bytes;
     };
     EXPECT_EQ(decode_error(with_name({'a', 0xFF, 'b'})), Errc::Malformed);  // not UTF-8

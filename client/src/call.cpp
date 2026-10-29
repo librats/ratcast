@@ -73,21 +73,10 @@ bool invitable(std::string_view address) {
 
 bool is_ipv6(std::string_view address) { return address.find(':') != std::string_view::npos; }
 
-const char* codec_name(Codec codec) {
-    switch (codec) {
-        case Codec::H264: return "H.264";
-        case Codec::H265: return "H.265";
-        case Codec::AV1: return "AV1";
-        case Codec::Opus: return "Opus";
-        case Codec::MpegTs: return "MPEG-TS";
-    }
-    return "an unknown codec";
-}
-
 /// A stream as the log names it: its label, number, codec and size.
 std::string described(const StreamDescription& description) {
     std::string text = (description.label.empty() ? "stream" : description.label) + " " +
-                       std::to_string(description.id) + " (" + codec_name(description.codec);
+                       std::to_string(description.id) + " (" + to_string(description.codec);
     if (const VideoFormat* video = description.video()) {
         text += ", " + std::to_string(video->width) + "x" + std::to_string(video->height);
     }
@@ -199,6 +188,10 @@ Call::Call(CallConfig config, CallHandlers handlers)
         SessionConfig{.capture_clock = config_.capture_clock,
                       .relays = config_.relays,
                       .entitled = [this](const PeerId& peer) { return !is_server(peer); }}));
+    // What this side decodes, for senders to code their pictures to it in.
+    if (config_.playback.pictures || config_.playback.cameras)
+        decodes_ = config_.playback.decodes.value_or(live_video_decoders());
+    if (!decodes_.empty()) (void)session().set_presence(Presence{.decodes = decodes_});
     // One key to meet under: the peer dialed, or this call's own — in the
     // DHT, where whoever is met dials the port the router forwards, if it
     // does (a NAT then needs no punch), and at servers, which tell each side
@@ -401,7 +394,9 @@ bool Call::is_server(const PeerId& peer) const {
 }
 
 Result<void> Call::set_presence(const Presence& presence) {
-    return session().set_presence(presence);
+    Presence told = presence;
+    told.decodes = decodes_;
+    return session().set_presence(told);
 }
 
 std::optional<Presence> Call::presence(const PeerId& peer) const {

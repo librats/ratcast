@@ -120,5 +120,13 @@ Result<std::unique_ptr<VideoDecoder>> open_video_decoder(const VideoDecoderConfi
     return decoder;
 }
 
+std::vector<Codec> video_decoders() {
+    std::vector<Codec> codecs;
+    for (const Codec codec : {Codec::AV1, Codec::H265, Codec::H264}) {
+        if (av::find_decoder(av::codec_id(codec))) codecs.push_back(codec);
+    }
+    return codecs;
+}
+
 }  // namespace backend
 }  // namespace ratcast

@@ -47,7 +47,8 @@ constexpr const char* kUsage = R"(usage: ratcast-room [rats://HOST:PORT | rats:/
   --no-relay           send every copy of what is shared from here, whatever the
                        uplink carries; by default viewers pass it on to others
   --size WxH           the pattern's size (default 1280x720)
-  --codec av1|h265|h264   default: av1
+  --codec av1|h265|h264   default: av1; one the viewers all decode as it comes in its
+                       place where they do not (a phone: H.265 or H.264)
   --bitrate KBPS       the most the share's rate control goes up to (default 4000)
   --fps N              the pattern's frames a second (default 30)
   --port N             listen port (default 7700; 0 for any)

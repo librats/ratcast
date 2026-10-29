@@ -116,6 +116,11 @@ struct CallPlayback {
     /// Pictures, on the video player's thread.
     VideoPlayer::Sink pictures = {};
     VideoPlayerConfig video = {};  ///< its `sync` is the call's own
+    /// The video codecs this side tells senders it decodes as they come
+    /// (Presence::decodes), best first, which their pictures to it follow;
+    /// none: this device's (live_video_decoders()). Said only where pictures
+    /// play.
+    std::optional<std::vector<Codec>> decodes = std::nullopt;
     /// Where `peer`'s camera's pictures go, asked as it starts (null: not
     /// played), then called on its player's thread; `video`'s config. Asked
     /// under the call's lock: it must not call back into the call.
@@ -289,8 +294,9 @@ public:
     /// of — in this call or, kept in the data directory, an earlier one.
     std::vector<librats::HostEndpoint> known_servers() const;
     /// Say who this side is — a name, muted, deafened — to every peer now and
-    /// to each as it connects. Fails with InvalidArgument for a presence that
-    /// is not valid.
+    /// to each as it connects; what it decodes is the call's own
+    /// (CallPlayback::decodes), told from the start. Fails with
+    /// InvalidArgument for a presence that is not valid.
     Result<void> set_presence(const Presence& presence);
     /// What `peer` last said of itself — while it is away, before it was
     /// lost; none before it said anything, or once it left.
@@ -433,6 +439,7 @@ private:
     librats::Node node_;
     MediaService* media_ = nullptr;              ///< the node's
     librats::Rendezvous* rendezvous_ = nullptr;  ///< the node's, if it meets by peer id
+    std::vector<Codec> decodes_;                 ///< what this side's presence says it decodes
     KnownServers known_servers_;
     /// The peers away, and what each member last said of itself: kept while
     /// it is away and as it comes back, until it says again.

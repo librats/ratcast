@@ -26,6 +26,9 @@ Result<std::unique_ptr<VideoEncoder>> open_video_encoder(const VideoEncoderConfi
 /// Precondition: `config.codec` is a video codec.
 Result<std::unique_ptr<VideoDecoder>> open_video_decoder(const VideoDecoderConfig& config);
 
+/// The video codecs there is a decoder for, best first.
+std::vector<Codec> video_decoders();
+
 void set_codec_logging(bool verbose);
 
 }  // namespace ratcast::backend

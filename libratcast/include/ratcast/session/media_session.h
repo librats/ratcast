@@ -275,6 +275,11 @@ public:
 
     std::optional<OutgoingStreamStats> outgoing_stats(StreamId stream) const;
 
+    /// Who a stream of this node's goes to: its subscribers, those a relay
+    /// passes it on to among them, but no server that only passes it on.
+    /// Empty for a stream not offered.
+    std::vector<PeerId> viewers(StreamId stream) const;
+
     /// What this node's uplink is known to carry for media, bits per second
     /// (shared_uplink.h); nullopt until the copies are found to fill it.
     std::optional<uint64_t> uplink_capacity() const;

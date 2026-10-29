@@ -38,6 +38,16 @@ Result<std::unique_ptr<VideoDecoder>> open_video_decoder(const VideoDecoderConfi
     return backend::open_video_decoder(config);
 }
 
+std::vector<Codec> live_video_decoders() {
+    static const std::vector<Codec> codecs =
+#ifdef __ANDROID__
+        android::hardware_video_decoders();
+#else
+        backend::video_decoders();
+#endif
+    return codecs;
+}
+
 void set_codec_logging(bool verbose) { backend::set_codec_logging(verbose); }
 
 }  // namespace ratcast

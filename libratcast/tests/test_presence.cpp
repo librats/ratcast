@@ -1,5 +1,5 @@
 // What a presence may say: a name of valid UTF-8, without control characters,
-// not too long.
+// not too long; the video codecs it decodes, each once.
 
 #include "ratcast/session/presence.h"
 
@@ -23,6 +23,12 @@ TEST(Presence, ANameIsAnyTextOfAnyScript) {
     std::string emoji;
     for (int i = 0; i < 32; ++i) emoji += "🎮";
     EXPECT_TRUE(valid_name(emoji));
+}
+
+TEST(Presence, WhatItDecodesIsVideoCodecsEachOnce) {
+    EXPECT_TRUE(is_valid(Presence{"", false, false, {Codec::AV1, Codec::H265, Codec::H264}}));
+    EXPECT_FALSE(is_valid(Presence{"", false, false, {Codec::Opus}}));
+    EXPECT_FALSE(is_valid(Presence{"", false, false, {Codec::H264, Codec::H264}}));
 }
 
 TEST(Presence, ANameIsNotTooLong) {

@@ -23,6 +23,8 @@ Result<std::unique_ptr<VideoDecoder>> open_video_decoder(const VideoDecoderConfi
     return fail(Errc::Unavailable);
 }
 
+std::vector<Codec> video_decoders() { return {}; }
+
 void set_codec_logging(bool) {}
 
 }  // namespace ratcast::backend
