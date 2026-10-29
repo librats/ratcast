@@ -294,6 +294,17 @@ TEST(CodecForViewers, KeepsThePreferredWhereNoneIsDecodedByAll) {
     EXPECT_EQ(codec_for_viewers(Codec::AV1, {}), Codec::AV1) << "nobody to follow";
 }
 
+TEST(CodecForViewers, WithNoneDecodedByAllTakesTheFirstWithAnEncoder) {
+    // A phone with no AV1 or H.265 encoder, nobody watching yet.
+    EXPECT_EQ(codec_for_viewers(Codec::AV1, {}, std::vector{Codec::AV1}), Codec::H265);
+    EXPECT_EQ(codec_for_viewers(Codec::AV1, {}, std::vector{Codec::AV1, Codec::H265}), Codec::H264);
+    const std::vector<std::vector<Codec>> apart = {{Codec::H265}, {Codec::AV1}};
+    EXPECT_EQ(codec_for_viewers(Codec::AV1, apart, std::vector{Codec::AV1}), Codec::H265);
+    EXPECT_EQ(codec_for_viewers(Codec::AV1, {}, std::vector{Codec::AV1, Codec::H265, Codec::H264}),
+              Codec::AV1)
+        << "none at all: the preferred, which fails as it is";
+}
+
 TEST_F(VideoPipelineTest, KeepsOnlyTheNewestPictureWhenTheEncoderIsBusy) {
     std::vector<VideoFrame> burst;
     for (uint64_t i = 0; i < 40; ++i) burst.push_back(picture(i));

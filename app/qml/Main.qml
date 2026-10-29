@@ -47,8 +47,8 @@ ApplicationWindow {
     readonly property int cameraTiles: (call.camera ? 1 : 0) + call.cameras
     /// One column: a phone held upright, or a window as narrow.
     readonly property bool compact: root.width < 720
-    /// Android's: no screen to share or camera yet (docs/PLAN.md, 13.4 and
-    /// 13.5), no tray, no folder to open.
+    /// Android's: no screen to share yet (docs/PLAN.md, 13.5), no tray, no
+    /// folder to open.
     readonly property bool mobile: Qt.platform.os === "android"
 
     /// The share watched on the whole screen, nothing else drawn.
@@ -1271,7 +1271,7 @@ ApplicationWindow {
             }
             Button {
                 text: call.camera ? qsTr("Camera off") : qsTr("Camera")
-                visible: !root.compact && !root.mobile
+                visible: !root.compact
                 checkable: true
                 checked: call.camera
                 onToggled: call.camera = checked
@@ -1352,6 +1352,8 @@ ApplicationWindow {
                     id: moreMenu
                     x: parent.width - width
                     y: -height
+                    // The cameras there are, for the one to switch to.
+                    onAboutToShow: if (call.camera) call.listDevices()
 
                     // An item hidden takes no room.
                     component MoreItem: MenuItem {
@@ -1364,8 +1366,17 @@ ApplicationWindow {
                     }
                     MoreItem {
                         text: call.camera ? qsTr("Camera off") : qsTr("Camera")
-                        visible: !root.mobile
                         onTriggered: call.camera = !call.camera
+                    }
+                    // The next of those listed: a phone's front and back.
+                    MoreItem {
+                        text: qsTr("Switch camera")
+                        visible: call.camera && call.cameraDevices.length > 1
+                        onTriggered: {
+                            const listed = call.cameraDevices
+                            const at = listed.findIndex(d => d.id === call.cameraDevice)
+                            call.cameraDevice = listed[(Math.max(at, 0) + 1) % listed.length].id
+                        }
                     }
                     MoreItem {
                         text: qsTr("Share a screen")

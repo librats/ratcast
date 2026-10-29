@@ -9,9 +9,12 @@
  * devices both appear as; on Windows Media Foundation's video capture
  * devices, whose node is a hash of the device's path, the same from one
  * listing to the next; on macOS AVFoundation's, whose node is a hash of the
- * device's unique id. A camera sends pictures at its own pace in one of
- * its modes: the first it lists that is no larger than asked and runs at 15
- * pictures a second or more, else the first no larger, else its first. What
+ * device's unique id; on Android Camera2's, the front ones first, whose node
+ * is a hash of the camera's id, their pictures turned upright as the display
+ * is. A camera sends pictures at its own pace in one of its modes: the
+ * first it lists that is no larger than asked and runs at 15 pictures a
+ * second or more, else the first no larger, else its first (on Android,
+ * whose list has no order, the largest and else the smallest). What
  * it sends — packed 4:2:2 (YUY2), 4:2:0, or RGB — comes converted into the
  * format asked for, in its own colour space (BT.601 unless it says another).
  * Compressed modes (MJPEG) are not taken.
@@ -35,7 +38,7 @@ struct CameraInfo {
     uint32_t node = 0;  ///< what CameraOptions::node takes, while the camera is there
     /// What CameraOptions::id takes: the same from one run to the next (on
     /// Linux a PipeWire node's name; on Windows the device's path; on macOS
-    /// its unique id).
+    /// its unique id; on Android its camera id).
     std::string id;
     std::string name;  ///< as the system names it, for a UI
 };

@@ -16,9 +16,9 @@ import android.util.Log;
 /**
  * The service a call keeps the process in the foreground with (InCall's),
  * its notification saying so and opening the app: media played while the
- * app is in the background, and the microphone heard there once the user
- * has allowed it. The manifest declares it with both types, and the
- * permissions they need.
+ * app is in the background, and the microphone heard and the camera seen
+ * there once the user has allowed them. The manifest declares it with
+ * these types, and the permissions they need.
  */
 public final class CallService extends Service {
     private static final String TAG = "ratcast";
@@ -50,6 +50,11 @@ public final class CallService extends Service {
                 && checkSelfPermission(Manifest.permission.RECORD_AUDIO)
                         == PackageManager.PERMISSION_GRANTED) {
             types |= ServiceInfo.FOREGROUND_SERVICE_TYPE_MICROPHONE;
+        }
+        if (Build.VERSION.SDK_INT >= 30
+                && checkSelfPermission(Manifest.permission.CAMERA)
+                        == PackageManager.PERMISSION_GRANTED) {
+            types |= ServiceInfo.FOREGROUND_SERVICE_TYPE_CAMERA;
         }
         try {
             startForeground(NOTIFICATION, notification.build(), types);

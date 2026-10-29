@@ -438,6 +438,55 @@ TEST_F(CallControllerTest, TheMicrophoneIsHeardOnceAllowedTheSystemToldOfTheCall
     EXPECT_TRUE(bob_.notice().isEmpty()) << bob_.notice().toStdString();
 }
 
+TEST_F(CallControllerTest, TheCameraIsSentOnceAllowedAskedAfterTheMicrophone) {
+    std::function<void(bool)> microphone;
+    std::function<void(bool)> camera;
+    auto opened = std::make_shared<std::atomic<int>>(0);
+    CallController::Environment asking = environment();
+    asking.ask_microphone = [&](std::function<void(bool)> allowed) {
+        microphone = std::move(allowed);
+    };
+    asking.ask_camera = [&](std::function<void(bool)> allowed) { camera = std::move(allowed); };
+    asking.enter_call = [] { return std::make_unique<Told>(); };
+    asking.open_camera = [opened, open = asking.open_camera](const std::string& device) {
+        ++*opened;
+        return open(device);
+    };
+    bob_.setEnvironment(asking);
+    bob_.setName("Bob");
+    g_calls_updated = 0;
+
+    // On before the room: asked once the microphone is answered, one at a time.
+    bob_.setCamera(true);
+    both_in();
+    ASSERT_TRUE(microphone);
+    EXPECT_FALSE(camera) << "asked while the microphone is";
+    std::exchange(microphone, {})(true);
+    ASSERT_TRUE(camera);
+
+    // Refused: off, said so, never opened.
+    std::exchange(camera, {})(false);
+    EXPECT_FALSE(bob_.camera());
+    EXPECT_FALSE(bob_.notice().isEmpty());
+    EXPECT_EQ(*opened, 0);
+
+    // Turned off while asked: that answer is not this turning on's.
+    bob_.setCamera(true);
+    ASSERT_TRUE(camera);
+    bob_.setCamera(false);
+    std::exchange(camera, {})(true);
+    EXPECT_EQ(*opened, 0);
+
+    // Allowed: opened, the system told it may be seen in the background.
+    const int updated = g_calls_updated;
+    bob_.setCamera(true);
+    ASSERT_TRUE(camera);
+    std::exchange(camera, {})(true);
+    EXPECT_EQ(*opened, 1);
+    EXPECT_EQ(g_calls_updated, updated + 1);
+    EXPECT_TRUE(wait_for([&] { return member(ann_, "Bob").value("camera").toBool(); }));
+}
+
 TEST_F(CallControllerTest, AnyoneSharesAndStopsWhileTheRoomGoesOn) {
     both_in();
     ann_.share(false, true);

@@ -1,6 +1,6 @@
 <?xml version="1.0"?>
 <!-- The app's manifest, Qt's template (src/android/templates) with what
-     ratcast asks of the system: the network, the microphone, the call's sound
+     ratcast asks of the system: the network, the microphone, the camera, the call's sound
      and the engine's foreground service, which keeps a call in the
      background. androiddeployqt fills in the rest from the
      target's QT_ANDROID_* properties (app/CMakeLists.txt). -->
@@ -12,13 +12,16 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
     <!-- %%INSERT_PERMISSIONS -->
     <uses-feature android:name="android.hardware.microphone" android:required="false" />
+    <uses-feature android:name="android.hardware.camera.any" android:required="false" />
     <!-- %%INSERT_FEATURES -->
     <supports-screens
         android:anyDensity="true"
@@ -63,7 +66,7 @@
         <!-- A call kept in the background (engine/src/android/java). -->
         <service
             android:name="ratcast.engine.CallService"
-            android:foregroundServiceType="mediaPlayback|microphone"
+            android:foregroundServiceType="mediaPlayback|microphone|camera"
             android:exported="false" />
 
         <provider

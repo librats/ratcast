@@ -228,6 +228,8 @@ public:
         /// wants it asked, and the answer given to `allowed` on the GUI
         /// thread, at once or later; null: no leave is needed.
         std::function<void(std::function<void(bool allowed)>)> ask_microphone = {};
+        /// The same for the camera, as it is turned on.
+        std::function<void(std::function<void(bool allowed)>)> ask_camera = {};
         /// Where how each member is heard — how loud, muted here — and the
         /// devices chosen are kept from one run to the next; null: while the
         /// controller lives.
@@ -377,6 +379,7 @@ private:
     void apply_voice();
     /// The camera, sent and seen; off with `notice` if it cannot be.
     void start_camera();
+    void open_camera();
     void camera_off(QString notice = {});
     /// Draw what `pictures` gets into `view` from now on, as `slot` keeps it.
     static bool attach(QPointer<VideoView>& slot, Pictures& pictures, VideoView* view);
@@ -445,6 +448,7 @@ private:
     bool speaking_ = false;
     bool heard_ = false;  ///< the microphone allowed in this room
     bool camera_ = false;
+    int camera_turn_ = 0;  ///< which turning on an answer to ask_camera is for
     bool sharing_ = false;
     bool choosing_ = false;
     QString watching_;

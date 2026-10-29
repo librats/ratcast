@@ -1662,9 +1662,26 @@ a desktop, the call held while the app is in the background.
   platform's canceller against WebRTC's on phones (both run now), the earpiece as a choice
   (13.7), a Bluetooth headset's microphone before Android 12 (SCO), notifications' leave
   (`POST_NOTIFICATIONS`, Android 13: without it the service's notification is not shown).
-- **13.4 Camera**: Camera2 through the NDK (`ACameraManager`), `AImageReader`'s YUV_420_888 into
-  4:2:0 (its row and pixel strides), turned by the sensor's orientation; front and back as two
-  cameras; `CAMERA` asked for.
+- **13.4 Camera** — done: Camera2 through the NDK (`engine/src/android/camera_capture.cpp`):
+  the cameras that make pictures as cameras do listed, front ones first (a call's camera),
+  named "Front camera" and "Back camera", their node a hash of the camera id; the largest
+  YUV_420_888 size no larger than asked at 15 a second or more, the auto-exposure's range with
+  the most pictures up to the rate asked, the preview template; pictures through an
+  `AImageReader`, on its thread, turned upright in one pass by the sensor's orientation and the
+  display's rotation (looked at twice a second) into NV12 or I420 by their row and pixel steps
+  (`camera_picture.h`, tested on its own), BT.601 at full range, stamped by boot time where
+  the camera says so. Taken away, the capture ends; failing, it fails. `CAMERA` asked for
+  through `QPermission` as the camera is turned on (`Environment::ask_camera`; a camera on
+  before the room is asked for once the microphone is answered: Android asks one at a time),
+  and the foreground service then of the camera's type too, so that it is seen with the app in
+  the background. The app offers the camera on Android and, with more than one, "Switch
+  camera" in the room's menu (the next listed). With no encoder for a codec, a publisher
+  passes it over for the next (`codec_for_viewers()`: of AV1, H.265 and H.264, the first with
+  one where the viewers decode none alike): on Android, until MediaCodec encodes (13.5), H.264
+  in OpenH264. On the phone (Snapdragon 732G): 640 x 480, 30 a second, turned to 480 x 640,
+  both cameras seen on a desktop, the back one with the app in the background. MIUI opens a
+  camera to a process under `adb shell`, gives it no pictures and may hang closing it, so the
+  capture test runs outside an application only when asked (`RATCAST_TEST_CAMERA`). Left: the sender's own back camera is shown mirrored, as a front one is.
 - **13.5 Sharing the screen**: MediaProjection — the system's consent each time (from Android
   14 it is not kept: no restore token), a single application where the system offers it (14
   QPR2) — into a VirtualDisplay on an `AImageReader`, its RGBA into NV12 (`convert_frame()`

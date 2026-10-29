@@ -140,9 +140,7 @@ Dialog {
                         chosen: dialog.call.speakerDevice
                         onPicked: id => dialog.call.speakerDevice = id
                     }
-                    // None on Android yet (docs/PLAN.md, 13.4).
                     DeviceChoice {
-                        visible: Qt.platform.os !== "android"
                         label: qsTr("Camera")
                         devices: dialog.call.cameraDevices
                         chosen: dialog.call.cameraDevice

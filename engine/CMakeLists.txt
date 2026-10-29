@@ -123,14 +123,15 @@ elseif(ANDROID)
     target_sources(ratcast_engine PRIVATE
         src/android/aaudio.cpp
         src/android/audio_device.cpp
+        src/android/camera_capture.cpp
+        src/android/camera_picture.cpp
         src/android/in_call.cpp
         src/android/java.cpp
         src/android/mediacodec_decoder.cpp
         src/android/screen_awake.cpp
-        src/capture/camera_capture_unavailable.cpp
         src/capture/screen_capture_unavailable.cpp
     )
-    target_link_libraries(ratcast_engine PRIVATE aaudio mediandk)
+    target_link_libraries(ratcast_engine PRIVATE aaudio camera2ndk mediandk)
     # The Java the engine calls, for an application to build into its package
     # (app/CMakeLists.txt): each file's path under java/ is its class's.
     set_target_properties(ratcast_engine PROPERTIES RATCAST_ANDROID_JAVA_DIR

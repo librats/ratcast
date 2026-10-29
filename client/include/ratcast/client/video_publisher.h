@@ -63,16 +63,18 @@ struct VideoPublisherConfig {
     uint32_t start_bitrate = 2'000'000;
     uint32_t min_bitrate = 250'000;
     /// The codec follows the viewers (codec_for_viewers()), encoder.codec the
-    /// one they are held to when they allow it. False, or an encoder named:
-    /// encoder.codec always.
+    /// one they are held to when they allow it, and one no encoder here opens
+    /// for is passed over for the next (a phone's: no AV1). False, or an
+    /// encoder named: encoder.codec always.
     bool follow_viewers = true;
 };
 
 /// The codec to code a stream in for viewers who each decode `viewers[i]` as
 /// it comes: `preferred` if they all do, otherwise the first of AV1, H.265
 /// and H.264 that they all do, never one `unusable` (no encoder opened for
-/// it); `preferred` when none is decoded by all, as each then decodes as it
-/// can. A viewer that said nothing is not among them.
+/// it); when none is decoded by all, as each then decodes as it can, the
+/// first of `preferred`, AV1, H.265 and H.264 not unusable — `preferred`
+/// when all are. A viewer that said nothing is not among them.
 Codec codec_for_viewers(Codec preferred, std::span<const std::vector<Codec>> viewers,
                         std::span<const Codec> unusable = {});
 
@@ -162,10 +164,11 @@ private:
     Timestamp last_encoded_at_{};  ///< on clock_, when last_ went to the encoder
     std::optional<StreamDescription> announced_;
     FrameNumber next_number_ = 0;
-    FrameNumber number_offset_ = 0;          ///< added to the current encoder's frame numbers
-    Codec codec_;                            ///< what the viewers have it coded in
-    std::vector<Codec> unusable_;            ///< codecs no encoder opened for
-    std::optional<Timestamp> viewers_seen_;  ///< on clock_, when follow_viewers() last looked
+    FrameNumber number_offset_ = 0;            ///< added to the current encoder's frame numbers
+    Codec codec_;                              ///< what the viewers have it coded in
+    std::vector<Codec> unusable_;              ///< codecs no encoder opened for
+    std::vector<std::vector<Codec>> decodes_;  ///< what the viewers said they decode, last looked
+    std::optional<Timestamp> viewers_seen_;    ///< on clock_, when follow_viewers() last looked
 
     mutable std::mutex stats_mutex_;
     VideoPublisherStats stats_;

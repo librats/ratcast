@@ -11,8 +11,8 @@
  * follows headsets as they come and go; audio focus is held, other
  * applications' sound stopped or ducked; and a foreground service, with its
  * notification, keeps the process while the app is in the background —
- * hearing the microphone there too once the user has allowed it, which
- * update() tells the system of. It needs the Context
+ * hearing the microphone and seeing the camera there too once the user has
+ * allowed them, which update() tells the system of. It needs the Context
  * `ratcast::android::attach()` was given; with none (a tool under adb) a
  * warning is logged and nothing is done. Elsewhere it does nothing.
  */
@@ -25,7 +25,8 @@ class InCall {
 public:
     virtual ~InCall() = default;
     /// Tell the system again what the call does: after the user allowed the
-    /// microphone, so that it is heard with the app in the background too.
+    /// microphone or the camera, so that it is heard or seen with the app in
+    /// the background too.
     virtual void update() = 0;
 };
 

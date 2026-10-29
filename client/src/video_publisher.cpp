@@ -31,8 +31,12 @@ Codec codec_for_viewers(Codec preferred, std::span<const std::vector<Codec>> vie
                    return std::ranges::find(decodes, codec) != decodes.end();
                });
     };
-    for (const Codec codec : {preferred, Codec::AV1, Codec::H265, Codec::H264}) {
+    const Codec codecs[] = {preferred, Codec::AV1, Codec::H265, Codec::H264};
+    for (const Codec codec : codecs) {
         if (all_decode(codec)) return codec;
+    }
+    for (const Codec codec : codecs) {
+        if (std::ranges::find(unusable, codec) == unusable.end()) return codec;
     }
     return preferred;
 }
@@ -190,14 +194,18 @@ Result<void> VideoPublisher::publish(VideoFrame picture, bool keyframe) {
         picture.color_space() != encoder_config_.color_space ||
         device_of(picture) != encoder_config_.device || codec_ != encoder_config_.codec) {
         Result<void> opened = open_encoder(picture);
-        if (!opened && codec_ != config_.encoder.codec) {
-            // No encoder of the codec the viewers decode: the configured one,
-            // decoded as each can, and never that codec again.
-            LOG_WARN("client", "stream " << config_.stream << ": no encoder for "
-                                         << to_string(codec_) << ", back to "
-                                         << to_string(config_.encoder.codec));
+        const bool following = config_.follow_viewers && config_.encoder.encoder.empty();
+        while (!opened && following &&
+               (opened.error() == Errc::Unavailable || opened.error() == Errc::Unsupported)) {
+            // No encoder of this codec here: never it again, the next the
+            // viewers decode instead, or any where they decode none alike.
             unusable_.push_back(codec_);
-            codec_ = config_.encoder.codec;
+            const Codec next = codec_for_viewers(config_.encoder.codec, decodes_, unusable_);
+            if (std::ranges::find(unusable_, next) != unusable_.end()) break;
+            LOG_WARN("client", "stream " << config_.stream << ": no encoder for "
+                                         << to_string(codec_) << ", " << to_string(next)
+                                         << " instead");
+            codec_ = next;
             opened = open_encoder(picture);
         }
         if (!opened) return opened;
@@ -245,8 +253,9 @@ void VideoPublisher::follow_viewers(bool now) {
         std::optional<Presence> presence = session_.presence(viewer);
         if (presence && !presence->decodes.empty()) decodes.push_back(std::move(presence->decodes));
     }
-    if (decodes.empty()) return;  // nobody says: as it is
-    const Codec codec = codec_for_viewers(config_.encoder.codec, decodes, unusable_);
+    decodes_ = std::move(decodes);
+    if (decodes_.empty()) return;  // nobody says: as it is
+    const Codec codec = codec_for_viewers(config_.encoder.codec, decodes_, unusable_);
     if (codec == codec_) return;
     LOG_INFO("client", "stream " << config_.stream << ": " << to_string(codec)
                                  << ", which its viewers all decode as it comes");

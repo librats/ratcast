@@ -14,7 +14,7 @@ ratcast_add_test(engine_tests
     LIBS
         ratcast::engine
     # A GPU's encoder sessions, the sound devices, the desktop, the cameras.
-    EXCLUSIVE "Encoders/*:Wasapi*:GraphicsCapture*:CameraTest.*:CoreAudio*:MacScreenCapture*:MacCamera*:AAudio*"
+    EXCLUSIVE "Encoders/*:Wasapi*:GraphicsCapture*:CameraTest.*:CoreAudio*:MacScreenCapture*:MacCamera*:AAudio*:AndroidCamera*"
 )
 # Private headers, for the parts tested on their own, and the tests' own.
 target_include_directories(engine_tests PRIVATE
@@ -67,5 +67,5 @@ elseif(APPLE)
     )
     target_link_libraries(engine_tests PRIVATE "-framework CoreFoundation" "-framework CoreVideo")
 elseif(ANDROID)
-    target_sources(engine_tests PRIVATE android/test_aaudio.cpp)
+    target_sources(engine_tests PRIVATE android/test_aaudio.cpp android/test_camera_capture.cpp)
 endif()

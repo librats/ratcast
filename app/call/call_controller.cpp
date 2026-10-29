@@ -194,6 +194,17 @@ CallController::Environment CallController::Environment::system() {
                                     allowed(answer.status() == Qt::PermissionStatus::Granted);
                                 });
     };
+    environment.ask_camera = [](std::function<void(bool)> allowed) {
+        const QCameraPermission camera;
+        if (qApp->checkPermission(camera) == Qt::PermissionStatus::Granted) {
+            allowed(true);
+            return;
+        }
+        qApp->requestPermission(camera, qApp,
+                                [allowed = std::move(allowed)](const QPermission& answer) {
+                                    allowed(answer.status() == Qt::PermissionStatus::Granted);
+                                });
+    };
 #endif
     environment.settings = [] { return std::make_unique<QSettings>(); };
     return environment;
@@ -398,18 +409,20 @@ void CallController::end(QString notice) {
 
 void CallController::talk() {
     levels_.start();
-    if (camera_) start_camera();
     const auto heard = [this] {
         heard_ = true;
         start_microphone();
     };
     if (!environment_.ask_microphone) {
+        if (camera_) start_camera();
         heard();
         return;
     }
     environment_.ask_microphone([self = QPointer(this), generation = generation_,
                                  heard](bool allowed) {
         if (!self || self->generation_ != generation) return;
+        // The camera's leave asked for after: Android asks one at a time.
+        if (self->camera_) self->start_camera();
         if (!allowed) {
             self->set_notice(tr("The microphone is not allowed: the others will not hear you."));
             return;
@@ -794,6 +807,24 @@ void CallController::setCamera(bool on) {
 }
 
 void CallController::start_camera() {
+    if (!environment_.ask_camera) {
+        open_camera();
+        return;
+    }
+    environment_.ask_camera([self = QPointer(this), turn = ++camera_turn_](bool allowed) {
+        // Turned off, or on again, or the room left, since: not this answer's.
+        if (!self || self->camera_turn_ != turn || !self->camera_ || !self->call_) return;
+        if (!allowed) {
+            self->camera_off(tr("The camera is not allowed."));
+            return;
+        }
+        // Seen with the app in the background as well, from now on.
+        if (self->in_call_) self->in_call_->update();
+        self->open_camera();
+    });
+}
+
+void CallController::open_camera() {
     std::unique_ptr<VideoSource> device =
         environment_.open_camera ? environment_.open_camera(chosen_id(Camera)) : nullptr;
     if (!device) {
@@ -809,6 +840,7 @@ void CallController::start_camera() {
 }
 
 void CallController::camera_off(QString notice) {
+    ++camera_turn_;
     if (call_) call_->unpublish(kCameraStream);
     if (preview_) preview_->clear();
     if (!notice.isEmpty()) set_notice(std::move(notice));
