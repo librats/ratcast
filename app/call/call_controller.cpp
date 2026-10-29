@@ -5,6 +5,9 @@
 #include <QMetaObject>
 #include <QStandardPaths>
 #include <QVariantMap>
+#ifdef Q_OS_ANDROID
+#include <QPermissions>
+#endif
 
 #include <algorithm>
 #include <array>
@@ -151,13 +154,13 @@ CallController::Environment CallController::Environment::system() {
     };
     environment.open_speaker = [format = environment.voice.speaker](const std::string& device) {
         Result<std::unique_ptr<AudioOutput>> speaker =
-            open_audio_output({.format = format, .device = device});
+            open_audio_output({.format = format, .device = device, .call = true});
         return speaker ? std::move(*speaker) : nullptr;
     };
     environment.open_microphone = [format =
                                        environment.voice.microphone](const std::string& device) {
         Result<std::unique_ptr<AudioSource>> microphone =
-            open_audio_capture({.format = format, .device = device});
+            open_audio_capture({.format = format, .device = device, .call = true});
         return microphone ? std::move(*microphone) : nullptr;
     };
     environment.open_camera = [](const std::string& device) -> std::unique_ptr<VideoSource> {
@@ -177,6 +180,21 @@ CallController::Environment CallController::Environment::system() {
     environment.list_speakers = [] { return or_none(list_audio_outputs()); };
     environment.list_cameras = [] { return or_none(ratcast::list_cameras()); };
     environment.keep_screen_awake = [] { return ratcast::keep_screen_awake("Watching a share"); };
+    environment.enter_call = [] { return ratcast::enter_call(); };
+#ifdef Q_OS_ANDROID
+    // Asked of the user here; desktops ask as the microphone opens, or not.
+    environment.ask_microphone = [](std::function<void(bool)> allowed) {
+        const QMicrophonePermission microphone;
+        if (qApp->checkPermission(microphone) == Qt::PermissionStatus::Granted) {
+            allowed(true);
+            return;
+        }
+        qApp->requestPermission(microphone, qApp,
+                                [allowed = std::move(allowed)](const QPermission& answer) {
+                                    allowed(answer.status() == Qt::PermissionStatus::Granted);
+                                });
+    };
+#endif
     environment.settings = [] { return std::make_unique<QSettings>(); };
     return environment;
 }
@@ -299,6 +317,9 @@ void CallController::start(CallConfig config, State state) {
     set_notice({});
     chat_.clear();
     const uint64_t generation = ++generation_;
+    // Told first: the call's sound goes where the call is routed.
+    in_call_ = environment_.enter_call ? environment_.enter_call() : nullptr;
+    heard_ = false;
     voice_ = std::make_unique<VoiceChannel>(environment_.voice);
     std::unique_ptr<AudioOutput> device =
         environment_.open_speaker ? environment_.open_speaker(chosen_id(Speaker)) : nullptr;
@@ -352,6 +373,8 @@ void CallController::end(QString notice) {
     call_.reset();
     speaker_.reset();
     voice_.reset();
+    in_call_.reset();
+    heard_ = false;
     cameras_->clear();
     for (const QPointer<VideoView>& view : std::as_const(camera_views_)) {
         if (view) view->clear();
@@ -376,10 +399,29 @@ void CallController::end(QString notice) {
 void CallController::talk() {
     levels_.start();
     if (camera_) start_camera();
-    start_microphone();
+    const auto heard = [this] {
+        heard_ = true;
+        start_microphone();
+    };
+    if (!environment_.ask_microphone) {
+        heard();
+        return;
+    }
+    environment_.ask_microphone([self = QPointer(this), generation = generation_,
+                                 heard](bool allowed) {
+        if (!self || self->generation_ != generation) return;
+        if (!allowed) {
+            self->set_notice(tr("The microphone is not allowed: the others will not hear you."));
+            return;
+        }
+        // Heard with the app in the background as well, from now on.
+        if (self->in_call_) self->in_call_->update();
+        heard();
+    });
 }
 
 void CallController::start_microphone() {
+    if (!heard_) return;
     std::unique_ptr<AudioSource> device = environment_.open_microphone
                                               ? environment_.open_microphone(chosen_id(Microphone))
                                               : nullptr;

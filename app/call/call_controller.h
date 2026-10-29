@@ -12,7 +12,8 @@
  * Everyone talks from the start: the microphone, cleaned of the echo of all
  * the computer plays and of noise, goes as a voice (VoiceChannel). Muted, it
  * sends silence; deafened, nobody is heard and the microphone is silent too,
- * as in Discord. Anyone may share a screen or a window — the desktop's dialog,
+ * as in Discord — once the user allows the microphone where the system asks
+ * (Android). Anyone may share a screen or a window — the desktop's dialog,
  * off the GUI thread — and stop, and turn their camera on and off, while the
  * room goes on. Whose share plays is chosen with watch(); until anyone is
  * chosen, the first one offered.
@@ -74,6 +75,7 @@
 #include "ratcast/client/voice.h"
 #include "ratcast/engine/audio_device.h"
 #include "ratcast/engine/camera_capture.h"
+#include "ratcast/engine/in_call.h"
 #include "ratcast/engine/screen_awake.h"
 #include "ratcast/engine/switchable_output.h"
 #include "video_view.h"
@@ -220,6 +222,12 @@ public:
         QString server = {};
         /// The screen kept on while a share is watched; null: left alone.
         std::function<std::unique_ptr<ScreenAwake>()> keep_screen_awake = {};
+        /// The system told of the call while in a room; null: not told.
+        std::function<std::unique_ptr<InCall>()> enter_call = {};
+        /// The user asked for leave to hear the microphone, where the system
+        /// wants it asked, and the answer given to `allowed` on the GUI
+        /// thread, at once or later; null: no leave is needed.
+        std::function<void(std::function<void(bool allowed)>)> ask_microphone = {};
         /// Where how each member is heard — how loud, muted here — and the
         /// devices chosen are kept from one run to the next; null: while the
         /// controller lives.
@@ -358,8 +366,8 @@ private:
     CallHandlers handlers(uint64_t generation);
     /// Run `event` on the GUI thread if the call of `generation` is still on.
     void post(uint64_t generation, std::function<void()> event);
-    /// This side's voice on the call just started, if there is a microphone,
-    /// and its camera if on.
+    /// This side's voice on the call just started, if there is a microphone
+    /// and the user allows it, and its camera if on.
     void talk();
     /// The microphone, cleaned of the echo, sent as this side's voice; a
     /// notice if it cannot be.
@@ -435,6 +443,7 @@ private:
     bool deafened_ = false;
     double share_volume_ = 1.0;
     bool speaking_ = false;
+    bool heard_ = false;  ///< the microphone allowed in this room
     bool camera_ = false;
     bool sharing_ = false;
     bool choosing_ = false;
@@ -460,7 +469,8 @@ private:
 
     /// Counts rooms begun: events and dialogs of an earlier one are dropped.
     uint64_t generation_ = 0;
-    std::jthread dialog_;  ///< the desktop's
+    std::jthread dialog_;              ///< the desktop's
+    std::unique_ptr<InCall> in_call_;  ///< while in a room
     std::unique_ptr<VoiceChannel> voice_;
     std::unique_ptr<ScreenAwake> awake_;         ///< while a share is watched
     std::unique_ptr<SwitchableOutput> speaker_;  ///< the voice channel's, of the device chosen

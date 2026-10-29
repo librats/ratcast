@@ -82,6 +82,10 @@ struct AudioCaptureOptions {
     /// With Applications: the process whose sound is left out; 0 for this one.
     int excluded_process = 0;
     Duration latency = std::chrono::milliseconds(10);
+    /// A call's microphone: on Android heard as a voice in a call is (the
+    /// voice-communication preset, the platform's echo canceller and noise
+    /// suppressor on it); elsewhere the same as without.
+    bool call = false;
 };
 
 /// A capture as `options` say, ready to start. Fails with InvalidArgument for
@@ -101,6 +105,10 @@ struct AudioOutputOptions {
     /// followed as it changes. Not there, it plays to the default.
     std::string device = {};
     Duration latency = std::chrono::milliseconds(10);
+    /// A call's sound: on Android played as a call's is (voice
+    /// communication: routed as the call is, enter_call()'s, and heard by the
+    /// platform's echo canceller); elsewhere the same as without.
+    bool call = false;
 };
 
 class AudioOutput {

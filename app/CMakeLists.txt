@@ -109,6 +109,13 @@ if(ANDROID)
     set(android_dir "${CMAKE_CURRENT_BINARY_DIR}/android")
     configure_file(android/AndroidManifest.xml "${android_dir}/AndroidManifest.xml" COPYONLY)
     configure_file(resources/ratcast.png "${android_dir}/res/drawable/ratcast.png" COPYONLY)
+    # The engine's Java (its foreground service, the call's sound), compiled
+    # with Qt's from the package's src/.
+    get_target_property(java_dir ratcast_engine RATCAST_ANDROID_JAVA_DIR)
+    get_target_property(java_files ratcast_engine RATCAST_ANDROID_JAVA)
+    foreach(java IN LISTS java_files)
+        configure_file("${java_dir}/${java}" "${android_dir}/src/${java}" COPYONLY)
+    endforeach()
     set(android_libs)
     if(TARGET PkgConfig::RATCAST_FFMPEG)
         get_target_property(ffmpeg_libs PkgConfig::RATCAST_FFMPEG INTERFACE_LINK_LIBRARIES)

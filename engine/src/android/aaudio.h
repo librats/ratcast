@@ -20,6 +20,11 @@
  * Capture is of the microphone (RECORD_AUDIO, an application's to ask the
  * user for); what other applications play needs a MediaProjection, which
  * only Java reaches: SystemSound, Applications and nodes are Unavailable.
+ *
+ * A call's streams (`call`) are voice communication's: the microphone through
+ * the preset that has the platform cancel the echo of what the device plays
+ * and suppress noise, the sound out as a call's, which the routing
+ * enter_call() sets follows and the platform's canceller hears.
  */
 
 #include <memory>

@@ -1,6 +1,7 @@
 // CallController in rooms on loopback: one makes a room and others join it by
 // its invites or by each other's, each going through its states; everyone
-// talking and seen speaking, muted, deafened; anyone sharing (the test
+// talking and seen speaking, muted, deafened, once the microphone is
+// allowed, the system told of the call meanwhile; anyone sharing (the test
 // pattern and a tone standing in for the desktop's screen and sound) and
 // stopping while the room goes on, the others watching it or not; cameras,
 // each member's in a view of its own; the devices chosen, kept and used at
@@ -20,9 +21,11 @@
 #include <atomic>
 #include <chrono>
 #include <cmath>
+#include <functional>
 #include <memory>
 #include <span>
 #include <thread>
+#include <utility>
 
 #include "ratcast/engine/pattern_source.h"
 #include "ratcast/engine/tone_source.h"
@@ -82,6 +85,17 @@ public:
     KeptAwake() { ++g_screens_kept; }
     ~KeptAwake() override { --g_screens_kept; }
     bool held() const noexcept override { return true; }
+};
+
+/// Calls the system is told of, by every side, and how often told again.
+std::atomic<int> g_calls_told{0};
+std::atomic<int> g_calls_updated{0};
+
+class Told final : public InCall {
+public:
+    Told() { ++g_calls_told; }
+    ~Told() override { --g_calls_told; }
+    void update() override { ++g_calls_updated; }
 };
 
 /// The test's own: loopback, its own protocol, nothing kept, a pattern for
@@ -382,6 +396,46 @@ TEST_F(CallControllerTest, WithoutAMicrophoneTheRoomGoesOn) {
     EXPECT_FALSE(bob_.notice().isEmpty());
     EXPECT_TRUE(wait_for([&] { return member(bob_, "Ann").value("speaking").toBool(); }));
     EXPECT_FALSE(member(ann_, "Bob").value("speaking").toBool());
+}
+
+TEST_F(CallControllerTest, AMicrophoneNotAllowedIsNotHeardAndTheRoomGoesOn) {
+    CallController::Environment refused = environment();
+    refused.ask_microphone = [](std::function<void(bool)> allowed) { allowed(false); };
+    bob_.setEnvironment(refused);
+    bob_.setName("Bob");
+    both_in();
+    EXPECT_FALSE(bob_.notice().isEmpty());
+    EXPECT_TRUE(wait_for([&] { return member(bob_, "Ann").value("speaking").toBool(); }));
+    EXPECT_FALSE(member(ann_, "Bob").value("speaking").toBool());
+}
+
+TEST_F(CallControllerTest, TheMicrophoneIsHeardOnceAllowedTheSystemToldOfTheCall) {
+    std::function<void(bool)> answer;
+    CallController::Environment asking = environment();
+    asking.ask_microphone = [&](std::function<void(bool)> allowed) { answer = std::move(allowed); };
+    asking.enter_call = [] { return std::make_unique<Told>(); };
+    bob_.setEnvironment(asking);
+    bob_.setName("Bob");
+    g_calls_updated = 0;
+    both_in();
+    EXPECT_EQ(g_calls_told, 1);
+    ASSERT_TRUE(answer) << "asked as the room started";
+    EXPECT_TRUE(wait_for([&] { return member(bob_, "Ann").value("speaking").toBool(); }));
+    EXPECT_FALSE(member(ann_, "Bob").value("speaking").toBool()) << "not before it is allowed";
+
+    std::exchange(answer, {})(true);
+    EXPECT_TRUE(wait_for([&] { return member(ann_, "Bob").value("speaking").toBool(); }));
+    EXPECT_TRUE(bob_.notice().isEmpty()) << bob_.notice().toStdString();
+    EXPECT_EQ(g_calls_updated, 1) << "told it may hear the microphone in the background";
+
+    bob_.leave();
+    EXPECT_EQ(g_calls_told, 0);
+    // An answer that comes after the room it was asked in is over is dropped.
+    bob_.join(ann_.invites().value(0));
+    ASSERT_TRUE(answer);
+    bob_.leave();
+    answer(false);
+    EXPECT_TRUE(bob_.notice().isEmpty()) << bob_.notice().toStdString();
 }
 
 TEST_F(CallControllerTest, AnyoneSharesAndStopsWhileTheRoomGoesOn) {

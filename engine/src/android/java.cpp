@@ -53,4 +53,24 @@ bool jni_failed(JNIEnv* env) {
     return true;
 }
 
+jclass jni_class(JNIEnv* env, const char* name) {
+    jobject context = jni_context();
+    if (!context) return nullptr;
+    jclass context_type = env->GetObjectClass(context);
+    jobject loader = env->CallObjectMethod(
+        context, env->GetMethodID(context_type, "getClassLoader", "()Ljava/lang/ClassLoader;"));
+    env->DeleteLocalRef(context_type);
+    if (jni_failed(env) || !loader) return nullptr;
+    jclass loader_type = env->GetObjectClass(loader);
+    jstring java_name = env->NewStringUTF(name);
+    jobject found = env->CallObjectMethod(
+        loader, env->GetMethodID(loader_type, "loadClass", "(Ljava/lang/String;)Ljava/lang/Class;"),
+        java_name);
+    env->DeleteLocalRef(java_name);
+    env->DeleteLocalRef(loader_type);
+    env->DeleteLocalRef(loader);
+    if (jni_failed(env)) return nullptr;
+    return static_cast<jclass>(found);
+}
+
 }  // namespace ratcast::android

@@ -123,6 +123,7 @@ elseif(ANDROID)
     target_sources(ratcast_engine PRIVATE
         src/android/aaudio.cpp
         src/android/audio_device.cpp
+        src/android/in_call.cpp
         src/android/java.cpp
         src/android/mediacodec_decoder.cpp
         src/android/screen_awake.cpp
@@ -130,6 +131,13 @@ elseif(ANDROID)
         src/capture/screen_capture_unavailable.cpp
     )
     target_link_libraries(ratcast_engine PRIVATE aaudio mediandk)
+    # The Java the engine calls, for an application to build into its package
+    # (app/CMakeLists.txt): each file's path under java/ is its class's.
+    set_target_properties(ratcast_engine PROPERTIES RATCAST_ANDROID_JAVA_DIR
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/android/java")
+    set_property(TARGET ratcast_engine PROPERTY RATCAST_ANDROID_JAVA
+        ratcast/engine/CallService.java
+        ratcast/engine/InCall.java)
 else()
     target_sources(ratcast_engine PRIVATE
         src/audio/audio_device_unavailable.cpp
@@ -137,6 +145,11 @@ else()
         src/capture/screen_capture_unavailable.cpp
         src/screen_awake_unavailable.cpp
     )
+endif()
+
+# Only Android's system is told of a call.
+if(NOT ANDROID)
+    target_sources(ratcast_engine PRIVATE src/in_call_none.cpp)
 endif()
 
 # Real-time waits: Windows' own timer, as Sleep() steps in 15.6 ms.

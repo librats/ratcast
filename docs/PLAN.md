@@ -1634,14 +1634,28 @@ a desktop, the call held while the app is in the background.
   av1_nvenc to hevc_nvenc as it joined: 60 fps in its hardware, against 21 in dav1d. Left: a
   phone; viewers behind a forwarder (a server) are not seen by the sender; pictures handed out
   while the decoder works on the next (one waited for at a time caps 1080p at ~69 fps here).
-- **13.3 Talking**: the microphone through AAudio (the voice-communication preset;
-  `RECORD_AUDIO` asked for through Qt's `QPermission`), the AudioProcessor hearing the speaker
-  as now (Android gives no other application's sound to cancel); the platform's own echo
-  canceller compared on phones, kept where it does better. The call's sound routed (the
-  speaker, the earpiece, a headset: `setCommunicationDevice()`) and audio focus taken; a
-  foreground service of the microphone's type keeping the call while the app is in the
-  background, the network followed as it moves between Wi-Fi and mobile (12.1), mDNS heard
-  under a multicast lock.
+- **13.3 Talking** — in part: a call's sound is voice communication's (`call` in
+  `AudioCaptureOptions` / `AudioOutputOptions`, set by the app: the microphone through AAudio's
+  voice-communication preset, which puts the platform's echo canceller and noise suppressor on
+  it, the sound out with the voice-communication usage; elsewhere the flag does nothing), the
+  AudioProcessor still hearing the speaker as on desktops (Android gives no other
+  application's sound to cancel). `RECORD_AUDIO` asked for through Qt's `QPermission` as a
+  room starts (`CallController::Environment::ask_microphone`; refused, the room goes on
+  unheard, with a notice). While in a room the system is told of the call (`enter_call()`,
+  `ratcast/engine/in_call.h`; Java of the engine's own, `engine/src/android/java`, built into
+  the app's package): the audio mode a call's, its sound to a headset where one is connected
+  and to the loudspeaker otherwise (`setCommunicationDevice()`, following headsets as they
+  come and go; before Android 12 the speakerphone), audio focus held, and a foreground
+  service (`CallService`, its notification opening the app) of the media-playback type and,
+  once the microphone is allowed, the microphone's: the voice heard with the app in the
+  background, all of it given back as the room is left. On the Android 13 device a call's
+  sound goes Qualcomm's VoIP way (48 kHz, stereo, the loudspeaker's voice tuning) and the
+  microphone with the platform's canceller and suppressor on it, heard behind another
+  application. The network followed as it moves (12.1): netlink's route socket is closed to
+  applications, so librats' NetworkMonitor polls the addresses every 5 s there. Left: the
+  platform's canceller against WebRTC's on phones (both run now), the earpiece as a choice
+  (13.7), a Bluetooth headset's microphone before Android 12 (SCO), notifications' leave
+  (`POST_NOTIFICATIONS`, Android 13: without it the service's notification is not shown).
 - **13.4 Camera**: Camera2 through the NDK (`ACameraManager`), `AImageReader`'s YUV_420_888 into
   4:2:0 (its row and pixel strides), turned by the sensor's orientation; front and back as two
   cameras; `CAMERA` asked for.

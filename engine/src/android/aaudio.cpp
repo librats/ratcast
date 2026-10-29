@@ -50,6 +50,7 @@ struct Setup {
     AudioFormat format;
     int32_t device = AAUDIO_UNSPECIFIED;
     Duration latency{};
+    bool call = false;  ///< a call's sound: voice communication
 };
 
 /// One AAudio stream as `setup` asks, its data handed to `data` on AAudio's
@@ -97,6 +98,12 @@ private:
         AAudioStreamBuilder_setSampleRate(builder, int32_t(format.sample_rate));
         AAudioStreamBuilder_setSharingMode(builder, AAUDIO_SHARING_MODE_SHARED);
         AAudioStreamBuilder_setPerformanceMode(builder, AAUDIO_PERFORMANCE_MODE_LOW_LATENCY);
+        if (setup_.call && setup_.direction == AAUDIO_DIRECTION_INPUT) {
+            AAudioStreamBuilder_setInputPreset(builder, AAUDIO_INPUT_PRESET_VOICE_COMMUNICATION);
+        } else if (setup_.call) {
+            AAudioStreamBuilder_setUsage(builder, AAUDIO_USAGE_VOICE_COMMUNICATION);
+            AAudioStreamBuilder_setContentType(builder, AAUDIO_CONTENT_TYPE_SPEECH);
+        }
         AAudioStreamBuilder_setDataCallback(builder, on_data, this);
         AAudioStreamBuilder_setErrorCallback(builder, on_error, this);
 
@@ -216,7 +223,8 @@ public:
           sink_(std::move(sink)),
           sample_clock_(options.format.sample_rate),
           device_(
-              {AAUDIO_DIRECTION_INPUT, options.format, device_of(options.device), options.latency},
+              {AAUDIO_DIRECTION_INPUT, options.format, device_of(options.device), options.latency,
+               options.call},
               [this](AAudioStream* stream, void* audio, int32_t frames) {
                   captured(stream, static_cast<const float*>(audio), frames);
               },
@@ -289,7 +297,8 @@ public:
           clock_(clock),
           pull_(std::move(pull)),
           device_(
-              {AAUDIO_DIRECTION_OUTPUT, options.format, device_of(options.device), options.latency},
+              {AAUDIO_DIRECTION_OUTPUT, options.format, device_of(options.device), options.latency,
+               options.call},
               [this](AAudioStream* stream, void* audio, int32_t frames) {
                   play(stream, static_cast<float*>(audio), frames);
               },

@@ -191,7 +191,11 @@ Call::Call(CallConfig config, CallHandlers handlers)
     // What this side decodes, for senders to code their pictures to it in.
     if (config_.playback.pictures || config_.playback.cameras)
         decodes_ = config_.playback.decodes.value_or(live_video_decoders());
-    if (!decodes_.empty()) (void)session().set_presence(Presence{.decodes = decodes_});
+    if (!decodes_.empty()) {
+        Presence presence;
+        presence.decodes = decodes_;
+        (void)session().set_presence(presence);
+    }
     // One key to meet under: the peer dialed, or this call's own — in the
     // DHT, where whoever is met dials the port the router forwards, if it
     // does (a NAT then needs no punch), and at servers, which tell each side

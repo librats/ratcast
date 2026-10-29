@@ -1,7 +1,8 @@
 // aaudio::AudioPlayback and aaudio::AudioCapture on the device's own sound: a
 // playback of the tone pulled with play times that lie ahead and run on, one
 // stopped and started again; the microphone heard in blocks that follow on,
-// stamped no later than now; what other applications play, and nodes,
+// stamped no later than now; a call's playback and microphone (voice
+// communication's) the same; what other applications play, and nodes,
 // Unavailable without a MediaProjection. Skipped where there is no sound
 // output, or no microphone (or no RECORD_AUDIO: adb's shell has it).
 
@@ -129,6 +130,27 @@ TEST(AAudioTest, TheMicrophoneIsHeardInBlocksThatFollowOn) {
         EXPECT_LE(blocks.back().capture_time() + blocks.back().duration(),
                   SteadyClock::instance().now());
     }
+}
+
+TEST(AAudioTest, ACallsSoundPlaysAndItsMicrophoneIsHeardAsAnyOther) {
+    Tone tone({.format = kMono, .call = true});
+    if (!tone.play()) GTEST_SKIP() << "no sound output here";
+    aaudio::AudioCapture capture({.format = kMono, .call = true});
+    Heard heard;
+    if (!capture.start(heard.sink(), heard.ended())) GTEST_SKIP() << "no microphone here";
+    const std::vector<AudioFrame> blocks = heard.wait_for_more(300ms);
+    capture.stop();
+    tone.stop();
+
+    ASSERT_FALSE(blocks.empty());
+    for (size_t i = 1; i < blocks.size(); ++i) {
+        const Timestamp follows_on = blocks[i - 1].capture_time() + blocks[i - 1].duration();
+        EXPECT_LE(std::chrono::abs(blocks[i].capture_time() - follows_on), 2ms) << "block " << i;
+    }
+    const std::vector<Tone::Pull> pulls = tone.pulls();
+    ASSERT_GT(pulls.size(), 10u);
+    for (size_t i = pulls.size() / 2; i < pulls.size(); ++i)
+        EXPECT_GT(pulls[i].play_time, pulls[i].pulled_at) << "pull " << i;
 }
 
 TEST(AAudioTest, WhatOtherApplicationsPlayIsUnavailable) {
