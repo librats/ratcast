@@ -2,6 +2,10 @@
 
 #include "video/codec_backend.h"
 
+#ifdef __ANDROID__
+#include "android/mediacodec_decoder.h"
+#endif
+
 namespace ratcast {
 namespace {
 
@@ -25,6 +29,12 @@ Result<std::unique_ptr<VideoEncoder>> open_video_encoder(const VideoEncoderConfi
 
 Result<std::unique_ptr<VideoDecoder>> open_video_decoder(const VideoDecoderConfig& config) {
     if (media_kind_of(config.codec) != MediaKind::Video) return fail(Errc::InvalidArgument);
+#ifdef __ANDROID__
+    // The device's hardware first: software decoding takes a phone's
+    // processors and battery.
+    if (Result<std::unique_ptr<VideoDecoder>> decoder = android::open_mediacodec_decoder(config))
+        return decoder;
+#endif
     return backend::open_video_decoder(config);
 }
 

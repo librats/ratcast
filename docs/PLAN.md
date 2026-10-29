@@ -1603,15 +1603,28 @@ a desktop, the call held while the app is in the background.
   device). `android-app` builds the app with Qt for Android into an APK
   (`app/android/AndroidManifest.xml`; the data directory in the application's own storage).
   Left: a CI job that builds it and runs the tests on an emulator.
-- **13.2 Watching**: sound out through AAudio (`open_audio_output()`: a low-latency callback
-  stream, the time the sound will be heard from `AAudioStream_getTimestamp()`); pictures
-  decoded by MediaCodec (the low-latency decoder where there is one, `KEY_LOW_LATENCY`) into
-  memory read as 4:2:0, software decoding as now where it fails; `VideoView` on Qt's OpenGL ES
-  or Vulkan backend; `CallController::Environment` for Android (the data directory in the
-  application's storage); a `rats://` link opening the app (an intent filter); the screen kept
-  on while watching; `Updater` off (packages come from a store or the release page). Done when
-  a phone watches a desktop's 1080p60 share with a desktop viewer's wait, stalls and
-  latency (`PlaybackMeter`).
+- **13.2 Watching** — in part: sound out through AAudio (`engine/src/android/aaudio.cpp`: a
+  low-latency callback stream, the time the sound will be heard from
+  `AAudioStream_getTimestamp()`, opened again when the default device changes); pictures
+  decoded by MediaCodec (`mediacodec_decoder.cpp`, tried before FFmpeg by
+  `open_video_decoder()`): the hardware decoder only — the system's software ones do no
+  better than FFmpeg's — and Qualcomm's `.low_latency` component of it where there is one,
+  low latency and decode-order output asked for, read in byte buffers by the layout the
+  output format describes (`image-data`, Android's MediaImage2) and copied into a pooled NV12
+  picture, its colour from the format (the BT.709-primaries-with-BT.601-matrix pair the
+  engine's encoders signal for SD comes wrapped, as 86); `decode()` waits for the picture of
+  the frame it was given, longer for the first. Measured on an Android 13 device (Qualcomm
+  QCS5430), a desktop's 1080p60 pattern: H.264 in hardware 58 fps, 12.5 ms in the decoder and
+  2 ms to copy a picture, against 21 fps for AV1 in dav1d (16 ms a picture, the processors
+  at 180 %). The app watches: `VideoView` draws on Qt's OpenGL ES backend as it is; a
+  `rats://` link opens the app and joins (an intent filter; Qt hands the URL to
+  `QDesktopServices`' handler, `app/src/main.cpp`), cold or while it runs; the screen kept on
+  by a wake lock (`screen_awake.cpp`, through `ratcast::android::attach()`: the Java VM and
+  the Context the app gives the engine as it starts); the data directory in the application's
+  own storage; the updater off (`RATCAST_UPDATES` is the release packages'). Left: a phone; a
+  share's codec chosen by what its viewers decode in hardware — a desktop shares AV1, which
+  most phones decode only in software; pictures handed out while the decoder works on the
+  next (one waited for at a time caps 1080p at ~69 fps here).
 - **13.3 Talking**: the microphone through AAudio (the voice-communication preset;
   `RECORD_AUDIO` asked for through Qt's `QPermission`), the AudioProcessor hearing the speaker
   as now (Android gives no other application's sound to cancel); the platform's own echo

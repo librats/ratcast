@@ -1,0 +1,361 @@
+// Video decoding through MediaCodec: see mediacodec_decoder.h.
+
+#include "android/mediacodec_decoder.h"
+
+#include <media/NdkMediaCodec.h>
+#include <media/NdkMediaFormat.h>
+
+#include <algorithm>
+#include <cstdint>
+#include <cstring>
+#include <string>
+#include <string_view>
+
+#include "librats/util/logger.h"
+
+namespace ratcast::android {
+namespace {
+
+/// MediaCodecInfo.CodecCapabilities.COLOR_FormatYUV420Flexible: 4:2:0 in
+/// whatever layout the decoder has, which its output format describes.
+constexpr int32_t kColorFormatFlexible = 0x7F420888;
+constexpr int32_t kColorFormatPlanar = 19;      ///< COLOR_FormatYUV420Planar: I420
+constexpr int32_t kColorFormatSemiPlanar = 21;  ///< COLOR_FormatYUV420SemiPlanar: NV12
+
+/// How long decode() waits for the picture of the frame it was given: a
+/// hardware decoder takes a few milliseconds for 4K, and longer for its
+/// first, as it sets itself up.
+constexpr int64_t kOutputWaitUs = 30'000;
+constexpr int64_t kFirstOutputWaitUs = 500'000;
+/// How long it waits for room for a frame, the decoder's pictures taken out
+/// meanwhile.
+constexpr int64_t kInputWaitUs = 50'000;
+
+/// The "image-data" of a decoder's output format: Android's MediaImage2
+/// (media/hardware/VideoAPI.h), where each plane of a picture is in its
+/// buffer.
+struct MediaImage2 {
+    struct Plane {
+        uint32_t offset;
+        int32_t column_step;  ///< bytes from one sample to the next
+        int32_t row_step;     ///< bytes from one row to the next
+        uint32_t horizontal_subsampling;
+        uint32_t vertical_subsampling;
+    };
+    int32_t type;  ///< 1: YUV
+    uint32_t plane_count;
+    uint32_t width;
+    uint32_t height;
+    uint32_t bit_depth;
+    uint32_t bit_depth_allocated;
+    Plane planes[4];
+};
+constexpr int32_t kMediaImageYuv = 1;
+
+const char* mime_of(Codec codec) {
+    switch (codec) {
+        case Codec::H264: return "video/avc";
+        case Codec::H265: return "video/hevc";
+        case Codec::AV1: return "video/av01";
+        default: return nullptr;
+    }
+}
+
+/// The system's own software decoders, which FFmpeg's match.
+bool is_software(std::string_view name) {
+    return name.starts_with("c2.android.") || name.starts_with("OMX.google.");
+}
+
+/// The matrix of MediaFormat's COLOR_STANDARD: BT.601's 2 to 5 — or, past
+/// 64, the pair of primaries and matrix no standard names, as Android's
+/// ColorUtils wraps it (64 + primaries + 7 x matrix): BT.709's primaries and
+/// BT.601's matrix, which the engine's encoders signal for SD, come as 86.
+ColorMatrix matrix_of(int32_t standard) {
+    if (standard >= 64) {
+        const int32_t matrix = (standard - 64) / 7;                    // ColorAspects::MatrixCoeffs
+        return matrix == 3 ? ColorMatrix::BT601 : ColorMatrix::BT709;  // MatrixBT601_6
+    }
+    return standard >= 2 && standard <= 5 ? ColorMatrix::BT601 : ColorMatrix::BT709;
+}
+
+int32_t int_of(AMediaFormat* format, const char* key, int32_t otherwise) {
+    int32_t value = 0;
+    return AMediaFormat_getInt32(format, key, &value) ? value : otherwise;
+}
+
+class MediaCodecDecoder final : public VideoDecoder {
+public:
+    MediaCodecDecoder(AMediaCodec* codec, std::string name)
+        : codec_(codec), info_{std::move(name)} {}
+
+    ~MediaCodecDecoder() override {
+        AMediaCodec_stop(codec_);
+        AMediaCodec_delete(codec_);
+    }
+
+    const VideoDecoderInfo& info() const noexcept override { return info_; }
+
+    Result<void> decode(const EncodedFrame& frame, Sink sink) override {
+        ssize_t index = AMediaCodec_dequeueInputBuffer(codec_, 0);
+        if (index < 0) {
+            // Every buffer taken: what is done comes out first, making room.
+            if (Result<void> drained = drain(sink, 0); !drained) return drained;
+            index = AMediaCodec_dequeueInputBuffer(codec_, kInputWaitUs);
+        }
+        if (index < 0) {
+            LOG_WARN("engine", info_.name << " takes no more frames: started again");
+            restart();
+            return fail(Errc::Malformed);
+        }
+        size_t capacity = 0;
+        uint8_t* input = AMediaCodec_getInputBuffer(codec_, size_t(index), &capacity);
+        const size_t size = frame.payload.size();
+        if (!input || size > capacity) {
+            AMediaCodec_queueInputBuffer(codec_, size_t(index), 0, 0, 0, 0);
+            return fail(Errc::Malformed);
+        }
+        std::memcpy(input, frame.payload.data(), size);
+        const uint64_t pts = uint64_t(frame.info.capture_time.time_since_epoch().count());
+        if (AMediaCodec_queueInputBuffer(codec_, size_t(index), 0, size, pts, 0) != AMEDIA_OK) {
+            restart();
+            return fail(Errc::Malformed);
+        }
+        ++pending_;
+        return drain(sink, pictures_ > 0 ? kOutputWaitUs : kFirstOutputWaitUs);
+    }
+
+private:
+    /// The pictures done, the first waited for `wait_us` while one is owed.
+    Result<void> drain(Sink sink, int64_t wait_us) {
+        for (;;) {
+            AMediaCodecBufferInfo buffer{};
+            const ssize_t index =
+                AMediaCodec_dequeueOutputBuffer(codec_, &buffer, pending_ > 0 ? wait_us : 0);
+            if (index == AMEDIACODEC_INFO_TRY_AGAIN_LATER) {
+                // Waited for in vain: the decoder holds that frame back, or
+                // made nothing of it. Not waited for again.
+                if (pending_ > 0 && wait_us > 0) pending_ = 0;
+                return {};
+            }
+            if (index == AMEDIACODEC_INFO_OUTPUT_FORMAT_CHANGED) {
+                read_format();
+                continue;
+            }
+            if (index == AMEDIACODEC_INFO_OUTPUT_BUFFERS_CHANGED) continue;
+            if (index < 0) {
+                LOG_WARN("engine", info_.name << " failed: " << index << ", started again");
+                restart();
+                return fail(Errc::Malformed);
+            }
+            pending_ = std::max(0, pending_ - 1);
+            ++pictures_;
+            wait_us = 0;
+            size_t capacity = 0;
+            const uint8_t* data = AMediaCodec_getOutputBuffer(codec_, size_t(index), &capacity);
+            Result<void> taken;
+            if (data && buffer.size > 0 && size_t(buffer.offset) + size_t(buffer.size) <= capacity)
+                taken = take(data + buffer.offset, size_t(buffer.size), buffer.presentationTimeUs,
+                             sink);
+            AMediaCodec_releaseOutputBuffer(codec_, size_t(index), false);
+            if (!taken) return taken;
+        }
+    }
+
+    /// Where the planes of the decoder's pictures are, and what they show.
+    void read_format() {
+        AMediaFormat* format = AMediaCodec_getOutputFormat(codec_);
+        if (!format) return;
+        layout_ = {};
+        const int32_t width = int_of(format, AMEDIAFORMAT_KEY_WIDTH, 0);
+        const int32_t height = int_of(format, AMEDIAFORMAT_KEY_HEIGHT, 0);
+        int32_t left = 0;
+        int32_t top = 0;
+        int32_t right = width - 1;
+        int32_t bottom = height - 1;
+        AMediaFormat_getRect(format, AMEDIAFORMAT_KEY_DISPLAY_CROP, &left, &top, &right, &bottom);
+        layout_.left = uint32_t(std::max(0, left));
+        layout_.top = uint32_t(std::max(0, top));
+        // 4:2:0 wants whole pairs: an odd last row or column is left out.
+        layout_.width = uint32_t(std::max(0, right - left + 1)) & ~1u;
+        layout_.height = uint32_t(std::max(0, bottom - top + 1)) & ~1u;
+
+        void* image = nullptr;
+        size_t image_size = 0;
+        if (AMediaFormat_getBuffer(format, "image-data", &image, &image_size) &&
+            image_size >= sizeof(MediaImage2)) {
+            MediaImage2 described{};
+            std::memcpy(&described, image, sizeof described);
+            if (described.type == kMediaImageYuv && described.plane_count == 3 &&
+                described.bit_depth == 8) {
+                for (size_t i = 0; i < 3; ++i) {
+                    layout_.planes[i] = {described.planes[i].offset,
+                                         described.planes[i].column_step,
+                                         described.planes[i].row_step};
+                }
+                layout_.known = true;
+            }
+        } else {
+            // No description: the two layouts a colour format names, by the
+            // stride and the rows of the luma plane.
+            const int32_t color = int_of(format, AMEDIAFORMAT_KEY_COLOR_FORMAT, 0);
+            const int32_t stride = int_of(format, AMEDIAFORMAT_KEY_STRIDE, width);
+            const int32_t rows = int_of(format, AMEDIAFORMAT_KEY_SLICE_HEIGHT, height);
+            const uint32_t luma = uint32_t(stride * rows);
+            if (color == kColorFormatSemiPlanar) {
+                layout_.planes[0] = {0, 1, stride};
+                layout_.planes[1] = {luma, 2, stride};
+                layout_.planes[2] = {luma + 1, 2, stride};
+                layout_.known = true;
+            } else if (color == kColorFormatPlanar) {
+                const uint32_t chroma = uint32_t(stride / 2 * rows / 2);
+                layout_.planes[0] = {0, 1, stride};
+                layout_.planes[1] = {luma, 1, stride / 2};
+                layout_.planes[2] = {luma + chroma, 1, stride / 2};
+                layout_.known = true;
+            }
+        }
+        if (!layout_.known)
+            LOG_WARN("engine",
+                     info_.name << " gives pictures in a layout the engine does not read");
+
+        // MediaFormat's COLOR_RANGE_FULL is 1.
+        const int32_t range = int_of(format, AMEDIAFORMAT_KEY_COLOR_RANGE, 2);
+        color_space_ = {matrix_of(int_of(format, AMEDIAFORMAT_KEY_COLOR_STANDARD, 1)),
+                        range == 1 ? ColorRange::Full : ColorRange::Limited};
+        AMediaFormat_delete(format);
+    }
+
+    /// A picture copied out of the decoder's buffer into a pooled NV12 frame.
+    Result<void> take(const uint8_t* data, size_t size, int64_t pts, Sink sink) {
+        if (!layout_.known || layout_.width == 0 || layout_.height == 0)
+            return fail(Errc::Unsupported);
+        const Layout& layout = layout_;
+        // The last byte each plane's crop reaches, within the buffer.
+        for (size_t i = 0; i < 3; ++i) {
+            const Layout::Plane& plane = layout.planes[i];
+            const size_t shift = i == 0 ? 0 : 1;
+            const size_t last_row = ((layout.top + layout.height) >> shift) - 1;
+            const size_t last_column = ((layout.left + layout.width) >> shift) - 1;
+            if (plane.row_step <= 0 || plane.column_step <= 0 ||
+                plane.offset + last_row * size_t(plane.row_step) +
+                        last_column * size_t(plane.column_step) >=
+                    size)
+                return fail(Errc::Malformed);
+        }
+
+        MutableVideoFrame picture =
+            MutableVideoFrame::allocate(PixelFormat::NV12, layout.width, layout.height);
+        const Layout::Plane& y = layout.planes[0];
+        const uint8_t* from = data + y.offset + layout.top * size_t(y.row_step) + layout.left;
+        for (uint32_t row = 0; row < layout.height; ++row) {
+            std::memcpy(picture.plane(0).data + row * picture.plane(0).stride,
+                        from + row * size_t(y.row_step), layout.width);
+        }
+        const Layout::Plane& u = layout.planes[1];
+        const Layout::Plane& v = layout.planes[2];
+        const size_t chroma_left = layout.left / 2;
+        const size_t chroma_top = layout.top / 2;
+        const bool nv12 = u.column_step == 2 && v.column_step == 2 && v.offset == u.offset + 1 &&
+                          u.row_step == v.row_step;
+        for (uint32_t row = 0; row < layout.height / 2; ++row) {
+            uint8_t* to = picture.plane(1).data + row * picture.plane(1).stride;
+            const uint8_t* from_u = data + u.offset + (chroma_top + row) * size_t(u.row_step) +
+                                    chroma_left * size_t(u.column_step);
+            if (nv12) {
+                std::memcpy(to, from_u, layout.width);
+                continue;
+            }
+            const uint8_t* from_v = data + v.offset + (chroma_top + row) * size_t(v.row_step) +
+                                    chroma_left * size_t(v.column_step);
+            for (uint32_t column = 0; column < layout.width / 2; ++column) {
+                to[2 * column] = from_u[column * size_t(u.column_step)];
+                to[2 * column + 1] = from_v[column * size_t(v.column_step)];
+            }
+        }
+        sink(std::move(picture).freeze(Timestamp{Duration{pts}}, color_space_));
+        return {};
+    }
+
+    /// After a failure: the decoder emptied, to start again at a keyframe.
+    void restart() {
+        AMediaCodec_flush(codec_);
+        pending_ = 0;
+    }
+
+    struct Layout {
+        struct Plane {
+            uint32_t offset = 0;
+            int32_t column_step = 0;
+            int32_t row_step = 0;
+        };
+        bool known = false;
+        uint32_t left = 0;
+        uint32_t top = 0;
+        uint32_t width = 0;  ///< what is shown, even
+        uint32_t height = 0;
+        Plane planes[3];  ///< Y, U, V
+    };
+
+    AMediaCodec* const codec_;
+    VideoDecoderInfo info_;
+    Layout layout_;
+    ColorSpace color_space_;
+    int pending_ = 0;  ///< frames given whose pictures have not come
+    uint64_t pictures_ = 0;
+};
+
+}  // namespace
+
+Result<std::unique_ptr<VideoDecoder>> open_mediacodec_decoder(const VideoDecoderConfig& config) {
+    const char* mime = mime_of(config.codec);
+    if (!mime) return fail(Errc::Unavailable);
+    AMediaCodec* codec = AMediaCodec_createDecoderByType(mime);
+    if (!codec) return fail(Errc::Unavailable);
+    std::string name;
+    if (char* own = nullptr; AMediaCodec_getName(codec, &own) == AMEDIA_OK && own) {
+        name = own;
+        AMediaCodec_releaseName(codec, own);
+    }
+    // Qualcomm's low-latency component of the same decoder, where there is one.
+    if (!name.empty() && !is_software(name)) {
+        const std::string low_latency = name + ".low_latency";
+        if (AMediaCodec* faster = AMediaCodec_createCodecByName(low_latency.c_str())) {
+            AMediaCodec_delete(codec);
+            codec = faster;
+            name = low_latency;
+        }
+    }
+    if (name.empty() || is_software(name)) {
+        AMediaCodec_delete(codec);
+        return fail(Errc::Unavailable);
+    }
+
+    // The size is the stream's to say; this one only sizes the first buffers.
+    AMediaFormat* format = AMediaFormat_new();
+    AMediaFormat_setString(format, AMEDIAFORMAT_KEY_MIME, mime);
+    AMediaFormat_setInt32(format, AMEDIAFORMAT_KEY_WIDTH, 1920);
+    AMediaFormat_setInt32(format, AMEDIAFORMAT_KEY_HEIGHT, 1080);
+    AMediaFormat_setInt32(format, AMEDIAFORMAT_KEY_COLOR_FORMAT, kColorFormatFlexible);
+    AMediaFormat_setInt32(format, "low-latency", 1);  // Android 11's KEY_LOW_LATENCY
+    AMediaFormat_setInt32(format, "vendor.qti-ext-dec-low-latency.enable", 1);
+    // Pictures out in the order they are decoded: the engine's encoders make
+    // no B-frames, so none is held back to be put in order.
+    AMediaFormat_setInt32(format, "vendor.qti-ext-dec-picture-order.enable", 1);
+    AMediaFormat_setInt32(format, "priority", 0);  // real time
+    if (!config.codec_config.empty()) {
+        AMediaFormat_setBuffer(format, "csd-0", config.codec_config.data(),
+                               config.codec_config.size());
+    }
+    media_status_t status = AMediaCodec_configure(codec, format, nullptr, nullptr, 0);
+    AMediaFormat_delete(format);
+    if (status == AMEDIA_OK) status = AMediaCodec_start(codec);
+    if (status != AMEDIA_OK) {
+        LOG_WARN("engine", "decoder " << name << " cannot open: " << status);
+        AMediaCodec_delete(codec);
+        return fail(Errc::Unavailable);
+    }
+    LOG_INFO("engine", "video decoder: " << name);
+    return std::unique_ptr<VideoDecoder>(std::make_unique<MediaCodecDecoder>(codec, name));
+}
+
+}  // namespace ratcast::android

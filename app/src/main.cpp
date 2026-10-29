@@ -8,19 +8,30 @@
 #include <QColor>
 #include <QCommandLineParser>
 #include <QDateTime>
+#include <QDesktopServices>
 #include <QDir>
 #include <QGuiApplication>
 #include <QIcon>
 #include <QPalette>
+#include <QPointer>
 #include <QQmlApplicationEngine>
 #include <QString>
 #include <QSysInfo>
 #include <QUrl>
+#include <QVariant>
+
+#ifdef Q_OS_ANDROID
+#include <QJniEnvironment>
+#include <QJniObject>
+
+#include "ratcast/engine/android.h"
+#endif
 
 #include <clocale>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <utility>
 
 // Our QML modules, linked in statically.
 Q_IMPORT_QML_PLUGIN(Ratcast_VideoPlugin)
@@ -44,6 +55,32 @@ void log_qt_message(QtMsgType type, const QMessageLogContext& context, const QSt
     librats::Logger::getInstance().log(level, named ? context.category : "qt", text.toStdString());
 }
 
+/// rats:// links the system opens the app with — Android's intent filter
+/// (app/android/AndroidManifest.xml), handed on by Qt — joined by the window
+/// (its openLink()); one that comes before the window is kept for it.
+class LinkOpener final : public QObject {
+    Q_OBJECT
+
+public:
+    void show_to(QObject* window) {
+        window_ = window;
+        if (!pending_.isEmpty()) open(QUrl(std::exchange(pending_, {})));
+    }
+
+public Q_SLOTS:
+    void open(const QUrl& url) {
+        if (!window_) {
+            pending_ = url.toString();
+            return;
+        }
+        QMetaObject::invokeMethod(window_, "openLink", QVariant(url.toString()));
+    }
+
+private:
+    QPointer<QObject> window_;
+    QString pending_;
+};
+
 }  // namespace
 
 int main(int argc, char* argv[]) {
@@ -52,6 +89,13 @@ int main(int argc, char* argv[]) {
     if (!qEnvironmentVariableIsSet("QT_QUICK_CONTROLS_STYLE"))
         qputenv("QT_QUICK_CONTROLS_STYLE", "Material");
     QGuiApplication app(argc, argv);
+#ifdef Q_OS_ANDROID
+    // What the engine reaches only through Java (the screen kept on).
+    ratcast::android::attach(QJniEnvironment::javaVM(),
+                             QNativeInterface::QAndroidApplication::context().object());
+#endif
+    LinkOpener links;
+    QDesktopServices::setUrlHandler(QStringLiteral("rats"), &links, "open");
     // Qt takes the user's locale on Unix; numbers written and read below Qt —
     // the call's stats, codecs' options — keep the C one, as Qt advises.
     std::setlocale(LC_NUMERIC, "C");
@@ -129,6 +173,9 @@ int main(int argc, char* argv[]) {
         &engine, &QQmlApplicationEngine::objectCreationFailed, &app,
         [] { QCoreApplication::exit(EXIT_FAILURE); }, Qt::QueuedConnection);
     engine.loadFromModule("Ratcast", "Main");
+    if (!engine.rootObjects().isEmpty()) links.show_to(engine.rootObjects().constFirst());
 
     return QGuiApplication::exec();
 }
+
+#include "main.moc"

@@ -82,6 +82,13 @@ ApplicationWindow {
 
     Component.onCompleted: if (root.link.length > 0) call.join(root.link)
 
+    /// A link the system opened the app with (Android's): joined as one given
+    /// at the start is, unless a room is already on.
+    function openLink(link) {
+        if (call.state === CallController.Idle)
+            call.join(link)
+    }
+
     /// The name of the member watched, as the members' list shows it.
     function watchedName() {
         return root.memberName(call.watched.name ?? "", call.watched.peer ?? "")

@@ -123,11 +123,13 @@ elseif(ANDROID)
     target_sources(ratcast_engine PRIVATE
         src/android/aaudio.cpp
         src/android/audio_device.cpp
+        src/android/java.cpp
+        src/android/mediacodec_decoder.cpp
+        src/android/screen_awake.cpp
         src/capture/camera_capture_unavailable.cpp
         src/capture/screen_capture_unavailable.cpp
-        src/screen_awake_unavailable.cpp
     )
-    target_link_libraries(ratcast_engine PRIVATE aaudio)
+    target_link_libraries(ratcast_engine PRIVATE aaudio mediandk)
 else()
     target_sources(ratcast_engine PRIVATE
         src/audio/audio_device_unavailable.cpp
