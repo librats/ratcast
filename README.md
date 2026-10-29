@@ -24,8 +24,8 @@ the picture goes straight from the sharer to each viewer, encrypted end to end.
 
 ratcast is built on [librats](https://github.com/librats/librats). It comes in two parts:
 
-- **ratcast**: the desktop app for Windows and Linux, with macOS (Apple Silicon) in preview.
-  Android is planned.
+- **ratcast**: the desktop app for Windows and Linux, with macOS (Apple Silicon) in preview,
+  and Android in preview too: watching a share and talking, not sharing yet.
 - **libratcast**: the media transport underneath it. You can use it on its own, much like SRT
   or librist.
 
@@ -67,6 +67,7 @@ Get the latest build from [Releases](https://github.com/librats/ratcast/releases
 | Windows 10/11 x64 | `ratcast-<version>-windows-x64.zip` | Unzip and run `ratcast.exe` |
 | Linux x86_64 | `ratcast-<version>-linux-x86_64.AppImage` | glibc 2.39+ and PipeWire 1.0+ (Ubuntu 24.04, Debian 13, Fedora 40 or newer) |
 | macOS 14+ Apple Silicon (preview) | `ratcast-<version>-macos-arm64.dmg` | Drag `ratcast` into Applications. It is not notarized: open it the first time with right-click → **Open** |
+| Android 10+ arm64 (preview) | `ratcast-<version>-android-arm64.apk` | Open it on the phone and allow installing from that app. Watch and talk; a newer APK installs over it. A `rats://` link opens the app |
 
 ## Using it
 
@@ -240,12 +241,15 @@ which needs the Screen Recording permission for the terminal they run in.
 <details>
 <summary><b>Releases</b></summary>
 
-[`release.yml`](.github/workflows/release.yml) builds the Windows zip, the Linux AppImage and
-the macOS DMG (with the same bundle zipped for the updater) on every push to `main` and
-publishes them as a GitHub release for each `v*` tag. The Windows and Linux packages carry the
+[`release.yml`](.github/workflows/release.yml) builds the Windows zip, the Linux AppImage,
+the macOS DMG (with the same bundle zipped for the updater) and the Android APK on every push
+to `main` and publishes them as a GitHub release for each `v*` tag. The APK is signed with the
+key in the repository's secrets (`ANDROID_KEYSTORE`, the keystore in base64, with
+`ANDROID_KEY_ALIAS`, `ANDROID_KEYSTORE_PASSWORD` and `ANDROID_KEY_PASSWORD`), so that each
+release installs over the one before; without them, with a key made for the run. The Windows and Linux packages carry the
 same FFmpeg encoders; on macOS the GPU's encoders are VideoToolbox's. The bundle is signed ad
 hoc, not notarized. The version comes from `-DRATCAST_VERSION`, or else from the last
-`v*` tag. Only release builds update themselves (`-DRATCAST_UPDATES=ON`). They check GitHub
+`v*` tag. Only the desktop's release builds update themselves (`-DRATCAST_UPDATES=ON`). They check GitHub
 shortly after start and then every six hours, and verify each download against its SHA-256. The
 AppImage is replaced at once. The Windows folder and the macOS bundle are replaced at the next
 start, or at once with **Restart now**.

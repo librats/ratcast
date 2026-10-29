@@ -8,7 +8,9 @@
  * The packages are named as .github/workflows/release.yml names them:
  * `ratcast-<version>-windows-x64.zip`, `ratcast-<version>-linux-x86_64.AppImage`,
  * `ratcast-<version>-macos-arm64.zip` (the DMG beside it is for people), each
- * beside a `-symbols` archive that is never the one.
+ * beside a `-symbols` archive that is never the one. Android's APK,
+ * `ratcast-<version>-android-arm64.apk`, has no updater: Android installs a
+ * newer one over it.
  */
 
 #include <QByteArray>

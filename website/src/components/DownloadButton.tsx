@@ -1,26 +1,34 @@
-import { Apple, ArrowDownToLine } from "lucide-react";
+import { Apple, ArrowDownToLine, Smartphone } from "lucide-react";
 import { formatSize, RELEASES_URL, useLatestRelease, usePlatform } from "../lib/release";
 import { LinuxIcon, WindowsIcon } from "./ui";
 
-const NAMES = { windows: "Windows", linux: "Linux", mac: "macOS" } as const;
-const FORMATS = { windows: "zip", linux: "AppImage", mac: "DMG" } as const;
+const NAMES = { windows: "Windows", linux: "Linux", mac: "macOS", android: "Android" } as const;
+const FORMATS = { windows: "zip", linux: "AppImage", mac: "DMG", android: "APK" } as const;
 
 /** The big button: the package for the visitor's system, straight from the latest release. */
 export function DownloadButton() {
   const release = useLatestRelease();
   const platform = usePlatform();
-  const target = platform === "windows" || platform === "linux" || platform === "mac" ? platform : null;
+  const target = platform === "other" ? null : platform;
   const pkg = target ? release?.packages.find((p) => p.platform === target) : undefined;
 
   const href = pkg ? pkg.url : target ? RELEASES_URL : "#download";
   const Icon =
-    target === "linux" ? LinuxIcon : target === "windows" ? WindowsIcon : target === "mac" ? Apple : ArrowDownToLine;
+    target === "linux"
+      ? LinuxIcon
+      : target === "windows"
+        ? WindowsIcon
+        : target === "mac"
+          ? Apple
+          : target === "android"
+            ? Smartphone
+            : ArrowDownToLine;
   const label = target ? `Download for ${NAMES[target]}` : "Download ratcast";
   const detail = pkg
     ? `v${release!.version} · ${FORMATS[target!]} · ${formatSize(pkg.size)}`
     : target
       ? "Latest release on GitHub"
-      : "Windows, Linux & macOS · Android planned";
+      : "Windows, Linux, macOS & Android";
 
   return (
     <a

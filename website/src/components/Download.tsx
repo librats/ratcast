@@ -48,6 +48,7 @@ sudo systemctl enable --now ratcast-server`;
 export function Download() {
   const release = useLatestRelease();
   const mine = usePlatform();
+  const android = release?.packages.find((p) => p.platform === "android");
 
   return (
     <section id="download" className="relative scroll-mt-24 overflow-hidden py-24">
@@ -101,10 +102,21 @@ export function Download() {
           })}
         </div>
 
-        <Reveal delay={0.2} className="mt-4 flex flex-col items-center justify-between gap-3 rounded-2xl border border-dashed border-white/10 px-6 py-4 text-sm text-fog/50 sm:flex-row">
+        <Reveal
+          delay={0.2}
+          className={`mt-4 flex flex-col items-center justify-between gap-3 rounded-2xl border border-dashed px-6 py-4 text-sm text-fog/50 sm:flex-row ${
+            mine === "android" ? "border-cyan/30" : "border-white/10"
+          }`}
+        >
           <span className="flex items-center gap-3">
-            <Smartphone className="size-4" />
-            Android is planned.
+            <Smartphone className="size-4 shrink-0" />
+            <span>
+              Android 10+ on arm64, in preview: watch a share and talk.{" "}
+              <a href={android?.url ?? RELEASES_URL} className="text-cyan hover:underline">
+                {android ? `${android.name} · ${formatSize(android.size)}` : "The APK"}
+              </a>
+              . A newer one installs over it.
+            </span>
           </span>
           <a href={release?.url ?? RELEASES_URL} className="text-cyan hover:underline">
             All files, checksums and notes →

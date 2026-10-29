@@ -1689,10 +1689,13 @@ a desktop, the call held while the app is in the background.
   going on; a share full screen turns the phone on its side (sensor landscape), and back
   after; a touch brings full screen's controls as the mouse does; the chat's box not
   focused as it opens, the keyboard not covering what was said; what Android has none of
-  yet (a screen to share, a camera, a folder to open, a tray) not offered. Left: the
-  release packages an APK (`release.yml`, `app/update/release.h`, the website's
-  `release.ts`), a link handed to Android's share sheet, edge to edge on Android 15 (Qt's
-  safe areas).
+  yet (a screen to share, a camera, a folder to open, a tray) not offered. The release
+  packages an APK (`release.yml`'s `android` job: the `android-app` preset as a release,
+  aligned and signed by apksigner with the key in the repository's secrets, or one made for
+  the run; checked for the app on arm64 at API 29, every library its libraries link, FFmpeg
+  LGPL with its codecs, the engine's Java), offered by the website and README; no updater,
+  Android installs a newer APK over the old. Left: a link handed to Android's share sheet,
+  edge to edge on Android 15 (Qt's safe areas).
 
 ### Stage 8 — Beyond
 
