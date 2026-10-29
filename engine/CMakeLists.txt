@@ -119,6 +119,15 @@ elseif(APPLE)
         "-framework CoreFoundation" "-framework CoreGraphics" "-framework CoreMedia"
         "-framework CoreVideo" "-framework Foundation" "-framework IOKit"
         "-framework ScreenCaptureKit")
+elseif(ANDROID)
+    target_sources(ratcast_engine PRIVATE
+        src/android/aaudio.cpp
+        src/android/audio_device.cpp
+        src/capture/camera_capture_unavailable.cpp
+        src/capture/screen_capture_unavailable.cpp
+        src/screen_awake_unavailable.cpp
+    )
+    target_link_libraries(ratcast_engine PRIVATE aaudio)
 else()
     target_sources(ratcast_engine PRIVATE
         src/audio/audio_device_unavailable.cpp

@@ -147,7 +147,7 @@ The current stage and the next are broken into steps; later ones stay coarse unt
 Stages keep their numbers when their order changes (steps and `docs/bench.md` refer to them):
 the app (6) comes before watching together (5), as one viewer is enough for its first version,
 the call monitor (9) right after the app, the room (10) after it and full screen (11) after
-that, before 5.
+that, before 5; Android (13) taken out of 8 and done before it.
 Every step ends with tests (and benchmarks when it moves a number) and leaves the code in its
 final place and shape: stage 0 is a walking skeleton, not a throwaway prototype.
 
@@ -161,11 +161,12 @@ final place and shape: stage 0 is a walking skeleton, not a throwaway prototype.
 | **5. Watch together** ✅ | one-to-many: a sender's budget, synchronised playout, forwarding tree, SFU and E2EE; simulcast and cinema put off | L5 ✅ |
 | **6. App** ✅ | Qt app MVP, one to one: invites, voice with AEC / NS, screen / window / app-audio share, camera; on Linux first, the other OSes as stage 4 reaches them | — |
 | **7. Conferences** ✅ | text chat, a link that holds, each member heard as loud as the listener sets, active speaker, last-N, grid, settings; moderation, push-to-talk and sounds put off to stage 8 | — |
-| **8. Beyond** | Android, cinema mode, HDR, moderation, push-to-talk, rooms past a mesh, polish | — |
+| **8. Beyond** | cinema mode, HDR, moderation, push-to-talk, rooms past a mesh, polish | — |
 | **9. Call monitor** ✅ | what a call does, as it does it: quality, bitrate, size, frame time, whether each end keeps up — a line a second in the console, a panel in the app | — |
 | **10. Room** ✅ | a voice lobby for a few, as Discord's: everyone with everyone, all talking from the start, who is there and who speaks, mute and deafen, anyone's screen or camera on and off while the room goes on | — |
 | **12. Getting through** — in part | a call that holds as a member's address changes (a VPN, another network); servers found without being typed in, the room's met at by all its members alike; joining fast and seen to be | L23 ✅, L24 ✅, L25 ✅ |
 | **11. Full screen** ✅ | a share watched on the whole screen with nothing else on it, the controls and the cursor there while the mouse moves; the picture pixel-exact; the screen kept awake while watching | — |
+| **13. Android** | the app on phones: a share watched first, then talking, the camera and the screen shared; the call held in the background | — |
 
 ### Stage 0 — Skeleton ✅
 
@@ -551,7 +552,7 @@ across the same paths. In steps:
   from C (`test_capi_c.c`, built as C11). Not in it: a feed's packet framing (`DataPublisher`'s
   six packets to a frame — a C sender sends whole packets, `RATCAST_DATA_FRAME_SIZE` bytes at
   most a frame) and the engine's capture and codecs, which bindings of the app will want
-  (Android, stage 8).
+  (Android, stage 13).
 
 netsim, the userspace impairment proxy (delay, jitter, loss, bursts, bandwidth caps; no root, any
 OS; scripted scenarios in CI), moved to stage 4: it is for the other platforms, and
@@ -1576,9 +1577,71 @@ it is.
 - Later: servers trusted by key and a guard against one who runs many (Sybil), a room's key
   (7.5) making the hash unguessable; connections to a server or two made as the app opens.
 
+### Stage 13 — Android
+
+The app on Android phones and tablets: a share watched first — the main use, and the shortest
+way to a package — then talking, the camera and the screen shared. The layers below the app
+build for Android as they are: librats already does (its logger to logcat, `ifaddrs` for old
+APIs), libratcast and the client are plain C++. What is new is the engine's backends
+(`engine/src/android/`, on the NDK's C APIs: AAudio, `AMediaCodec`, Camera2, `AImageReader`), a
+little Java for what the NDK does not reach — the screen's consent, other applications' sound,
+the foreground service — kept in the engine and handed the JavaVM and the application's
+context at start (`ratcast::android::attach()`), so that nothing of it needs Qt, and the app
+laid out for touch. Android 10 (API 29) at least, for AudioPlaybackCapture; arm64-v8a first.
+*Done when* a phone joins a room by a `rats://` link and watches a share smoothly, talks with
+the others with its echo cancelled, and shares its own screen with its applications' sound to
+a desktop, the call held while the app is in the background.
+
+- **13.1 The build** — in part: the `android` preset (the NDK's toolchain under vcpkg's,
+  `arm64-android-release`: FFmpeg a shared library as LGPL wants, Opus and WebRTC
+  AudioProcessing — its overlay port built for Android unchanged — static), everything below
+  the app building unchanged; the tests run on a device by ctest through
+  `cmake/android-run.cmake` (the build's `CMAKE_CROSSCOMPILING_EMULATOR`: each program
+  stripped and pushed, with libc++ and FFmpeg's libraries, when it changed), 548 of them
+  passing on an Android 13 device, the video ones skipping for want of an encoder (13.5). The engine's
+  sound already on AAudio (from 13.2/13.3: playback and the microphone, their tests on a
+  device). `android-app` builds the app with Qt for Android into an APK
+  (`app/android/AndroidManifest.xml`; the data directory in the application's own storage).
+  Left: a CI job that builds it and runs the tests on an emulator.
+- **13.2 Watching**: sound out through AAudio (`open_audio_output()`: a low-latency callback
+  stream, the time the sound will be heard from `AAudioStream_getTimestamp()`); pictures
+  decoded by MediaCodec (the low-latency decoder where there is one, `KEY_LOW_LATENCY`) into
+  memory read as 4:2:0, software decoding as now where it fails; `VideoView` on Qt's OpenGL ES
+  or Vulkan backend; `CallController::Environment` for Android (the data directory in the
+  application's storage); a `rats://` link opening the app (an intent filter); the screen kept
+  on while watching; `Updater` off (packages come from a store or the release page). Done when
+  a phone watches a desktop's 1080p60 share with a desktop viewer's wait, stalls and
+  latency (`PlaybackMeter`).
+- **13.3 Talking**: the microphone through AAudio (the voice-communication preset;
+  `RECORD_AUDIO` asked for through Qt's `QPermission`), the AudioProcessor hearing the speaker
+  as now (Android gives no other application's sound to cancel); the platform's own echo
+  canceller compared on phones, kept where it does better. The call's sound routed (the
+  speaker, the earpiece, a headset: `setCommunicationDevice()`) and audio focus taken; a
+  foreground service of the microphone's type keeping the call while the app is in the
+  background, the network followed as it moves between Wi-Fi and mobile (12.1), mDNS heard
+  under a multicast lock.
+- **13.4 Camera**: Camera2 through the NDK (`ACameraManager`), `AImageReader`'s YUV_420_888 into
+  4:2:0 (its row and pixel strides), turned by the sensor's orientation; front and back as two
+  cameras; `CAMERA` asked for.
+- **13.5 Sharing the screen**: MediaProjection — the system's consent each time (from Android
+  14 it is not kept: no restore token), a single application where the system offers it (14
+  QPR2) — into a VirtualDisplay on an `AImageReader`, its RGBA into NV12 (`convert_frame()`
+  learns RGBA); the applications' sound through AudioPlaybackCapture, this process left out
+  (`excludeUid`), the call's voices not captured anyway (their voice-communication usage); a
+  foreground service of the media projection's type. Encoded by MediaCodec on its own API
+  (`open_native`, as VideoToolbox: `KEY_LATENCY`, keyframes asked for through
+  `PARAMETER_KEY_REQUEST_SYNC_FRAME`, the bitrate changed in flight through
+  `PARAMETER_KEY_VIDEO_BITRATE`), checked to hand each picture back at once.
+- **13.6 The GPU path**: the VirtualDisplay drawing into `AHardwareBuffer`s the encoder reads
+  where they are (a `GpuDevice` of Android's), and decoded pictures handed to QRhi as textures
+  with no copy.
+- **13.7 The app for touch**: `Main.qml` laid out for a phone held upright, its controls for
+  fingers; the release packages an APK (`release.yml`, `app/update/release.h`, the website's
+  `release.ts`).
+
 ### Stage 8 — Beyond
 
-Android, cinema mode (5.5), HDR, polish; from stage 7, moderation (7.5), push-to-talk and the
+Cinema mode (5.5), HDR, polish; from stage 7, moderation (7.5), push-to-talk and the
 room's sounds (7.3), rooms past a mesh (7.6).
 
 ## librats track

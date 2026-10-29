@@ -23,7 +23,8 @@ public:
     void until(std::chrono::steady_clock::time_point when);
 
 private:
-    void* timer_ = nullptr;  ///< Windows' waitable timer (a HANDLE); unused elsewhere
+    /// Windows' waitable timer (a HANDLE); unused elsewhere.
+    [[maybe_unused]] void* timer_ = nullptr;
 };
 
 }  // namespace ratcast

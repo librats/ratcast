@@ -125,8 +125,13 @@ struct CallController::Cameras {
 };
 
 QString data_folder() {
+#ifdef Q_OS_ANDROID
+    // The application's own storage: the shared one (Generic) asks the user.
+    return QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+#else
     return QStandardPaths::writableLocation(QStandardPaths::GenericDataLocation) +
            QStringLiteral("/ratcast");
+#endif
 }
 
 CallController::Environment CallController::Environment::system() {

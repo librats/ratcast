@@ -43,6 +43,36 @@
       }
     },
     {
+      "name": "android",
+      "displayName": "Android arm64, libraries and tools (NDK, vcpkg's arm64-android-release)",
+      "description": "Needs ANDROID_NDK_ROOT and VCPKG_ROOT, and VCPKG_DEFAULT_HOST_TRIPLET where pkg-config is vcpkg's (Windows: x64-windows); tests run on the device adb sees (ANDROID_SERIAL when several).",
+      "inherits": "debug",
+      "toolchainFile": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
+      "cacheVariables": {
+        "VCPKG_CHAINLOAD_TOOLCHAIN_FILE": "$env{ANDROID_NDK_ROOT}/build/cmake/android.toolchain.cmake",
+        "VCPKG_TARGET_TRIPLET": "arm64-android-release",
+        "VCPKG_HOST_TRIPLET": "$env{VCPKG_DEFAULT_HOST_TRIPLET}",
+        "VCPKG_OVERLAY_TRIPLETS": "${sourceDir}/cmake/vcpkg-triplets",
+        "ANDROID_ABI": "arm64-v8a",
+        "ANDROID_PLATFORM": "android-29",
+        "ANDROID_STL": "c++_shared",
+        "RATCAST_BUILD_APP": "OFF"
+      }
+    },
+    {
+      "name": "android-app",
+      "displayName": "Android arm64 with the app (Qt for Android)",
+      "description": "As android, and QT_ANDROID (Qt's android_arm64_v8a), QT_HOST_PATH (the host's Qt) and ANDROID_SDK_ROOT; the package is the apk target.",
+      "inherits": "android",
+      "cacheVariables": {
+        "VCPKG_CHAINLOAD_TOOLCHAIN_FILE": "$env{QT_ANDROID}/lib/cmake/Qt6/qt.toolchain.cmake",
+        "QT_HOST_PATH": "$env{QT_HOST_PATH}",
+        "ANDROID_NDK_ROOT": "$env{ANDROID_NDK_ROOT}",
+        "ANDROID_SDK_ROOT": "$env{ANDROID_SDK_ROOT}",
+        "RATCAST_BUILD_APP": "ON"
+      }
+    },
+    {
       "name": "tsan",
       "displayName": "Debug + ThreadSanitizer",
       "inherits": "debug",
@@ -74,6 +104,14 @@
     {
       "name": "tsan",
       "configurePreset": "tsan"
+    },
+    {
+      "name": "android",
+      "configurePreset": "android"
+    },
+    {
+      "name": "android-app",
+      "configurePreset": "android-app"
     }
   ],
   "testPresets": [
@@ -114,6 +152,15 @@
       "configurePreset": "tsan",
       "environment": {
         "TSAN_OPTIONS": "halt_on_error=1:suppressions=${sourceDir}/cmake/tsan.supp"
+      }
+    },
+    {
+      "name": "android",
+      "description": "On one device: its processors are shared, and adb pushes over one link.",
+      "inherits": "base",
+      "configurePreset": "android",
+      "execution": {
+        "jobs": 4
       }
     }
   ]

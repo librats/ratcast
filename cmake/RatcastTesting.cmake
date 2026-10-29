@@ -19,6 +19,24 @@ endif()
 
 include(GoogleTest)
 
+# An Android build's tests run on a device through adb (cmake/android-run.cmake):
+# ctest and GoogleTest's discovery start every test program through it, which
+# pushes the shared libraries they need beside them — libc++ and vcpkg's
+# (FFmpeg's, arm64-android-release).
+if(ANDROID)
+    find_program(RATCAST_ADB adb HINTS "$ENV{ANDROID_SDK_ROOT}/platform-tools"
+        "$ENV{ANDROID_HOME}/platform-tools" REQUIRED)
+    set(android_libs "${CMAKE_SYSROOT}/usr/lib/${CMAKE_LIBRARY_ARCHITECTURE}/libc++_shared.so")
+    if(VCPKG_INSTALLED_DIR AND VCPKG_TARGET_TRIPLET)
+        file(GLOB vcpkg_libs "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/lib/*.so")
+        list(APPEND android_libs ${vcpkg_libs})
+    endif()
+    list(JOIN android_libs "|" android_libs)
+    set(CMAKE_CROSSCOMPILING_EMULATOR
+        "${CMAKE_COMMAND}" "-DADB=${RATCAST_ADB}" "-DSTRIP=${CMAKE_STRIP}"
+        "-DLIBS=${android_libs}" -P "${PROJECT_SOURCE_DIR}/cmake/android-run.cmake" --)
+endif()
+
 # ratcast_add_test(<name> SOURCES <files...> LIBS <targets...> [OWN_MAIN]
 #                  [EXCLUSIVE <gtest filter>])
 # OWN_MAIN: the sources have main() (a Qt test makes its application first).

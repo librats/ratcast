@@ -101,6 +101,39 @@ if(APPLE)
         PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
 endif()
 
+# On Android a package, made by androiddeployqt (the `apk` target): the
+# manifest (android/AndroidManifest.xml) and the icon put together in the
+# build's folder, as the package wants them, and the shared libraries the app
+# links beside Qt's — FFmpeg's.
+if(ANDROID)
+    set(android_dir "${CMAKE_CURRENT_BINARY_DIR}/android")
+    configure_file(android/AndroidManifest.xml "${android_dir}/AndroidManifest.xml" COPYONLY)
+    configure_file(resources/ratcast.png "${android_dir}/res/drawable/ratcast.png" COPYONLY)
+    set(android_libs)
+    if(TARGET PkgConfig::RATCAST_FFMPEG)
+        get_target_property(ffmpeg_libs PkgConfig::RATCAST_FFMPEG INTERFACE_LINK_LIBRARIES)
+        list(FILTER ffmpeg_libs INCLUDE REGEX "\\.so$")
+        list(APPEND android_libs ${ffmpeg_libs})
+    endif()
+    # Each release's above the one before: 1.2.3 is 1002003 (1 for 0.0.0, as 0 is none).
+    math(EXPR version_code
+        "${PROJECT_VERSION_MAJOR} * 1000000 + ${PROJECT_VERSION_MINOR} * 1000 + ${PROJECT_VERSION_PATCH}")
+    if(version_code EQUAL 0)
+        set(version_code 1)
+    endif()
+    set_target_properties(ratcast_app PROPERTIES
+        QT_ANDROID_PACKAGE_SOURCE_DIR "${android_dir}"
+        QT_ANDROID_PACKAGE_NAME       app.ratcast
+        QT_ANDROID_APP_NAME           ratcast
+        QT_ANDROID_APP_ICON           "@drawable/ratcast"
+        QT_ANDROID_MIN_SDK_VERSION    29
+        QT_ANDROID_TARGET_SDK_VERSION 35
+        QT_ANDROID_VERSION_NAME       "${PROJECT_VERSION}"
+        QT_ANDROID_VERSION_CODE       ${version_code}
+        QT_ANDROID_EXTRA_LIBS         "${android_libs}"
+    )
+endif()
+
 qt_add_qml_module(ratcast_app
     URI     Ratcast
     VERSION 1.0
@@ -128,7 +161,10 @@ target_link_libraries(ratcast_app PRIVATE
 )
 ratcast_target_defaults(ratcast_app)
 
-ratcast_install_programs(ratcast_app)
+# On Android the app is a library in a package (the apk target), never installed.
+if(NOT ANDROID)
+    ratcast_install_programs(ratcast_app)
+endif()
 
 # Qt's libraries, plugins and the QML modules Main.qml imports, beside the app
 # (windeployqt) or in its bundle (macdeployqt). The compiler's runtime is
@@ -165,7 +201,7 @@ elseif(APPLE)
         DEPLOY_TOOL_OPTIONS ${library_paths}
     )
     install(SCRIPT "${deploy_script}")
-elseif(UNIX)
+elseif(UNIX AND NOT ANDROID)
     # The desktop's menu entry and icon; Qt and the libraries are bundled into
     # the AppImage by linuxdeploy (.github/workflows/release.yml).
     install(FILES resources/ratcast.desktop DESTINATION "${CMAKE_INSTALL_DATADIR}/applications")
