@@ -81,6 +81,37 @@ private:
     QString pending_;
 };
 
+/// What the window asks of Android's activity; elsewhere nothing. Its
+/// toBackground(): the app sent behind as Home sends it (a window cannot be
+/// minimized there), the room going on. Its share full screen: turned on its
+/// side, either way up, as a film is watched; back as it was after.
+class Activity final : public QObject {
+    Q_OBJECT
+
+public:
+    explicit Activity(QObject* window) : window_(window) {}
+
+public Q_SLOTS:
+    void to_background() {
+#ifdef Q_OS_ANDROID
+        QJniObject activity = QNativeInterface::QAndroidApplication::context();
+        if (activity.isValid()) activity.callMethod<jboolean>("moveTaskToBack", jboolean(true));
+#endif
+    }
+
+    void full_screen_changed() {
+#ifdef Q_OS_ANDROID
+        // ActivityInfo's SCREEN_ORIENTATION_SENSOR_LANDSCAPE, _UNSPECIFIED.
+        const jint orientation = window_->property("fullScreen").toBool() ? 6 : -1;
+        QJniObject activity = QNativeInterface::QAndroidApplication::context();
+        if (activity.isValid()) activity.callMethod<void>("setRequestedOrientation", orientation);
+#endif
+    }
+
+private:
+    QObject* window_;
+};
+
 }  // namespace
 
 int main(int argc, char* argv[]) {
@@ -173,7 +204,12 @@ int main(int argc, char* argv[]) {
         &engine, &QQmlApplicationEngine::objectCreationFailed, &app,
         [] { QCoreApplication::exit(EXIT_FAILURE); }, Qt::QueuedConnection);
     engine.loadFromModule("Ratcast", "Main");
-    if (!engine.rootObjects().isEmpty()) links.show_to(engine.rootObjects().constFirst());
+    if (engine.rootObjects().isEmpty()) return QGuiApplication::exec();
+    QObject* window = engine.rootObjects().constFirst();
+    links.show_to(window);
+    Activity activity(window);
+    QObject::connect(window, SIGNAL(toBackground()), &activity, SLOT(to_background()));
+    QObject::connect(window, SIGNAL(fullScreenChanged()), &activity, SLOT(full_screen_changed()));
 
     return QGuiApplication::exec();
 }

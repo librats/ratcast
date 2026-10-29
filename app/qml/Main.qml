@@ -25,6 +25,10 @@ import Ratcast.Video
 // is kept in. The settings (SettingsDialog), from the start and the room; the
 // window goes to the tray, if they say so, as it is minimized or closed —
 // the room going on — and comes back from its icon.
+// Narrow — a phone held upright — the room is one column: the stage on top,
+// the members under it, chat and stats over both, and the controls that do
+// not fit along the bottom in a menu. On Android, Back steps out of what is
+// open, and in a room leaves the app to the background, the room going on.
 ApplicationWindow {
     id: root
 
@@ -41,6 +45,11 @@ ApplicationWindow {
     readonly property bool watching: call.watching.length > 0
     /// Cameras shown: this side's, if on, and the others'.
     readonly property int cameraTiles: (call.camera ? 1 : 0) + call.cameras
+    /// One column: a phone held upright, or a window as narrow.
+    readonly property bool compact: root.width < 720
+    /// Android's: no screen to share or camera yet (docs/PLAN.md, 13.4 and
+    /// 13.5), no tray, no folder to open.
+    readonly property bool mobile: Qt.platform.os === "android"
 
     /// The share watched on the whole screen, nothing else drawn.
     property bool fullScreen: false
@@ -142,10 +151,40 @@ ApplicationWindow {
     }
 
     onClosing: close => {
+        if (root.mobile && root.stepBack()) {
+            close.accepted = false
+            return
+        }
         if (settingsDialog.closeToTray && tray.available && !root.quitting) {
             close.accepted = false
             root.toTray()
         }
+    }
+
+    /// The app sent to the background (main.cpp: Android's activity behind).
+    signal toBackground()
+
+    /// Android's Back: out of full screen, the chat or the stats, if open;
+    /// in a room, the app to the background, the room going on. False when
+    /// there is nothing to step out of: the app goes.
+    function stepBack() {
+        if (root.fullScreen)
+            root.setFullScreen(false)
+        else if (chatPane.shown)
+            chatPane.shown = false
+        else if (stats.shown)
+            stats.shown = false
+        else if (call.state !== CallController.Idle)
+            root.toBackground()
+        else
+            return false
+        return true
+    }
+
+    Shortcut {
+        sequence: "Back"
+        enabled: root.mobile
+        onActivated: if (!root.stepBack()) Qt.quit()
     }
 
     /// The window hidden, its icon in the tray: the room goes on.
@@ -264,6 +303,7 @@ ApplicationWindow {
         }
         Slider {
             id: slider
+            Layout.fillWidth: true
             Layout.preferredWidth: 140
             from: 0
             to: call.maxVolume
@@ -297,20 +337,27 @@ ApplicationWindow {
             font.bold: true
         }
 
-        RowLayout {
+        // Narrow, one under another.
+        GridLayout {
             Layout.alignment: Qt.AlignHCenter
-            spacing: 8
+            columns: root.compact ? 1 : 3
+            columnSpacing: 8
+            rowSpacing: 0
 
             Label {
+                Layout.alignment: Qt.AlignHCenter
                 text: "v" + root.ratcastVersion + "  ·  librats " + root.libratsVersion
                 opacity: 0.6
             }
             Button {
+                Layout.alignment: Qt.AlignHCenter
                 text: qsTr("Open log folder")
                 flat: true
+                visible: !root.mobile
                 onClicked: Qt.openUrlExternally(root.dataFolder)
             }
             Button {
+                Layout.alignment: Qt.AlignHCenter
                 text: qsTr("Settings")
                 flat: true
                 onClicked: settingsDialog.open()
@@ -443,13 +490,19 @@ ApplicationWindow {
 
     // ── The room ────────────────────────────────────────────────────────────
 
-    // Who is in it, and how to bring others.
+    // Who is in it, and how to bring others; narrow, under the stage, the
+    // first invite only until the others are asked for.
     Pane {
         id: side
+
+        property bool allInvites: false
+
+        // Sizes bound, not anchors let go: an anchor taken away leaves the
+        // size it gave, which a binding that did not change does not undo.
         anchors.left: parent.left
-        anchors.top: parent.top
+        anchors.top: root.compact ? stage.bottom : parent.top
         anchors.bottom: controls.top
-        width: 280
+        width: root.compact ? parent.width : 280
         visible: root.inRoom && !root.fullScreen
         Material.elevation: 2
 
@@ -468,7 +521,7 @@ ApplicationWindow {
                 font.pixelSize: 12
             }
             Repeater {
-                model: call.invites
+                model: root.compact && !side.allInvites ? call.invites.slice(0, 1) : call.invites
 
                 RowLayout {
                     required property string modelData
@@ -487,6 +540,14 @@ ApplicationWindow {
                         onClicked: call.copy(modelData)
                     }
                 }
+            }
+
+            Button {
+                text: call.invites.length === 2 ? qsTr("1 more link")
+                                                : qsTr("%1 more links").arg(call.invites.length - 1)
+                flat: true
+                visible: root.compact && !side.allInvites && call.invites.length > 1
+                onClicked: side.allInvites = true
             }
 
             Label {
@@ -651,23 +712,30 @@ ApplicationWindow {
     }
 
     // The share watched, and the cameras: beside it, or alone in the middle;
-    // full screen, the share alone on the whole of it.
+    // full screen, the share alone on the whole of it. Narrow, across the top:
+    // the share as wide as it is, its buttons and the cameras under it.
     Item {
         id: stage
         readonly property bool camerasBeside: root.watching && root.cameraTiles > 0
-                                              && !root.fullScreen
-        anchors.left: root.fullScreen ? parent.left : side.right
-        anchors.right: chatPane.visible ? chatPane.left : parent.right
+                                              && !root.fullScreen && !root.compact
+        /// Narrow, the top of one column.
+        readonly property bool column: root.compact && !root.fullScreen
+        anchors.left: root.fullScreen || root.compact ? parent.left : side.right
+        anchors.right: chatPane.visible && !root.compact ? chatPane.left : parent.right
         anchors.top: parent.top
-        anchors.bottom: root.fullScreen ? parent.bottom : controls.top
         anchors.margins: root.fullScreen ? 0 : 12
+        // Bound, not anchored at the bottom: see the members' pane.
+        height: root.fullScreen ? parent.height
+              : !stage.column ? controls.y - 24
+              : root.watching ? cameras.y + (cameras.visible ? cameras.height : 0)
+              : Math.max(120, (controls.y - 24) * 0.45)
         visible: root.inRoom
 
         VideoView {
             id: picture
             anchors.left: parent.left
             anchors.top: parent.top
-            anchors.bottom: parent.bottom
+            height: stage.column ? stage.width * 9 / 16 : stage.height
             anchors.right: stage.camerasBeside ? cameras.left : parent.right
             anchors.rightMargin: stage.camerasBeside ? 12 : 0
             visible: root.watching
@@ -681,26 +749,37 @@ ApplicationWindow {
             hoverEnabled: root.fullScreen
             cursorShape: root.fullScreen && !chrome.shown ? Qt.BlankCursor : Qt.ArrowCursor
             onDoubleClicked: root.setFullScreen(!root.fullScreen)
+            // A touch brings them as the mouse does.
+            onPressed: if (root.fullScreen) chrome.wake()
             onPositionChanged: if (root.fullScreen) chrome.wake()
         }
 
-        RowLayout {
-            anchors.top: parent.top
+        // Over the share; narrow, under it.
+        GridLayout {
+            id: shareRow
+            anchors.top: stage.column ? picture.bottom : parent.top
+            anchors.topMargin: stage.column ? 8 : 0
             anchors.horizontalCenter: picture.horizontalCenter
+            width: stage.column ? stage.width : implicitWidth
+            columns: stage.column ? 2 : 3
             visible: root.watching && !root.fullScreen
 
             Button {
+                Layout.fillWidth: stage.column
                 text: qsTr("Stop watching")
                 onClicked: call.watch("")
             }
             Button {
+                Layout.fillWidth: stage.column
                 text: qsTr("Full screen")
                 onClicked: root.setFullScreen(true)
                 ToolTip.visible: hovered
                 ToolTip.text: qsTr("F, or a double click on the share; Esc to leave")
             }
             ShareVolume {
-                Layout.leftMargin: 8
+                Layout.columnSpan: stage.column ? 2 : 1
+                Layout.fillWidth: stage.column
+                Layout.leftMargin: stage.column ? 0 : 8
             }
         }
 
@@ -816,7 +895,7 @@ ApplicationWindow {
                 return best
             }
             readonly property real tileWidth: root.watching
-                ? 240
+                ? (stage.column ? 120 : 240)
                 : Math.min((stage.width - (columns - 1) * spacing) / columns,
                            (stage.height - (Math.ceil(tiles / columns) - 1) * spacing)
                            / Math.ceil(tiles / columns) * 4 / 3)
@@ -824,9 +903,11 @@ ApplicationWindow {
             // Placed, not anchored: anchors swapped by bindings meet for a
             // moment (right and horizontalCenter), which stretches the column
             // over the whole stage and leaves the share no room.
-            x: root.watching ? stage.width - width : (stage.width - width) / 2
-            y: root.watching ? 0 : (stage.height - height) / 2
-            width: root.watching ? tileWidth : columns * tileWidth + (columns - 1) * spacing
+            x: !root.watching ? (stage.width - width) / 2 : stage.column ? 0 : stage.width - width
+            y: !root.watching ? (stage.height - height) / 2
+             : stage.column ? shareRow.y + shareRow.height + 8 : 0
+            width: !root.watching ? columns * tileWidth + (columns - 1) * spacing
+                 : stage.column ? stage.width : tileWidth
             spacing: 8
             visible: !root.fullScreen && (root.watching ? root.cameraTiles > 0
                                                         : memberTiles.count > 0 || call.camera)
@@ -891,11 +972,12 @@ ApplicationWindow {
 
         property bool shown: false
 
-        anchors.left: stage.left
-        anchors.top: stage.top
+        anchors.left: root.compact ? parent.left : stage.left
+        anchors.top: root.compact ? parent.top : stage.top
         anchors.margins: 8
-        width: Math.min(420, stage.width - 16)
-        height: Math.min(statsColumn.implicitHeight + 24, stage.height - 16)
+        width: root.compact ? parent.width - 16 : Math.min(420, stage.width - 16)
+        height: Math.min(statsColumn.implicitHeight + 24,
+                         (root.compact ? controls.y : stage.height) - 16)
         visible: root.inRoom && shown
         color: "#e6111214"
         radius: 6
@@ -972,6 +1054,7 @@ ApplicationWindow {
                 Button {
                     text: qsTr("Open log folder")
                     flat: true
+                    visible: !root.mobile
                     onClicked: Qt.openUrlExternally(root.dataFolder)
                 }
             }
@@ -986,16 +1069,19 @@ ApplicationWindow {
 
         property bool shown: false
 
+        // Narrow, over all of the room but its controls.
         anchors.right: parent.right
         anchors.top: parent.top
         anchors.bottom: controls.top
-        width: 320
+        width: root.compact ? parent.width : 320
         padding: 0
         visible: root.inRoom && !root.fullScreen && shown
         Material.elevation: 2
 
+        // A phone's keyboard would cover what was said: written in when touched.
         onShownChanged: if (shown) {
-            draft.forceActiveFocus()
+            if (!root.mobile)
+                draft.forceActiveFocus()
             messages.positionViewAtEnd()
         }
 
@@ -1176,6 +1262,7 @@ ApplicationWindow {
             }
             Button {
                 text: call.deafened ? qsTr("Undeafen") : qsTr("Deafen")
+                visible: !root.compact
                 checkable: true
                 checked: call.deafened
                 onToggled: call.deafened = checked
@@ -1184,12 +1271,14 @@ ApplicationWindow {
             }
             Button {
                 text: call.camera ? qsTr("Camera off") : qsTr("Camera")
+                visible: !root.compact && !root.mobile
                 checkable: true
                 checked: call.camera
                 onToggled: call.camera = checked
             }
             Button {
                 id: shareButton
+                visible: !root.compact && !root.mobile
                 text: call.sharing ? qsTr("Stop sharing")
                                    : call.choosing ? qsTr("Choosing…") : qsTr("Share")
                 highlighted: call.sharing
@@ -1233,6 +1322,7 @@ ApplicationWindow {
                 }
                 Button {
                     text: qsTr("Stats")
+                    visible: !root.compact
                     checkable: true
                     checked: stats.shown
                     onToggled: stats.shown = checked
@@ -1249,10 +1339,63 @@ ApplicationWindow {
             }
             Button {
                 text: qsTr("Settings")
+                visible: !root.compact
                 onClicked: settingsDialog.open()
             }
+            // Narrow, what does not fit.
             Button {
-                Layout.leftMargin: 8
+                text: "⋯"
+                visible: root.compact
+                onClicked: moreMenu.open()
+
+                Menu {
+                    id: moreMenu
+                    x: parent.width - width
+                    y: -height
+
+                    // An item hidden takes no room.
+                    component MoreItem: MenuItem {
+                        height: visible ? implicitHeight : 0
+                    }
+
+                    MoreItem {
+                        text: call.deafened ? qsTr("Undeafen") : qsTr("Deafen")
+                        onTriggered: call.deafened = !call.deafened
+                    }
+                    MoreItem {
+                        text: call.camera ? qsTr("Camera off") : qsTr("Camera")
+                        visible: !root.mobile
+                        onTriggered: call.camera = !call.camera
+                    }
+                    MoreItem {
+                        text: qsTr("Share a screen")
+                        visible: !root.mobile && !call.sharing && !call.choosing
+                        onTriggered: call.share(false, true)
+                    }
+                    MoreItem {
+                        text: qsTr("Share a window")
+                        visible: !root.mobile && !call.sharing && !call.choosing
+                        onTriggered: call.share(true, true)
+                    }
+                    MoreItem {
+                        text: qsTr("Stop sharing")
+                        visible: call.sharing || call.choosing
+                        onTriggered: call.stopSharing()
+                    }
+                    MoreItem {
+                        text: qsTr("Stats")
+                        checkable: true
+                        checked: stats.shown
+                        onTriggered: stats.shown = checked
+                    }
+                    MoreItem {
+                        text: qsTr("Settings")
+                        onTriggered: settingsDialog.open()
+                    }
+                }
+            }
+            Button {
+                Layout.leftMargin: root.compact ? 0 : 8
                 text: qsTr("Leave")
                 Material.background: Material.color(Material.Red, Material.Shade700)
                 onClicked: call.leave()
@@ -1333,23 +1476,30 @@ ApplicationWindow {
                 }
             }
 
-            RowLayout {
+            // Narrow, in two columns across, alike.
+            GridLayout {
                 anchors.horizontalCenter: parent.horizontalCenter
                 anchors.bottom: parent.bottom
                 anchors.bottomMargin: 16
-                spacing: 8
+                width: root.compact ? parent.width - 32 : implicitWidth
+                columns: root.compact ? 2 : 6
+                columnSpacing: 8
 
                 HoverHandler {
                     id: controlsHover
                 }
 
                 Button {
+                    Layout.fillWidth: root.compact
+                    Layout.preferredWidth: root.compact ? 1 : -1  // columns alike
                     text: call.muted ? qsTr("Unmute") : qsTr("Mute")
                     checkable: true
                     checked: call.muted
                     onToggled: call.muted = checked
                 }
                 Button {
+                    Layout.fillWidth: root.compact
+                    Layout.preferredWidth: root.compact ? 1 : -1  // columns alike
                     text: call.deafened ? qsTr("Undeafen") : qsTr("Deafen")
                     checkable: true
                     checked: call.deafened
@@ -1357,6 +1507,7 @@ ApplicationWindow {
                 }
                 Dot {
                     Layout.leftMargin: 8
+                    Layout.alignment: root.compact ? Qt.AlignHCenter : Qt.AlignVCenter
                     color: root.qualityColor(call.quality)
 
                     HoverHandler {
@@ -1367,10 +1518,14 @@ ApplicationWindow {
                                   ? call.quality + ": " + call.qualityReason : call.quality
                 }
                 ShareVolume {
+                    Layout.fillWidth: root.compact
+                    Layout.preferredWidth: root.compact ? 1 : -1  // columns alike
                     Layout.leftMargin: 8
                 }
                 Button {
-                    Layout.leftMargin: 8
+                    Layout.fillWidth: root.compact
+                    Layout.preferredWidth: root.compact ? 1 : -1  // columns alike
+                    Layout.leftMargin: root.compact ? 0 : 8
                     text: qsTr("Stop watching")
                     onClicked: {
                         root.setFullScreen(false)
@@ -1378,6 +1533,8 @@ ApplicationWindow {
                     }
                 }
                 Button {
+                    Layout.fillWidth: root.compact
+                    Layout.preferredWidth: root.compact ? 1 : -1  // columns alike
                     text: qsTr("Leave full screen")
                     highlighted: true
                     onClicked: root.setFullScreen(false)

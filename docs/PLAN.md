@@ -1636,7 +1636,8 @@ a desktop, the call held while the app is in the background.
   its hardware (an OMX component, no low-latency one), 59 fps, 11.7 ms in the decoder. AAudio
   there starts a stream some 140 ms after its first pulls, and stamps the first after that
   seconds in the past: a stamp that puts a pull's play time before now is not taken. Left:
-  viewers behind a forwarder (a server) are not seen by the sender; pictures handed out
+  a viewer back under the same id after its process was killed, not having left, gets the
+  pictures again but not the sound with them (left and joined again, both); viewers behind a forwarder (a server) are not seen by the sender; pictures handed out
   while the decoder works on the next (one waited for at a time caps 1080p at ~69 fps here).
 - **13.3 Talking** — in part: a call's sound is voice communication's (`call` in
   `AudioCaptureOptions` / `AudioOutputOptions`, set by the app: the microphone through AAudio's
@@ -1676,9 +1677,22 @@ a desktop, the call held while the app is in the background.
 - **13.6 The GPU path**: the VirtualDisplay drawing into `AHardwareBuffer`s the encoder reads
   where they are (a `GpuDevice` of Android's), and decoded pictures handed to QRhi as textures
   with no copy.
-- **13.7 The app for touch**: `Main.qml` laid out for a phone held upright, its controls for
-  fingers; the release packages an APK (`release.yml`, `app/update/release.h`, the website's
-  `release.ts`).
+- **13.7 The app for touch** — in part: `Main.qml` in one column when narrow (under 720 wide:
+  a phone held upright, or a window as narrow) — the share as wide as the screen with its
+  buttons and the sound under it, the cameras in a strip below, the members under that (the
+  first invite only, the others on asking), chat and stats over the room, and along the
+  bottom mute, the call's quality, chat, leave and a menu of the rest (deafen, the camera,
+  sharing, stats, settings); the settings' sections as tabs. Sizes there are bound, not
+  anchors let go: an anchor taken away leaves the size it gave. On Android: Back steps out
+  of full screen, the chat and the stats, and in a room sends the app behind
+  (`moveTaskToBack`, `app/src/main.cpp`: a window cannot be minimized there), the room
+  going on; a share full screen turns the phone on its side (sensor landscape), and back
+  after; a touch brings full screen's controls as the mouse does; the chat's box not
+  focused as it opens, the keyboard not covering what was said; what Android has none of
+  yet (a screen to share, a camera, a folder to open, a tray) not offered. Left: the
+  release packages an APK (`release.yml`, `app/update/release.h`, the website's
+  `release.ts`), a link handed to Android's share sheet, edge to edge on Android 15 (Qt's
+  safe areas).
 
 ### Stage 8 — Beyond
 
