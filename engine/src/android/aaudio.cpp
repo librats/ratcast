@@ -10,6 +10,7 @@
 #include <condition_variable>
 #include <cstring>
 #include <functional>
+#include <optional>
 #include <stop_token>
 #include <string>
 #include <thread>
@@ -312,19 +313,23 @@ private:
         if (frames <= 0) return;
         // Heard when the stream's stamp says, as far on from the frame it
         // stamps as this pull's first is: the frames written so far. Before
-        // the stream has one, after what is queued.
+        // the stream has one, or with one that puts it in the past (a stale
+        // stamp as a device starts, seconds off), after what is queued.
         const int64_t first = AAudioStream_getFramesWritten(stream);
-        Timestamp at;
+        const Timestamp now = clock_.now();
+        std::optional<Timestamp> at;
         int64_t position = 0;
         int64_t nanos = 0;
         if (AAudioStream_getTimestamp(stream, CLOCK_MONOTONIC, &position, &nanos) == AAUDIO_OK) {
             at = at_monotonic(
                 clock_, nanos + (first - position) * 1'000'000'000 / int64_t(format_.sample_rate));
-        } else {
-            const int64_t queued = std::max<int64_t>(0, first - AAudioStream_getFramesRead(stream));
-            at = clock_.now() + audio_duration(size_t(queued), format_.sample_rate);
+            if (*at < now) at.reset();
         }
-        pull_({audio, size_t(frames) * format_.channels}, at);
+        if (!at) {
+            const int64_t queued = std::max<int64_t>(0, first - AAudioStream_getFramesRead(stream));
+            at = now + audio_duration(size_t(queued), format_.sample_rate);
+        }
+        pull_({audio, size_t(frames) * format_.channels}, *at);
     }
 
     const AudioFormat format_;

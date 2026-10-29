@@ -75,9 +75,16 @@ TEST(AAudioTest, APlaybackIsPulledWithPlayTimesAheadThatRunOn) {
 
     const std::vector<Tone::Pull> pulls = tone.pulls();
     ASSERT_GT(pulls.size(), 10u);
+    // Pulled in real time once it runs, which some devices take a good while
+    // to after the first pulls: as much in the second half of the pulls as
+    // the time they span, give or take what the device buffers ahead.
+    const size_t half = pulls.size() / 2;
     size_t played = 0;
-    for (const Tone::Pull& pull : pulls) played += pull.length;
-    EXPECT_NEAR(double(played), 48'000 * 0.5, 48'000 * 0.15) << "half a second's worth";
+    for (size_t i = half; i + 1 < pulls.size(); ++i) played += pulls[i].length;
+    const Duration pulling = pulls.back().pulled_at - pulls[half].pulled_at;
+    EXPECT_GT(pulling, 100ms);
+    EXPECT_NEAR(double(played), double(audio_length(pulling, kMono.sample_rate)), 48'000 * 0.03)
+        << "real time's worth";
 
     // Once the stream stamps its frames (a few pulls in), each pull is heard
     // later than it is made, where the one before it ends.

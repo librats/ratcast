@@ -1631,8 +1631,12 @@ a desktop, the call held while the app is in the background.
   every second, a new encoder with a keyframe when it changes; a codec no encoder opens for is
   passed over; a viewer that says nothing (a server) holds it to nothing; `--encoder` or
   `follow_viewers = false` keep it. A desktop sharing to the Android device above went from
-  av1_nvenc to hevc_nvenc as it joined: 60 fps in its hardware, against 21 in dav1d. Left: a
-  phone; viewers behind a forwarder (a server) are not seen by the sender; pictures handed out
+  av1_nvenc to hevc_nvenc as it joined: 60 fps in its hardware, against 21 in dav1d. On a phone
+  (Snapdragon 732G, Android 13) the same: AV1's first picture in dav1d, H.265 from 0.3 s on in
+  its hardware (an OMX component, no low-latency one), 59 fps, 11.7 ms in the decoder. AAudio
+  there starts a stream some 140 ms after its first pulls, and stamps the first after that
+  seconds in the past: a stamp that puts a pull's play time before now is not taken. Left:
+  viewers behind a forwarder (a server) are not seen by the sender; pictures handed out
   while the decoder works on the next (one waited for at a time caps 1080p at ~69 fps here).
 - **13.3 Talking** — in part: a call's sound is voice communication's (`call` in
   `AudioCaptureOptions` / `AudioOutputOptions`, set by the app: the microphone through AAudio's
@@ -1651,7 +1655,8 @@ a desktop, the call held while the app is in the background.
   background, all of it given back as the room is left. On the Android 13 device a call's
   sound goes Qualcomm's VoIP way (48 kHz, stereo, the loudspeaker's voice tuning) and the
   microphone with the platform's canceller and suppressor on it, heard behind another
-  application. The network followed as it moves (12.1): netlink's route socket is closed to
+  application; on the phone the system's dialog asks for the microphone, and it is heard with
+  the launcher in front. The network followed as it moves (12.1): netlink's route socket is closed to
   applications, so librats' NetworkMonitor polls the addresses every 5 s there. Left: the
   platform's canceller against WebRTC's on phones (both run now), the earpiece as a choice
   (13.7), a Bluetooth headset's microphone before Android 12 (SCO), notifications' leave
