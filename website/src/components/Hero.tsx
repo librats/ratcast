@@ -115,7 +115,7 @@ export function Hero() {
           transition={{ duration: 1, delay: 1 }}
           className="mt-5 font-mono text-xs text-fog/40"
         >
-          Windows 10/11 · Linux AppImage · MIT licensed
+          Windows 10/11 · Linux AppImage · macOS 14+ · MIT licensed
         </motion.p>
       </div>
 

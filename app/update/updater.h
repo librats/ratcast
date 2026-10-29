@@ -19,7 +19,8 @@
  * downloaded: a download under way stops, and starts again once it is not.
  *
  * Only a release package updates itself (RATCAST_UPDATES, and on Linux only
- * from its AppImage): elsewhere `supported` is false and nothing happens. A
+ * from its AppImage, on macOS only from its bundle on Apple Silicon):
+ * elsewhere `supported` is false and nothing happens. A
  * check that fails is only said when the user asked for it; an update that
  * cannot be put in place — a folder that cannot be written to, say — always
  * is, with the release's page to fetch it from by hand. GUI thread only.

@@ -59,7 +59,7 @@ int main(int argc, char* argv[]) {
     QGuiApplication::setOrganizationName(QStringLiteral("ratcast"));
     QGuiApplication::setApplicationVersion(QString::fromLatin1(ratcast::version()));
     // Wayland finds the window's icon by its desktop entry; Windows' is the
-    // executable's own (ratcast.rc.in).
+    // executable's own (ratcast.rc.in), macOS's Dock the bundle's (ratcast.icns).
     QGuiApplication::setDesktopFileName(QStringLiteral("ratcast"));
 #ifndef Q_OS_WIN
     QGuiApplication::setWindowIcon(QIcon(QStringLiteral(":/ratcast/ratcast.png")));

@@ -7,7 +7,7 @@ export const RELEASES_URL = `${REPO_URL}/releases/latest`;
 export type Platform = "windows" | "linux" | "mac" | "android" | "other";
 
 export interface Package {
-  platform: "windows" | "linux";
+  platform: "windows" | "linux" | "mac";
   name: string;
   url: string;
   size: number;
@@ -21,10 +21,12 @@ export interface Release {
 }
 
 // Package names as release.yml makes them (and app/update/release.h finds them):
-// ratcast-<version>-windows-x64.zip, ratcast-<version>-linux-x86_64.AppImage.
+// ratcast-<version>-windows-x64.zip, ratcast-<version>-linux-x86_64.AppImage,
+// ratcast-<version>-macos-arm64.dmg (the zip of the same bundle beside it is the updater's).
 const PACKAGES: { platform: Package["platform"]; pattern: RegExp }[] = [
   { platform: "windows", pattern: /^ratcast-.+-windows-x64\.zip$/ },
   { platform: "linux", pattern: /^ratcast-.+-linux-x86_64\.AppImage$/ },
+  { platform: "mac", pattern: /^ratcast-.+-macos-arm64\.dmg$/ },
 ];
 
 interface GitHubAsset {
@@ -120,8 +122,9 @@ function detectPlatform(): Platform {
   const nav = navigator as Navigator & { userAgentData?: { platform?: string } };
   const name = (nav.userAgentData?.platform || navigator.userAgent).toLowerCase();
   if (name.includes("android")) return "android";
+  if (name.includes("iphone") || name.includes("ipad")) return "other";
   if (name.includes("win")) return "windows";
-  if (name.includes("mac") || name.includes("iphone") || name.includes("ipad")) return "mac";
+  if (name.includes("mac")) return "mac";
   if (name.includes("linux") || name.includes("x11")) return "linux";
   return "other";
 }

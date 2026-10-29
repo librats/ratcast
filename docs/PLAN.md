@@ -59,7 +59,7 @@ encoded frames, so it is useful without the rest and the SFU links only it.
 | | Screen / window | Per-app audio | Camera |
 |---|---|---|---|
 | Windows | Windows.Graphics.Capture, DXGI Duplication fallback | WASAPI process loopback | Media Foundation |
-| macOS | ScreenCaptureKit | ScreenCaptureKit (13+) | AVFoundation |
+| macOS | ScreenCaptureKit and its picker (14+) | Core Audio process taps (14.2+) | AVFoundation |
 | Linux | PipeWire + xdg-desktop-portal, X11 fallback | PipeWire node capture | PipeWire / V4L2 |
 | Android | MediaProjection | AudioPlaybackCapture | Camera2 |
 
@@ -109,18 +109,17 @@ told to whoever connects.
 
 ## Dependencies
 
-| Dependency | For | Linux | Windows / macOS |
-|---|---|---|---|
-| FFmpeg ≥ 6 (avcodec, avformat, avutil, swscale) | encode, decode, demux | system | vcpkg, LGPL build we ship |
-| PipeWire ≥ 0.3.50 | screen capture, audio | system | — |
-| GIO (GLib) | xdg-desktop-portal over D-Bus | system | — |
-| libdrm, GBM, EGL, Vulkan | DMA-BUF import, GPU colour conversion (stage 4) | system | — |
-| SDL3 | windows of the CLI tools | system | vcpkg |
-| Qt ≥ 6.6 with Quick, Shader Tools, QtGui private headers (QRhi) | app | system | official installer / aqtinstall |
-| libopus ≥ 1.3 | audio | system (`libopus-dev`) | vcpkg |
-| WebRTC AudioProcessing 1.x | voice: echo, noise, gain | system (`libwebrtc-audio-processing-dev`) | build from freedesktop.org's meson project |
-| WebRTC AudioProcessing | AEC, AGC, NS (stage 6) | system | vcpkg or vendored |
-| GoogleTest | tests | fetched by CMake | fetched by CMake |
+| Dependency | For | Linux | Windows | macOS |
+|---|---|---|---|---|
+| FFmpeg ≥ 6 (avcodec, avformat, avutil, swscale) | encode, decode, demux | system | vcpkg, LGPL build we ship | Homebrew to build; vcpkg's LGPL build we ship |
+| PipeWire ≥ 0.3.50 | screen capture, audio | system | — | — |
+| GIO (GLib) | xdg-desktop-portal over D-Bus | system | — | — |
+| libdrm, GBM, EGL, Vulkan | DMA-BUF import, GPU colour conversion (stage 4) | system | — | — |
+| SDL3 | windows of the CLI tools | system | vcpkg | Homebrew |
+| Qt ≥ 6.6 with Quick, Shader Tools, QtGui private headers (QRhi) | app | system | official installer / aqtinstall | official installer / aqtinstall |
+| libopus ≥ 1.3 | audio | system (`libopus-dev`) | vcpkg | Homebrew; vcpkg's we ship |
+| WebRTC AudioProcessing 1.x | voice: echo, noise, gain | system (`libwebrtc-audio-processing-dev`) | vcpkg, overlay port in `cmake/vcpkg-ports` | vcpkg, the same overlay port |
+| GoogleTest | tests | fetched by CMake | fetched by CMake | fetched by CMake |
 
 A vcpkg manifest is added with the first dependency Windows or macOS needs. Each dependency is
 optional at its module boundary: a missing one disables the backend that needs it, never the build.
@@ -158,7 +157,7 @@ final place and shape: stage 0 is a walking skeleton, not a throwaway prototype.
 | **1. A stream that holds** ✅ | one video stream to a few viewers plays on every emulated path: rate control, fast joining, smooth playback on lossy paths | L2 (c) ✅, L3 ✅; L2 (a, b) put off |
 | **2. Sound** ✅ | audio, A/V sync; latency profiles put off to stages 5 and 6 | L4 ✅ |
 | **3. Standalone library** ✅ | MPEG-TS in and out, `rats://` URLs, a benchmark against librist and SRT, C API | — |
-| **4. Platforms** — in part | GPU paths and hardware codecs; Windows ✅ (its GPU path too) and macOS capture; netsim ✅ | — |
+| **4. Platforms** — in part | GPU paths and hardware codecs; Windows ✅ (its GPU path too), macOS ✅ written (its GPU path and VideoToolbox too), to be tried on a Mac; netsim ✅ | — |
 | **5. Watch together** ✅ | one-to-many: a sender's budget, synchronised playout, forwarding tree, SFU and E2EE; simulcast and cinema put off | L5 ✅ |
 | **6. App** ✅ | Qt app MVP, one to one: invites, voice with AEC / NS, screen / window / app-audio share, camera; on Linux first, the other OSes as stage 4 reaches them | — |
 | **7. Conferences** ✅ | text chat, a link that holds, each member heard as loud as the listener sets, active speaker, last-N, grid, settings; moderation, push-to-talk and sounds put off to stage 8 | — |
@@ -754,7 +753,8 @@ Put off after 4.5: 4.1–4.4 need machines the dev VM is not — an Intel or AMD
 NVIDIA, Windows, a Mac — and are taken up a step at a time as one is at hand. The app (stage 6)
 goes ahead meanwhile on Linux with the software codecs, which carry a one-to-one call and a
 1080p screen; high resolutions and the other OSes come to it with these steps. 4.3 (a) came with
-a Windows machine at hand: the app and the tools run there now.
+a Windows machine at hand: the app and the tools run there now. 4.4 came through CI's macOS
+runner: the app is a bundle there, released as a DMG for Apple Silicon.
 
 ### Stage 5 — Watch together ✅
 

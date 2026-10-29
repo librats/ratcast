@@ -9,6 +9,7 @@ const TECH = [
   "NVENC",
   "AMF",
   "Quick Sync",
+  "VideoToolbox",
   "SVT-AV1",
   "Opus",
   "WebRTC AudioProcessing",
@@ -19,6 +20,7 @@ const TECH = [
   "Hole punching",
   "Direct3D 11",
   "PipeWire",
+  "ScreenCaptureKit",
   "librats",
 ];
 

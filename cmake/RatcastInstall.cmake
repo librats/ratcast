@@ -1,6 +1,7 @@
 # What `cmake --install` lays out: the app and the command-line tools, and on
 # Windows everything they run on, so the folder works on a machine with none of
-# it — the release zip is this folder.
+# it — the release zip is this folder. On macOS the app is a bundle, which its
+# own deploy script fills (macdeployqt, in app/): the release DMG holds it.
 #
 # On Windows the layout is flat (CMAKE_INSTALL_BINDIR "."): the programs, the
 # DLLs of the libraries they link (FFmpeg and its codecs, Opus, WebRTC's

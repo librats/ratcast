@@ -274,7 +274,7 @@ const CARDS: { span: string; icon: LucideIcon; title: string; text: string; demo
     span: "lg:col-span-2",
     icon: Cpu,
     title: "Hardware encoding",
-    text: "AV1, HEVC and H.264 on NVENC, AMF or Quick Sync. On Windows the screen reaches the encoder without leaving the GPU.",
+    text: "AV1, HEVC and H.264 on NVENC, AMF or Quick Sync; HEVC and H.264 on VideoToolbox on a Mac. On Windows and macOS the screen reaches the encoder without leaving the GPU.",
     demo: <Encoders />,
   },
   {

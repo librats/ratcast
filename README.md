@@ -46,8 +46,8 @@ ratcast is built on [librats](https://github.com/librats/librats). It comes in t
   ones, even in the middle of a call. The window can go to the tray when minimized or closed,
   and the room goes on.
 - **Hardware encoding.** AV1, HEVC and H.264 run on NVENC, AMF or Quick Sync when a GPU has
-  them. Otherwise SVT-AV1, libaom or OpenH264 encode on the CPU. On Windows the screen goes to the
-  encoder without leaving the GPU.
+  them, and HEVC and H.264 on VideoToolbox on a Mac. Otherwise SVT-AV1, libaom or OpenH264 encode
+  on the CPU. On Windows and macOS the screen goes to the encoder without leaving the GPU.
 - **Low latency on real networks.** Rate control follows the path, and FEC and retransmission
   repair losses within each frame's deadline. On one host a picture takes about 18 ms from
   capture to the screen. The numbers for lossy and distant paths are in
@@ -158,8 +158,8 @@ ctest --preset debug
 If you already cloned without `--recursive`, run `git submodule update --init --recursive`.
 
 **Requirements:** CMake 3.22+, Ninja and a C++20 compiler. The media libraries are optional:
-FFmpeg, libopus, PipeWire and `webrtc-audio-processing-1`, found through pkg-config. Without one
-of them, the parts that need it are left out. The app also needs Qt 6.6+ with Qt Quick,
+FFmpeg, libopus, PipeWire (Linux) and `webrtc-audio-processing-1`, found through pkg-config.
+Without one of them, the parts that need it are left out. The app also needs Qt 6.6+ with Qt Quick,
 Qt Shader Tools and QtGui's private headers. On Debian and Ubuntu, install
 `qt6-declarative-dev qt6-shadertools-dev qt6-base-private-dev`. With the Qt installer, add the
 Qt Shader Tools module. Without Qt the app is skipped and the libraries still build.

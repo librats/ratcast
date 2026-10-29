@@ -37,7 +37,8 @@ if(RATCAST_FFMPEG_FOUND)
         src/ffmpeg/video_decoder.cpp
         src/ffmpeg/video_encoder.cpp
     )
-    # Pictures in GPU memory into encoders: Direct3D 11's on Windows.
+    # Pictures in GPU memory into encoders: Direct3D 11's on Windows. macOS's
+    # IOSurfaces go to VideoToolbox on its own API, below, not through FFmpeg.
     if(WIN32)
         target_sources(ratcast_engine PRIVATE src/ffmpeg/hw_frames_d3d11.cpp)
     else()

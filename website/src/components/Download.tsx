@@ -28,6 +28,14 @@ const TARGETS: {
     needs: "glibc 2.39+ and PipeWire 1.0+: Ubuntu 24.04, Debian 13, Fedora 40 or newer.",
     steps: "chmod +x and run it",
   },
+  {
+    platform: "mac",
+    name: "macOS",
+    icon: <Apple className="size-7" />,
+    format: "Apple Silicon · DMG · preview",
+    needs: "macOS 14+ on Apple Silicon. Sharing the applications' sound needs 14.2+.",
+    steps: "Drag ratcast into Applications. It is not notarized: open it the first time with right-click → Open",
+  },
 ];
 
 const SERVER = `git clone --recursive https://github.com/librats/ratcast.git && cd ratcast
@@ -52,7 +60,7 @@ export function Download() {
           Free and open source. It keeps itself up to date.
         </SectionHeading>
 
-        <div className="mt-14 grid gap-4 md:grid-cols-2">
+        <div className="mt-14 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
           {TARGETS.map((t, i) => {
             const pkg = release?.packages.find((p) => p.platform === t.platform);
             const yours = mine === t.platform;
@@ -95,9 +103,8 @@ export function Download() {
 
         <Reveal delay={0.2} className="mt-4 flex flex-col items-center justify-between gap-3 rounded-2xl border border-dashed border-white/10 px-6 py-4 text-sm text-fog/50 sm:flex-row">
           <span className="flex items-center gap-3">
-            <Apple className="size-4" />
             <Smartphone className="size-4" />
-            macOS and Android are planned.
+            Android is planned.
           </span>
           <a href={release?.url ?? RELEASES_URL} className="text-cyan hover:underline">
             All files, checksums and notes →

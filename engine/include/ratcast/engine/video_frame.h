@@ -95,7 +95,8 @@ enum class GpuApi : uint8_t {
 };
 
 /// A GPU as a graphics API sees it: what pictures in its memory belong to.
-/// What it is made of is that API's code's business (engine/src/windows).
+/// What it is made of is that API's code's business (engine/src/windows,
+/// engine/src/macos).
 class GpuDevice {
 public:
     virtual ~GpuDevice() = default;

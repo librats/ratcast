@@ -1,7 +1,7 @@
 # WebRTC's AudioProcessing for the engine's voice processing — echo
 # cancellation (AEC3), noise suppression, gain control — found through
 # pkg-config as the freedesktop.org build ships it (BSD; Debian/Ubuntu:
-# libwebrtc-audio-processing-dev; on Windows, vcpkg with the overlay port in
+# libwebrtc-audio-processing-dev; on Windows and macOS, vcpkg with the overlay port in
 # cmake/vcpkg-ports: `vcpkg install webrtc-audio-processing
 # --overlay-ports=cmake/vcpkg-ports`).
 #

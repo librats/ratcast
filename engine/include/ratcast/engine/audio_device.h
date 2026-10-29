@@ -95,7 +95,7 @@ Result<std::unique_ptr<AudioSource>> open_audio_capture(const AudioCaptureOption
 struct AudioOutputOptions {
     AudioFormat format{48'000, 2};
     /// Where to play: 0 for `device`, or a device's node (on Linux; Windows
-    /// fails to start with one).
+    /// and macOS fail to start with one).
     uint32_t node = 0;
     /// The output of this id (AudioDeviceInfo::id); "" for the default,
     /// followed as it changes. Not there, it plays to the default.
