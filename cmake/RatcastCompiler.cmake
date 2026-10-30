@@ -16,6 +16,14 @@ function(ratcast_target_defaults target)
         target_compile_definitions(${target} PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
     endif()
 
+    # libc++ before 19 (the NDK r27 that Qt for Android is built with) hides
+    # std::jthread and std::stop_token behind its experimental switch; they
+    # are header-only, so the switch is all they need.
+    if(ANDROID AND CMAKE_CXX_COMPILER_ID STREQUAL "Clang"
+       AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 19)
+        target_compile_definitions(${target} PRIVATE _LIBCPP_ENABLE_EXPERIMENTAL)
+    endif()
+
     # Every program of ours runs with UTF-8 for its code page, as our strings
     # are: MSVC's linker embeds the manifest that says so.
     get_target_property(type ${target} TYPE)
