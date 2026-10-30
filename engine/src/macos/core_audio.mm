@@ -858,9 +858,15 @@ private:
         const size_t samples = std::min<size_t>(size_t{frames} * self->options_.format.channels,
                                                 data->mBuffers[0].mDataByteSize / sizeof(float));
         const Duration latency{self->latency_us_.load(std::memory_order_relaxed)};
-        const Timestamp at = (time && (time->mFlags & kAudioTimeStampHostTimeValid))
-                                 ? at_host_time(self->clock_, time->mHostTime) + latency
-                                 : self->clock_.now() + latency;
+        // Heard when the unit's stamp says; without one, or with one that puts
+        // it in the past (a cycle run late, as a loaded machine's may be), as
+        // the next cycle goes out: this one's length and the latency from now.
+        const Timestamp now = self->clock_.now();
+        Timestamp at = now + audio_duration(frames, self->options_.format.sample_rate) + latency;
+        if (time && (time->mFlags & kAudioTimeStampHostTimeValid)) {
+            const Timestamp stamped = at_host_time(self->clock_, time->mHostTime) + latency;
+            if (stamped >= now) at = stamped;
+        }
         self->pull_({static_cast<float*>(data->mBuffers[0].mData), samples}, at);
         return noErr;
     }
