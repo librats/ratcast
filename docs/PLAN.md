@@ -1598,7 +1598,7 @@ a desktop, the call held while the app is in the background.
   the app building unchanged; the tests run on a device by ctest through
   `cmake/android-run.cmake` (the build's `CMAKE_CROSSCOMPILING_EMULATOR`: each program
   stripped and pushed, with libc++ and FFmpeg's libraries, when it changed), 548 of them
-  passing on an Android 13 device, the video ones skipping for want of an encoder (13.5). The engine's
+  passing on an Android 13 device (the video ones on MediaCodec's encoders since 13.5). The engine's
   sound already on AAudio (from 13.2/13.3: playback and the microphone, their tests on a
   device). `android-app` builds the app with Qt for Android into an APK
   (`app/android/AndroidManifest.xml`; the data directory in the application's own storage).
@@ -1677,20 +1677,51 @@ a desktop, the call held while the app is in the background.
   the background. The app offers the camera on Android and, with more than one, "Switch
   camera" in the room's menu (the next listed). With no encoder for a codec, a publisher
   passes it over for the next (`codec_for_viewers()`: of AV1, H.265 and H.264, the first with
-  one where the viewers decode none alike): on Android, until MediaCodec encodes (13.5), H.264
-  in OpenH264. On the phone (Snapdragon 732G): 640 x 480, 30 a second, turned to 480 x 640,
+  one where the viewers decode none alike): on Android, AV1 has none, and H.265 is MediaCodec's
+  (13.5). On the phone (Snapdragon 732G): 640 x 480, 30 a second, turned to 480 x 640,
   both cameras seen on a desktop, the back one with the app in the background. MIUI opens a
   camera to a process under `adb shell`, gives it no pictures and may hang closing it, so the
   capture test runs outside an application only when asked (`RATCAST_TEST_CAMERA`). Left: the sender's own back camera is shown mirrored, as a front one is.
-- **13.5 Sharing the screen**: MediaProjection — the system's consent each time (from Android
-  14 it is not kept: no restore token), a single application where the system offers it (14
-  QPR2) — into a VirtualDisplay on an `AImageReader`, its RGBA into NV12 (`convert_frame()`
-  learns RGBA); the applications' sound through AudioPlaybackCapture, this process left out
-  (`excludeUid`), the call's voices not captured anyway (their voice-communication usage); a
-  foreground service of the media projection's type. Encoded by MediaCodec on its own API
-  (`open_native`, as VideoToolbox: `KEY_LATENCY`, keyframes asked for through
-  `PARAMETER_KEY_REQUEST_SYNC_FRAME`, the bitrate changed in flight through
-  `PARAMETER_KEY_VIDEO_BITRATE`), checked to hand each picture back at once.
+- **13.5 Sharing the screen** — done: MediaProjection, only Java's
+  (`engine/src/android/java/ratcast/engine/ScreenShare.java`; `android/projection.h`): the
+  system's dialog asks each time, shown by an activity of the engine's own over the app
+  (`ScreenConsent`, translucent, kept through a turn), its answer waited for off the GUI thread
+  as the desktop's dialogs are (the room's `Choosing…`, a cancel closing it); allowed, the
+  foreground service is made a projection's first — Android makes no projection otherwise —
+  then the projection (`CallService` held by what needs it, the call and the share, each
+  `hold()`/`release()`, stopped once nothing does). The screen is mirrored into a VirtualDisplay
+  drawing into an `AImageReader` of RGBA (`engine/src/android/screen_capture.cpp`), no larger
+  than 1920 on its long side (a phone's 1080 x 2400 as 864 x 1920), each picture converted as
+  it comes (`convert_frame()` reads RGBA as BGRA's loops with red and blue traded); the screen
+  turned is looked for twice a second and mirrored into a reader of the turned size, the
+  display resized (Android 14 makes one display a projection); a reader is deleted only once no
+  callback of its is at work — deleting holds its lock until its callbacks' thread is over, and
+  a callback reading a picture waits for that lock, which hung the first turn (the camera had the
+  same, fixed with it). The projection stopped ends the capture with success. What the other
+  applications play: an AudioRecord of the projection's (AudioPlaybackCapture; media, games and
+  the unknown, this process left out by its uid, a call's voices never heard), opened beside the
+  screen (`android/playback_capture.h`: `Applications` takes the projection the screen holds,
+  `Projection::current()`) and read 10 ms at a time on its own thread; it needs RECORD_AUDIO,
+  and without it the app shares the screen alone. Encoded by MediaCodec on its own API
+  (`android/mediacodec_encoder.h`, the table's `h264_mediacodec` and `hevc_mediacodec`):
+  the hardware's encoder only, each picture copied into its buffer as its input format lays
+  it out (`android/mediacodec.h`, shared with the decoder) and its frame waited for, constant
+  bitrate, no B-frames, Android 11's latency key and Qualcomm's low-latency one, keyframes
+  only on `request-sync`, the bitrate changed in flight (`video-bitrate`), the parameter sets
+  put ahead of each keyframe; the codec tests pass on it. The app offers the screen in the
+  room's menu on Android ("Share the screen"; never a window). On the phone (Snapdragon 732G,
+  Android 13): 864 x 1920 in H.265 to a desktop at 8 Mbit/s (decoded there in 2–10 ms),
+  with what the applications play; turned to its side and back six times, each followed in
+  half a second with an encoder of the new size; shared with the app in the background and
+  the screen locked; stopped from the app, by leaving, and refused in the dialog, the display
+  and the service let go each time. `bench_codec` there: MediaCodec takes 25–27 ms a picture
+  at 720p as at 1080p — the latency of its OMX encoder, not its speed — so a picture waited for
+  at a time holds the screen to some 37 a second; on the Android 13 panel's encoders (Codec2)
+  12.5 ms at 720p, 17 ms at 1080p. Left: on encoders as slow to answer, a picture in flight
+  while the next is taken (one frame's latency for the rate; the last held until the next
+  comes or a flush); a single application where Android 14 QPR2 offers it is shared as the
+  system draws it, its own size not followed (`onCapturedContentResize`); the app's own stats
+  and events wait while it is in the background (Qt's GUI thread is paused there).
 - **13.6 The GPU path**: the VirtualDisplay drawing into `AHardwareBuffer`s the encoder reads
   where they are (a `GpuDevice` of Android's), and decoded pictures handed to QRhi as textures
   with no copy.
@@ -1706,7 +1737,7 @@ a desktop, the call held while the app is in the background.
   going on; a share full screen turns the phone on its side (sensor landscape), and back
   after; a touch brings full screen's controls as the mouse does; the chat's box not
   focused as it opens, the keyboard not covering what was said; what Android has none of
-  yet (a screen to share, a camera, a folder to open, a tray) not offered. The release
+  (a window to share, a folder to open, a tray) not offered. The release
   packages an APK (`release.yml`'s `android` job: the `android-app` preset as a release,
   aligned and signed by apksigner with the key in the repository's secrets, or one made for
   the run; checked for the app on arm64 at API 29, every library its libraries link, FFmpeg

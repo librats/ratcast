@@ -14,13 +14,14 @@ SDL_PixelFormat sdl_format(PixelFormat format) {
         case PixelFormat::I420: return SDL_PIXELFORMAT_IYUV;
         case PixelFormat::NV12: return SDL_PIXELFORMAT_NV12;
         case PixelFormat::BGRA: return SDL_PIXELFORMAT_BGRA32;
+        case PixelFormat::RGBA: return SDL_PIXELFORMAT_RGBA32;
         case PixelFormat::YUY2: return SDL_PIXELFORMAT_YUY2;
     }
     return SDL_PIXELFORMAT_UNKNOWN;
 }
 
 SDL_Colorspace sdl_colorspace(PixelFormat format, ColorSpace color_space) {
-    if (format == PixelFormat::BGRA) return SDL_COLORSPACE_SRGB;
+    if (format == PixelFormat::BGRA || format == PixelFormat::RGBA) return SDL_COLORSPACE_SRGB;
     const bool full = color_space.range == ColorRange::Full;
     if (color_space.matrix == ColorMatrix::BT601) {
         return full ? SDL_COLORSPACE_BT601_FULL : SDL_COLORSPACE_BT601_LIMITED;
@@ -109,6 +110,7 @@ bool VideoWindow::draw(const VideoFrame& picture) {
                                  stride(2));
             break;
         case PixelFormat::BGRA:
+        case PixelFormat::RGBA:
         case PixelFormat::YUY2:
             SDL_UpdateTexture(texture_, nullptr, picture.plane(0).data, stride(0));
             break;

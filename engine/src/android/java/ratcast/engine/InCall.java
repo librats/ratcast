@@ -1,7 +1,6 @@
 package ratcast.engine;
 
 import android.content.Context;
-import android.content.Intent;
 import android.media.AudioAttributes;
 import android.media.AudioDeviceCallback;
 import android.media.AudioDeviceInfo;
@@ -71,18 +70,14 @@ public final class InCall {
         update();
     }
 
-    /** CallService started, or told again what it does. */
+    /** CallService held for the call, or told again what it does. */
     public void update() {
-        try {
-            context.startForegroundService(new Intent(context, CallService.class));
-        } catch (RuntimeException e) {
-            Log.w(TAG, "the call is not kept in the background: " + e);
-        }
+        CallService.hold(context, CallService.CALL, 0);
     }
 
     @SuppressWarnings("deprecation")  // setSpeakerphoneOn(), before Android 12
     public void leave() {
-        context.stopService(new Intent(context, CallService.class));
+        CallService.release(context, CallService.CALL);
         audio.unregisterAudioDeviceCallback(devices);
         if (Build.VERSION.SDK_INT >= 31) audio.clearCommunicationDevice();
         else audio.setSpeakerphoneOn(false);

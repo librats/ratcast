@@ -16,7 +16,9 @@
  * PipeWire streams, which need no permission beyond the session's; on Windows
  * WASAPI streams, which need the user's leave for the microphone; on macOS
  * Core Audio's, which need it for the microphone and for what other
- * applications play (process taps, macOS 14.2). Each
+ * applications play (process taps, macOS 14.2); on Android AAudio's, and what
+ * other applications play only beside the screen shared (its MediaProjection),
+ * both with the user's leave for the microphone. Each
  * follows the default device as the user changes it, or plays to, or hears,
  * one device the user chose from those listed (`device`): by an id that lasts
  * from one run to the next, the default in its place while it is not there.

@@ -58,8 +58,8 @@ struct VideoEncoderConfig {
 };
 
 struct VideoEncoderInfo {
-    /// The encoder by FFmpeg's name, e.g. "av1_nvenc" — VideoToolbox's too,
-    /// though opened on the system's own API.
+    /// The encoder by FFmpeg's name, e.g. "av1_nvenc" — VideoToolbox's and
+    /// MediaCodec's too, though opened on the system's own API.
     std::string name;
     Codec codec = Codec::AV1;
     bool hardware = false;

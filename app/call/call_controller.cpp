@@ -556,6 +556,12 @@ void CallController::share(bool window, bool sound) {
     ScreenShareConfig config;
     config.window = window;
     config.sound = sound;
+#ifdef Q_OS_ANDROID
+    // What the applications play is heard only with the microphone's leave:
+    // without it, the screen alone.
+    if (qApp->checkPermission(QMicrophonePermission{}) != Qt::PermissionStatus::Granted)
+        config.sound = false;
+#endif
     // No data_dir: the desktop asks every time, as a room's member chooses
     // anew what to show. A choice kept would stand for the dialog for good.
     set_choosing(true);

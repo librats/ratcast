@@ -44,7 +44,11 @@ if(RATCAST_FFMPEG_FOUND)
     else()
         target_sources(ratcast_engine PRIVATE src/ffmpeg/hw_frames_none.cpp)
     endif()
-    # VideoToolbox's encoders, in the encoder table, on the system's own API.
+    # VideoToolbox's and MediaCodec's encoders, in the encoder table, on the
+    # system's own API.
+    if(ANDROID)
+        target_sources(ratcast_engine PRIVATE src/android/mediacodec_encoder.cpp)
+    endif()
     if(APPLE)
         target_sources(ratcast_engine PRIVATE src/macos/videotoolbox_encoder.cpp)
         target_link_libraries(ratcast_engine PRIVATE
@@ -127,18 +131,23 @@ elseif(ANDROID)
         src/android/camera_picture.cpp
         src/android/in_call.cpp
         src/android/java.cpp
+        src/android/mediacodec.cpp
         src/android/mediacodec_decoder.cpp
+        src/android/playback_capture.cpp
+        src/android/projection.cpp
         src/android/screen_awake.cpp
-        src/capture/screen_capture_unavailable.cpp
+        src/android/screen_capture.cpp
     )
-    target_link_libraries(ratcast_engine PRIVATE aaudio camera2ndk mediandk)
+    target_link_libraries(ratcast_engine PRIVATE aaudio android camera2ndk mediandk)
     # The Java the engine calls, for an application to build into its package
     # (app/CMakeLists.txt): each file's path under java/ is its class's.
     set_target_properties(ratcast_engine PROPERTIES RATCAST_ANDROID_JAVA_DIR
         "${CMAKE_CURRENT_SOURCE_DIR}/src/android/java")
     set_property(TARGET ratcast_engine PROPERTY RATCAST_ANDROID_JAVA
         ratcast/engine/CallService.java
-        ratcast/engine/InCall.java)
+        ratcast/engine/InCall.java
+        ratcast/engine/ScreenConsent.java
+        ratcast/engine/ScreenShare.java)
 else()
     target_sources(ratcast_engine PRIVATE
         src/audio/audio_device_unavailable.cpp

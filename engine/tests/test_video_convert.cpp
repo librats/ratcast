@@ -122,6 +122,40 @@ TEST(VideoConvert, BgraToYuvMatchesTheReference) {
     }
 }
 
+TEST(VideoConvert, RgbaGivesWhatTheSameColoursInBgraDo) {
+    const VideoFrame bgra = random_bgra(333, 199, 5);
+    MutableVideoFrame rgba = MutableVideoFrame::allocate(PixelFormat::RGBA, 333, 199);
+    for (uint32_t y = 0; y < 199; ++y) {
+        const uint8_t* from = bgra.plane(0).data + y * bgra.plane(0).stride;
+        uint8_t* to = rgba.plane(0).data + y * rgba.plane(0).stride;
+        for (uint32_t x = 0; x < 333; ++x) {
+            to[4 * x] = from[4 * x + 2];
+            to[4 * x + 1] = from[4 * x + 1];
+            to[4 * x + 2] = from[4 * x];
+            to[4 * x + 3] = from[4 * x + 3];
+        }
+    }
+    const VideoFrame frozen = std::move(rgba).freeze(Timestamp{7s});
+    for (PixelFormat format : {PixelFormat::I420, PixelFormat::NV12}) {
+        for (const ColorSpace& cs : kColorSpaces) {
+            Result<VideoFrame> expected = convert_frame(bgra, format, cs);
+            Result<VideoFrame> got = convert_frame(frozen, format, cs);
+            ASSERT_TRUE(expected);
+            ASSERT_TRUE(got);
+            EXPECT_EQ(got->color_space(), cs);
+            for (size_t i = 0; i < plane_count(format); ++i) {
+                for (size_t y = 0; y < plane_rows(format, i, 199); ++y) {
+                    ASSERT_EQ(std::memcmp(got->plane(i).data + y * got->plane(i).stride,
+                                          expected->plane(i).data + y * expected->plane(i).stride,
+                                          plane_row_bytes(format, i, 333)),
+                              0)
+                        << "plane " << i << ", row " << y;
+                }
+            }
+        }
+    }
+}
+
 TEST(VideoConvert, BlackWhiteAndGreyAreExact) {
     struct Case {
         ColorRange range;

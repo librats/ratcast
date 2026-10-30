@@ -1,6 +1,6 @@
-// BGRA into 4:2:0 YUV in fixed point, and a camera's 4:2:2 into 4:2:0. The loops are plain C++ on
-// purpose: compilers turn them into SIMD (this file is built with -O3), which keeps one version of
-// the code for every architecture and runs near memory speed.
+// BGRA (and RGBA) into 4:2:0 YUV in fixed point, and a camera's 4:2:2 into 4:2:0. The loops are
+// plain C++ on purpose: compilers turn them into SIMD (this file is built with -O3), which keeps
+// one version of the code for every architecture and runs near memory speed.
 //
 // The arithmetic is 16-bit, so that a vector holds eight lanes rather than
 // four: each term is the high half of a 16 x 16-bit product (what SIMD calls
@@ -13,6 +13,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <utility>
 
 namespace ratcast {
 namespace {
@@ -73,6 +74,14 @@ const Coefficients& coefficients(ColorSpace color_space) {
     const bool full = color_space.range == ColorRange::Full;
     if (color_space.matrix == ColorMatrix::BT601) return full ? kBt601Full : kBt601Limited;
     return full ? kBt709Full : kBt709Limited;
+}
+
+/// The same for RGBA, read by BGRA's loops: red and blue trade places.
+Coefficients swapped(Coefficients k) {
+    std::swap(k.yr, k.yb);
+    std::swap(k.ur, k.ub);
+    std::swap(k.vr, k.vb);
+    return k;
 }
 
 /// The high halves of 16 x 16-bit products, written the way vectorisers
@@ -237,7 +246,9 @@ void yuy2_to_yuv(const VideoFrame& in, MutableVideoFrame& out) {
     }
 }
 
-bool is_yuv(PixelFormat format) { return format != PixelFormat::BGRA; }
+bool is_yuv(PixelFormat format) {
+    return format != PixelFormat::BGRA && format != PixelFormat::RGBA;
+}
 bool is_420(PixelFormat format) {
     return format == PixelFormat::I420 || format == PixelFormat::NV12;
 }
@@ -264,7 +275,8 @@ Result<VideoFrame> convert_frame(const VideoFrame& picture, PixelFormat format,
     } else if (is_yuv(picture.format())) {
         relayout_yuv(picture, out);
     } else {
-        bgra_to_yuv(picture, out, coefficients(color_space));
+        const Coefficients& k = coefficients(color_space);
+        bgra_to_yuv(picture, out, picture.format() == PixelFormat::RGBA ? swapped(k) : k);
         return std::move(out).freeze(picture.capture_time(), color_space);
     }
     return std::move(out).freeze(picture.capture_time(), picture.color_space());

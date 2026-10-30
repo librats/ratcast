@@ -26,6 +26,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <condition_variable>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -391,15 +392,35 @@ public:
             output_ = nullptr;
         }
         if (reader_) {
+            // Deleting a reader holds its lock until its callbacks' thread is
+            // over, and a callback reading a picture waits for that lock:
+            // none may be at work.
             AImageReader_setImageListener(reader_, nullptr);
+            {
+                std::unique_lock lock(mutex_);
+                idle_.wait(lock, [this] { return busy_ == 0; });
+            }
             AImageReader_delete(reader_);
             reader_ = nullptr;
         }
     }
 
 private:
-    /// On the reader's thread: the newest picture, turned upright.
+    /// On the reader's thread: the newest picture, turned upright — none
+    /// once closing.
     void take(AImageReader* reader) {
+        {
+            std::lock_guard lock(mutex_);
+            if (over_) return;
+            ++busy_;
+        }
+        read(reader);
+        std::lock_guard lock(mutex_);
+        --busy_;
+        idle_.notify_all();
+    }
+
+    void read(AImageReader* reader) {
         AImage* acquired = nullptr;
         if (AImageReader_acquireLatestImage(reader, &acquired) != AMEDIA_OK || !acquired) return;
         const std::unique_ptr<AImage, decltype(&AImage_delete)> image(acquired, AImage_delete);
@@ -529,6 +550,8 @@ private:
     int display_ = 0;
 
     std::mutex mutex_;  ///< over the sink, the end and closing
+    std::condition_variable idle_;
+    int busy_ = 0;  ///< the reader's callbacks at work
     FramePacer pacer_;
     bool over_ = false;
 };

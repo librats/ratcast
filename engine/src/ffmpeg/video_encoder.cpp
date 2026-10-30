@@ -3,8 +3,9 @@
 // told to keep latency down, and whether it can change its bitrate in flight —
 // the candidate table below. Pictures come from memory, or — to an encoder
 // opened on a frames context of their GPU's (hw_frames.h) — from GPU memory
-// without passing through the CPU. VideoToolbox's encoders are the table's
-// too, but opened on the system's own API (macos/videotoolbox_encoder.h).
+// without passing through the CPU. VideoToolbox's and MediaCodec's encoders
+// are the table's too, but opened on the system's own API
+// (macos/videotoolbox_encoder.h, android/mediacodec_encoder.h).
 
 #include <algorithm>
 #include <chrono>
@@ -30,6 +31,9 @@ extern "C" {
 
 #ifdef __APPLE__
 #include "macos/videotoolbox_encoder.h"
+#endif
+#ifdef __ANDROID__
+#include "android/mediacodec_encoder.h"
 #endif
 
 #include "librats/util/logger.h"
@@ -147,12 +151,18 @@ constexpr Candidate kCandidates[] = {
     {"hevc_videotoolbox", Codec::H265, true, true, nullptr, false,
      macos::open_videotoolbox_encoder},
 #endif
+#ifdef __ANDROID__
+    {"hevc_mediacodec", Codec::H265, true, true, nullptr, false, android::open_mediacodec_encoder},
+#endif
     {"h264_nvenc", Codec::H264, true, true, tune_nvenc},
     {"h264_qsv", Codec::H264, true, true, tune_qsv},
     {"h264_amf", Codec::H264, true, false, tune_amf},
 #ifdef __APPLE__
     {"h264_videotoolbox", Codec::H264, true, true, nullptr, false,
      macos::open_videotoolbox_encoder},
+#endif
+#ifdef __ANDROID__
+    {"h264_mediacodec", Codec::H264, true, true, nullptr, false, android::open_mediacodec_encoder},
 #endif
     {"libopenh264", Codec::H264, false, false, tune_openh264},
 };

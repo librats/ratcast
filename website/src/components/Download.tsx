@@ -111,7 +111,8 @@ export function Download() {
           <span className="flex items-center gap-3">
             <Smartphone className="size-4 shrink-0" />
             <span>
-              Android 10+ on arm64, in preview: watch a share and talk.{" "}
+              Android 10+ on arm64, in preview: watch, talk, and share your camera or
+              screen.{" "}
               <a href={android?.url ?? RELEASES_URL} className="text-cyan hover:underline">
                 {android ? `${android.name} · ${formatSize(android.size)}` : "The APK"}
               </a>

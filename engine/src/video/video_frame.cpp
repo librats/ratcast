@@ -20,7 +20,8 @@ size_t plane_row_bytes(PixelFormat format, size_t plane, uint32_t width) noexcep
     switch (format) {
         case PixelFormat::I420: return plane == 0 ? width : half;
         case PixelFormat::NV12: return plane == 0 ? width : half * 2;
-        case PixelFormat::BGRA: return size_t{width} * 4;
+        case PixelFormat::BGRA:
+        case PixelFormat::RGBA: return size_t{width} * 4;
         case PixelFormat::YUY2: return half * 4;
     }
     return 0;
@@ -31,6 +32,7 @@ size_t plane_rows(PixelFormat format, size_t plane, uint32_t height) noexcept {
         case PixelFormat::I420:
         case PixelFormat::NV12: return plane == 0 ? height : (size_t{height} + 1) / 2;
         case PixelFormat::BGRA:
+        case PixelFormat::RGBA:
         case PixelFormat::YUY2: return height;
     }
     return 0;

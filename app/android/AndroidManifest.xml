@@ -1,8 +1,8 @@
 <?xml version="1.0"?>
 <!-- The app's manifest, Qt's template (src/android/templates) with what
-     ratcast asks of the system: the network, the microphone, the camera, the call's sound
-     and the engine's foreground service, which keeps a call in the
-     background. androiddeployqt fills in the rest from the
+     ratcast asks of the system: the network, the microphone, the camera, the call's sound,
+     the engine's foreground service, which keeps a call in the background and
+     the screen shared, and the engine's activity asking for the screen. androiddeployqt fills in the rest from the
      target's QT_ANDROID_* properties (app/CMakeLists.txt). -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="app.ratcast"
@@ -19,6 +19,7 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MICROPHONE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CAMERA" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PROJECTION" />
     <!-- %%INSERT_PERMISSIONS -->
     <uses-feature android:name="android.hardware.microphone" android:required="false" />
     <uses-feature android:name="android.hardware.camera.any" android:required="false" />
@@ -63,10 +64,18 @@
                 android:value="-- %%INSERT_APP_ARGUMENTS%% --" />
         </activity>
 
-        <!-- A call kept in the background (engine/src/android/java). -->
+        <!-- A call kept in the background, and the screen shared
+             (engine/src/android/java). -->
         <service
             android:name="ratcast.engine.CallService"
-            android:foregroundServiceType="mediaPlayback|microphone|camera"
+            android:foregroundServiceType="mediaPlayback|microphone|camera|mediaProjection"
+            android:exported="false" />
+        <!-- The system's dialog for the screen, over the app. -->
+        <activity
+            android:name="ratcast.engine.ScreenConsent"
+            android:theme="@android:style/Theme.Translucent.NoTitleBar"
+            android:configChanges="orientation|screenLayout|screenSize|smallestScreenSize|keyboardHidden"
+            android:excludeFromRecents="true"
             android:exported="false" />
 
         <provider

@@ -40,6 +40,9 @@ enum class PixelFormat : uint8_t {
     I420,  ///< 8-bit 4:2:0 in three planes: Y, then U and V at half size
     NV12,  ///< 8-bit 4:2:0 in two planes: Y, then U and V interleaved at half size
     BGRA,  ///< 8-bit packed blue, green, red, alpha (alpha may be undefined)
+    /// 8-bit packed red, green, blue, alpha: what Android's screen gives.
+    /// Read only, into 4:2:0, as BGRA is.
+    RGBA,
     /// 8-bit 4:2:2 packed, Y0 U Y1 V for each two pixels: what cameras give.
     /// Read only, into 4:2:0; no encoder takes it.
     YUY2,
@@ -72,6 +75,7 @@ constexpr size_t plane_count(PixelFormat format) noexcept {
         case PixelFormat::I420: return 3;
         case PixelFormat::NV12: return 2;
         case PixelFormat::BGRA:
+        case PixelFormat::RGBA:
         case PixelFormat::YUY2: return 1;
     }
     return 0;

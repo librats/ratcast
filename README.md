@@ -25,7 +25,8 @@ the picture goes straight from the sharer to each viewer, encrypted end to end.
 ratcast is built on [librats](https://github.com/librats/librats). It comes in two parts:
 
 - **ratcast**: the desktop app for Windows and Linux, with macOS (Apple Silicon) in preview,
-  and Android in preview too: watching a share and talking, not sharing yet.
+  and Android in preview too: watching a share, talking, a camera, and sharing the phone's
+  screen with its sound.
 - **libratcast**: the media transport underneath it. You can use it on its own, much like SRT
   or librist.
 
@@ -67,7 +68,7 @@ Get the latest build from [Releases](https://github.com/librats/ratcast/releases
 | Windows 10/11 x64 | `ratcast-<version>-windows-x64.zip` | Unzip and run `ratcast.exe` |
 | Linux x86_64 | `ratcast-<version>-linux-x86_64.AppImage` | glibc 2.39+ and PipeWire 1.0+ (Ubuntu 24.04, Debian 13, Fedora 40 or newer) |
 | macOS 14+ Apple Silicon (preview) | `ratcast-<version>-macos-arm64.dmg` | Drag `ratcast` into Applications. It is not notarized: open it the first time with right-click → **Open** |
-| Android 10+ arm64 (preview) | `ratcast-<version>-android-arm64.apk` | Open it on the phone and allow installing from that app. Watch and talk; a newer APK installs over it. A `rats://` link opens the app |
+| Android 10+ arm64 (preview) | `ratcast-<version>-android-arm64.apk` | Open it on the phone and allow installing from that app. Watch, talk, show a camera and share the screen; a newer APK installs over it. A `rats://` link opens the app |
 
 ## Using it
 

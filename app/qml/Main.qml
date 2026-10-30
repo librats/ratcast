@@ -47,8 +47,8 @@ ApplicationWindow {
     readonly property int cameraTiles: (call.camera ? 1 : 0) + call.cameras
     /// One column: a phone held upright, or a window as narrow.
     readonly property bool compact: root.width < 720
-    /// Android's: no screen to share yet (docs/PLAN.md, 13.5), no tray, no
-    /// folder to open.
+    /// Android's: the whole screen to share, never a window of it; no tray,
+    /// no folder to open.
     readonly property bool mobile: Qt.platform.os === "android"
 
     /// The share watched on the whole screen, nothing else drawn.
@@ -1278,7 +1278,7 @@ ApplicationWindow {
             }
             Button {
                 id: shareButton
-                visible: !root.compact && !root.mobile
+                visible: !root.compact
                 text: call.sharing ? qsTr("Stop sharing")
                                    : call.choosing ? qsTr("Choosing…") : qsTr("Share")
                 highlighted: call.sharing
@@ -1294,6 +1294,8 @@ ApplicationWindow {
                     }
                     MenuItem {
                         text: qsTr("A window")
+                        visible: !root.mobile
+                        height: visible ? implicitHeight : 0
                         onTriggered: call.share(true, withSound.checked)
                     }
                     MenuSeparator {}
@@ -1379,8 +1381,8 @@ ApplicationWindow {
                         }
                     }
                     MoreItem {
-                        text: qsTr("Share a screen")
-                        visible: !root.mobile && !call.sharing && !call.choosing
+                        text: root.mobile ? qsTr("Share the screen") : qsTr("Share a screen")
+                        visible: !call.sharing && !call.choosing
                         onTriggered: call.share(false, true)
                     }
                     MoreItem {
