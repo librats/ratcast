@@ -3,6 +3,8 @@
 #include <algorithm>
 #include <utility>
 
+#include "ratcast/engine/real_time.h"
+
 #ifdef _WIN32
 #include <timeapi.h>  // after librats' headers, which bring in windows.h
 #endif
@@ -77,6 +79,9 @@ void Proxy::run() {
     // would come that coarse. 1 ms while the proxy runs.
     timeBeginPeriod(1);
 #endif
+    // On macOS a background process's waits (a CI runner's) end up to 70 ms
+    // late: the path's delays with them.
+    keep_time_on_this_thread();
     std::vector<uint8_t> buffer(64 * 1024);
     std::vector<librats::PollResult> ready(64);
     while (!stopping_.load()) {

@@ -135,10 +135,13 @@ TEST_F(CoreAudioTest, ACaptureOfSystemSoundHearsWhatIsPlayed) {
     core_audio::AudioCapture capture({.format = kMono, .source = AudioCaptureSource::SystemSound});
     Heard heard;
     if (!capture.start(heard.sink(), heard.ended())) GTEST_SKIP() << "no process taps here";
-    const std::vector<AudioFrame> tone = heard.wait_for_tone(200ms);
-    if (tone.empty()) GTEST_SKIP() << "no leave to hear the computer's sound";
-    EXPECT_GT(rms(tone), 0.05f);
-    expect_follow_on(tone);
+    // Measured once it plays on: a global tap may hear a moment of the tone
+    // and then nothing for a while as it starts.
+    const auto loud = [&](const auto& blocks) { return amplitude(blocks, kTone.frequency) > 0.1; };
+    if (!loud(heard.wait_until(loud))) GTEST_SKIP() << "no leave to hear the computer's sound";
+    const std::vector<AudioFrame> blocks = heard.wait_for_more(300ms);
+    EXPECT_NEAR(amplitude(blocks, kTone.frequency), kTone.level, 0.03);
+    expect_follow_on(blocks);
 }
 
 /// Other processes may be playing too — tests run side by side — so each
