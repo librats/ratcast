@@ -1287,8 +1287,11 @@ clicked through on two hosts; the sharer's uplink is stage 5's (above).
   (`docs/bench.md`, "A sharer's preview"); with no sink nothing is taken.
   `CallController::sharePreview`, a view QML gives: `Main.qml` draws it in a corner of the
   stage while sharing, its shape the picture's (an upright window too), dragged to another
-  corner, hidden on a button (and then not made at all), both kept in the settings; not on a
-  phone, which shares the screen it would be shown on. `with_preview()` moved from `camera.h`
+  corner, hidden on a button (and then not made at all), both kept in the settings, and paused
+  while the window is not the one in use — a game played over it — the last picture left with
+  "paused" (as Discord's: shown, it costs some 4% of a core with the compositor's share, and the
+  GPU's drawing, measured in `docs/bench.md`); not on a phone, which shares the screen it would
+  be shown on. `with_preview()` moved from `camera.h`
   to `preview.h`. Found on the way: a QML property named `picture` read the share's view of
   that id instead (ids come first), caught on a screenshot. Tested: `shrink_frame()` against
   each block's mean in both layouts with sizes no multiple of the factor, the factor, what it

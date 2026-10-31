@@ -158,7 +158,8 @@ class CallController : public QObject {
     Q_PROPERTY(ratcast::app::VideoView* video READ video WRITE setVideo NOTIFY videoChanged)
     Q_PROPERTY(ratcast::app::VideoView* preview READ preview WRITE setPreview NOTIFY previewChanged)
     /// Where this side's own share is seen while it shares; null: nowhere,
-    /// and nothing is done for it.
+    /// and nothing is done for it (what the view shows stays: a preview
+    /// paused).
     Q_PROPERTY(ratcast::app::VideoView* sharePreview READ sharePreview WRITE setSharePreview NOTIFY
                    sharePreviewChanged)
     /// The call over the last second, as its monitor saw it: a section a part,

@@ -1659,3 +1659,20 @@ for a 1440p picture, 330 MB a second at 60 — for a corner 320 pixels wide. Shr
 0.35 MB 15 times a second, 5 MB a second. The source never waits: a picture is kept by
 reference when one is due (by its capture time) and the thread makes it small; hidden, nothing
 is taken at all.
+
+The whole of it, shrinking and drawing, measured in the app on the dev VM (release, GNOME
+Wayland on vmwgfx): a room sharing the 1440p pattern at 30 a second, 10 s with the preview
+shown and 10 s hidden, three times each, each thread's CPU from `/proc`:
+
+| | hidden | shown | the preview's |
+|---|---:|---:|---:|
+| the GUI thread | 0.2–0.4% | 0.7–0.8% | +0.4% |
+| Qt Quick's render thread | 0.1–0.2% | 1.4–1.6% | +1.4% |
+| gnome-shell, compositing the window | 1.0–1.2% | 2.5–2.6% | +1.4% |
+| the preview's thread (among the encoder's, ~100%) | — | — | ~1% |
+
+About 4% of a core in all, and the GPU's time to draw and compose 15 windows a second (not
+measured): nothing next to the encoder, but spent the whole time a game is played over the
+window with nobody looking. So the preview pauses while the window is not the one in use (Qt's
+`active`): the view let go, nothing taken, shrunk or drawn, the last picture left with
+"paused" — all of the above back to its hidden column.

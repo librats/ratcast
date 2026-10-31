@@ -19,7 +19,7 @@ import Ratcast.Video
 // sharing (and, while sharing, another screen or window shown in its place),
 // chat, how the call goes (a panel on a button or Ctrl+I, its quality a dot),
 // leave. What this side shares it sees small in a corner of the stage, which
-// it drags to another or hides.
+// it drags to another or hides; paused while the window is not the one in use.
 // A share watched may go full screen (F, a double click): only the share, on
 // black, its controls and the cursor there while the mouse moves.
 // The start also says what the updater does: a new version on its way, or in
@@ -87,8 +87,9 @@ ApplicationWindow {
         id: call
         video: picture
         preview: ownCamera
-        // Hidden, nothing is made for it.
-        sharePreview: ownShare.visible && root.ownShareShown ? ownShareView : null
+        // Hidden, or the window not the one in use — a game played over it —
+        // nothing is made for it, nor drawn: the last picture stays.
+        sharePreview: ownShare.visible && root.ownShareShown && root.active ? ownShareView : null
         statsEvery: root.statsEvery
     }
 
@@ -1020,11 +1021,19 @@ ApplicationWindow {
                 anchors.margins: 1
                 visible: root.ownShareShown
             }
+            // A share ended: no picture of it left for the next.
+            Connections {
+                target: call
+                function onSharingChanged() {
+                    if (!call.sharing)
+                        ownShareView.clear()
+                }
+            }
             Label {
                 anchors.left: parent.left
                 anchors.bottom: parent.bottom
                 anchors.margins: 6
-                text: qsTr("Your share")
+                text: root.active ? qsTr("Your share") : qsTr("Your share · paused")
                 visible: root.ownShareShown
                 font.pixelSize: 11
                 style: Text.Outline
@@ -1075,7 +1084,8 @@ ApplicationWindow {
             }
             ToolTip.visible: ownShareHover.hovered && root.ownShareShown
             ToolTip.delay: 800
-            ToolTip.text: qsTr("What the others see. Drag it to another corner.")
+            ToolTip.text: qsTr("What the others see, paused while you are elsewhere. " +
+                               "Drag it to another corner.")
         }
     }
 
