@@ -98,6 +98,9 @@ struct Call::Published {
     virtual PublisherStats stats() const = 0;
     virtual void request_keyframe() {}
     virtual void set_bitrate(uint32_t) {}
+    virtual Result<void> switch_source(std::unique_ptr<VideoSource>&) {
+        return fail(Errc::InvalidArgument);
+    }
 
     const std::string label;
 };
@@ -121,7 +124,20 @@ struct Call::PublishedAs final : Published {
     void set_bitrate(uint32_t bits_per_second) override {
         if constexpr (kVideo) publisher.set_bitrate(bits_per_second);
     }
+    /// `next` published in place of the source, which it then holds, to go
+    /// with it.
+    Result<void> switch_source(std::unique_ptr<VideoSource>& next) override {
+        if constexpr (kVideo) {
+            std::lock_guard lock(switching);
+            if (Result<void> switched = publisher.switch_source(*next); !switched) return switched;
+            source.swap(next);
+            return {};
+        } else {
+            return Published::switch_source(next);
+        }
+    }
 
+    std::mutex switching;  ///< over `source`, for switch_source()
     std::unique_ptr<Source> source;
     Publisher publisher;
 };
@@ -304,7 +320,7 @@ Call::~Call() {
     closing_ = true;
     speakers_.request_stop();
     if (speakers_.joinable()) speakers_.join();
-    std::map<StreamId, std::unique_ptr<Published>> published;
+    std::map<StreamId, std::shared_ptr<Published>> published;
     {
         std::lock_guard lock(publishing_);
         published.swap(published_);
@@ -490,7 +506,7 @@ template <typename Source, typename Publisher, typename Config>
 Result<Publisher*> Call::add(std::unique_ptr<Source> source, Config config) {
     if (!source) return fail(Errc::InvalidArgument);
     const StreamId stream = config.stream;
-    auto published = std::make_unique<PublishedAs<Source, Publisher>>(std::move(source), session(),
+    auto published = std::make_shared<PublishedAs<Source, Publisher>>(std::move(source), session(),
                                                                       std::move(config));
     const std::string label = published->label;
     Publisher& publisher = published->publisher;
@@ -520,8 +536,28 @@ Result<Publisher*> Call::add(std::unique_ptr<Source> source, Config config) {
     return &publisher;
 }
 
+Result<void> Call::switch_source(StreamId stream, std::unique_ptr<VideoSource> source) {
+    if (!source) return fail(Errc::InvalidArgument);
+    std::shared_ptr<Published> published;
+    {
+        std::lock_guard lock(publishing_);
+        const auto it = published_.find(stream);
+        if (it == published_.end()) return fail(Errc::InvalidArgument);
+        published = it->second;
+    }
+    // Starting a source takes a moment: not under the lock the network's
+    // keyframe requests and bitrates take.
+    if (Result<void> switched = published->switch_source(source); !switched) {
+        LOG_WARN("call", "cannot switch " << published->label << " " << stream << ": "
+                                          << to_string(switched.error()));
+        return switched;
+    }
+    LOG_INFO("call", "sending " << published->label << " " << stream << " from another source");
+    return {};  // the one before goes with `source`, stopped
+}
+
 void Call::unpublish(StreamId stream) {
-    std::unique_ptr<Published> published;
+    std::shared_ptr<Published> published;
     {
         std::lock_guard lock(publishing_);
         const auto it = published_.find(stream);

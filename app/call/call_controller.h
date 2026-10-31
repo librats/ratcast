@@ -14,15 +14,16 @@
  * sends silence; deafened, nobody is heard and the microphone is silent too,
  * as in Discord — once the user allows the microphone where the system asks
  * (Android). Anyone may share a screen or a window — the desktop's dialog,
- * off the GUI thread — and stop, and turn their camera on and off, while the
- * room goes on. Whose share plays is chosen with watch(); until anyone is
- * chosen, the first one offered.
+ * off the GUI thread — show another in its place as the share goes on, and
+ * stop, and turn their camera on and off, while the room goes on. Whose share plays is chosen with
+ * watch(); until anyone is chosen, the first one offered.
  *
  * Each side says who it is — the user's name, muted, deafened — and the others
  * are listed (`members`) by it, with who is speaking and whose camera and
  * share are on. Each member's camera goes to the view QML gives for it
  * (setCameraView()), the share watched to `video`, this side's own camera to
- * `preview`. What is said in writing is `chat` (ChatModel): said with say(),
+ * `preview` and its own share, small and a few times a second (Preview), to
+ * `sharePreview`. What is said in writing is `chat` (ChatModel): said with say(),
  * and what the others said, what was said before this side came among it.
  *
  * The microphone, the speaker and the camera are the system's defaults until
@@ -71,6 +72,7 @@
 #include "ratcast/client/call.h"
 #include "ratcast/client/call_monitor.h"
 #include "ratcast/client/camera.h"
+#include "ratcast/client/preview.h"
 #include "ratcast/client/screen_share.h"
 #include "ratcast/client/voice.h"
 #include "ratcast/engine/audio_device.h"
@@ -155,6 +157,10 @@ class CallController : public QObject {
     /// Where the share watched is drawn, and this side's own camera.
     Q_PROPERTY(ratcast::app::VideoView* video READ video WRITE setVideo NOTIFY videoChanged)
     Q_PROPERTY(ratcast::app::VideoView* preview READ preview WRITE setPreview NOTIFY previewChanged)
+    /// Where this side's own share is seen while it shares; null: nowhere,
+    /// and nothing is done for it.
+    Q_PROPERTY(ratcast::app::VideoView* sharePreview READ sharePreview WRITE setSharePreview NOTIFY
+                   sharePreviewChanged)
     /// The call over the last second, as its monitor saw it: a section a part,
     /// the call first, each a map of `title`, `quality`, `reason` and `rows`
     /// (maps of `label` and `value`). Empty outside a room.
@@ -254,9 +260,12 @@ public:
     Q_INVOKABLE void join(const QString& link);
     Q_INVOKABLE void leave();
     /// Ask the desktop for a screen (or a window) and share it, with the
-    /// computer's sound if asked. In a room, while not sharing.
+    /// computer's sound if asked. In a room, while the dialog is not open.
+    /// Sharing already, it is shown in place of what is, the share going on
+    /// with its sound as it is.
     Q_INVOKABLE void share(bool window, bool sound);
-    /// Stop sharing, or call off the desktop's dialog.
+    /// Stop sharing; or, while the desktop's dialog is open, call it off,
+    /// a share going on as it was.
     Q_INVOKABLE void stopSharing();
     /// Watch the share of the member of `id`; "": none.
     Q_INVOKABLE void watch(const QString& id);
@@ -315,6 +324,8 @@ public:
     void setVideo(VideoView* video);
     VideoView* preview() const { return preview_; }
     void setPreview(VideoView* view);
+    VideoView* sharePreview() const { return share_preview_view_; }
+    void setSharePreview(VideoView* view);
     QVariantList stats() const { return stats_; }
     QString quality() const { return quality_; }
     QString qualityReason() const { return quality_reason_; }
@@ -343,6 +354,7 @@ Q_SIGNALS:
     void watchedChanged();
     void videoChanged();
     void previewChanged();
+    void sharePreviewChanged();
     void statsChanged();
     void statsEveryChanged();
 
@@ -359,10 +371,14 @@ private:
     void start(CallConfig config, State state);
     /// The server named, into `config`; false, with a notice, if it is none.
     bool meet_at_server(CallConfig& config);
-    /// The sources the desktop gave for the share asked in room `generation`,
-    /// or why not.
-    void share_opened(uint64_t generation, const ScreenShareConfig& config,
+    /// The sources the desktop gave for the share asked in room `generation`
+    /// — to show in place of the one shared, if `switching` — or why not.
+    void share_opened(uint64_t generation, const ScreenShareConfig& config, bool switching,
                       Result<ScreenShareSources> sources);
+    /// `pictures`, seen in `sharePreview` as they are shared.
+    std::unique_ptr<VideoSource> previewed(std::unique_ptr<VideoSource> pictures);
+    /// The share over: withdrawn, and no longer seen.
+    void stop_share();
     /// A call's handlers, which bring its events onto the GUI thread for
     /// as long as it is the call of `generation`.
     CallHandlers handlers(uint64_t generation);
@@ -464,6 +480,7 @@ private:
     unsigned printed_seconds_ = 0;  ///< into the call, as printed
     QPointer<VideoView> video_;
     QPointer<VideoView> preview_;
+    QPointer<VideoView> share_preview_view_;
     /// Where the share watched goes, and this side's camera: each its view.
     std::shared_ptr<Pictures> pictures_;
     std::shared_ptr<Pictures> preview_pictures_;
@@ -477,6 +494,7 @@ private:
     std::unique_ptr<InCall> in_call_;  ///< while in a room
     std::unique_ptr<VoiceChannel> voice_;
     std::unique_ptr<ScreenAwake> awake_;         ///< while a share is watched
+    std::shared_ptr<Preview> share_preview_;     ///< while sharing; its pictures hold it too
     std::unique_ptr<SwitchableOutput> speaker_;  ///< the voice channel's, of the device chosen
     std::unique_ptr<Call> call_;                 ///< after the speaker: it plays into it
     /// After the call, which they watch: the panel's, standard output's and

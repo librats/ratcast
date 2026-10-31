@@ -62,8 +62,7 @@ Result<void> VideoPublisher::start(VideoSource& source, EndHandler ended) {
     ended_ = std::move(ended);
     thread_ = std::thread(&VideoPublisher::run, this);
 
-    Result<void> started = source.start([this](VideoFrame picture) { take(std::move(picture)); },
-                                        [this](Result<void> outcome) { finish(outcome); });
+    Result<void> started = start_source(source, ++sources_);
     if (!started) {
         {
             std::lock_guard lock(mutex_);
@@ -75,6 +74,35 @@ Result<void> VideoPublisher::start(VideoSource& source, EndHandler ended) {
     }
     source_ = &source;
     return {};
+}
+
+Result<void> VideoPublisher::switch_source(VideoSource& next) {
+    std::lock_guard lifecycle(lifecycle_);
+    if (!source_) return fail(Errc::InvalidArgument);
+    {
+        std::lock_guard lock(mutex_);
+        if (finished_) return fail(Errc::InvalidArgument);  // over, to be stopped
+    }
+    const uint64_t before = sources_;
+    if (Result<void> started = start_source(next, ++sources_); !started) {
+        std::lock_guard lock(mutex_);
+        current_ = before;
+        return started;
+    }
+    source_->stop();  // what it showed last may still be encoded: it went before
+    source_ = &next;
+    return {};
+}
+
+Result<void> VideoPublisher::start_source(VideoSource& source, uint64_t number) {
+    // Its pictures from the first on: a screen shows one, then only what
+    // changes. The one before is dropped meanwhile, as it is about to go.
+    {
+        std::lock_guard lock(mutex_);
+        current_ = number;
+    }
+    return source.start([this, number](VideoFrame picture) { take(number, std::move(picture)); },
+                        [this, number](Result<void> outcome) { finish(outcome, number); });
 }
 
 void VideoPublisher::stop() {
@@ -120,10 +148,11 @@ VideoPublisherStats VideoPublisher::stats() const {
     return stats_;
 }
 
-void VideoPublisher::take(VideoFrame picture) {
+void VideoPublisher::take(uint64_t source, VideoFrame picture) {
     bool replaced = false;
     {
         std::lock_guard lock(mutex_);
+        if (source != current_) return;  // switched from
         replaced = pending_.has_value();
         pending_ = std::move(picture);
     }
@@ -133,10 +162,10 @@ void VideoPublisher::take(VideoFrame picture) {
     if (replaced) ++stats_.skipped;
 }
 
-void VideoPublisher::finish(Result<void> outcome) {
+void VideoPublisher::finish(Result<void> outcome, uint64_t source) {
     {
         std::lock_guard lock(mutex_);
-        if (finished_) return;
+        if (finished_ || (source != 0 && source != current_)) return;
         finished_ = true;
     }
     if (ended_) ended_(outcome);

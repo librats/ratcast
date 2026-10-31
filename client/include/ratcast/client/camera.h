@@ -9,13 +9,14 @@
  * a video stream labelled kCameraLabel, which the other side plays apart from
  * the screen, in its own time. It is a small picture beside a big one, so it
  * is coded small: no more than 1 Mbit/s, rate control sharing the path with
- * the screen in proportion (the screen's 8 to its 1). with_preview() lets the
- * sender see what goes.
+ * the screen in proportion (the screen's 8 to its 1). with_preview()
+ * (preview.h) lets the sender see what goes.
  */
 
 #include <memory>
 
 #include "ratcast/client/call.h"
+#include "ratcast/client/preview.h"
 #include "ratcast/client/video_publisher.h"
 #include "ratcast/core/result.h"
 #include "ratcast/engine/camera_capture.h"
@@ -34,11 +35,5 @@ CameraOptions call_camera_options();
 /// does.
 Result<VideoPublisher*> publish_camera(Call& call, std::unique_ptr<VideoSource> camera,
                                        StreamId stream = kCameraStream);
-
-/// `source`, each of its pictures handed to `preview` as well (on the
-/// source's thread, before the publisher has it). Pictures are shared, not
-/// copied.
-std::unique_ptr<VideoSource> with_preview(std::unique_ptr<VideoSource> source,
-                                          VideoSource::Sink preview);
 
 }  // namespace ratcast

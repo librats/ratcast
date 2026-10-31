@@ -16,8 +16,10 @@ import Ratcast.Video
 // and share are on — the share watched in the middle with the cameras beside
 // it, what is said in a pane on the right (on a button that counts what is
 // unread), and the controls along the bottom: microphone, sound, camera,
-// sharing, chat, how the call goes (a panel on a button or Ctrl+I, its quality
-// a dot), leave.
+// sharing (and, while sharing, another screen or window shown in its place),
+// chat, how the call goes (a panel on a button or Ctrl+I, its quality a dot),
+// leave. What this side shares it sees small in a corner of the stage, which
+// it drags to another or hides.
 // A share watched may go full screen (F, a double click): only the share, on
 // black, its controls and the cursor there while the mouse moves.
 // The start also says what the updater does: a new version on its way, or in
@@ -51,6 +53,11 @@ ApplicationWindow {
     /// no folder to open.
     readonly property bool mobile: Qt.platform.os === "android"
 
+    /// This side's own share seen in a corner while it shares: which one
+    /// (left 0, right 1; top 0, bottom 2), and whether it is shown or hidden.
+    property int ownShareCorner: 2
+    property bool ownShareShown: true
+
     /// The share watched on the whole screen, nothing else drawn.
     property bool fullScreen: false
     /// Whose share went full screen — another's, or none, ends it — and
@@ -80,6 +87,8 @@ ApplicationWindow {
         id: call
         video: picture
         preview: ownCamera
+        // Hidden, nothing is made for it.
+        sharePreview: ownShare.visible && root.ownShareShown ? ownShareView : null
         statsEvery: root.statsEvery
     }
 
@@ -259,6 +268,8 @@ ApplicationWindow {
         property alias name: call.name
         property alias server: call.server
         property alias shareVolume: call.shareVolume
+        property alias ownShareCorner: root.ownShareCorner
+        property alias ownShareShown: root.ownShareShown
     }
     Settings {
         category: "window"
@@ -806,7 +817,7 @@ ApplicationWindow {
             opacity: 0.6
             text: qsTr("Everyone here hears everyone. Share a screen or turn a camera on, " +
                        "and the others see it.")
-            visible: !root.watching && memberTiles.count === 0 && !call.camera
+            visible: !root.watching && memberTiles.count === 0 && !call.camera && !call.sharing
         }
 
         // A member's place on the stage: its camera, or its name until there
@@ -962,6 +973,109 @@ ApplicationWindow {
                     }
                 }
             }
+        }
+
+        // What this side shares, as the others see it: small, in a corner of
+        // the stage, dragged to another; hidden on asking, a button in its
+        // place. Not on a phone: it shares the screen it would be shown on.
+        Rectangle {
+            id: ownShare
+
+            readonly property real margin: 8
+            /// The most it takes of the stage either way; its shape the
+            /// picture's, a window's upright one too.
+            readonly property real across: Math.min(root.compact ? 200 : 320, stage.width * 0.4)
+            readonly property real down: Math.min(across, stage.height * 0.5)
+            readonly property size shownSize: ownShareView.pictureSize
+            /// The picture's scale into that; 0 before the first.
+            readonly property real fit: shownSize.width > 0
+                ? Math.min(across / shownSize.width, down / shownSize.height) : 0
+
+            /// Back to its corner, bound to it again: after a drag.
+            function place() {
+                ownShare.x = Qt.binding(() => (root.ownShareCorner & 1)
+                                              ? stage.width - ownShare.width - ownShare.margin
+                                              : ownShare.margin)
+                ownShare.y = Qt.binding(() => (root.ownShareCorner & 2)
+                                              ? stage.height - ownShare.height - ownShare.margin
+                                              : ownShare.margin)
+            }
+
+            Component.onCompleted: place()
+            z: 2  // over the share and the cameras
+            visible: call.sharing && !root.fullScreen && !root.mobile
+            // The picture's border round it.
+            width: !root.ownShareShown ? showOwnShare.implicitWidth
+                 : fit > 0 ? shownSize.width * fit + 2 : across
+            height: !root.ownShareShown ? showOwnShare.implicitHeight
+                  : fit > 0 ? shownSize.height * fit + 2 : across * 9 / 16
+            color: root.ownShareShown ? "#111214" : "transparent"
+            radius: 6
+            border.color: root.ownShareShown ? "#4e5058" : "transparent"
+            clip: true
+
+            VideoView {
+                id: ownShareView
+                anchors.fill: parent
+                anchors.margins: 1
+                visible: root.ownShareShown
+            }
+            Label {
+                anchors.left: parent.left
+                anchors.bottom: parent.bottom
+                anchors.margins: 6
+                text: qsTr("Your share")
+                visible: root.ownShareShown
+                font.pixelSize: 11
+                style: Text.Outline
+                styleColor: "#000000"
+            }
+            // Dark under it, to be seen over any picture.
+            ToolButton {
+                anchors.right: parent.right
+                anchors.top: parent.top
+                anchors.margins: 4
+                width: 26
+                height: 26
+                visible: root.ownShareShown
+                text: "–"
+                background: Rectangle {
+                    radius: width / 2
+                    color: parent.hovered ? "#e6111214" : "#99111214"
+                }
+                onClicked: root.ownShareShown = false
+                ToolTip.visible: hovered
+                ToolTip.text: qsTr("Hide your share")
+            }
+            Button {
+                id: showOwnShare
+                visible: !root.ownShareShown
+                text: qsTr("Your share")
+                onClicked: root.ownShareShown = true
+                ToolTip.visible: hovered
+                ToolTip.text: qsTr("See what the others see")
+            }
+
+            DragHandler {
+                target: ownShare
+                enabled: root.ownShareShown
+                // Let go: into the corner nearest.
+                onActiveChanged: {
+                    if (active)
+                        return
+                    const right = ownShare.x + ownShare.width / 2 > stage.width / 2
+                    const bottom = ownShare.y + ownShare.height / 2 > stage.height / 2
+                    root.ownShareCorner = (right ? 1 : 0) | (bottom ? 2 : 0)
+                    ownShare.place()
+                }
+            }
+            HoverHandler {
+                id: ownShareHover
+                enabled: root.ownShareShown
+            }
+            ToolTip.visible: ownShareHover.hovered && root.ownShareShown
+            ToolTip.delay: 800
+            ToolTip.text: qsTr("What the others see. Drag it to another corner.")
         }
     }
 
@@ -1279,10 +1393,12 @@ ApplicationWindow {
             Button {
                 id: shareButton
                 visible: !root.compact
-                text: call.sharing ? qsTr("Stop sharing")
-                                   : call.choosing ? qsTr("Choosing…") : qsTr("Share")
+                text: call.choosing ? qsTr("Choosing…")
+                                    : call.sharing ? qsTr("Sharing") : qsTr("Share")
                 highlighted: call.sharing
-                onClicked: call.sharing || call.choosing ? call.stopSharing() : shareMenu.open()
+                // The dialog open: called off, a share going on as it was.
+                onClicked: call.choosing ? call.stopSharing()
+                                         : call.sharing ? sharingMenu.open() : shareMenu.open()
 
                 Menu {
                     id: shareMenu
@@ -1304,6 +1420,28 @@ ApplicationWindow {
                         text: qsTr("With its sound")
                         checkable: true
                         checked: true
+                    }
+                }
+                // Sharing: another in place of what is, the others watching
+                // on, the sound as it is.
+                Menu {
+                    id: sharingMenu
+                    y: -height
+
+                    MenuItem {
+                        text: qsTr("Show another screen")
+                        onTriggered: call.share(false, false)
+                    }
+                    MenuItem {
+                        text: qsTr("Show another window")
+                        visible: !root.mobile
+                        height: visible ? implicitHeight : 0
+                        onTriggered: call.share(true, false)
+                    }
+                    MenuSeparator {}
+                    MenuItem {
+                        text: qsTr("Stop sharing")
+                        onTriggered: call.stopSharing()
                     }
                 }
             }
@@ -1391,7 +1529,17 @@ ApplicationWindow {
                         onTriggered: call.share(true, true)
                     }
                     MoreItem {
-                        text: qsTr("Stop sharing")
+                        text: qsTr("Show another screen")
+                        visible: !root.mobile && call.sharing && !call.choosing
+                        onTriggered: call.share(false, false)
+                    }
+                    MoreItem {
+                        text: qsTr("Show another window")
+                        visible: !root.mobile && call.sharing && !call.choosing
+                        onTriggered: call.share(true, false)
+                    }
+                    MoreItem {
+                        text: call.choosing ? qsTr("Call off choosing") : qsTr("Stop sharing")
                         visible: call.sharing || call.choosing
                         onTriggered: call.stopSharing()
                     }

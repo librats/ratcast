@@ -12,7 +12,8 @@ cmake --preset release -DRATCAST_BUILD_BENCH=ON && cmake --build --preset releas
 ./build/release/bin/bench_core      # Buffer, frame header
 ./build/release/bin/bench_session   # MediaSession per frame
 ./build/release/bin/bench_codec     # video encoders and decoders, Opus
-./build/release/bin/bench_convert   # BGRA -> NV12 / I420, against libswscale; YUY2 -> NV12
+./build/release/bin/bench_convert   # BGRA -> NV12 / I420, against libswscale; YUY2 -> NV12;
+                                    # NV12 shrunk for a sharer's preview
 ```
 
 **The whole pipeline over an emulated network** (`bench/netem.py`): `ratcast-send --source
@@ -1639,3 +1640,22 @@ peer went; `--lost-after 15`, as the app (`--duration 60`).
 - `move()` makes the internet forget the old address at once: a forwarded port's flow is not
   flushed as the address goes, and the hosts on the bridge reached it by its MAC until their
   neighbour entries went stale, half a minute on.
+
+## A sharer's preview of its share (10.6)
+
+What it costs the sender to see what it shares (`Preview`): at most 15 pictures a second, each
+shrunk by a whole factor to fit within 640 x 360 (`shrink_frame()`, each sample the mean of its
+block) on a thread of its own, and only while the preview is shown. `bench_convert` on the dev
+VM, release:
+
+| picture | factor | shrunk to | `shrink_frame` | at 15 a second |
+|---|---:|---|---:|---:|
+| 1080p | 3 | 640 x 360 | 0.60 ms (5.2 GB/s) | 0.9% of a core |
+| 1440p | 4 | 640 x 360 | 0.70 ms (7.9 GB/s) | 1.0% |
+| 4K | 6 | 640 x 360 | 1.06 ms (11.7 GB/s) | 1.6% |
+
+Against drawing every picture as it is: a view uploads its planes to the GPU each time, 5.5 MB
+for a 1440p picture, 330 MB a second at 60 — for a corner 320 pixels wide. Shrunk, it uploads
+0.35 MB 15 times a second, 5 MB a second. The source never waits: a picture is kept by
+reference when one is due (by its capture time) and the thread makes it small; hidden, nothing
+is taken at all.

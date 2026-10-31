@@ -267,6 +267,14 @@ void CallController::setPreview(VideoView* view) {
     if (attach(preview_, *preview_pictures_, view)) Q_EMIT previewChanged();
 }
 
+void CallController::setSharePreview(VideoView* view) {
+    if (view == share_preview_view_) return;
+    share_preview_view_ = view;
+    // None: nothing taken or made small for it.
+    if (share_preview_) share_preview_->set_sink(view ? view->sink() : VideoView::Sink{});
+    Q_EMIT sharePreviewChanged();
+}
+
 void CallController::setCameraView(const QString& id, VideoView* view) {
     QPointer<VideoView>& slot = camera_views_[id];
     attach(slot, *cameras_->of(id), view);
@@ -392,6 +400,8 @@ void CallController::end(QString notice) {
     }
     if (video_) video_->clear();
     if (preview_) preview_->clear();
+    if (share_preview_view_) share_preview_view_->clear();
+    share_preview_.reset();
     update_levels();
     update_members();
     set_choosing(false);
@@ -551,11 +561,14 @@ void CallController::update_members() {
 // ── Sharing and watching ────────────────────────────────────────────────────
 
 void CallController::share(bool window, bool sound) {
-    if (state_ != State::InRoom || sharing_ || choosing_) return;
+    if (state_ != State::InRoom || choosing_) return;
     set_notice({});
+    // Sharing, another in place of what is shared: the sound shared goes on,
+    // none opened beside it.
+    const bool switching = sharing_;
     ScreenShareConfig config;
     config.window = window;
-    config.sound = sound;
+    config.sound = sound && !switching;
 #ifdef Q_OS_ANDROID
     // What the applications play is heard only with the microphone's leave:
     // without it, the screen alone.
@@ -567,20 +580,20 @@ void CallController::share(bool window, bool sound) {
     set_choosing(true);
     // The desktop's dialog waits on the user: off the GUI thread. The last
     // one has said its say: assigning joins it.
-    dialog_ = std::jthread([this, generation = generation_, config,
+    dialog_ = std::jthread([this, generation = generation_, config, switching,
                             open = environment_.open_share](std::stop_token cancel) {
         auto sources = std::make_shared<Result<ScreenShareSources>>(open(config, cancel));
         QMetaObject::invokeMethod(
             this,
-            [this, generation, config, sources] {
-                share_opened(generation, config, std::move(*sources));
+            [this, generation, config, switching, sources] {
+                share_opened(generation, config, switching, std::move(*sources));
             },
             Qt::QueuedConnection);
     });
 }
 
 void CallController::share_opened(uint64_t generation, const ScreenShareConfig& config,
-                                  Result<ScreenShareSources> sources) {
+                                  bool switching, Result<ScreenShareSources> sources) {
     if (generation != generation_) return;  // left meanwhile
     set_choosing(false);
     if (!sources) {
@@ -589,18 +602,44 @@ void CallController::share_opened(uint64_t generation, const ScreenShareConfig& 
         }
         return;
     }
-    if (Result<void> shared = publish_screen_share(*call_, std::move(*sources), config); !shared) {
+    // A switch whose share ended meanwhile (stopped, or its window closed)
+    // has nothing to switch: the user shares again if they want to.
+    if (switching && !sharing_) return;
+    sources->pictures = previewed(std::move(sources->pictures));
+    const Result<void> shared = switching
+                                    ? switch_screen_share(*call_, std::move(*sources))
+                                    : publish_screen_share(*call_, std::move(*sources), config);
+    if (!shared) {
         set_notice(tr("The screen cannot be shared (%1).").arg(describe(shared.error())));
+        if (!sharing_) share_preview_.reset();
         return;
     }
     set_sharing(true);
 }
 
-void CallController::stopSharing() {
-    if (choosing_) dialog_.request_stop();  // its answer, Cancelled, ends it
-    if (!sharing_) return;
+std::unique_ptr<VideoSource> CallController::previewed(std::unique_ptr<VideoSource> pictures) {
+    if (!share_preview_) {
+        share_preview_ = std::make_shared<Preview>();
+        if (share_preview_view_) share_preview_->set_sink(share_preview_view_->sink());
+    }
+    return with_preview(std::move(pictures), [preview = share_preview_](const VideoFrame& picture) {
+        preview->take(picture);
+    });
+}
+
+void CallController::stop_share() {
     unpublish_screen_share(*call_);
+    share_preview_.reset();
+    if (share_preview_view_) share_preview_view_->clear();
     set_sharing(false);
+}
+
+void CallController::stopSharing() {
+    if (choosing_) {
+        dialog_.request_stop();  // its answer, Cancelled, ends it
+        return;
+    }
+    if (sharing_) stop_share();
 }
 
 void CallController::watch(const QString& id) {
@@ -1008,8 +1047,7 @@ CallHandlers CallController::handlers(uint64_t generation) {
                     if (stream != kScreenStream && stream != kScreenSoundStream) return;
                     if (!sharing_) return;
                     // Either half gone is the share over: the desktop stopped it.
-                    unpublish_screen_share(*call_);
-                    set_sharing(false);
+                    stop_share();
                     set_notice(outcome ? tr("Sharing stopped.")
                                        : tr("Sharing failed (%1).").arg(describe(outcome.error())));
                 });

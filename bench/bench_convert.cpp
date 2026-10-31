@@ -1,7 +1,8 @@
 // BGRA into the YUV encoders take: what every captured picture costs before it
 // reaches the encoder, at the sizes screens have. Next to it, FFmpeg's
 // libswscale doing the same, when the build has FFmpeg. Then a camera's YUY2
-// into NV12, at the sizes cameras have.
+// into NV12, at the sizes cameras have, and a screen's NV12 shrunk for the
+// sender's preview of it (640 x 360 at most).
 
 #include <cstdio>
 #include <memory>
@@ -97,6 +98,19 @@ void camera_benchmarks(bench::Bench& b, const Size& size) {
     });
 }
 
+/// What the sender's preview of a share costs a picture it shows.
+void preview_benchmarks(bench::Bench& b, const Size& size) {
+    b.group(std::string("NV12 shrunk for a preview, ") + size.name);
+    b.items(1);
+    b.bytes(double(size.width) * size.height * 3 / 2);
+    const VideoFrame nv12 = draw_pattern({PixelFormat::NV12, size.width, size.height}, 0, {});
+    const uint32_t factor = shrink_factor(size.width, size.height, 640, 360);
+    b.run("shrink_frame", [&] {
+        Result<VideoFrame> small = shrink_frame(nv12, factor);
+        bench::do_not_optimize(small->plane(0).data[0]);
+    });
+}
+
 }  // namespace
 
 int main() {
@@ -110,6 +124,10 @@ int main() {
     for (const Size& size :
          {Size{"480p", 640, 480}, Size{"720p", 1280, 720}, Size{"1080p", 1920, 1080}}) {
         camera_benchmarks(b, size);
+    }
+    for (const Size& size :
+         {Size{"1080p", 1920, 1080}, Size{"1440p", 2560, 1440}, Size{"4K", 3840, 2160}}) {
+        preview_benchmarks(b, size);
     }
     b.report();
 

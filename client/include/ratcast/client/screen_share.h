@@ -14,7 +14,9 @@
  *
  * The pictures go as a rate-controlled video stream (kScreenStream), the
  * sound as music: stereo, full band, no DTX or FEC (kScreenSoundStream).
- * unpublish_screen_share() stops both, and the call goes on.
+ * switch_screen_share() shows another screen or window in their place as the
+ * share goes on — its viewers kept watching, the sound as it was —
+ * and unpublish_screen_share() stops both, and the call goes on.
  */
 
 #include <memory>
@@ -74,6 +76,13 @@ Result<ScreenShareSources> open_screen_share(const ScreenShareConfig& config,
 /// then nothing is published.
 Result<void> publish_screen_share(Call& call, ScreenShareSources sources,
                                   const ScreenShareConfig& config);
+
+/// Share the pictures of `sources` on `call` in place of those shared, the
+/// share going on: its viewers kept, the sound shared as it was (what the
+/// other applications play is the same whichever window is shown; `sources`'
+/// is let go). Fails as Call::switch_source does — InvalidArgument when
+/// nothing is shared — and the pictures before are still shared.
+Result<void> switch_screen_share(Call& call, ScreenShareSources sources);
 
 /// Stop sharing on `call`: the pictures and the sound withdrawn.
 void unpublish_screen_share(Call& call);

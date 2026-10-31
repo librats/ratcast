@@ -11,7 +11,8 @@
  *
  * What is published, the call owns: each source with its publisher, whose
  * encoder hears the keyframes receivers ask for and the bitrate rate control
- * aims at. Whoever connects may subscribe to it.
+ * aims at. Whoever connects may subscribe to it. A video stream's source may
+ * be switched for another as it goes (switch_source()), its viewers kept.
  *
  * What is played, each where the playback config says, is everyone's voice
  * and camera, and of the one watched the pictures and the sound with them.
@@ -328,6 +329,13 @@ public:
     Result<AudioPublisher*> publish(std::unique_ptr<AudioSource> source,
                                     AudioPublisherConfig config);
     Result<DataPublisher*> publish(std::unique_ptr<TsInput> input, DataPublisherConfig config);
+    /// Publish what `source` produces as the video stream `stream` from now
+    /// on, in place of its source, which is stopped and let go: the stream
+    /// goes on, its viewers kept (VideoPublisher::switch_source()). Fails
+    /// with InvalidArgument for no source or no video stream so published,
+    /// or one that ended by itself, or with the source's own failure to
+    /// start, the one before still published.
+    Result<void> switch_source(StreamId stream, std::unique_ptr<VideoSource> source);
     /// Stop the source and withdraw the stream.
     void unpublish(StreamId stream);
     /// Every stream published, by id.
@@ -448,7 +456,8 @@ private:
     std::map<PeerId, Presence> said_;
 
     mutable std::mutex publishing_;
-    std::map<StreamId, std::unique_ptr<Published>> published_;
+    /// Shared with a switch_source() under way, which works on its own.
+    std::map<StreamId, std::shared_ptr<Published>> published_;
 
     PlayoutClock sync_;
     std::optional<AudioMixer> mixer_;  ///< over playback.sound, if any

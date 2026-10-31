@@ -26,6 +26,7 @@
 #include <span>
 #include <thread>
 #include <utility>
+#include <vector>
 
 #include "ratcast/engine/pattern_source.h"
 #include "ratcast/engine/tone_source.h"
@@ -513,6 +514,73 @@ TEST_F(CallControllerTest, AnyoneSharesAndStopsWhileTheRoomGoesOn) {
     // And again: one room, any number of shares.
     ann_.share(true, false);
     EXPECT_TRUE(wait_for([&] { return bob_.watching() == ann; }));
+}
+
+TEST_F(CallControllerTest, ASharerShowsAnotherWindowAndTheShareGoesOn) {
+    // The desktop gives a screen, then a window of another size.
+    CallController::Environment two = environment();
+    auto asked = std::make_shared<std::vector<ScreenShareConfig>>();
+    two.open_share = [asked](const ScreenShareConfig& config,
+                             std::stop_token) -> Result<ScreenShareSources> {
+        asked->push_back(config);
+        const uint32_t width = asked->size() == 1 ? 320 : 480;
+        ScreenShareSources sources{.pictures = std::make_unique<PatternSource>(PatternConfig{
+                                       PixelFormat::NV12, width, width * 9 / 16, 30, 1})};
+        if (config.sound) {
+            sources.sound = std::make_unique<ToneSource>(ToneConfig{.format = {48'000, 2}});
+        }
+        return sources;
+    };
+    ann_.setEnvironment(two);
+    ann_.setName("Ann");  // the environment's name before
+    VideoView own;
+    ann_.setSharePreview(&own);
+    both_in();
+    ann_.share(false, true);
+    ASSERT_TRUE(wait_for([&] { return bob_view_.pictureSize() == QSize(320, 180); }));
+    EXPECT_TRUE(wait_for([&] { return own.pictureSize() == QSize(320, 180); }))
+        << "the sharer sees what it shares";
+
+    ann_.share(true, true);
+    EXPECT_TRUE(ann_.choosing());
+    EXPECT_TRUE(ann_.sharing()) << "the share goes on while the dialog is open";
+    EXPECT_TRUE(wait_for([&] { return bob_view_.pictureSize() == QSize(480, 270); }));
+    EXPECT_TRUE(wait_for([&] { return own.pictureSize() == QSize(480, 270); }));
+    EXPECT_FALSE(ann_.choosing());
+    EXPECT_TRUE(ann_.sharing());
+    EXPECT_TRUE(ann_.notice().isEmpty()) << ann_.notice().toStdString();
+    EXPECT_EQ(bob_.watching(), id_of(bob_, "Ann")) << "watched throughout";
+    ASSERT_EQ(asked->size(), 2u);
+    EXPECT_TRUE(asked->at(0).sound);
+    EXPECT_TRUE(asked->at(1).window);
+    EXPECT_FALSE(asked->at(1).sound) << "the sound shared goes on: none opened beside it";
+
+    ann_.stopSharing();
+    EXPECT_FALSE(ann_.sharing());
+    EXPECT_TRUE(own.pictureSize().isEmpty()) << "no longer seen";
+    EXPECT_TRUE(wait_for([&] { return bob_.watching().isEmpty(); }));
+}
+
+TEST_F(CallControllerTest, ASwitchCalledOffLeavesTheShareAsItWas) {
+    CallController::Environment once = environment();
+    auto opened = std::make_shared<int>(0);
+    once.open_share = [opened, open = once.open_share](const ScreenShareConfig& config,
+                                                       std::stop_token cancel) {
+        if (++*opened > 1) return Result<ScreenShareSources>(fail(Errc::Cancelled));
+        return open(config, std::move(cancel));
+    };
+    ann_.setEnvironment(once);
+    ann_.setName("Ann");
+    both_in();
+    ann_.share(false, false);
+    ASSERT_TRUE(wait_for([&] { return bob_view_.pictureSize() == QSize(320, 240); }));
+    ann_.share(true, false);
+    ASSERT_TRUE(wait_for([&] { return !ann_.choosing(); }));
+    EXPECT_TRUE(ann_.sharing());
+    EXPECT_TRUE(ann_.notice().isEmpty());
+    bob_view_.clear();
+    EXPECT_TRUE(wait_for([&] { return bob_view_.pictureSize() == QSize(320, 240); }))
+        << "the screen still shared";
 }
 
 TEST_F(CallControllerTest, TheShareIsHeardAsLoudAsSetBesideTheVoices) {

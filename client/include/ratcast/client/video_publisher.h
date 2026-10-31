@@ -19,7 +19,9 @@
  * change of codec: the stream is coded in one its viewers all decode as it
  * comes (what their Presence says) — a phone among them, which decodes AV1
  * in software only, has it in H.265 or H.264 — looked at with every keyframe
- * (a viewer joining asks for one) and every second.
+ * (a viewer joining asks for one) and every second. And so does a switch of
+ * its source for another as it goes (switch_source(): another window shared):
+ * the stream stays, its viewers with it, and only the pictures change.
  *
  * The stream is rate-controlled unless configured otherwise: the session
  * follows the paths to the viewers and the publisher hands the bitrate it
@@ -115,6 +117,15 @@ public:
     /// already started, or with the source's own failure.
     Result<void> start(VideoSource& source, EndHandler ended = {});
 
+    /// Publish what `next` produces from now on, in place of the source
+    /// before, which is stopped (and may then go): the stream goes on, its
+    /// viewers kept, a new encoder only for pictures of another size, colour
+    /// space or GPU. `next` must stay alive until stop() or the next switch;
+    /// what `ended` was given hears of it as it did of the one before, never
+    /// of that one again. Fails if not started or already ended, or with
+    /// `next`'s own failure to start, the source before still published.
+    Result<void> switch_source(VideoSource& next);
+
     /// Stop the source and the encoder, and withdraw the stream.
     void stop();
 
@@ -129,8 +140,13 @@ public:
     VideoPublisherStats stats() const;
 
 private:
-    void take(VideoFrame picture);
-    void finish(Result<void> outcome);
+    /// `source` started as the one of `number` (sources_), whose pictures
+    /// and end are taken from now on, those of the one before dropped.
+    Result<void> start_source(VideoSource& source, uint64_t number);
+    void take(uint64_t source, VideoFrame picture);
+    /// Publishing over: the source of that number ended, unless switched
+    /// from, or (0) the encoder failed.
+    void finish(Result<void> outcome, uint64_t source = 0);
     void run();
     Result<void> publish(VideoFrame picture, bool keyframe);
     Result<void> open_encoder(const VideoFrame& picture);
@@ -142,14 +158,16 @@ private:
     const VideoPublisherConfig config_;
     Clock& clock_;
 
-    std::mutex lifecycle_;  ///< serialises start() and stop()
+    std::mutex lifecycle_;  ///< serialises start(), switch_source() and stop()
     VideoSource* source_ = nullptr;
+    uint64_t sources_ = 0;  ///< started, the number of the last
     EndHandler ended_;
     std::thread thread_;
 
     // The hand-over from the source to the encoder thread.
     std::mutex mutex_;
     std::condition_variable wake_;
+    uint64_t current_ = 0;  ///< the source whose pictures are taken
     std::optional<VideoFrame> pending_;
     bool keyframe_requested_ = false;
     bool have_picture_ = false;  ///< the encoder thread has a last picture to repeat

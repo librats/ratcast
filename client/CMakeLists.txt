@@ -18,6 +18,7 @@ add_library(ratcast_client STATIC
     src/playback_meter.cpp
     src/playout_clock.cpp
     src/playout_schedule.cpp
+    src/preview.cpp
     src/rats_url.cpp
     src/screen_share.cpp
     src/ts_probe.cpp

@@ -1265,6 +1265,41 @@ lost without leaving is not dialed again (the member rejoins); presence is not i
 punching is librats' and untested here (loopback has no NAT); the app's room has not been
 clicked through on two hosts; the sharer's uplink is stage 5's (above).
 
+- **10.6 A share switched, and seen by its sharer** ✅ (after the stage closed): a member
+  sharing a game and wanting to show a player in its place had to stop sharing and share
+  again — its viewers saw the share end, and each chose it anew; and a sharer had no way to see
+  what it sent.
+  Done so: `VideoPublisher::switch_source()` — the next source started first, its pictures
+  taken from then on (each source numbered: pictures and an end from one switched from are
+  dropped), the one before stopped; the stream stays announced, numbers carry on, a new
+  encoder only for another size, colour space or GPU (`update_stream()`, as a window resized);
+  a source that cannot start leaves the one before. `Call::switch_source(stream, source)` (the
+  published held by `shared_ptr`, so that starting a source is not done under the lock the
+  network's keyframe requests take), `switch_screen_share()`: the pictures in place, the sound
+  as it was (the other applications' is the same whichever window is shown). The app:
+  `share()` while sharing switches — the desktop's dialog for the pictures alone, the share
+  going on while it is open; called off, nothing changes; answered after the share ended,
+  nothing is switched. The button reads Sharing and opens Show another screen, Show another
+  window, Stop sharing. The preview: `Preview` (client), the pictures `with_preview()` hands it
+  kept at most 15 a second by their capture times, the newest only, shrunk on a thread of its
+  own to fit within 640 x 360 (`shrink_frame()`, engine: a whole factor, each sample its
+  block's mean, read out of GPU memory first) — 0.6–1.1 ms a picture, about 1% of a core
+  (`docs/bench.md`, "A sharer's preview"); with no sink nothing is taken.
+  `CallController::sharePreview`, a view QML gives: `Main.qml` draws it in a corner of the
+  stage while sharing, its shape the picture's (an upright window too), dragged to another
+  corner, hidden on a button (and then not made at all), both kept in the settings; not on a
+  phone, which shares the screen it would be shown on. `with_preview()` moved from `camera.h`
+  to `preview.h`. Found on the way: a QML property named `picture` read the share's view of
+  that id instead (ids come first), caught on a screenshot. Tested: `shrink_frame()` against
+  each block's mean in both layouts with sizes no multiple of the factor, the factor, what it
+  refuses; the preview's rate, size, nothing without a sink, a source on another clock; a
+  publisher switched to another size and back with the stream never withdrawn and nothing
+  undecodable, a source that cannot start, the end heard only of the current; a call's share
+  switched with its viewer playing on and the sound going on; the room's sharer switching, the
+  viewer watching throughout, the sharer seeing both, no sound opened for the switch, a switch
+  called off. Left: a window's title is not shown (the portal does not say it); the label of a
+  stream switched from a window to a screen stays "window".
+
 ### Stage 11 — Full screen ✅
 
 Watching as a film is watched: the share on the whole screen, nothing else on it. The room

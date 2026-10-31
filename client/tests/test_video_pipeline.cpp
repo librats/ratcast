@@ -13,6 +13,7 @@
 #include <mutex>
 #include <optional>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #include "loopback.h"
@@ -32,26 +33,37 @@ PeerId make_peer(uint8_t seed) {
     return PeerId::from_public_key(key.data(), key.size());
 }
 
-/// A source the test drives by hand, one picture at a time.
+/// A source the test drives by hand, one picture at a time, and ends; or
+/// one that fails to start.
 class ManualSource final : public VideoSource {
 public:
-    Result<void> start(Sink sink, EndHandler) override {
+    explicit ManualSource(Result<void> starts = {}) : starts_(starts) {}
+    Result<void> start(Sink sink, EndHandler ended) override {
+        if (!starts_) return starts_;
         std::lock_guard lock(mutex_);
         sink_ = std::move(sink);
+        ended_ = std::move(ended);
         return {};
     }
     void stop() override {
         std::lock_guard lock(mutex_);
         sink_ = nullptr;
+        ended_ = nullptr;
     }
     void show(VideoFrame picture) {
         std::lock_guard lock(mutex_);
         if (sink_) sink_(std::move(picture));
     }
+    void end() {
+        std::lock_guard lock(mutex_);
+        if (ended_) std::exchange(ended_, nullptr)({});
+    }
 
 private:
+    const Result<void> starts_;
     std::mutex mutex_;
     Sink sink_;
+    EndHandler ended_;
 };
 
 /// The stamp on picture `i` of a test.
@@ -169,6 +181,7 @@ protected:
 
     // After the loopback, so that they go first; the sources before what uses them.
     ManualSource source_;
+    ManualSource other_;  ///< switched to
     PatternSource pattern_{{PixelFormat::NV12, 320, 240, 60, 1}};
     std::unique_ptr<VideoPublisher> publisher_;
     std::unique_ptr<VideoPlayer> player_;
@@ -239,6 +252,70 @@ TEST_F(VideoPipelineTest, FollowsTheSourceToANewSize) {
     ASSERT_GE(announced_.size(), 2u);
     EXPECT_EQ(announced_.back().video()->width, 640u);
     EXPECT_EQ(announced_.back().video()->height, 360u);
+}
+
+TEST_F(VideoPipelineTest, SwitchesItsSourceAndTheStreamGoesOn) {
+    ASSERT_TRUE(publisher_->start(source_));
+    source_.show(picture(0));
+    play();
+    uint64_t i = 1;
+    ASSERT_TRUE(eventually([&] {
+        source_.show(picture(i++));
+        return picture_count() > 0;
+    }));
+
+    // Another window, of another size: the same stream, a new encoder, and
+    // nothing more from the one before.
+    ASSERT_TRUE(publisher_->switch_source(other_));
+    source_.show(picture(1000));
+    ASSERT_TRUE(eventually([&] {
+        other_.show(picture(i++, 640, 360));
+        std::this_thread::sleep_for(10ms);
+        return wait_for_picture([](const VideoFrame& p) { return p.width() == 640; });
+    }));
+    EXPECT_FALSE(withdrawn_) << "its viewers kept";
+    EXPECT_EQ(publisher_->stats().encoders, 2u);
+    EXPECT_EQ(player_->stats().decode_errors, 0u) << "numbers carried on";
+    {
+        std::lock_guard lock(mutex_);
+        EXPECT_EQ(announced_.back().video()->width, 640u);
+    }
+
+    // Of the same size, back: the encoder goes on.
+    ASSERT_TRUE(publisher_->switch_source(source_));
+    const size_t before = picture_count();
+    ASSERT_TRUE(eventually([&] {
+        source_.show(picture(i++, 640, 360));
+        std::this_thread::sleep_for(10ms);
+        return picture_count() > before + 2;
+    }));
+    EXPECT_EQ(publisher_->stats().encoders, 2u);
+    EXPECT_FALSE(withdrawn_);
+}
+
+TEST_F(VideoPipelineTest, ASourceThatCannotStartLeavesTheOneBefore) {
+    std::atomic<int> ended{0};
+    ASSERT_TRUE(publisher_->start(source_, [&](Result<void>) { ++ended; }));
+    ManualSource refusing(fail(Errc::Unavailable));
+    EXPECT_EQ(publisher_->switch_source(refusing).error(), Errc::Unavailable);
+
+    source_.show(picture(0));
+    play();
+    uint64_t i = 1;
+    EXPECT_TRUE(eventually([&] {
+        source_.show(picture(i++));
+        return picture_count() > 0;
+    })) << "the one before still published";
+
+    // The end heard is the one switched to's, never the one's before.
+    ASSERT_TRUE(publisher_->switch_source(other_));
+    source_.end();
+    std::this_thread::sleep_for(20ms);
+    EXPECT_EQ(ended, 0);
+    other_.end();
+    EXPECT_TRUE(eventually([&] { return ended == 1; }));
+    EXPECT_EQ(publisher_->switch_source(source_).error(), Errc::InvalidArgument)
+        << "over: to be stopped";
 }
 
 TEST_F(VideoPipelineTest, CodesInWhatItsViewerDecodesAsItComes) {

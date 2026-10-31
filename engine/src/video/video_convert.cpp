@@ -1,4 +1,5 @@
-// BGRA (and RGBA) into 4:2:0 YUV in fixed point, and a camera's 4:2:2 into 4:2:0. The loops are
+// BGRA (and RGBA) into 4:2:0 YUV in fixed point, a camera's 4:2:2 into 4:2:0, and 4:2:0 shrunk by
+// a whole factor. The loops are
 // plain C++ on purpose: compilers turn them into SIMD (this file is built with -O3), which keeps
 // one version of the code for every architecture and runs near memory speed.
 //
@@ -14,6 +15,7 @@
 #include <cstdint>
 #include <cstring>
 #include <utility>
+#include <vector>
 
 namespace ratcast {
 namespace {
@@ -246,6 +248,33 @@ void yuy2_to_yuv(const VideoFrame& in, MutableVideoFrame& out) {
     }
 }
 
+/// A plane of `width` x `rows` samples (each `channels` interleaved bytes: NV12's chroma has two)
+/// out of one `factor` times larger each way, each sample the mean of its block. Each output row
+/// sums its block's rows column by column first — a loop over the whole input row that compilers
+/// vectorise, and which is most of the work — then each `factor` columns of those sums.
+void shrink_plane(const VideoFrame::Plane& in, const MutableVideoFrame::Plane& out, size_t width,
+                  size_t rows, size_t channels, uint32_t factor, std::vector<uint32_t>& sums) {
+    const size_t span = width * factor * channels;  // the bytes of an input row read
+    const uint32_t area = factor * factor;
+    sums.resize(span);
+    for (size_t y = 0; y < rows; ++y) {
+        uint32_t* __restrict sum = sums.data();
+        std::fill_n(sum, span, 0u);
+        for (uint32_t r = 0; r < factor; ++r) {
+            const uint8_t* __restrict row = in.data + (y * factor + r) * in.stride;
+            for (size_t x = 0; x < span; ++x) sum[x] += row[x];
+        }
+        uint8_t* __restrict line = out.data + y * out.stride;
+        for (size_t x = 0; x < width; ++x) {
+            for (size_t c = 0; c < channels; ++c) {
+                uint32_t block = area / 2;  // rounded to the nearest
+                for (uint32_t i = 0; i < factor; ++i) block += sum[(x * factor + i) * channels + c];
+                line[x * channels + c] = uint8_t(block / area);
+            }
+        }
+    }
+}
+
 bool is_yuv(PixelFormat format) {
     return format != PixelFormat::BGRA && format != PixelFormat::RGBA;
 }
@@ -285,6 +314,43 @@ Result<VideoFrame> convert_frame(const VideoFrame& picture, PixelFormat format,
 Result<VideoFrame> convert_frame(const VideoFrame& picture, PixelFormat format,
                                  ColorSpace color_space) {
     return convert_frame(picture, format, color_space, BufferPool::shared());
+}
+
+Result<VideoFrame> shrink_frame(const VideoFrame& picture, uint32_t factor, BufferPool& pool) {
+    if (picture.empty() || factor == 0) return fail(Errc::InvalidArgument);
+    if (!is_420(picture.format())) return fail(Errc::Unsupported);
+    if (factor == 1) return picture;
+    const uint32_t width = picture.width() / factor & ~1u;
+    const uint32_t height = picture.height() / factor & ~1u;
+    if (width == 0 || height == 0) return fail(Errc::InvalidArgument);
+    if (picture.gpu()) {  // read out of GPU memory first
+        Result<VideoFrame> downloaded = download_frame(picture, pool);
+        if (!downloaded) return downloaded;
+        return shrink_frame(*downloaded, factor, pool);
+    }
+
+    MutableVideoFrame out = MutableVideoFrame::allocate(picture.format(), width, height, pool);
+    std::vector<uint32_t> sums;
+    shrink_plane(picture.plane(0), out.plane(0), width, height, 1, factor, sums);
+    if (picture.format() == PixelFormat::NV12) {
+        shrink_plane(picture.plane(1), out.plane(1), width / 2, height / 2, 2, factor, sums);
+    } else {
+        shrink_plane(picture.plane(1), out.plane(1), width / 2, height / 2, 1, factor, sums);
+        shrink_plane(picture.plane(2), out.plane(2), width / 2, height / 2, 1, factor, sums);
+    }
+    return std::move(out).freeze(picture.capture_time(), picture.color_space());
+}
+
+Result<VideoFrame> shrink_frame(const VideoFrame& picture, uint32_t factor) {
+    return shrink_frame(picture, factor, BufferPool::shared());
+}
+
+uint32_t shrink_factor(uint32_t width, uint32_t height, uint32_t max_width,
+                       uint32_t max_height) noexcept {
+    const auto across = [](uint32_t size, uint32_t most) {
+        return most == 0 ? 1u : std::max(1u, (size + most - 1) / most);
+    };
+    return std::max(across(width, max_width), across(height, max_height));
 }
 
 YuvToRgb rgb_from_yuv(ColorSpace color_space) noexcept {

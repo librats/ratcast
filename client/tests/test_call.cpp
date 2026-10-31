@@ -407,6 +407,57 @@ TEST_F(CallTest, AScreenShareGoesAsPicturesAndMusic) {
     EXPECT_EQ(guest->peers().size(), 1u);
 }
 
+TEST_F(CallTest, AScreenShareShowsAnotherWindowAndGoesOn) {
+    VideoEncoderConfig probe;
+    probe.width = 320;
+    probe.height = 240;
+    if (!open_video_encoder(probe)) GTEST_SKIP() << "no AV1 encoder here";
+
+    Side host;
+    host.start(config());
+    ScreenShareConfig share{.window = true};
+    share.video.bitrate = 1'000'000;
+    ASSERT_TRUE(publish_screen_share(
+        *host,
+        {.pictures =
+             std::make_unique<PatternSource>(PatternConfig{PixelFormat::NV12, 320, 240, 30, 1}),
+         .sound = std::make_unique<ToneSource>(ToneConfig{.format = {48'000, 2}})},
+        share));
+    Side guest;
+    guest.start(config(RatsUrl{host.address()}));
+    ASSERT_TRUE(wait_for([&] { return guest.pictures() >= 10 && guest.heard() >= 10; }));
+
+    // Another window, larger: the guest goes on watching, the sound on playing.
+    ASSERT_TRUE(
+        switch_screen_share(*host, {.pictures = std::make_unique<PatternSource>(
+                                        PatternConfig{PixelFormat::NV12, 480, 270, 30, 1})}));
+    EXPECT_TRUE(wait_for(
+        [&] { return guest->video_stats() && guest->video_stats()->player.width == 480u; }));
+    const size_t pictures = guest.pictures();
+    const size_t heard = guest.heard();
+    EXPECT_TRUE(wait_for([&] { return guest.pictures() >= pictures + 10; }));
+    EXPECT_TRUE(wait_for([&] { return guest.heard() >= heard + 10; }));
+    EXPECT_FALSE(guest.told("ended window"));
+    EXPECT_FALSE(guest.told("ended sound"));
+    EXPECT_EQ(guest.told_times("playing window"), 1u);
+    EXPECT_EQ(guest->video_stats()->player.decode_errors, 0u);
+
+    // Nothing but a video stream published switches.
+    EXPECT_EQ(
+        host->switch_source(kScreenSoundStream, std::make_unique<PatternSource>(PatternConfig{}))
+            .error(),
+        Errc::InvalidArgument);
+    EXPECT_EQ(host->switch_source(99, std::make_unique<PatternSource>(PatternConfig{})).error(),
+              Errc::InvalidArgument);
+    EXPECT_EQ(host->switch_source(kScreenStream, nullptr).error(), Errc::InvalidArgument);
+    unpublish_screen_share(*host);
+    EXPECT_EQ(
+        switch_screen_share(*host, {.pictures = std::make_unique<PatternSource>(PatternConfig{})})
+            .error(),
+        Errc::InvalidArgument)
+        << "nothing shared";
+}
+
 TEST_F(CallTest, ACameraPlaysApartFromTheScreen) {
     VideoEncoderConfig probe;
     probe.width = 320;

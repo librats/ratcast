@@ -79,6 +79,10 @@ Result<void> publish_screen_share(Call& call, ScreenShareSources sources,
     return {};
 }
 
+Result<void> switch_screen_share(Call& call, ScreenShareSources sources) {
+    return call.switch_source(kScreenStream, std::move(sources.pictures));
+}
+
 void unpublish_screen_share(Call& call) {
     call.unpublish(kScreenStream);
     call.unpublish(kScreenSoundStream);

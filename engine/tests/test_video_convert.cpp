@@ -291,6 +291,78 @@ TEST(VideoConvert, RefusesWhatItCannotDo) {
     EXPECT_EQ(convert_frame(VideoFrame{}, PixelFormat::NV12).error(), Errc::InvalidArgument);
 }
 
+TEST(VideoConvert, ShrinksByTheMeanOfEachBlock) {
+    // Neither side a multiple of the factor: what is left over is not read.
+    constexpr uint32_t kWidth = 103;
+    constexpr uint32_t kHeight = 70;
+    constexpr uint32_t kFactor = 3;
+    for (PixelFormat format : {PixelFormat::NV12, PixelFormat::I420}) {
+        MutableVideoFrame drawn = MutableVideoFrame::allocate(format, kWidth, kHeight);
+        std::mt19937 rng(11);
+        for (size_t i = 0; i < plane_count(format); ++i) {
+            for (size_t y = 0; y < plane_rows(format, i, kHeight); ++y) {
+                uint8_t* row = drawn.plane(i).data + y * drawn.plane(i).stride;
+                for (size_t x = 0; x < plane_row_bytes(format, i, kWidth); ++x)
+                    row[x] = static_cast<uint8_t>(rng());
+            }
+        }
+        const VideoFrame picture =
+            std::move(drawn).freeze(Timestamp{5s}, {ColorMatrix::BT601, ColorRange::Full});
+
+        Result<VideoFrame> small = shrink_frame(picture, kFactor);
+        ASSERT_TRUE(small);
+        EXPECT_EQ(small->format(), format);
+        EXPECT_EQ(small->width(), 34u);
+        EXPECT_EQ(small->height(), 22u) << "23, rounded down to even";
+        EXPECT_EQ(small->capture_time(), picture.capture_time());
+        EXPECT_EQ(small->color_space(), picture.color_space());
+
+        // Each sample against the mean of its block, byte by byte of a row:
+        // NV12's chroma, two interleaved, a step of two.
+        const auto check = [&](size_t plane, uint32_t width, uint32_t rows, uint32_t channels) {
+            for (uint32_t y = 0; y < rows; ++y) {
+                for (uint32_t x = 0; x < width * channels; ++x) {
+                    const uint32_t column = x / channels * kFactor * channels + x % channels;
+                    uint32_t sum = 0;
+                    for (uint32_t j = 0; j < kFactor; ++j) {
+                        for (uint32_t i = 0; i < kFactor; ++i)
+                            sum += pixel(picture, plane, column + i * channels, y * kFactor + j);
+                    }
+                    ASSERT_EQ(pixel(*small, plane, x, y),
+                              (sum + kFactor * kFactor / 2) / (kFactor * kFactor))
+                        << "plane " << plane << " at " << x << "," << y;
+                }
+            }
+        };
+        check(0, 34, 22, 1);
+        if (format == PixelFormat::NV12) {
+            check(1, 17, 11, 2);
+        } else {
+            check(1, 17, 11, 1);
+            check(2, 17, 11, 1);
+        }
+    }
+}
+
+TEST(VideoConvert, TheShrinkFactorFitsThePictureWithin) {
+    EXPECT_EQ(shrink_factor(2560, 1440, 640, 360), 4u);
+    EXPECT_EQ(shrink_factor(1920, 1080, 640, 360), 3u);
+    EXPECT_EQ(shrink_factor(1921, 1080, 640, 360), 4u) << "rounded up";
+    EXPECT_EQ(shrink_factor(1080, 2400, 640, 360), 7u) << "upright: its height says";
+    EXPECT_EQ(shrink_factor(320, 240, 640, 360), 1u) << "fits as it is";
+}
+
+TEST(VideoConvert, ShrinkingRefusesWhatItCannotDo) {
+    const VideoFrame i420 = draw_pattern({PixelFormat::I420, 64, 64}, 0, Timestamp{});
+    Result<VideoFrame> same = shrink_frame(i420, 1);
+    ASSERT_TRUE(same);
+    EXPECT_EQ(same->plane(0).data, i420.plane(0).data) << "1: the picture itself";
+    EXPECT_EQ(shrink_frame(i420, 0).error(), Errc::InvalidArgument);
+    EXPECT_EQ(shrink_frame(i420, 33).error(), Errc::InvalidArgument) << "less than 2 x 2";
+    EXPECT_EQ(shrink_frame(VideoFrame{}, 2).error(), Errc::InvalidArgument);
+    EXPECT_EQ(shrink_frame(random_bgra(64, 64, 1), 2).error(), Errc::Unsupported);
+}
+
 TEST(VideoConvert, RgbFromYuvUndoesTheConversion) {
     // Colours in 2 x 2 blocks, so that chroma is each block's own.
     constexpr uint8_t kColours[][3] = {{0, 0, 0},   {255, 255, 255}, {255, 0, 0},    {0, 255, 0},
