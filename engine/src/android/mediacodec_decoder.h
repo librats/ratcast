@@ -9,8 +9,12 @@
  * back to. Set up for live input — low latency (Android 11's key, and
  * Qualcomm's own) — and read in byte buffers, each picture copied out of the
  * decoder's buffer into a pooled 4:2:0 frame, so that the few buffers a
- * decoder has go back to it at once. decode() waits a little for the picture
- * of the frame it was given, as the decoder works on its own.
+ * decoder has go back to it at once. Asked for GPU pictures
+ * (VideoDecoderConfig::gpu), it renders into an AImageReader's surface
+ * instead, each picture handed out in its AHardwareBuffer
+ * (android/hardware_picture.h), for a view to draw where it is. decode()
+ * waits a little for the picture of the frame it was given, as the decoder
+ * works on its own.
  */
 
 #include <memory>

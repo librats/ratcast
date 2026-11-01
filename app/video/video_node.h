@@ -20,17 +20,25 @@ class VideoNode final : public QSGGeometryNode {
 public:
     VideoNode();
 
-    /// Draw `picture` from the next frame of the window on: I420 or NV12.
-    void set_picture(VideoFrame picture);
+    /// Draw `picture` from the next frame of the window on: I420 or NV12 —
+    /// in memory, or in Android's GPU memory, drawn where it is when the
+    /// window is drawn through OpenGL ES (`gles`), else copied out first.
+    void set_picture(VideoFrame picture, bool gles);
     /// The size of the picture drawn; empty before the first.
     QSize picture_size() const noexcept { return picture_size_; }
     /// Draw the picture over `rect`.
     void place(const QRectF& rect);
 
 private:
-    VideoMaterial* material_;  ///< the node's own
+    /// The material for pictures in memory, made the node's if it is not.
+    VideoMaterial* planes();
+
+    VideoMaterial* material_ = nullptr;  ///< the node's, if pictures in memory are drawn
     QSize picture_size_;
     QRectF placed_;  ///< where the picture is drawn now
+    /// What of the texture is the picture: a buffer in GPU memory may be
+    /// larger than its picture.
+    QRectF source_{0, 0, 1, 1};
 };
 
 /// Where a `picture`-sized picture goes in `bounds`: as large as fits, its

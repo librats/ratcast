@@ -13,9 +13,12 @@
  *
  * Drawing is the GPU's: the picture's planes go up as they are (one byte a
  * sample for Y, U and V; two for NV12's interleaved chroma) and a shader turns
- * them into colour by the picture's own colour space. It needs a window drawn
- * through QRhi (the default: Vulkan, Metal, Direct3D or OpenGL), not Qt
- * Quick's software renderer.
+ * them into colour by the picture's own colour space. A picture in Android's
+ * GPU memory (a decoder's, ratcast/engine/android.h) is drawn where it is on
+ * OpenGL ES, an external texture over its buffer turning it into colour; on
+ * another backend it is read out first. It needs a window drawn through QRhi
+ * (the default: Vulkan, Metal, Direct3D or OpenGL), not Qt Quick's software
+ * renderer.
  */
 
 #include <QtQml/qqmlregistration.h>

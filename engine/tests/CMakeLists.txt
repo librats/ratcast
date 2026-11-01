@@ -68,5 +68,5 @@ elseif(APPLE)
     target_link_libraries(engine_tests PRIVATE "-framework CoreFoundation" "-framework CoreVideo")
 elseif(ANDROID)
     target_sources(engine_tests PRIVATE android/test_aaudio.cpp android/test_camera_capture.cpp
-        android/test_screen_capture.cpp)
+        android/test_gpu_encoding.cpp android/test_screen_capture.cpp)
 endif()

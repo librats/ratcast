@@ -234,8 +234,10 @@ public:
             return fail(Errc::InvalidArgument);
         }
         if (!hw_frames_ && (picture.gpu() || picture.format() != info_.input_format)) {
-            // In GPU memory, or in the other 4:2:0 layout.
-            Result<VideoFrame> converted = convert_frame(picture, info_.input_format);
+            // In GPU memory, or in the other 4:2:0 layout; RGB in the GPU's
+            // memory into the colour space it says it becomes.
+            Result<VideoFrame> converted =
+                convert_frame(picture, info_.input_format, picture.color_space());
             if (!converted) return fail(converted.error());
             return encode(*converted, keyframe, sink);
         }

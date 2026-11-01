@@ -4,13 +4,21 @@
 // mirrored into a VirtualDisplay drawing into an AImageReader of RGBA
 // pictures, no larger than kLongestSide on the long side, its proportions
 // kept; each picture, as it comes on the reader's thread, converted into the
-// format asked for. A turn of the screen is looked for twice a second, and
-// the display mirrored into a reader of the turned size from then on. A
-// reader is deleted only once no callback of its own is at work: deleting
-// one holds its lock until its callbacks' thread is over, and a callback
-// that reads a picture or lets one go waits for that lock. A
-// projection stopped — by the user, from the status bar or the notification —
-// ends the capture with success. There is no pointer to draw on a phone.
+// format asked for — or, GPU pictures asked for, handed out as it is, in its
+// AHardwareBuffer (android/hardware_picture.h), for MediaCodec's encoder to
+// draw into its surface, the reader kept while any of its pictures is. A turn
+// of the screen is looked for twice a second, and the display mirrored into
+// a reader of the turned size from then on.
+//
+// A reader's callbacks reach the capture through a link of the reader's own
+// (ReaderLink), which the capture is cut from, waiting for a callback at
+// work, before the reader is let go of: a callback already on its way may
+// come after that, as late as the reader's deletion, which ends its thread.
+// So no callback reaches a capture that is gone, and deleting a reader —
+// which holds its lock until its callbacks' thread is over — never waits for
+// a callback that waits for that lock or the capture's. A projection stopped
+// — by the user, from the status bar or the notification — ends the capture
+// with success. There is no pointer to draw on a phone.
 
 #include "ratcast/engine/screen_capture.h"
 
@@ -20,13 +28,13 @@
 #include <algorithm>
 #include <chrono>
 #include <condition_variable>
-#include <map>
 #include <memory>
 #include <mutex>
 #include <optional>
 #include <thread>
 #include <utility>
 
+#include "android/hardware_picture.h"
 #include "android/projection.h"
 #include "capture/frame_pacer.h"
 #include "ratcast/engine/video_convert.h"
@@ -43,11 +51,31 @@ constexpr uint32_t kLongestSide = 1920;
 constexpr Duration kWatchEvery = std::chrono::milliseconds(500);
 /// Pictures a reader holds: the one read, the one coming, one spare.
 constexpr int32_t kHeldImages = 3;
+/// Pictures a reader of GPU pictures holds, those the sink keeps among them:
+/// the one encoded, the one waiting, the one kept to repeat.
+constexpr int32_t kHeldGpuImages = 6;
+/// What GPU pictures are drawn for: the GPU reads them, and so may the CPU,
+/// for an encoder that does not draw them.
+constexpr uint64_t kGpuUsage =
+    AHARDWAREBUFFER_USAGE_GPU_SAMPLED_IMAGE | AHARDWAREBUFFER_USAGE_CPU_READ_RARELY;
 
-struct ReaderDeleter {
-    void operator()(AImageReader* reader) const { AImageReader_delete(reader); }
+using Image = std::unique_ptr<AImage, decltype(&AImage_delete)>;
+
+class AndroidScreenCapture;
+
+/// A reader and what its callbacks reach the capture through, deleted
+/// together once neither the capture nor a picture of the reader's holds
+/// them.
+struct ReaderLink : std::enable_shared_from_this<ReaderLink> {
+    ~ReaderLink() {
+        if (reader) AImageReader_delete(reader);
+    }
+
+    AImageReader* reader = nullptr;
+    std::mutex mutex;  ///< held by a callback at work
+    AndroidScreenCapture* capture = nullptr;
 };
-using Reader = std::unique_ptr<AImageReader, ReaderDeleter>;
+using Reader = std::shared_ptr<ReaderLink>;
 
 /// A picture's size for `screen`: within kLongestSide, its proportions kept,
 /// even.
@@ -104,45 +132,62 @@ public:
         }
     }
 
+    /// On a reader's thread, its link held: the newest picture, handed out.
+    void take(ReaderLink& link) {
+        AImage* acquired = nullptr;
+        if (AImageReader_acquireLatestImage(link.reader, &acquired) != AMEDIA_OK || !acquired)
+            return;
+        Image image(acquired, AImage_delete);
+        const Timestamp now = clock_.now();
+        {
+            std::lock_guard lock(mutex_);
+            if (over_ || !pacer_.admit(now)) return;
+        }
+        if (options_.gpu) {
+            hand_out(std::move(image), link.shared_from_this(), now);
+        } else {
+            convert(image.get(), now);
+        }
+    }
+
 private:
     /// The screen mirrored into a reader of its size.
     Result<void> show(const android::Projection::Screen& screen) {
         const auto [width, height] = size_for(screen);
-        AImageReader* made = nullptr;
-        if (AImageReader_new(int32_t(width), int32_t(height), AIMAGE_FORMAT_RGBA_8888, kHeldImages,
-                             &made) != AMEDIA_OK) {
-            return fail(Errc::Unavailable);
-        }
-        Reader reader(made);
-        AImageReader_setImageListener(reader.get(), &listener_);
+        auto reader = std::make_shared<ReaderLink>();
+        const media_status_t made =
+            options_.gpu ? AImageReader_newWithUsage(int32_t(width), int32_t(height),
+                                                     AIMAGE_FORMAT_RGBA_8888, kGpuUsage,
+                                                     kHeldGpuImages, &reader->reader)
+                         : AImageReader_new(int32_t(width), int32_t(height),
+                                            AIMAGE_FORMAT_RGBA_8888, kHeldImages, &reader->reader);
+        if (made != AMEDIA_OK) return fail(Errc::Unavailable);
+        reader->capture = this;
+        AImageReader_ImageListener listener{reader.get(), &AndroidScreenCapture::on_image};
+        AImageReader_setImageListener(reader->reader, &listener);
         ANativeWindow* window = nullptr;
-        if (AImageReader_getWindow(reader.get(), &window) != AMEDIA_OK ||
+        if (AImageReader_getWindow(reader->reader, &window) != AMEDIA_OK ||
             !projection_->show(window, width, height, screen.dpi)) {
+            retire(std::move(reader));
             return fail(Errc::Unavailable);
         }
         LOG_INFO("engine", "the screen, " << screen.width << "x" << screen.height << ", as "
-                                          << width << "x" << height);
+                                          << width << "x" << height
+                                          << (options_.gpu ? " in GPU memory" : ""));
         // The reader before goes once the display draws into this one.
-        {
-            std::lock_guard lock(mutex_);
-            current_ = reader.get();
-        }
         std::swap(reader_, reader);
         if (reader) retire(std::move(reader));
         shown_ = screen;
         return {};
     }
 
-    /// `reader`, no longer current, deleted once no callback of its is at
-    /// work; none starts any more.
-    void retire(Reader reader) {
-        AImageReader_setImageListener(reader.get(), nullptr);
-        {
-            std::unique_lock lock(mutex_);
-            if (current_ == reader.get()) current_ = nullptr;
-            idle_.wait(lock, [&] { return !busy_.contains(reader.get()); });
-        }
-        reader.reset();
+    /// `reader` cut from the capture, once no callback of its is at work,
+    /// and let go of: none reaches the capture any more. Its pictures may
+    /// keep it a while yet.
+    static void retire(Reader reader) {
+        AImageReader_setImageListener(reader->reader, nullptr);
+        std::lock_guard lock(reader->mutex);
+        reader->capture = nullptr;
     }
 
     /// The watcher's thread: the projection stopped, or the screen turned.
@@ -172,39 +217,17 @@ private:
         }
     }
 
-    /// On a reader's thread: the newest picture, converted — unless the
-    /// reader is no longer current (retire()).
-    void take(AImageReader* reader) {
-        {
-            std::lock_guard lock(mutex_);
-            if (over_ || reader != current_) return;
-            ++busy_[reader];
-        }
-        convert(reader);
-        std::lock_guard lock(mutex_);
-        if (--busy_[reader] == 0) busy_.erase(reader);
-        idle_.notify_all();
-    }
-
-    void convert(AImageReader* reader) {
-        AImage* acquired = nullptr;
-        if (AImageReader_acquireLatestImage(reader, &acquired) != AMEDIA_OK || !acquired) return;
-        const std::unique_ptr<AImage, decltype(&AImage_delete)> image(acquired, AImage_delete);
-        const Timestamp now = clock_.now();
-        {
-            std::lock_guard lock(mutex_);
-            if (over_ || !pacer_.admit(now)) return;
-        }
-
+    /// The picture of `image`, read into the format asked for.
+    void convert(AImage* image, Timestamp now) {
         AImageCropRect crop{};
         uint8_t* data = nullptr;
         int length = 0;
         int32_t row_step = 0;
         int32_t pixel_step = 0;
-        if (AImage_getCropRect(image.get(), &crop) != AMEDIA_OK ||
-            AImage_getPlaneData(image.get(), 0, &data, &length) != AMEDIA_OK ||
-            AImage_getPlaneRowStride(image.get(), 0, &row_step) != AMEDIA_OK ||
-            AImage_getPlanePixelStride(image.get(), 0, &pixel_step) != AMEDIA_OK || !data ||
+        if (AImage_getCropRect(image, &crop) != AMEDIA_OK ||
+            AImage_getPlaneData(image, 0, &data, &length) != AMEDIA_OK ||
+            AImage_getPlaneRowStride(image, 0, &row_step) != AMEDIA_OK ||
+            AImage_getPlanePixelStride(image, 0, &pixel_step) != AMEDIA_OK || !data ||
             pixel_step != 4) {
             return;
         }
@@ -223,6 +246,19 @@ private:
         if (picture && !over_) sink_(std::move(*picture));
     }
 
+    /// The picture of `image` in its buffer, which it holds — with the image,
+    /// and the reader the image goes back to — for as long as it lives.
+    void hand_out(Image image, Reader reader, Timestamp now) {
+        AImage* const held = image.release();
+        std::shared_ptr<const void> owner(held, [reader = std::move(reader)](const void* kept) {
+            AImage_delete(static_cast<AImage*>(const_cast<void*>(kept)));
+        });
+        VideoFrame picture =
+            android::gpu_frame_of(held, std::move(owner), now, options_.color_space);
+        std::lock_guard lock(mutex_);
+        if (!picture.empty() && !over_) sink_(std::move(picture));
+    }
+
     /// The end, said once.
     void end(Result<void> outcome) {
         std::lock_guard lock(mutex_);
@@ -231,25 +267,23 @@ private:
         if (ended_) ended_(std::move(outcome));
     }
 
-    static void on_image(void* self, AImageReader* reader) {
-        static_cast<AndroidScreenCapture*>(self)->take(reader);
+    static void on_image(void* context, AImageReader*) {
+        auto* link = static_cast<ReaderLink*>(context);
+        std::lock_guard lock(link->mutex);
+        if (link->capture) link->capture->take(*link);
     }
 
     const ScreenCaptureOptions options_;
     const std::shared_ptr<android::Projection> projection_;
     Clock& clock_;
     const std::string no_token_;  ///< Android keeps no consent
-    AImageReader_ImageListener listener_{this, &AndroidScreenCapture::on_image};
 
     std::mutex start_mutex_;  ///< serialises start() and stop()
-    Reader reader_;           ///< start()'s, then the watcher's
+    Reader reader_;           ///< the one the display draws into: start()'s, then the watcher's
     android::Projection::Screen shown_;
     std::jthread watcher_;
 
-    std::mutex mutex_;  ///< over the sink, the end, the pacer and the readers' callbacks
-    std::condition_variable idle_;
-    AImageReader* current_ = nullptr;    ///< the reader whose pictures are taken
-    std::map<AImageReader*, int> busy_;  ///< callbacks at work, by their reader
+    std::mutex mutex_;  ///< over the sink, the end and the pacer
     VideoSource::Sink sink_;
     VideoSource::EndHandler ended_;
     FramePacer pacer_;

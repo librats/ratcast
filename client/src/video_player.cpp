@@ -208,7 +208,7 @@ Duration VideoPlayer::max_delay() const noexcept {
 Result<void> VideoPlayer::open_decoder(const StreamDescription& description) {
     if (media_kind_of(description.codec) != MediaKind::Video) return fail(Errc::InvalidArgument);
     Result<std::unique_ptr<VideoDecoder>> decoder =
-        open_video_decoder({description.codec, description.codec_config});
+        open_video_decoder({description.codec, description.codec_config, config_.gpu});
     if (!decoder) {
         LOG_WARN("client",
                  "stream " << description.id << ": no decoder: " << to_string(decoder.error()));

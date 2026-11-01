@@ -52,6 +52,9 @@ struct VideoPlayerConfig {
     /// Shared with the audio player of the same sender, for lip sync; must
     /// outlive the player. Null: pictures keep their own time.
     PlayoutClock* sync = nullptr;
+    /// Pictures may stay in GPU memory, for a sink that draws them there
+    /// (VideoDecoderConfig::gpu).
+    bool gpu = false;
 };
 
 struct VideoPlayerStats {

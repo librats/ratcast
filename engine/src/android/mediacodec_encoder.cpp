@@ -14,7 +14,9 @@
 #include <utility>
 #include <vector>
 
+#include "android/hardware_picture.h"
 #include "android/mediacodec.h"
+#include "android/surface_drawer.h"
 #include "ratcast/engine/video_convert.h"
 
 #include "librats/util/logger.h"
@@ -47,37 +49,45 @@ constexpr int64_t kFirstOutputWaitUs = 1'000'000;
 /// How long it waits for room for a picture.
 constexpr int64_t kInputWaitUs = 50'000;
 
+/// MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface: pictures drawn into
+/// the encoder's input surface.
+constexpr int32_t kColorFormatSurface = 0x7F000789;
+
 /// One way to set an encoder up; the first the encoder takes is used.
 struct Setup {
-    int32_t color_format;
     bool profile;  ///< H.264's High or HEVC's Main asked for, not left to the encoder
     bool constant_bitrate;
 };
 
-constexpr Setup kSetups[] = {
-    {kColorFormatSemiPlanar, true, true},   {kColorFormatFlexible, true, true},
-    {kColorFormatSemiPlanar, false, true},  {kColorFormatFlexible, false, true},
-    {kColorFormatSemiPlanar, false, false}, {kColorFormatFlexible, false, false},
-};
+constexpr Setup kSetups[] = {{true, true}, {false, true}, {false, false}};
+/// The colour formats pictures in memory are copied in, each tried with each
+/// setup.
+constexpr int32_t kBufferFormats[] = {kColorFormatSemiPlanar, kColorFormatFlexible};
 
 class MediaCodecEncoder final : public VideoEncoder {
 public:
     MediaCodecEncoder(const VideoEncoderConfig& config, std::string name)
         : config_(config),
           name_(std::move(name)),
+          surface_(config.device && config.device->api() == GpuApi::HardwareBuffer),
           info_{config.codec == Codec::H265 ? "hevc_mediacodec" : "h264_mediacodec", config.codec,
-                true, PixelFormat::NV12, false} {}
+                true, PixelFormat::NV12, surface_} {}
 
     ~MediaCodecEncoder() override { close(); }
 
     /// The encoder made and started, in the first setup it takes.
     Result<void> open() {
         for (const Setup& setup : kSetups) {
-            if (start(setup)) {
-                LOG_DEBUG("engine", name_ << ": colour format " << setup.color_format
-                                          << (setup.profile ? ", profile asked" : "")
-                                          << (setup.constant_bitrate ? ", constant bitrate" : ""));
-                return {};
+            for (const int32_t buffer_format : kBufferFormats) {
+                const int32_t color_format = surface_ ? kColorFormatSurface : buffer_format;
+                if (start(setup, color_format)) {
+                    LOG_DEBUG("engine",
+                              name_ << ": colour format " << color_format
+                                    << (setup.profile ? ", profile asked" : "")
+                                    << (setup.constant_bitrate ? ", constant bitrate" : ""));
+                    return {};
+                }
+                if (surface_) break;  // its one format
             }
         }
         LOG_DEBUG("engine", name_ << " will not take " << config_.width << "x" << config_.height);
@@ -87,13 +97,17 @@ public:
     const VideoEncoderInfo& info() const noexcept override { return info_; }
 
     Result<void> encode(const VideoFrame& picture, bool keyframe, Sink sink) override {
-        if ((picture.format() != PixelFormat::NV12 && picture.format() != PixelFormat::I420) ||
+        const bool yuv =
+            picture.format() == PixelFormat::NV12 || picture.format() == PixelFormat::I420;
+        if ((!yuv && !(picture.gpu() && picture.format() == PixelFormat::RGBA)) ||
             picture.width() != config_.width || picture.height() != config_.height ||
             picture.color_space() != config_.color_space) {
             return fail(Errc::InvalidArgument);
         }
-        if (picture.gpu()) {
-            Result<VideoFrame> converted = convert_frame(picture, PixelFormat::NV12);
+        if (picture.gpu() && !(surface_ && hardware_buffer_of(picture))) {
+            // Not drawn where it is: read out of the GPU's memory first.
+            Result<VideoFrame> converted =
+                convert_frame(picture, PixelFormat::NV12, picture.color_space());
             if (!converted) return fail(converted.error());
             return encode(*converted, keyframe, sink);
         }
@@ -102,38 +116,19 @@ public:
             keyframe_owed_ = true;
         }
 
-        ssize_t index = AMediaCodec_dequeueInputBuffer(codec_, 0);
-        if (index < 0) {
-            // Every buffer taken: what is done comes out first, making room.
-            if (Result<void> drained = drain(sink, 0); !drained) return drained;
-            index = AMediaCodec_dequeueInputBuffer(codec_, kInputWaitUs);
-        }
-        if (index < 0) {
-            LOG_WARN("engine", name_ << " takes no more pictures: " << index);
-            return fail(Errc::Internal);
-        }
-        size_t capacity = 0;
-        uint8_t* input = AMediaCodec_getInputBuffer(codec_, size_t(index), &capacity);
-        if (!input || !layout_.fits(capacity)) {
-            AMediaCodec_queueInputBuffer(codec_, size_t(index), 0, 0, 0, 0);
-            LOG_WARN("engine", name_ << "'s buffer is smaller than its pictures");
-            close();
-            return fail(Errc::Internal);
-        }
-        const size_t size = copy_in(picture, input, capacity);
-
         if (std::exchange(keyframe_owed_, false) || keyframe) set_parameter("request-sync", 0);
         // Encoders insist on increasing times; two pictures stamped alike
         // are a microsecond apart.
         int64_t pts = picture.capture_time().time_since_epoch().count();
         if (last_pts_ && pts <= *last_pts_) pts = *last_pts_ + 1;
         last_pts_ = pts;
-        if (const media_status_t queued =
-                AMediaCodec_queueInputBuffer(codec_, size_t(index), 0, size, uint64_t(pts), 0);
-            queued != AMEDIA_OK) {
-            LOG_WARN("engine", name_ << " refused a picture: " << queued);
-            close();
-            return fail(Errc::Internal);
+        if (surface_) {
+            if (Result<void> drawn = drawer_->draw(picture, pts * 1000); !drawn) {
+                if (drawn.error() != Errc::InvalidArgument) close();
+                return drawn;
+            }
+        } else if (Result<void> queued = queue(picture, sink, pts); !queued) {
+            return queued;
         }
         ++pending_;
         return drain(sink, frames_ > 0 ? kOutputWaitUs : kFirstOutputWaitUs);
@@ -157,14 +152,51 @@ public:
     }
 
 private:
-    bool start(const Setup& setup) {
+    /// The colour space the frames are in, signalled in the stream.
+    ColorSpace made_in() const noexcept {
+        return surface_ ? ColorSpace{ColorMatrix::BT601, ColorRange::Limited} : config_.color_space;
+    }
+
+    /// `picture`, in memory, copied into one of the encoder's buffers and
+    /// queued, stamped `pts`.
+    Result<void> queue(const VideoFrame& picture, Sink sink, int64_t pts) {
+        ssize_t index = AMediaCodec_dequeueInputBuffer(codec_, 0);
+        if (index < 0) {
+            // Every buffer taken: what is done comes out first, making room.
+            if (Result<void> drained = drain(sink, 0); !drained) return drained;
+            index = AMediaCodec_dequeueInputBuffer(codec_, kInputWaitUs);
+        }
+        if (index < 0) {
+            LOG_WARN("engine", name_ << " takes no more pictures: " << index);
+            return fail(Errc::Internal);
+        }
+        size_t capacity = 0;
+        uint8_t* input = AMediaCodec_getInputBuffer(codec_, size_t(index), &capacity);
+        if (!input || !layout_.fits(capacity)) {
+            AMediaCodec_queueInputBuffer(codec_, size_t(index), 0, 0, 0, 0);
+            LOG_WARN("engine", name_ << "'s buffer is smaller than its pictures");
+            close();
+            return fail(Errc::Internal);
+        }
+        const size_t size = copy_in(picture, input, capacity);
+        if (const media_status_t queued =
+                AMediaCodec_queueInputBuffer(codec_, size_t(index), 0, size, uint64_t(pts), 0);
+            queued != AMEDIA_OK) {
+            LOG_WARN("engine", name_ << " refused a picture: " << queued);
+            close();
+            return fail(Errc::Internal);
+        }
+        return {};
+    }
+
+    bool start(const Setup& setup, int32_t color_format) {
         codec_ = AMediaCodec_createCodecByName(name_.c_str());
         if (!codec_) return false;
         AMediaFormat* format = AMediaFormat_new();
         AMediaFormat_setString(format, AMEDIAFORMAT_KEY_MIME, mime_of(config_.codec));
         AMediaFormat_setInt32(format, AMEDIAFORMAT_KEY_WIDTH, int32_t(config_.width));
         AMediaFormat_setInt32(format, AMEDIAFORMAT_KEY_HEIGHT, int32_t(config_.height));
-        AMediaFormat_setInt32(format, AMEDIAFORMAT_KEY_COLOR_FORMAT, setup.color_format);
+        AMediaFormat_setInt32(format, AMEDIAFORMAT_KEY_COLOR_FORMAT, color_format);
         AMediaFormat_setInt32(format, AMEDIAFORMAT_KEY_BIT_RATE, int32_t(config_.bitrate));
         if (setup.constant_bitrate) AMediaFormat_setInt32(format, "bitrate-mode", kConstantBitrate);
         const uint32_t rate = std::max<uint32_t>(
@@ -182,16 +214,35 @@ private:
         AMediaFormat_setInt32(format, "latency", 1);  // Android 11's KEY_LATENCY
         AMediaFormat_setInt32(format, "vendor.qti-ext-enc-low-latency.enable", 1);
         AMediaFormat_setInt32(format, "priority", 0);  // real time
-        AMediaFormat_setInt32(
-            format, AMEDIAFORMAT_KEY_COLOR_STANDARD,
-            config_.color_space.matrix == ColorMatrix::BT601 ? kStandardBt601 : kStandardBt709);
+        // What is drawn into the surface becomes YUV by the encoder's own
+        // conversion: BT.601's matrix whatever is asked for (Qualcomm's, as
+        // Android's own), and full range made but signalled as limited. So
+        // BT.601 at limited range it is, which it signals as it makes.
+        const ColorSpace made = made_in();
+        AMediaFormat_setInt32(format, AMEDIAFORMAT_KEY_COLOR_STANDARD,
+                              made.matrix == ColorMatrix::BT601 ? kStandardBt601 : kStandardBt709);
         AMediaFormat_setInt32(format, AMEDIAFORMAT_KEY_COLOR_TRANSFER, kTransferSdr);
-        AMediaFormat_setInt32(
-            format, AMEDIAFORMAT_KEY_COLOR_RANGE,
-            config_.color_space.range == ColorRange::Full ? kRangeFull : kRangeLimited);
+        AMediaFormat_setInt32(format, AMEDIAFORMAT_KEY_COLOR_RANGE,
+                              made.range == ColorRange::Full ? kRangeFull : kRangeLimited);
         media_status_t status = AMediaCodec_configure(codec_, format, nullptr, nullptr,
                                                       AMEDIACODEC_CONFIGURE_FLAG_ENCODE);
         AMediaFormat_delete(format);
+        if (surface_) {
+            // The surface between configuring and starting; drawn into
+            // through a context of the drawer's own.
+            if (status == AMEDIA_OK) status = AMediaCodec_createInputSurface(codec_, &window_);
+            if (status == AMEDIA_OK) status = AMediaCodec_start(codec_);
+            if (status == AMEDIA_OK) {
+                Result<std::unique_ptr<SurfaceDrawer>> drawer = SurfaceDrawer::open(window_);
+                if (drawer) {
+                    drawer_ = std::move(*drawer);
+                    return true;
+                }
+                AMediaCodec_stop(codec_);
+            }
+            close();
+            return false;
+        }
         if (status == AMEDIA_OK) status = AMediaCodec_start(codec_);
         if (status == AMEDIA_OK) {
             if (AMediaFormat* input = AMediaCodec_getInputFormat(codec_)) {
@@ -339,17 +390,24 @@ private:
     /// another.
     void close() {
         if (!codec_) return;
+        drawer_.reset();  // its context and surface before the window goes
         AMediaCodec_stop(codec_);
         AMediaCodec_delete(codec_);
         codec_ = nullptr;
+        if (window_) ANativeWindow_release(std::exchange(window_, nullptr));
         pending_ = 0;
         parameter_sets_.clear();
     }
 
     VideoEncoderConfig config_;
     const std::string name_;  ///< MediaCodec's
+    /// Pictures drawn into the encoder's input surface, not copied into its
+    /// buffers: opened for pictures in AHardwareBuffers.
+    const bool surface_;
     VideoEncoderInfo info_;
     AMediaCodec* codec_ = nullptr;
+    ANativeWindow* window_ = nullptr;  ///< the input surface
+    std::unique_ptr<SurfaceDrawer> drawer_;
     MediaLayout layout_;
     std::vector<uint8_t> parameter_sets_;
     /// The next picture is a keyframe whether asked for or not.

@@ -2,6 +2,7 @@
 
 #include <QMetaObject>
 #include <QQuickWindow>
+#include <QSGRendererInterface>
 #include <utility>
 
 #include "video_node.h"
@@ -74,7 +75,9 @@ QSGNode* VideoView::updatePaintNode(QSGNode* old, UpdatePaintNodeData*) {
     }
     if (picture) {
         if (!node) node = new VideoNode;
-        node->set_picture(std::move(*picture));
+        node->set_picture(std::move(*picture),
+                          window() && window()->rendererInterface()->graphicsApi() ==
+                                          QSGRendererInterface::OpenGL);
     } else if (cleared) {
         delete node;
         return nullptr;

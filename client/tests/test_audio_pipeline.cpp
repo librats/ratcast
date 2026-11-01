@@ -12,6 +12,7 @@
 #include <chrono>
 #include <cmath>
 #include <functional>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <numbers>
@@ -82,6 +83,11 @@ protected:
                         if (frame.info.stream == kVideo) {
                             if (VideoPlayer* p = video_ptr_.load()) p->push(std::move(frame));
                             return;
+                        }
+                        {
+                            std::lock_guard lock(mutex_);
+                            transit_[frame.info.number] =
+                                SteadyClock::instance().now() - frame.info.capture_time;
                         }
                         if (lose_ && lose_(frame.info.number)) return;
                         if (AudioPlayer* p = player_ptr_.load()) p->push(std::move(frame));
@@ -198,6 +204,7 @@ protected:
     std::atomic<bool> withdrawn_{false};
     std::vector<float> heard_;
     std::vector<Duration> latencies_;
+    std::map<FrameNumber, Duration> transit_;  ///< from capture to the receiver, each frame's
 };
 
 }  // namespace
@@ -266,13 +273,30 @@ TEST_F(AudioPipelineTest, FramesLostOnTheWayAreMadeUpWithoutABreak) {
         if (rms[i] < expected / 2) where += " " + std::to_string(i);
     }
     const auto ms = [](Duration d) { return std::to_string(d.count() / 1000) + " ms"; };
+    // How long frames took on the way: the one after each lost (its FEC late,
+    // or not there?) against all of them.
+    std::string transit;
+    {
+        std::lock_guard lock(mutex_);
+        std::vector<Duration> all;
+        for (const auto& [number, took] : transit_) {
+            all.push_back(took);
+            if (lose_(number) && transit_.contains(number + 1))
+                transit += " " + std::to_string(number + 1) + ": " + ms(transit_[number + 1]);
+        }
+        if (!all.empty()) {
+            std::ranges::sort(all);
+            transit += "; all: median " + ms(all[all.size() / 2]) + ", 97% " +
+                       ms(all[all.size() * 97 / 100]) + ", most " + ms(all.back());
+        }
+    }
     EXPECT_LE(quiet, 1) << "of " << rms.size() << " windows of 20 ms, quiet at" << where
                         << "; lost " << played.jitter.lost << ", late " << played.jitter.late
                         << ", dropped " << played.jitter.dropped << ", made up "
                         << ms(played.jitter.concealed) << " + " << ms(played.jitter.expanded)
                         << " expanded; recovered " << ms(played.decoded.recovered) << ", concealed "
                         << ms(played.decoded.concealed) << "; delay " << ms(played.delay) << " for "
-                        << ms(played.target);
+                        << ms(played.target) << "; on the way, after the lost" << transit;
 }
 
 TEST_F(AudioPipelineTest, StoppingWithdrawsTheStreamAndThePlayerFallsSilent) {

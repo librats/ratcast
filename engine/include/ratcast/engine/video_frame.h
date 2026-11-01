@@ -96,6 +96,9 @@ enum class GpuApi : uint8_t {
     /// macOS: Core Video's pixel buffers on IOSurfaces, what ScreenCaptureKit
     /// gives and VideoToolbox takes.
     CoreVideo,
+    /// Android: AHardwareBuffers of RGBA, what a VirtualDisplay draws the
+    /// screen into and MediaCodec's encoder draws into its input surface.
+    HardwareBuffer,
 };
 
 /// A GPU as a graphics API sees it: what pictures in its memory belong to.
@@ -144,7 +147,8 @@ public:
                std::shared_ptr<const void> owner, Timestamp capture_time,
                ColorSpace color_space = {}) noexcept;
 
-    /// A frame over a picture in GPU memory, which holds `format` (NV12).
+    /// A frame over a picture in GPU memory, which holds `format`: NV12, or
+    /// RGBA (Android's screen) that becomes YUV in `color_space`.
     VideoFrame(PixelFormat format, uint32_t width, uint32_t height,
                std::shared_ptr<const GpuPicture> picture, Timestamp capture_time,
                ColorSpace color_space = {}) noexcept;

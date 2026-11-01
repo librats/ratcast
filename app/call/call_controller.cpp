@@ -143,6 +143,8 @@ CallController::Environment CallController::Environment::system() {
     environment.server = QStringLiteral(RATCAST_DEFAULT_SERVER);
     environment.call.discoverable = true;
     environment.call.playback.most_cameras = kMostCameras;
+    // The views draw pictures in GPU memory where they are (Android's).
+    environment.call.playback.video.gpu = true;
     environment.call.lost_after = kLostAfter;
     environment.call.chosen_servers = kChosenServers;
     environment.data_dir = data_folder().toStdString();

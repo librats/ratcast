@@ -116,6 +116,10 @@ struct VideoDecoderConfig {
     Codec codec = Codec::AV1;
     /// Out-of-band configuration from the stream description, if any.
     Buffer codec_config;
+    /// Pictures may stay in GPU memory (VideoFrame::gpu()), for a view that
+    /// draws them there: on Android MediaCodec's, in the AHardwareBuffers
+    /// it decodes into (ratcast/engine/android.h). Elsewhere, in memory.
+    bool gpu = false;
 };
 
 struct VideoDecoderInfo {

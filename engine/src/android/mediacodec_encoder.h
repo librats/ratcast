@@ -9,7 +9,12 @@
  * frames out as they come, a few late; here each picture is copied into the
  * encoder's own buffer, laid out as its input format says, and its frame
  * waited for, so that the call that took it hands it out, as every encoder
- * here must. Set up for live use: constant bitrate, no B-frames, one picture
+ * here must. Opened for Android's GPU pictures (the config's device, of
+ * GpuApi::HardwareBuffer: the screen's), the encoder takes its pictures
+ * through its input surface instead, each drawn there where it is
+ * (android/surface_drawer.h) — one in memory from its planes — and turned
+ * into YUV by the encoder: BT.601 at limited range, what Qualcomm's make of
+ * RGB whatever is asked and what is signalled. Set up for live use: constant bitrate, no B-frames, one picture
  * in flight at most (Android 11's latency key), keyframes only when asked
  * (`request-sync`), the bitrate changed in flight (`video-bitrate`). Frames
  * leave in Annex B with a keyframe's parameter sets ahead of it. The encoder

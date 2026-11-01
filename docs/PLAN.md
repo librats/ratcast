@@ -1760,9 +1760,37 @@ a desktop, the call held while the app is in the background.
   comes or a flush); a single application where Android 14 QPR2 offers it is shared as the
   system draws it, its own size not followed (`onCapturedContentResize`); the app's own stats
   and events wait while it is in the background (Qt's GUI thread is paused there).
-- **13.6 The GPU path**: the VirtualDisplay drawing into `AHardwareBuffer`s the encoder reads
-  where they are (a `GpuDevice` of Android's), and decoded pictures handed to QRhi as textures
-  with no copy.
+- **13.6 The GPU path** — done: pictures in Android's GPU memory, `AHardwareBuffer`s
+  (`GpuApi::HardwareBuffer`; `engine/src/android/hardware_picture.h`), each held with the
+  `AImage` that gives it back to its reader for as long as any copy of the frame lives, the
+  reader with it; read by the CPU only for what does not draw them (through the image, which
+  finds the planes of a vendor's format — Qualcomm's decoders render in their own NV12, whose
+  buffer locked shows one plane). The screen, GPU pictures asked for (`gpu`, as the app and
+  `ratcast-send` ask): RGBA buffers handed out as the VirtualDisplay draws them, nothing
+  converted; a reader's callbacks reach the capture through a link of the reader's own, cut
+  before the reader is let go of, as a picture may keep it past the capture.
+  MediaCodec's encoder opened for that device takes its pictures through its input surface
+  (`android/surface_drawer.h`: an EGL context of its own, OpenGL ES 3, each picture drawn
+  over the surface through an EGLImage of its buffer, stamped with its time; one in memory
+  drawn from its planes by the picture's matrix), and turns the RGB into YUV itself: by
+  BT.601's matrix whatever the format asks — Qualcomm's OMX encoders and the panel's Codec2
+  alike — and at full range while signalling limited, so BT.601 at limited range is asked for
+  and signalled there, which the tests check against `convert_frame()`'s colours. Decoded
+  pictures, asked for (`VideoDecoderConfig::gpu`, `VideoPlayerConfig::gpu`, set by the app),
+  rendered by MediaCodec into an `AImageReader`'s surface, each taken there as its frame comes
+  out; `VideoView` draws them where they are on Qt's OpenGL ES (an external texture of Qt's
+  made, the buffer's EGLImage bound to it, `external_gles.frag`'s `samplerExternalOES` in
+  qsb's place for GLSL ES — the GPU turning YUV into colour by what the decoder says of it),
+  the picture before kept a frame for the GPU still drawing from it; on any other backend
+  read out first. On the phone (Snapdragon 732G): its screen to a desktop in H.265 through
+  the surface, 864 x 1920, upright and in its colours, the screen's 58 pictures a second
+  reaching the encoder and its 27 ms holding it to 38 as before; a desktop's 1080p60 pattern
+  watched at 60 a second, 15 ms in the decoder, full screen on its side as well, the
+  process's EGL memory the same over minutes. `bench_codec` (a second decoder, asked for GPU
+  pictures, beside the first): 1080p H.265 20.8 ms a picture against 37.1 with the copy out,
+  H.264 16.8 against 32.9, 720p 12.9 and 11.3 against 16.8 and 15.3. Left: Qt's Vulkan
+  backend on Android draws a copy (Qt picks OpenGL ES there unless told); a full-range share
+  drawn into a surface goes at limited range.
 - **13.7 The app for touch** — in part: `Main.qml` in one column when narrow (under 720 wide:
   a phone held upright, or a window as narrow) — the share as wide as the screen with its
   buttons and the sound under it, the cameras in a strip below, the members under that (the

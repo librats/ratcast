@@ -2,14 +2,21 @@
 
 #include "android/mediacodec_decoder.h"
 
+#include <media/NdkImage.h>
+#include <media/NdkImageReader.h>
 #include <media/NdkMediaCodec.h>
 #include <media/NdkMediaFormat.h>
 
 #include <algorithm>
+#include <chrono>
 #include <cstdint>
 #include <cstring>
+#include <memory>
 #include <string>
+#include <thread>
+#include <utility>
 
+#include "android/hardware_picture.h"
 #include "android/mediacodec.h"
 
 #include "librats/util/logger.h"
@@ -25,6 +32,20 @@ constexpr int64_t kFirstOutputWaitUs = 500'000;
 /// How long it waits for room for a frame, the decoder's pictures taken out
 /// meanwhile.
 constexpr int64_t kInputWaitUs = 50'000;
+/// How long a picture rendered into the reader's surface is waited for there.
+constexpr auto kImageWait = std::chrono::milliseconds(30);
+/// How often the reader is looked at meanwhile.
+constexpr auto kImageLookEvery = std::chrono::microseconds(500);
+/// Pictures the reader of GPU pictures holds, those a view keeps among them:
+/// the one drawn, the one waiting, those the GPU may still be drawing from.
+constexpr int32_t kHeldImages = 8;
+/// What GPU pictures are decoded for: the GPU draws them, and the CPU may
+/// read them for whatever does not.
+constexpr uint64_t kGpuUsage =
+    AHARDWAREBUFFER_USAGE_GPU_SAMPLED_IMAGE | AHARDWAREBUFFER_USAGE_CPU_READ_RARELY;
+
+/// A reader, deleted once neither the decoder nor a picture of its holds it.
+using Reader = std::shared_ptr<AImageReader>;
 
 /// The matrix of MediaFormat's COLOR_STANDARD: BT.601's 2 to 5 — or, past
 /// 64, the pair of primaries and matrix no standard names, as Android's
@@ -45,8 +66,10 @@ int32_t int_of(AMediaFormat* format, const char* key, int32_t otherwise) {
 
 class MediaCodecDecoder final : public VideoDecoder {
 public:
-    MediaCodecDecoder(AMediaCodec* codec, std::string name)
-        : codec_(codec), info_{std::move(name)} {}
+    /// With `reader`, the decoder renders into its surface: pictures in GPU
+    /// memory.
+    MediaCodecDecoder(AMediaCodec* codec, std::string name, Reader reader)
+        : codec_(codec), info_{std::move(name)}, reader_(std::move(reader)) {}
 
     ~MediaCodecDecoder() override {
         AMediaCodec_stop(codec_);
@@ -110,6 +133,13 @@ private:
             pending_ = std::max(0, pending_ - 1);
             ++pictures_;
             wait_us = 0;
+            if (reader_) {
+                // Into the reader, stamped with the frame's time.
+                AMediaCodec_releaseOutputBuffer(codec_, size_t(index), buffer.size > 0);
+                if (buffer.size > 0) ++rendering_;
+                collect(sink);
+                continue;
+            }
             size_t capacity = 0;
             const uint8_t* data = AMediaCodec_getOutputBuffer(codec_, size_t(index), &capacity);
             Result<void> taken;
@@ -121,12 +151,56 @@ private:
         }
     }
 
+    /// The pictures rendered into the reader, each handed out in its buffer
+    /// as it comes there, those still owed waited for a little.
+    void collect(Sink sink) {
+        const auto until = std::chrono::steady_clock::now() + kImageWait;
+        for (;;) {
+            AImage* acquired = nullptr;
+            const media_status_t status = AImageReader_acquireNextImage(reader_.get(), &acquired);
+            if (status == AMEDIA_OK && acquired) {
+                rendering_ = std::max(0, rendering_ - 1);
+                hand_out(acquired, sink);
+                continue;
+            }
+            if (status == AMEDIA_IMGREADER_MAX_IMAGES_ACQUIRED && !full_said_) {
+                full_said_ = true;
+                LOG_WARN("engine", info_.name << ": pictures kept too long, others wait");
+            }
+            if (rendering_ == 0 || status != AMEDIA_IMGREADER_NO_BUFFER_AVAILABLE ||
+                std::chrono::steady_clock::now() >= until) {
+                rendering_ = 0;  // come later, if at all: taken with the next
+                return;
+            }
+            std::this_thread::sleep_for(kImageLookEvery);
+        }
+    }
+
+    /// The picture of `acquired`, held with the image and its reader.
+    void hand_out(AImage* acquired, Sink sink) {
+        std::shared_ptr<const void> image(acquired, [reader = reader_](const void* held) {
+            AImage_delete(static_cast<AImage*>(const_cast<void*>(held)));
+        });
+        int64_t time_ns = 0;
+        if (AImage_getTimestamp(acquired, &time_ns) != AMEDIA_OK) return;
+        VideoFrame picture = gpu_frame_of(
+            acquired, std::move(image),
+            Timestamp{std::chrono::duration_cast<Duration>(std::chrono::nanoseconds(time_ns))},
+            color_space_);
+        if (!picture.empty()) {
+            sink(std::move(picture));
+        } else if (!crop_said_) {
+            crop_said_ = true;
+            LOG_WARN("engine", info_.name << " crops its pictures elsewhere than the top left");
+        }
+    }
+
     /// Where the planes of the decoder's pictures are, and what they show.
     void read_format() {
         AMediaFormat* format = AMediaCodec_getOutputFormat(codec_);
         if (!format) return;
         layout_ = layout_of(format);
-        if (!layout_.known)
+        if (!layout_.known && !reader_)
             LOG_WARN("engine",
                      info_.name << " gives pictures in a layout the engine does not read");
 
@@ -184,11 +258,26 @@ private:
 
     AMediaCodec* const codec_;
     VideoDecoderInfo info_;
+    const Reader reader_;  ///< what pictures are rendered into, if anything
     MediaLayout layout_;
     ColorSpace color_space_;
-    int pending_ = 0;  ///< frames given whose pictures have not come
+    int pending_ = 0;    ///< frames given whose pictures have not come
+    int rendering_ = 0;  ///< pictures rendered that have not reached the reader
     uint64_t pictures_ = 0;
+    bool full_said_ = false;
+    bool crop_said_ = false;
 };
+
+/// A reader of GPU pictures for a decoder to render into, or null.
+Reader gpu_reader() {
+    AImageReader* made = nullptr;
+    // The size is the decoder's to say, buffer by buffer.
+    if (AImageReader_newWithUsage(1920, 1080, AIMAGE_FORMAT_YUV_420_888, kGpuUsage, kHeldImages,
+                                  &made) != AMEDIA_OK) {
+        return nullptr;
+    }
+    return Reader(made, AImageReader_delete);
+}
 
 /// The name of the decoder the device picks for `mime`, made to be asked.
 std::string default_decoder(const char* mime) {
@@ -246,16 +335,32 @@ Result<std::unique_ptr<VideoDecoder>> open_mediacodec_decoder(const VideoDecoder
         AMediaFormat_setBuffer(format, "csd-0", config.codec_config.data(),
                                config.codec_config.size());
     }
-    media_status_t status = AMediaCodec_configure(codec, format, nullptr, nullptr, 0);
+    // GPU pictures asked for: rendered into a reader's surface, or, where
+    // the decoder will not, in memory after all.
+    Reader reader = config.gpu ? gpu_reader() : nullptr;
+    ANativeWindow* window = nullptr;
+    if (reader && AImageReader_getWindow(reader.get(), &window) != AMEDIA_OK) reader.reset();
+    media_status_t status =
+        AMediaCodec_configure(codec, format, reader ? window : nullptr, nullptr, 0);
+    if (status != AMEDIA_OK && reader) {
+        LOG_INFO("engine", "decoder " << name << " renders into no surface: " << status);
+        reader.reset();
+        AMediaCodec_delete(codec);
+        codec = AMediaCodec_createCodecByName(name.c_str());
+        status = codec ? AMediaCodec_configure(codec, format, nullptr, nullptr, 0)
+                       : AMEDIA_ERROR_UNKNOWN;
+    }
     AMediaFormat_delete(format);
+    if (!codec) return fail(Errc::Unavailable);
     if (status == AMEDIA_OK) status = AMediaCodec_start(codec);
     if (status != AMEDIA_OK) {
         LOG_WARN("engine", "decoder " << name << " cannot open: " << status);
         AMediaCodec_delete(codec);
         return fail(Errc::Unavailable);
     }
-    LOG_INFO("engine", "video decoder: " << name);
-    return std::unique_ptr<VideoDecoder>(std::make_unique<MediaCodecDecoder>(codec, name));
+    LOG_INFO("engine", "video decoder: " << name << (reader ? ", into GPU memory" : ""));
+    return std::unique_ptr<VideoDecoder>(
+        std::make_unique<MediaCodecDecoder>(codec, name, std::move(reader)));
 }
 
 }  // namespace ratcast::android

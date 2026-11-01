@@ -7,7 +7,9 @@
 // bitrate halves, as rate control changes it, and 30 more pictures show what
 // that costs: the slowest of them and, for an encoder that cannot change its
 // rate in flight, how many pictures on the new encoder takes over (with a
-// keyframe — its size is the other cost).
+// keyframe — its size is the other cost). Where a decoder hands pictures out
+// in GPU memory when asked (Android's), the same frames through one so asked
+// too: what decoding for a view that draws them there costs.
 //
 // Then Opus, for voice and for music: microseconds per 20 ms frame both ways,
 // which says what a call's sound costs next to its picture.
@@ -53,6 +55,8 @@ void run(Codec codec, const std::string& name, Size size) {
     if (!encoder) return;  // no hardware for it here
     Result<std::unique_ptr<VideoDecoder>> decoder = open_video_decoder({codec, {}});
     if (!decoder) return;
+    Result<std::unique_ptr<VideoDecoder>> gpu_decoder =
+        open_video_decoder({.codec = codec, .codec_config = {}, .gpu = true});
 
     const PatternConfig pattern{(*encoder)->info().input_format, size.width, size.height, 60, 1};
     std::vector<VideoFrame> pictures;
@@ -61,7 +65,8 @@ void run(Codec codec, const std::string& name, Size size) {
             draw_pattern(pattern, i, Timestamp{std::chrono::microseconds(i * 16'667)}));
     }
 
-    double encode_ms = 0, decode_ms = 0, worst_encode_ms = 0;
+    double encode_ms = 0, decode_ms = 0, gpu_decode_ms = 0, worst_encode_ms = 0;
+    bool in_gpu = false;  // whether the decoder asked for GPU pictures gave them
     size_t bytes = 0;
     for (int i = 0; i < kWarmup + kMeasured; ++i) {
         std::vector<EncodedVideo> frames;
@@ -70,16 +75,28 @@ void run(Codec codec, const std::string& name, Size size) {
                                  [&](EncodedVideo&& v) { frames.push_back(std::move(v)); });
         const double encoded = ms_since(start);
 
+        std::vector<EncodedFrame> encoded_frames;
+        for (EncodedVideo& v : frames)
+            encoded_frames.push_back({v.info, std::move(v.payload).freeze()});
         const auto decode_start = std::chrono::steady_clock::now();
-        for (EncodedVideo& v : frames) {
-            const EncodedFrame frame{v.info, std::move(v.payload).freeze()};
+        for (const EncodedFrame& frame : encoded_frames) {
             (void)(*decoder)->decode(frame, [](VideoFrame&&) {});
             if (i >= kWarmup) bytes += frame.payload.size();
+        }
+        const double decoded = ms_since(decode_start);
+        const auto gpu_start = std::chrono::steady_clock::now();
+        for (const EncodedFrame& frame : encoded_frames) {
+            if (gpu_decoder) {
+                (void)(*gpu_decoder)->decode(frame, [&](VideoFrame&& p) {
+                    in_gpu = in_gpu || p.gpu() != nullptr;
+                });
+            }
         }
         if (i >= kWarmup) {
             encode_ms += encoded;
             worst_encode_ms = std::max(worst_encode_ms, encoded);
-            decode_ms += ms_since(decode_start);
+            decode_ms += decoded;
+            gpu_decode_ms += ms_since(gpu_start);
         }
     }
 
@@ -88,6 +105,8 @@ void run(Codec codec, const std::string& name, Size size) {
         "B/frame\n",
         name.c_str(), size.width, size.height, size.bitrate / 1e6, encode_ms / kMeasured,
         worst_encode_ms, decode_ms / kMeasured, double(bytes) / kMeasured);
+    if (in_gpu)
+        std::printf("  %31s decode into GPU memory %6.2f ms\n", "", gpu_decode_ms / kMeasured);
 
     (*encoder)->set_bitrate(size.bitrate / 2);
     double worst_ms = 0;

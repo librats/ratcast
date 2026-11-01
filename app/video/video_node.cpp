@@ -12,6 +12,19 @@
 
 #include "ratcast/engine/video_convert.h"
 
+#ifdef Q_OS_ANDROID
+#include <EGL/egl.h>
+#include <EGL/eglext.h>
+#include <GLES2/gl2.h>
+#include <GLES2/gl2ext.h>
+#include <android/hardware_buffer.h>
+
+#include <QOpenGLContext>
+#include <QOpenGLFunctions>
+
+#include "ratcast/engine/android.h"
+#endif
+
 namespace ratcast::app {
 namespace {
 
@@ -156,24 +169,208 @@ QSGMaterialShader* VideoMaterial::createShader(QSGRendererInterface::RenderMode)
     return new VideoShader;
 }
 
-// ── The node ────────────────────────────────────────────────────────────────
+#ifdef Q_OS_ANDROID
 
-VideoNode::VideoNode() : material_(new VideoMaterial) {
-    setMaterial(material_);
-    setGeometry(new QSGGeometry(QSGGeometry::defaultAttributes_TexturedPoint2D(), 4));
-    setFlags(OwnsMaterial | OwnsGeometry);
+// ── A picture in Android's GPU memory ───────────────────────────────────────
+
+/// The buffer of a picture in GPU memory as an external texture of OpenGL
+/// ES's, through an EGLImage of it: drawn where it is, the GPU turning its
+/// YUV into colour by what the buffer says it is. Made on the render thread,
+/// Qt's context current.
+class ExternalTexture final : public QSGTexture {
+public:
+    ExternalTexture() {
+        setFiltering(Linear);
+        setHorizontalWrapMode(ClampToEdge);
+        setVerticalWrapMode(ClampToEdge);
+    }
+
+    ~ExternalTexture() override {
+        if (image_ != EGL_NO_IMAGE_KHR) destroy_image_(display_, image_);
+    }
+
+    /// `picture`, in `buffer`, drawn from the next commit on. The picture
+    /// before is kept a frame longer: the GPU may still be drawing from it.
+    void set(const VideoFrame& picture, AHardwareBuffer* buffer) {
+        before_ = std::exchange(picture_, picture);
+        buffer_ = buffer;
+        AHardwareBuffer_Desc desc{};
+        AHardwareBuffer_describe(buffer, &desc);
+        size_ = QSize(int(desc.width), int(desc.height));
+        pending_ = true;
+    }
+
+    qint64 comparisonKey() const override { return qint64(reinterpret_cast<quintptr>(this)); }
+    QRhiTexture* rhiTexture() const override { return texture_.get(); }
+    QSize textureSize() const override { return size_; }
+    bool hasAlphaChannel() const override { return false; }
+    bool hasMipmaps() const override { return false; }
+
+    void commitTextureOperations(QRhi* rhi, QRhiResourceUpdateBatch*) override {
+        if (!pending_) return;
+        pending_ = false;
+        if (!native_client_buffer_) {
+            native_client_buffer_ = reinterpret_cast<PFNEGLGETNATIVECLIENTBUFFERANDROIDPROC>(
+                eglGetProcAddress("eglGetNativeClientBufferANDROID"));
+            create_image_ =
+                reinterpret_cast<PFNEGLCREATEIMAGEKHRPROC>(eglGetProcAddress("eglCreateImageKHR"));
+            destroy_image_ = reinterpret_cast<PFNEGLDESTROYIMAGEKHRPROC>(
+                eglGetProcAddress("eglDestroyImageKHR"));
+            image_target_ = reinterpret_cast<PFNGLEGLIMAGETARGETTEXTURE2DOESPROC>(
+                eglGetProcAddress("glEGLImageTargetTexture2DOES"));
+        }
+        QOpenGLContext* context = QOpenGLContext::currentContext();
+        if (!context || !native_client_buffer_ || !create_image_ || !destroy_image_ ||
+            !image_target_) {
+            return;
+        }
+        // An external texture: Qt makes it, the image gives it its contents.
+        if (!texture_) {
+            texture_.reset(rhi->newTexture(QRhiTexture::RGBA8, size_, 1, QRhiTexture::ExternalOES));
+            if (!texture_->create()) {
+                texture_.reset();
+                return;
+            }
+        }
+        const EGLDisplay display = eglGetCurrentDisplay();
+        const EGLint preserved[] = {EGL_IMAGE_PRESERVED_KHR, EGL_TRUE, EGL_NONE};
+        const EGLImageKHR image = create_image_(display, EGL_NO_CONTEXT, EGL_NATIVE_BUFFER_ANDROID,
+                                                native_client_buffer_(buffer_), preserved);
+        if (image == EGL_NO_IMAGE_KHR) return;
+        QOpenGLFunctions* gl = context->functions();
+        gl->glBindTexture(GL_TEXTURE_EXTERNAL_OES, GLuint(texture_->nativeTexture().object));
+        image_target_(GL_TEXTURE_EXTERNAL_OES, static_cast<GLeglImageOES>(image));
+        gl->glBindTexture(GL_TEXTURE_EXTERNAL_OES, 0);
+        // The image before let go of: the texture holds this one now.
+        if (image_ != EGL_NO_IMAGE_KHR) destroy_image_(display_, image_);
+        image_ = image;
+        display_ = display;
+    }
+
+private:
+    VideoFrame picture_;
+    VideoFrame before_;
+    AHardwareBuffer* buffer_ = nullptr;  ///< kept by the picture
+    QSize size_;
+    bool pending_ = false;
+    std::unique_ptr<QRhiTexture, DeleteLater> texture_;
+    EGLDisplay display_ = EGL_NO_DISPLAY;
+    EGLImageKHR image_ = EGL_NO_IMAGE_KHR;
+    PFNEGLGETNATIVECLIENTBUFFERANDROIDPROC native_client_buffer_ = nullptr;
+    PFNEGLCREATEIMAGEKHRPROC create_image_ = nullptr;
+    PFNEGLDESTROYIMAGEKHRPROC destroy_image_ = nullptr;
+    PFNGLEGLIMAGETARGETTEXTURE2DOESPROC image_target_ = nullptr;
+};
+
+class ExternalMaterial final : public QSGMaterial {
+public:
+    ExternalTexture& texture() { return texture_; }
+
+    QSGMaterialType* type() const override {
+        static QSGMaterialType type;
+        return &type;
+    }
+    QSGMaterialShader* createShader(QSGRendererInterface::RenderMode) const override;
+    int compare(const QSGMaterial* other) const override {
+        return this == other ? 0 : (this < other ? -1 : 1);
+    }
+
+private:
+    ExternalTexture texture_;
+};
+
+/// shaders/video.vert and external.frag (external_gles.frag on OpenGL ES):
+/// the uniform block is video.frag's, of which only the matrix and the
+/// opacity are read.
+class ExternalShader final : public QSGMaterialShader {
+public:
+    ExternalShader() {
+        setShaderFileName(VertexStage, QStringLiteral(":/ratcast/video/shaders/video.vert.qsb"));
+        setShaderFileName(FragmentStage,
+                          QStringLiteral(":/ratcast/video/shaders/external.frag.qsb"));
+    }
+
+    bool updateUniformData(RenderState& state, QSGMaterial*, QSGMaterial*) override {
+        char* data = state.uniformData()->data();
+        if (state.isMatrixDirty()) std::memcpy(data, state.combinedMatrix().constData(), 64);
+        if (state.isOpacityDirty()) {
+            const float opacity = state.opacity();
+            std::memcpy(data + 128, &opacity, 4);
+        }
+        return true;
+    }
+
+    void updateSampledImage(RenderState& state, int, QSGTexture** texture, QSGMaterial* now,
+                            QSGMaterial*) override {
+        ExternalTexture& picture = static_cast<ExternalMaterial*>(now)->texture();
+        picture.commitTextureOperations(state.rhi(), state.resourceUpdateBatch());
+        *texture = &picture;
+    }
+};
+
+QSGMaterialShader* ExternalMaterial::createShader(QSGRendererInterface::RenderMode) const {
+    return new ExternalShader;
 }
 
-void VideoNode::set_picture(VideoFrame picture) {
-    material_->set_picture(picture);
+#endif
+
+// ── The node ────────────────────────────────────────────────────────────────
+
+VideoNode::VideoNode() {
+    setGeometry(new QSGGeometry(QSGGeometry::defaultAttributes_TexturedPoint2D(), 4));
+    setFlags(OwnsMaterial | OwnsGeometry);
+    planes();
+}
+
+VideoMaterial* VideoNode::planes() {
+    if (!material_) {
+        material_ = new VideoMaterial;
+        setMaterial(material_);  // the one before deleted
+    }
+    return material_;
+}
+
+void VideoNode::set_picture(VideoFrame picture, bool gles) {
+    QRectF source(0, 0, 1, 1);
+    bool drawn = false;  // where it is
+#ifdef Q_OS_ANDROID
+    if (AHardwareBuffer* buffer = android::hardware_buffer_of(picture); buffer && gles) {
+        auto* external = dynamic_cast<ExternalMaterial*>(material());
+        if (!external) {
+            external = new ExternalMaterial;
+            setMaterial(external);  // the one before deleted
+            material_ = nullptr;
+        }
+        external->texture().set(picture, buffer);
+        AHardwareBuffer_Desc desc{};
+        AHardwareBuffer_describe(buffer, &desc);
+        source = QRectF(0, 0, double(picture.width()) / desc.width,
+                        double(picture.height()) / desc.height);
+        drawn = true;
+    }
+#else
+    (void)gles;
+#endif
+    if (!drawn) {
+        if (picture.gpu()) {  // read out first
+            Result<VideoFrame> read = download_frame(picture);
+            if (!read) return;
+            picture = std::move(*read);
+        }
+        planes()->set_picture(picture);
+    }
     picture_size_ = QSize(int(picture.width()), int(picture.height()));
+    if (source != source_) {
+        source_ = source;
+        placed_ = {};  // the geometry made anew by place()
+    }
     markDirty(DirtyMaterial);
 }
 
 void VideoNode::place(const QRectF& rect) {
     if (rect == placed_) return;
     placed_ = rect;
-    QSGGeometry::updateTexturedRectGeometry(geometry(), rect, QRectF(0, 0, 1, 1));
+    QSGGeometry::updateTexturedRectGeometry(geometry(), rect, source_);
     markDirty(DirtyGeometry);
 }
 
