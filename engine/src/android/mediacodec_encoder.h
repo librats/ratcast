@@ -14,9 +14,10 @@
  * through its input surface instead, each drawn there where it is
  * (android/surface_drawer.h) — one in memory from its planes — and turned
  * into YUV by the encoder: BT.601 at limited range, what Qualcomm's make of
- * RGB whatever is asked and what is signalled. Set up for live use: constant bitrate, no B-frames, one picture
- * in flight at most (Android 11's latency key), keyframes only when asked
- * (`request-sync`), the bitrate changed in flight (`video-bitrate`). Frames
+ * RGB whatever is asked and what is signalled. Set up for live use:
+ * constant bitrate, no B-frames, one picture in flight at most (Android 11's
+ * latency key), keyframes only when asked (`request-sync`), the bitrate
+ * changed in flight (`video-bitrate`). Frames
  * leave in Annex B with a keyframe's parameter sets ahead of it. The encoder
  * table (ffmpeg/video_encoder.cpp) opens it under FFmpeg's names,
  * h264_mediacodec and hevc_mediacodec. Only a hardware encoder is taken: the

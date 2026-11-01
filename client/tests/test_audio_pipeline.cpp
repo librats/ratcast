@@ -263,14 +263,22 @@ TEST_F(AudioPipelineTest, FramesLostOnTheWayAreMadeUpWithoutABreak) {
     // The next frame's FEC brings each lost one back: the tone never dips, as
     // it would where a frame is concealed (decoder stats cannot tell the two
     // apart before libopus 1.5; the sound can). A slow machine may miss one.
+    // From the tone's first moment at its level: a decoder that joins the
+    // stream midway has no history to predict it from, and its first frames
+    // come quiet, losses or not.
     const float expected = kLevel / std::numbers::sqrt2_v<float>;
     const std::vector<float> rms = levels();
-    const auto quiet = std::ranges::count_if(rms, [&](float r) { return r < expected / 2; });
+    const auto at_level = std::ranges::find_if(rms, [&](float r) { return r >= expected / 2; });
+    ASSERT_NE(at_level, rms.end()) << "the tone never at its level";
+    const size_t first = size_t(at_level - rms.begin());
     // Where, and what the player made of it: a loss concealed rather than
     // recovered, or sound made up while the next frame was not there.
+    int64_t quiet = 0;
     std::string where;
-    for (size_t i = 0; i < rms.size(); ++i) {
-        if (rms[i] < expected / 2) where += " " + std::to_string(i);
+    for (size_t i = first; i < rms.size(); ++i) {
+        if (rms[i] >= expected / 2) continue;
+        ++quiet;
+        where += " " + std::to_string(i);
     }
     const auto ms = [](Duration d) { return std::to_string(d.count() / 1000) + " ms"; };
     // How long frames took on the way: the one after each lost (its FEC late,
@@ -290,11 +298,12 @@ TEST_F(AudioPipelineTest, FramesLostOnTheWayAreMadeUpWithoutABreak) {
                        ms(all[all.size() * 97 / 100]) + ", most " + ms(all.back());
         }
     }
-    EXPECT_LE(quiet, 1) << "of " << rms.size() << " windows of 20 ms, quiet at" << where
-                        << "; lost " << played.jitter.lost << ", late " << played.jitter.late
-                        << ", dropped " << played.jitter.dropped << ", made up "
-                        << ms(played.jitter.concealed) << " + " << ms(played.jitter.expanded)
-                        << " expanded; recovered " << ms(played.decoded.recovered) << ", concealed "
+    EXPECT_LE(quiet, 1) << "of " << rms.size() << " windows of 20 ms, at its level from " << first
+                        << ", quiet at" << where << "; lost " << played.jitter.lost << ", late "
+                        << played.jitter.late << ", dropped " << played.jitter.dropped
+                        << ", made up " << ms(played.jitter.concealed) << " + "
+                        << ms(played.jitter.expanded) << " expanded; recovered "
+                        << ms(played.decoded.recovered) << ", concealed "
                         << ms(played.decoded.concealed) << "; delay " << ms(played.delay) << " for "
                         << ms(played.target) << "; on the way, after the lost" << transit;
 }
