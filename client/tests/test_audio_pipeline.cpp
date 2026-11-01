@@ -85,7 +85,9 @@ protected:
                             return;
                         }
                         {
-                            std::lock_guard lock(mutex_);
+                            // A lock of its own: levels(), under mutex_, would
+                            // hold up the frames it measures.
+                            std::lock_guard lock(transit_mutex_);
                             transit_[frame.info.number] =
                                 SteadyClock::instance().now() - frame.info.capture_time;
                         }
@@ -159,16 +161,25 @@ protected:
         video_ptr_ = video_player_.get();
     }
 
+    static constexpr size_t kWindow = 960 * 2;  ///< 20 ms of 48 kHz stereo
+
+    /// How many windows of levels() there are so far: cheap enough to wait on
+    /// without holding up the output, whose sink takes the same lock.
+    size_t windows_heard() {
+        std::lock_guard lock(mutex_);
+        const auto first = std::ranges::find_if(heard_, [](float s) { return s != 0.0f; });
+        return size_t(heard_.end() - first) / kWindow;
+    }
+
     /// The level of what was heard, 20 ms at a time, from the first frame on.
     std::vector<float> levels() {
         std::lock_guard lock(mutex_);
         std::vector<float> out;
         const auto first = std::ranges::find_if(heard_, [](float s) { return s != 0.0f; });
-        const size_t window = 960 * 2;  // 20 ms of 48 kHz stereo
-        for (auto at = first; heard_.end() - at >= ptrdiff_t(window); at += window) {
+        for (auto at = first; heard_.end() - at >= ptrdiff_t(kWindow); at += kWindow) {
             double sum = 0;
-            for (auto s = at; s != at + window; ++s) sum += double(*s) * *s;
-            out.push_back(float(std::sqrt(sum / window)));
+            for (auto s = at; s != at + kWindow; ++s) sum += double(*s) * *s;
+            out.push_back(float(std::sqrt(sum / kWindow)));
         }
         return out;
     }
@@ -204,6 +215,7 @@ protected:
     std::atomic<bool> withdrawn_{false};
     std::vector<float> heard_;
     std::vector<Duration> latencies_;
+    std::mutex transit_mutex_;
     std::map<FrameNumber, Duration> transit_;  ///< from capture to the receiver, each frame's
 };
 
@@ -212,7 +224,7 @@ protected:
 TEST_F(AudioPipelineTest, PlaysTheToneAsItWasSent) {
     publish();
     play();
-    ASSERT_TRUE(eventually([&] { return levels().size() >= 50; }));  // a second of it
+    ASSERT_TRUE(eventually([&] { return windows_heard() >= 50; }));  // a second of it
     player_->stop();
 
     {
@@ -253,7 +265,7 @@ TEST_F(AudioPipelineTest, FramesLostOnTheWayAreMadeUpWithoutABreak) {
     lose_ = [](FrameNumber n) { return n > 25 && n % 25 == 10; };
     publish();
     play();
-    ASSERT_TRUE(eventually([&] { return levels().size() >= 100; }));
+    ASSERT_TRUE(eventually([&] { return windows_heard() >= 100; }));
     player_->stop();
 
     const AudioPlayerStats played = player_->stats();
@@ -285,7 +297,7 @@ TEST_F(AudioPipelineTest, FramesLostOnTheWayAreMadeUpWithoutABreak) {
     // or not there?) against all of them.
     std::string transit;
     {
-        std::lock_guard lock(mutex_);
+        std::lock_guard lock(transit_mutex_);
         std::vector<Duration> all;
         for (const auto& [number, took] : transit_) {
             all.push_back(took);
