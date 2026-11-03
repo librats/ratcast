@@ -32,8 +32,9 @@ ratcast is built on [librats](https://github.com/librats/librats). It comes in t
 
 ## Features
 
-- **Rooms by link.** Make a room, copy its `rats://` link and send it to whoever should join.
-  Peers find each other through the DHT. A server is optional.
+- **Rooms by link.** Make a room, copy its link (`https://ratcast.app/r/#…`, clickable in any
+  messenger) and send it to whoever should join: it opens the app. Peers find each other
+  through the DHT. A server is optional.
 - **Share a screen or a window with its sound.** Viewers hear what your applications play, but
   never the call's own voices.
 - **Voice that is easy to listen to.** Echo cancellation, noise suppression and automatic gain
@@ -72,13 +73,13 @@ Get the latest build from [Releases](https://github.com/librats/ratcast/releases
 | Windows 10/11 x64 | `ratcast-<version>-windows-x64.zip` | Unzip and run `ratcast.exe` |
 | Linux x86_64 | `ratcast-<version>-linux-x86_64.AppImage` | glibc 2.39+ and PipeWire 1.0+ (Ubuntu 24.04, Debian 13, Fedora 40 or newer) |
 | macOS 14+ Apple Silicon (preview) | `ratcast-<version>-macos-arm64.dmg` | Drag `ratcast` into Applications. It is not notarized: open it the first time with right-click → **Open** |
-| Android 10+ arm64 (preview) | `ratcast-<version>-android-arm64.apk` | Open it on the phone and allow installing from that app. Watch, talk, show a camera and share the screen; a newer APK installs over it. A `rats://` link opens the app |
+| Android 10+ arm64 (preview) | `ratcast-<version>-android-arm64.apk` | Open it on the phone and allow installing from that app. Watch, talk, show a camera and share the screen; a newer APK installs over it. A room's link opens the app |
 
 ## Using it
 
 1. **Make a room** and send the link it shows to your friends.
-2. They paste the link and press **Join**. A link given on the command line works too:
-   `ratcast rats://…`.
+2. They open the link — it opens the app, which joins — or paste it and press **Join**. The
+   `rats://…` link the page opens works too, and on the command line: `ratcast rats://…`.
 3. Press **Share**, choose a screen or a window, and decide whether to share its sound.
    The others press **Watch**.
 

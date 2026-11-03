@@ -10,6 +10,12 @@
  * A link (RatsLink) may name servers too: "rats://PEER-ID?via=HOST:PORT",
  * where the room is met that its members may not know of. And a server, as a
  * user writes one (parse_server()).
+ *
+ * A link goes about as a web link too (to_web_link()): the website's page
+ * that opens it in the app, "https://ratcast.app/r/#" and the link without
+ * its "rats://" — clickable in every messenger, which rats:// is not, and
+ * opening the app on Android by itself (its App Links). What follows '#'
+ * never reaches the website's server.
  */
 
 #include <cstdint>
@@ -41,11 +47,19 @@ struct RatsLink {
     bool operator==(const RatsLink&) const = default;
 };
 
-/// A RatsUrl with servers after it, if any; nullopt for anything else, a via
-/// that is no server too.
+/// A RatsUrl with servers after it, if any, as a rats:// link or as a web link
+/// (to_web_link(), its fragment percent-encoded or not); nullopt for anything
+/// else, a via that is no server too.
 std::optional<RatsLink> parse_rats_link(std::string_view link);
 
 std::string to_string(const RatsLink& link);
+
+/// The website's page that opens links in the app: a web link is this and the
+/// rats:// link without its scheme.
+inline constexpr std::string_view kWebLinkPrefix = "https://ratcast.app/r/#";
+
+/// The link as a web link: "https://ratcast.app/r/#PEER-ID?via=…".
+std::string to_web_link(const RatsLink& link);
 
 /// The port a ratcast-server listens on unless told otherwise.
 inline constexpr uint16_t kServerPort = 7700;

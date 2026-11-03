@@ -3,8 +3,9 @@ import { StrictMode } from "react";
 import { renderToString } from "react-dom/server";
 import App from "./App";
 import { Privacy } from "./components/Privacy";
+import { Room } from "./components/Room";
 
-/** The pages, by the HTML file each is put into: dist/index.html, dist/privacy/index.html. */
+/** The pages, by the HTML file each is put into: dist/index.html, dist/privacy/index.html, … */
 const PAGES = {
   "index.html": () => <App />,
   "privacy/index.html": () => (
@@ -12,6 +13,7 @@ const PAGES = {
       <Privacy />
     </MotionConfig>
   ),
+  "r/index.html": () => <Room />,
 } as const;
 
 export const pages = Object.keys(PAGES) as (keyof typeof PAGES)[];

@@ -100,8 +100,8 @@
         <translation>Raum erstellen</translation>
     </message>
     <message>
-        <source>or a rats:// link to a room</source>
-        <translation>oder ein rats://-Link zu einem Raum</translation>
+        <source>or a link to a room</source>
+        <translation>oder ein Link zu einem Raum</translation>
     </message>
     <message>
         <source>Join</source>
@@ -497,8 +497,8 @@
         <translation>„%1“ ist kein Server: bitte HOST oder HOST:PORT.</translation>
     </message>
     <message>
-        <source>That is not a rats:// link.</source>
-        <translation>Das ist kein rats://-Link.</translation>
+        <source>That is not a link to a room.</source>
+        <translation>Das ist kein Link zu einem Raum.</translation>
     </message>
     <message>
         <source>The call cannot start (%1).</source>

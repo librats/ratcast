@@ -100,8 +100,8 @@
         <translation>Crear una sala</translation>
     </message>
     <message>
-        <source>or a rats:// link to a room</source>
-        <translation>o un enlace rats:// a una sala</translation>
+        <source>or a link to a room</source>
+        <translation>o un enlace a una sala</translation>
     </message>
     <message>
         <source>Join</source>
@@ -497,8 +497,8 @@
         <translation>&apos;%1&apos; no es un servidor: escribe HOST o HOST:PORT.</translation>
     </message>
     <message>
-        <source>That is not a rats:// link.</source>
-        <translation>Eso no es un enlace rats://.</translation>
+        <source>That is not a link to a room.</source>
+        <translation>Eso no es un enlace a una sala.</translation>
     </message>
     <message>
         <source>The call cannot start (%1).</source>

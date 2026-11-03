@@ -108,11 +108,13 @@ ApplicationWindow {
 
     Component.onCompleted: if (root.link.length > 0) call.join(root.link)
 
-    /// A link the system opened the app with (Android's): joined as one given
-    /// at the start is, unless a room is already on.
+    /// A link the system opened the app with (links.h): joined as one given
+    /// at the start is, unless a room is already on; whether it was taken.
     function openLink(link) {
-        if (call.state === CallController.Idle)
-            call.join(link)
+        if (call.state !== CallController.Idle)
+            return false
+        call.join(link)
+        return true
     }
 
     /// The name of the member watched, as the members' list shows it.
@@ -550,7 +552,7 @@ ApplicationWindow {
             TextField {
                 id: linkField
                 Layout.fillWidth: true
-                placeholderText: qsTr("or a rats:// link to a room")
+                placeholderText: qsTr("or a link to a room")
                 onAccepted: if (text.length > 0) call.join(text)
             }
             Button {

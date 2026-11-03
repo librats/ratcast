@@ -100,8 +100,8 @@
         <translation>방 만들기</translation>
     </message>
     <message>
-        <source>or a rats:// link to a room</source>
-        <translation>또는 방의 rats:// 링크</translation>
+        <source>or a link to a room</source>
+        <translation>또는 방 링크</translation>
     </message>
     <message>
         <source>Join</source>
@@ -496,8 +496,8 @@
         <translation>올바른 서버가 아니에요: &apos;%1&apos;. HOST 또는 HOST:PORT 형식으로 입력하세요.</translation>
     </message>
     <message>
-        <source>That is not a rats:// link.</source>
-        <translation>rats:// 링크가 아니에요.</translation>
+        <source>That is not a link to a room.</source>
+        <translation>방 링크가 아닙니다.</translation>
     </message>
     <message>
         <source>The call cannot start (%1).</source>

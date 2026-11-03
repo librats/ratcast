@@ -15,7 +15,6 @@
 #include <QCoreApplication>
 #include <QGuiApplication>
 #include <QTemporaryDir>
-#include <QUrl>
 
 #include <algorithm>
 #include <atomic>
@@ -23,11 +22,13 @@
 #include <cmath>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <span>
 #include <thread>
 #include <utility>
 #include <vector>
 
+#include "ratcast/client/rats_url.h"
 #include "ratcast/engine/pattern_source.h"
 #include "ratcast/engine/tone_source.h"
 #include "ratcast/engine/virtual_output.h"
@@ -187,7 +188,7 @@ protected:
 
 TEST_F(CallControllerTest, OneMakesARoomAndAnotherJoins) {
     const QString invite = make_room();
-    EXPECT_TRUE(invite.startsWith("rats://127.0.0.1:"));
+    EXPECT_TRUE(invite.startsWith("https://ratcast.app/r/#127.0.0.1:")) << invite.toStdString();
     EXPECT_EQ(members(ann_), 0) << "alone";
 
     bob_.join(invite);
@@ -372,8 +373,9 @@ TEST_F(CallControllerTest, AMemberCutOffIsListedByNameReconnectingUntilBack) {
     for (CallController* side : {&ann_, &bob_}) side->setEnvironment(quick);
     ann_.setName("Ann");
     bob_.setName("Bob");
-    const QString invite = make_room();
-    test::UdpPath path(QUrl(invite).port());
+    const std::optional<RatsLink> invite = parse_rats_link(make_room().toStdString());
+    ASSERT_TRUE(invite);
+    test::UdpPath path(std::get<librats::HostEndpoint>(invite->url).port);
     bob_.join(QString("rats://127.0.0.1:%1").arg(path.port()));
     ASSERT_TRUE(wait_for([&] { return !member(ann_, "Bob").isEmpty(); }));
     EXPECT_FALSE(member(ann_, "Bob").value("reconnecting").toBool());

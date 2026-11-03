@@ -94,9 +94,10 @@ class CallController : public QObject {
     Q_OBJECT
     QML_ELEMENT
     Q_PROPERTY(State state READ state NOTIFY stateChanged)
-    /// rats:// links to the room, for the user to send: by peer id for the
-    /// internet if there is one, then the networks this host is on. Any
-    /// member's will do.
+    /// Links to the room, for the user to send, as web links
+    /// (https://ratcast.app/r/#…, to_web_link()): by peer id for the internet
+    /// if there is one, then the networks this host is on. Any member's will
+    /// do. join() takes them and rats:// links alike.
     Q_PROPERTY(QStringList invites READ invites NOTIFY invitesChanged)
     Q_PROPERTY(QString notice READ notice NOTIFY noticeChanged)
     /// What the others call this side: the user's login name until they say

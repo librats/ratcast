@@ -2,6 +2,7 @@
 #include "install.h"
 #include "language.h"
 #include "librats/util/logger.h"
+#include "links.h"
 #include "ratcast/client/log_file.h"
 #include "ratcast/version.h"
 
@@ -9,12 +10,10 @@
 #include <QColor>
 #include <QCommandLineParser>
 #include <QDateTime>
-#include <QDesktopServices>
 #include <QDir>
 #include <QGuiApplication>
 #include <QIcon>
 #include <QPalette>
-#include <QPointer>
 #include <QQmlApplicationEngine>
 #include <QString>
 #include <QSvgRenderer>
@@ -33,7 +32,6 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
-#include <utility>
 
 // Our QML modules, linked in statically.
 Q_IMPORT_QML_PLUGIN(Ratcast_VideoPlugin)
@@ -57,32 +55,6 @@ void log_qt_message(QtMsgType type, const QMessageLogContext& context, const QSt
     const bool named = context.category && std::strcmp(context.category, "default") != 0;
     librats::Logger::getInstance().log(level, named ? context.category : "qt", text.toStdString());
 }
-
-/// rats:// links the system opens the app with — Android's intent filter
-/// (app/android/AndroidManifest.xml), handed on by Qt — joined by the window
-/// (its openLink()); one that comes before the window is kept for it.
-class LinkOpener final : public QObject {
-    Q_OBJECT
-
-public:
-    void show_to(QObject* window) {
-        window_ = window;
-        if (!pending_.isEmpty()) open(QUrl(std::exchange(pending_, {})));
-    }
-
-public Q_SLOTS:
-    void open(const QUrl& url) {
-        if (!window_) {
-            pending_ = url.toString();
-            return;
-        }
-        QMetaObject::invokeMethod(window_, "openLink", QVariant(url.toString()));
-    }
-
-private:
-    QPointer<QObject> window_;
-    QString pending_;
-};
 
 /// What the window asks of Android's activity; elsewhere nothing. Its
 /// toBackground(): the app sent behind as Home sends it (a window cannot be
@@ -128,8 +100,7 @@ int main(int argc, char* argv[]) {
     ratcast::android::attach(QJniEnvironment::javaVM(),
                              QNativeInterface::QAndroidApplication::context().object());
 #endif
-    LinkOpener links;
-    QDesktopServices::setUrlHandler(QStringLiteral("rats"), &links, "open");
+    ratcast::app::LinkOpener links;
     // Qt takes the user's locale on Unix; numbers written and read below Qt —
     // the call's stats, codecs' options — keep the C one, as Qt advises.
     std::setlocale(LC_NUMERIC, "C");
@@ -186,9 +157,18 @@ int main(int argc, char* argv[]) {
         QStringLiteral("seconds"));
     options.addOptions({stats, stats_every});
     options.addPositionalArgument(QStringLiteral("link"),
-                                  QStringLiteral("A rats:// link to a room, to join at once."),
+                                  QStringLiteral("A link to a room, to join at once."),
                                   QStringLiteral("[link]"));
     options.process(app);
+    const QString link = options.positionalArguments().value(0);
+    // A link the system opened a second app with joined by the first, unless
+    // it is in a room already.
+    ratcast::app::SingleInstance instance(data);
+    if (!link.isEmpty() && instance.handed_over(link)) {
+        LOG_INFO("app", "the link handed to the app running");
+        return EXIT_SUCCESS;
+    }
+    ratcast::app::register_link_scheme();
     int every = options.isSet(stats) ? 2 : 0;
     if (options.isSet(stats_every)) {
         bool number = false;
@@ -207,7 +187,7 @@ int main(int argc, char* argv[]) {
     engine.setInitialProperties({
         {QStringLiteral("ratcastVersion"), QString::fromLatin1(ratcast::version())},
         {QStringLiteral("libratsVersion"), QString::fromLatin1(ratcast::librats_version())},
-        {QStringLiteral("link"), options.positionalArguments().value(0)},
+        {QStringLiteral("link"), link},
         {QStringLiteral("statsEvery"), every},
         {QStringLiteral("dataFolder"), QUrl::fromLocalFile(data)},
     });
@@ -219,6 +199,7 @@ int main(int argc, char* argv[]) {
     if (engine.rootObjects().isEmpty()) return QGuiApplication::exec();
     QObject* window = engine.rootObjects().constFirst();
     links.show_to(window);
+    instance.listen(&links);
     Activity activity(window);
     QObject::connect(window, SIGNAL(toBackground()), &activity, SLOT(to_background()));
     QObject::connect(window, SIGNAL(fullScreenChanged()), &activity, SLOT(full_screen_changed()));

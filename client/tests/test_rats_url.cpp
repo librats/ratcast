@@ -62,6 +62,37 @@ TEST(RatsUrl, ALinkNamesTheServersTheRoomIsMetAt) {
     EXPECT_FALSE(parse_rats_url(text)) << "a link's servers in a bare url";
 }
 
+TEST(RatsUrl, ALinkGoesAboutAsAWebLink) {
+    using librats::HostEndpoint;
+    const PeerId peer = PeerId::from_public_key(reinterpret_cast<const uint8_t*>("key"), 3);
+    const RatsLink link{RatsUrl{peer}, {HostEndpoint{"2001:db8::1", 7701}}};
+    const std::string web = to_web_link(link);
+    EXPECT_EQ(web, "https://ratcast.app/r/#" + peer.to_hex() + "?via=[2001:db8::1]:7701");
+    EXPECT_EQ(parse_rats_link(web), link);
+
+    // As a messenger or a browser may hand it on: escaped, its host in
+    // capitals, through www., over http, the page without its slash.
+    EXPECT_EQ(parse_rats_link("https://ratcast.app/r/#" + peer.to_hex() +
+                              "%3Fvia%3D%5B2001%3Adb8%3A%3A1%5D%3A7701"),
+              link);
+    const RatsLink address{RatsUrl{HostEndpoint{"192.168.0.5", 7700}}};
+    EXPECT_EQ(to_web_link(address), "https://ratcast.app/r/#192.168.0.5:7700");
+    for (const char* text :
+         {"https://ratcast.app/r/#192.168.0.5:7700", "HTTPS://RatCast.App/r#192.168.0.5:7700",
+          "http://www.ratcast.app/r/#192.168.0.5:7700/"}) {
+        EXPECT_EQ(parse_rats_link(text), address) << text;
+    }
+
+    for (const char* bad :
+         {"https://ratcast.app/r/", "https://ratcast.app/r/#", "https://ratcast.app/#1.2.3.4:5",
+          "https://ratcast.app/privacy/#1.2.3.4:5", "https://example.org/r/#1.2.3.4:5",
+          "https://ratcast.app.example.org/r/#1.2.3.4:5", "ftp://ratcast.app/r/#1.2.3.4:5",
+          "https://ratcast.app/r/#nonsense", "https://ratcast.app/r/#1.2.3.4%3",
+          "ratcast.app/r/#1.2.3.4:5", "https://ratcast.app/r/#rats://1.2.3.4:5"}) {
+        EXPECT_FALSE(parse_rats_link(bad)) << bad;
+    }
+}
+
 TEST(RatsUrl, AServerAsAUserWritesOne) {
     using librats::HostEndpoint;
     EXPECT_EQ(parse_server("degitx.com"), (HostEndpoint{"degitx.com", kServerPort}));

@@ -317,7 +317,7 @@ void CallController::join(const QString& link) {
     if (state_ != State::Idle) return;
     const std::optional<RatsLink> url = parse_rats_link(link.trimmed().toStdString());
     if (!url) {
-        set_notice(tr("That is not a rats:// link."));
+        set_notice(tr("That is not a link to a room."));
         return;
     }
     LOG_INFO("app", "joining " << to_string(*url));
@@ -372,8 +372,10 @@ void CallController::start(CallConfig config, State state) {
     for (auto it = hearing_.cbegin(); it != hearing_.cend(); ++it)
         tell_hearing(it.key(), it.value());
     call_->set_share_volume(float(share_volume_));
+    // As web links: clickable wherever they are sent (rats_url.h).
     for (const std::string& invite : call_->invites()) {
-        invites_.push_back(QString::fromStdString(invite));
+        const std::optional<RatsLink> link = parse_rats_link(invite);
+        invites_.push_back(QString::fromStdString(link ? to_web_link(*link) : invite));
     }
     Q_EMIT invitesChanged();
     set_state(state);

@@ -100,8 +100,8 @@
         <translation>Oda oluştur</translation>
     </message>
     <message>
-        <source>or a rats:// link to a room</source>
-        <translation>ya da bir odanın rats:// bağlantısı</translation>
+        <source>or a link to a room</source>
+        <translation>veya bir odanın bağlantısı</translation>
     </message>
     <message>
         <source>Join</source>
@@ -496,8 +496,8 @@
         <translation>&apos;%1&apos; bir sunucu değil: lütfen HOST ya da HOST:PORT girin.</translation>
     </message>
     <message>
-        <source>That is not a rats:// link.</source>
-        <translation>Bu bir rats:// bağlantısı değil.</translation>
+        <source>That is not a link to a room.</source>
+        <translation>Bu bir odanın bağlantısı değil.</translation>
     </message>
     <message>
         <source>The call cannot start (%1).</source>

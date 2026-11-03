@@ -100,8 +100,8 @@
         <translation>Создать комнату</translation>
     </message>
     <message>
-        <source>or a rats:// link to a room</source>
-        <translation>или ссылка rats:// на комнату</translation>
+        <source>or a link to a room</source>
+        <translation>или ссылка на комнату</translation>
     </message>
     <message>
         <source>Join</source>
@@ -498,8 +498,8 @@
         <translation>«%1» — не адрес сервера: нужно HOST или HOST:PORT.</translation>
     </message>
     <message>
-        <source>That is not a rats:// link.</source>
-        <translation>Это не ссылка rats://.</translation>
+        <source>That is not a link to a room.</source>
+        <translation>Это не ссылка на комнату.</translation>
     </message>
     <message>
         <source>The call cannot start (%1).</source>

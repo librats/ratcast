@@ -7,3 +7,4 @@ Exec=ratcast %u
 Icon=ratcast
 Terminal=false
 Categories=AudioVideo;Network;VideoConference;
+MimeType=x-scheme-handler/rats;

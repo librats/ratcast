@@ -1830,11 +1830,30 @@ devices, and Ann's phone, added by a QR code from her PC, is Ann to Bob.
   (`Ann · 4F2K`): names are not unique. A device added from another by a QR code, which hands
   over the key and the person's list of friends and groups, synced as two of their
   devices meet. Backup: the key in a file. Today's identity becomes the first device.
-- **14.2 Links that open the app**: `https://ratcast.app/u/#…` (a person), `/g/#…` (a
-  group), `/r/#…` (a room) — clickable in every messenger, which `rats://` is not. What
+- **14.2 Links that open the app** — rooms' ✅: `https://ratcast.app/u/#…` (a person), `/g/#…`
+  (a group), `/r/#…` (a room) — clickable in every messenger, which `rats://` is not. What
   follows `#` never reaches a server: the static page reads it in an effect, opens `rats://…`
   and offers the download to one without the app. Android App Links; `rats://` links keep
   working.
+  Done so, for rooms: `to_web_link()` (`rats_url.h`), the rats:// link without its scheme after
+  `https://ratcast.app/r/#`, which `parse_rats_link()` takes as it takes rats:// (escaped or
+  not; the site's www., http, `/r` too); the app's invites are web links, its field and its
+  command line take both. The website's `/r/` (`Room.tsx`, prerendered without the link, kept
+  from search engines): opens `rats://` at once, a button to again, the download, the rats://
+  link to copy. The app (`app/src/links.h`): on Android a second intent filter, the site's
+  `/r/` with `autoVerify`, its https links handed to the window and every other the app opens
+  (the chat's) on to the browser; on macOS the bundle's `CFBundleURLTypes`, the link a
+  `QFileOpenEvent`; on Windows `rats://` registered for the user as the app starts (a release
+  package takes it over, another build keeps one whose program is there), on Linux the desktop
+  entry's `MimeType` and, for an AppImage, an entry of its own made the default by `xdg-mime`.
+  A link the system starts a second process with on Windows and Linux is handed to the one
+  running with the same data folder (`SingleInstance`, a local socket), which joins it and
+  comes to the front — or, in a room already, leaves it to the new process, as a host may be
+  in a room twice. Tested: the web links both ways, as messengers hand them on, and what is
+  none; the controller's invites; on Windows by hand — the scheme registered, a link opened by
+  the system joined, one given to a second process taken by the first. Left: the site's
+  `/.well-known/assetlinks.json` (the release key's SHA-256): until it is there, Android opens
+  the page, whose button opens the app; QR codes; macOS, Linux and Android tried by hand.
 - **14.3 Friends**: a personal link (the person's key and a secret, reset at will) opened sends
   a request, shown on the other's devices: accept or decline; Add friend at a member's name in
   a room too. Until accepted nothing reaches but the request: no ringing by strangers.

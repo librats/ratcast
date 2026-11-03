@@ -7,12 +7,12 @@ const STEPS: { icon: LucideIcon; title: string; text: string; detail: string }[]
     icon: Link2,
     title: "Make a room",
     text: "Press one button and the app gives you a link. Send it to your friends however you like.",
-    detail: "rats://PEER-ID",
+    detail: "ratcast.app/r/#PEER-ID",
   },
   {
     icon: Popcorn,
     title: "Friends join",
-    text: "They paste the link and press Join, or open it from the command line: ratcast rats://…",
+    text: "They open the link and the app joins. Or they paste it and press Join, or give it on the command line: ratcast rats://…",
     detail: "no account, no install wizard",
   },
   {

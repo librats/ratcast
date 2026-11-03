@@ -99,8 +99,8 @@ export function Privacy() {
             later sees the last hundred. They are not saved to disk.
           </p>
           <p>
-            Who joins a room is up to you: anyone who has a room's <code className="font-mono text-sm">rats://</code>{" "}
-            link can join it, so share it only with people you want there.
+            Who joins a room is up to you: anyone who has a room's link can join it, so share it only with people
+            you want there.
           </p>
         </Section>
 
@@ -162,6 +162,10 @@ export function Privacy() {
             ratcast.app is a static site hosted on GitHub Pages. It sets no cookies and has no analytics. To show the
             latest release and the number of stars, your browser asks GitHub's public API, and GitHub, as the host,
             sees the requests your browser makes.
+          </p>
+          <p>
+            A link to a room (ratcast.app/r/#…) carries the room after the #, which your browser never sends to any
+            server: the page reads it on your device only to open the app.
           </p>
         </Section>
 

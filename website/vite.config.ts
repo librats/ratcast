@@ -10,12 +10,14 @@ const repo = fileURLToPath(new URL("..", import.meta.url));
 export default defineConfig({
   base: "/",
   plugins: [react(), tailwindcss()],
-  // Two pages: the site and its privacy policy (/privacy/, which Google Play links to).
+  // Three pages: the site, its privacy policy (/privacy/, which Google Play links to) and the
+  // page a link to a room opens (/r/#…).
   build: {
     rolldownOptions: {
       input: {
         main: fileURLToPath(new URL("index.html", import.meta.url)),
         privacy: fileURLToPath(new URL("privacy/index.html", import.meta.url)),
+        room: fileURLToPath(new URL("r/index.html", import.meta.url)),
       },
     },
   },

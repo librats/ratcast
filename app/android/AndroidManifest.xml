@@ -47,12 +47,23 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
-            <!-- rats:// links: joined (QDesktopServices' handler, app/src/main.cpp). -->
+            <!-- rats:// links: joined (QDesktopServices' handler, app/src/links.h). -->
             <intent-filter>
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="rats" />
+            </intent-filter>
+            <!-- The website's links to rooms, https://ratcast.app/r/#…: App
+                 Links, verified by the site's /.well-known/assetlinks.json;
+                 unverified, they open the page, which opens rats://. -->
+            <intent-filter android:autoVerify="true">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="https" />
+                <data android:host="ratcast.app" />
+                <data android:pathPrefix="/r/" />
             </intent-filter>
 
             <meta-data

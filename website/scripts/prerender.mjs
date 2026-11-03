@@ -1,6 +1,6 @@
-// Puts each page's HTML into its file in dist/ (index.html, privacy/index.html), so search
-// engines and link previews read its text without running scripts; the browser then hydrates
-// it (src/main.tsx, src/privacy.tsx).
+// Puts each page's HTML into its file in dist/ (index.html, privacy/index.html, r/index.html), so
+// search engines and link previews read its text without running scripts; the browser then
+// hydrates it (src/main.tsx, src/privacy.tsx, src/room.tsx).
 import { readFile, rm, writeFile } from "node:fs/promises";
 
 const server = new URL("../dist-server/", import.meta.url);

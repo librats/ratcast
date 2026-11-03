@@ -43,5 +43,17 @@
     <string>ratcast shows your camera to the room you are in.</string>
     <key>NSAudioCaptureUsageDescription</key>
     <string>ratcast shares what your applications play along with your screen.</string>
+    <!-- rats:// links open the app (app/src/links.h). -->
+    <key>CFBundleURLTypes</key>
+    <array>
+        <dict>
+            <key>CFBundleURLName</key>
+            <string>Room link</string>
+            <key>CFBundleURLSchemes</key>
+            <array>
+                <string>rats</string>
+            </array>
+        </dict>
+    </array>
 </dict>
 </plist>

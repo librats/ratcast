@@ -100,8 +100,8 @@
         <translation>Créer un salon</translation>
     </message>
     <message>
-        <source>or a rats:// link to a room</source>
-        <translation>ou le lien rats:// d’un salon</translation>
+        <source>or a link to a room</source>
+        <translation>ou un lien vers un salon</translation>
     </message>
     <message>
         <source>Join</source>
@@ -497,8 +497,8 @@
         <translation>«&#xa0;%1&#xa0;» n’est pas un serveur&#xa0;: indiquez HOST ou HOST:PORT.</translation>
     </message>
     <message>
-        <source>That is not a rats:// link.</source>
-        <translation>Ce n’est pas un lien rats://.</translation>
+        <source>That is not a link to a room.</source>
+        <translation>Ce n’est pas un lien vers un salon.</translation>
     </message>
     <message>
         <source>The call cannot start (%1).</source>

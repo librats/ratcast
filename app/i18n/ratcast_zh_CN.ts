@@ -100,8 +100,8 @@
         <translation>创建房间</translation>
     </message>
     <message>
-        <source>or a rats:// link to a room</source>
-        <translation>或输入房间的 rats:// 链接</translation>
+        <source>or a link to a room</source>
+        <translation>或房间链接</translation>
     </message>
     <message>
         <source>Join</source>
@@ -496,8 +496,8 @@
         <translation>“%1”不是有效的服务器：请输入 HOST 或 HOST:PORT。</translation>
     </message>
     <message>
-        <source>That is not a rats:// link.</source>
-        <translation>这不是 rats:// 链接。</translation>
+        <source>That is not a link to a room.</source>
+        <translation>这不是房间链接。</translation>
     </message>
     <message>
         <source>The call cannot start (%1).</source>

@@ -100,8 +100,8 @@
         <translation>ルームを作成</translation>
     </message>
     <message>
-        <source>or a rats:// link to a room</source>
-        <translation>またはルームの rats:// リンク</translation>
+        <source>or a link to a room</source>
+        <translation>またはルームへのリンク</translation>
     </message>
     <message>
         <source>Join</source>
@@ -496,8 +496,8 @@
         <translation>「%1」はサーバーではありません。HOST または HOST:PORT を入力してください。</translation>
     </message>
     <message>
-        <source>That is not a rats:// link.</source>
-        <translation>これは rats:// リンクではありません。</translation>
+        <source>That is not a link to a room.</source>
+        <translation>ルームへのリンクではありません。</translation>
     </message>
     <message>
         <source>The call cannot start (%1).</source>

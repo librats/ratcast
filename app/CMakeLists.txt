@@ -67,6 +67,8 @@ add_subdirectory(language)
 
 qt_add_executable(ratcast_app
     src/main.cpp
+    src/links.cpp
+    src/links.h
 )
 
 # The executable is ratcast, but its import library (MSVC) must not take the
@@ -229,7 +231,9 @@ endif()
 
 target_link_libraries(ratcast_app PRIVATE
     Qt6::Quick
+    Qt6::Network
     Qt6::Svg
+    ratcast::client
     ratcast_videoplugin
     ratcast_callplugin
     ratcast_call
@@ -240,6 +244,8 @@ target_link_libraries(ratcast_app PRIVATE
     ratcast::ratcast
 )
 ratcast_target_defaults(ratcast_app)
+# A release package takes the rats:// scheme over from other builds (links.cpp).
+target_compile_definitions(ratcast_app PRIVATE $<$<BOOL:${RATCAST_UPDATES}>:RATCAST_UPDATES=1>)
 
 # On Android the app is a library in a package (the apk target), never installed.
 if(NOT ANDROID)

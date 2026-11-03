@@ -100,8 +100,8 @@
         <translation>रूम बनाएँ</translation>
     </message>
     <message>
-        <source>or a rats:// link to a room</source>
-        <translation>या किसी रूम का rats:// लिंक</translation>
+        <source>or a link to a room</source>
+        <translation>या किसी रूम का लिंक</translation>
     </message>
     <message>
         <source>Join</source>
@@ -497,8 +497,8 @@
         <translation>&apos;%1&apos; सर्वर नहीं है: कृपया HOST या HOST:PORT लिखें।</translation>
     </message>
     <message>
-        <source>That is not a rats:// link.</source>
-        <translation>यह rats:// लिंक नहीं है।</translation>
+        <source>That is not a link to a room.</source>
+        <translation>यह किसी रूम का लिंक नहीं है।</translation>
     </message>
     <message>
         <source>The call cannot start (%1).</source>

@@ -38,7 +38,7 @@ function useTick(ms: number) {
   return n;
 }
 
-const LINK = "rats://9f2c7a41b0d3e6ed1";
+const LINK = "ratcast.app/r/#9f2c7a41b0d3e6ed1";
 
 function RoomLink() {
   const n = useTick(90);
@@ -253,7 +253,7 @@ const CARDS: { span: string; icon: LucideIcon; title: string; text: string; demo
     span: "lg:col-span-3",
     icon: Link2,
     title: "Rooms by link",
-    text: "Make a room, copy its rats:// link and send it to whoever should join. Peers find each other through the DHT, so a server is optional.",
+    text: "Make a room, copy its link and send it to whoever should join: it opens the app, from any messenger. Peers find each other through the DHT, so a server is optional.",
     demo: <RoomLink />,
   },
   {

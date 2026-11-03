@@ -100,8 +100,8 @@
         <translation>إنشاء غرفة</translation>
     </message>
     <message>
-        <source>or a rats:// link to a room</source>
-        <translation>أو رابط rats:// لغرفة</translation>
+        <source>or a link to a room</source>
+        <translation>أو رابط إلى غرفة</translation>
     </message>
     <message>
         <source>Join</source>
@@ -501,8 +501,8 @@
         <translation>«%1» ليس خادمًا: اكتب HOST أو HOST:PORT من فضلك.</translation>
     </message>
     <message>
-        <source>That is not a rats:// link.</source>
-        <translation>هذا ليس رابط rats://.</translation>
+        <source>That is not a link to a room.</source>
+        <translation>هذا ليس رابطًا إلى غرفة.</translation>
     </message>
     <message>
         <source>The call cannot start (%1).</source>
