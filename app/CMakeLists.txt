@@ -63,6 +63,7 @@ add_compile_definitions(QT_NO_KEYWORDS)
 add_subdirectory(video)
 add_subdirectory(call)
 add_subdirectory(update)
+add_subdirectory(language)
 
 qt_add_executable(ratcast_app
     src/main.cpp
@@ -163,6 +164,7 @@ qt_add_qml_module(ratcast_app
         qml/icons/globe.svg
         qml/icons/headphone-off.svg
         qml/icons/headphones.svg
+        qml/icons/languages.svg
         qml/icons/loader-circle.svg
         qml/icons/log-in.svg
         qml/icons/maximize.svg
@@ -187,6 +189,36 @@ qt_add_qml_module(ratcast_app
         qml/icons/x.svg
 )
 
+# The translations (i18n/ratcast_<code>.ts, the languages language.cpp lists),
+# of the window's QML and the C++ beneath it, built into Ratcast.Language's
+# resources as :/i18n/ratcast_<code>.qm. The update_translations target runs
+# lupdate over the sources (a string changed or added), which a translator
+# then fills in. Without Qt's Linguist tools (Debian: qt6-l10n-tools
+# qt6-tools-dev) or before Qt 6.7 the app speaks English only.
+find_package(Qt6 QUIET COMPONENTS LinguistTools)
+if(Qt6LinguistTools_FOUND AND Qt6_VERSION VERSION_GREATER_EQUAL 6.7)
+    qt_add_translations(
+        TARGETS        ratcast_language
+        SOURCE_TARGETS ratcast_app ratcast_call ratcast_update
+        TS_FILES
+            i18n/ratcast_ar.ts
+            i18n/ratcast_de.ts
+            i18n/ratcast_es.ts
+            i18n/ratcast_fr.ts
+            i18n/ratcast_hi.ts
+            i18n/ratcast_ja.ts
+            i18n/ratcast_ko.ts
+            i18n/ratcast_pt.ts
+            i18n/ratcast_ru.ts
+            i18n/ratcast_tr.ts
+            i18n/ratcast_zh_CN.ts
+        NO_GENERATE_PLURALS_TS_FILE
+        LUPDATE_OPTIONS -no-obsolete -locations none
+    )
+else()
+    message(STATUS "Qt's Linguist tools (6.7+) not found: the app speaks English only")
+endif()
+
 # The QML import scan exists to link QML plugins into a static Qt. A shared Qt
 # loads them at run time, and distribution packages do not ship the plugin
 # targets the scan looks for, so it would only warn about each of them. On
@@ -203,6 +235,8 @@ target_link_libraries(ratcast_app PRIVATE
     ratcast_call
     ratcast_updateplugin
     ratcast_update
+    ratcast_languageplugin
+    ratcast_language
     ratcast::ratcast
 )
 ratcast_target_defaults(ratcast_app)

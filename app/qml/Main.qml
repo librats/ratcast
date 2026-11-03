@@ -85,6 +85,10 @@ ApplicationWindow {
     color: root.fullScreen ? "black" : "#1e1f22"
     Material.theme: Material.Dark
     Material.accent: Material.Teal
+    // A language written from right to left (Arabic) turns the layout round,
+    // the dialogs' and menus' too (Language sets the direction).
+    LayoutMirroring.enabled: Qt.application.layoutDirection === Qt.RightToLeft
+    LayoutMirroring.childrenInherit: true
 
     CallController {
         id: call
@@ -653,7 +657,7 @@ ApplicationWindow {
 
             Button {
                 text: call.invites.length === 2 ? qsTr("1 more link")
-                                                : qsTr("%1 more links").arg(call.invites.length - 1)
+                                                : qsTr("%n more links", "", call.invites.length - 1)
                 flat: true
                 visible: root.compact && !side.allInvites && call.invites.length > 1
                 onClicked: side.allInvites = true

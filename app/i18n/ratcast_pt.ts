@@ -1,0 +1,607 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE TS>
+<TS version="2.1" language="pt" sourcelanguage="en">
+<context>
+    <name>Main</name>
+    <message>
+        <source>%1 stopped sharing</source>
+        <translation>%1 parou de compartilhar</translation>
+    </message>
+    <message>
+        <source>Still in the room, here in the tray.</source>
+        <translation>Você continua na sala: o ratcast está na bandeja do sistema.</translation>
+    </message>
+    <message>
+        <source>Still here, in the tray.</source>
+        <translation>O ratcast continua aqui, na bandeja do sistema.</translation>
+    </message>
+    <message>
+        <source>ratcast: in a room</source>
+        <translation>ratcast: em uma sala</translation>
+    </message>
+    <message>
+        <source>Show ratcast</source>
+        <translation>Mostrar o ratcast</translation>
+    </message>
+    <message>
+        <source>Unmute</source>
+        <translation>Ativar microfone</translation>
+    </message>
+    <message>
+        <source>Mute</source>
+        <translation>Silenciar</translation>
+    </message>
+    <message>
+        <source>Leave the room</source>
+        <translation>Sair da sala</translation>
+    </message>
+    <message>
+        <source>Quit</source>
+        <translation>Sair</translation>
+    </message>
+    <message>
+        <source>Someone %1</source>
+        <translation>Usuário %1</translation>
+    </message>
+    <message>
+        <source>Sound</source>
+        <translation>Som</translation>
+    </message>
+    <message>
+        <source>%1%</source>
+        <translation>%1%</translation>
+    </message>
+    <message>
+        <source>Open log folder</source>
+        <translation>Abrir pasta de logs</translation>
+    </message>
+    <message>
+        <source>Settings</source>
+        <translation>Configurações</translation>
+    </message>
+    <message>
+        <source>Looking for a new version…</source>
+        <translation>Procurando uma nova versão…</translation>
+    </message>
+    <message>
+        <source>Downloading version %1… %2%</source>
+        <translation>Baixando a versão %1… %2%</translation>
+    </message>
+    <message>
+        <source>Installing version %1…</source>
+        <translation>Instalando a versão %1…</translation>
+    </message>
+    <message>
+        <source>Version %1 is installed: it starts next time.</source>
+        <translation>A versão %1 foi instalada: ela será usada na próxima vez que você abrir o ratcast.</translation>
+    </message>
+    <message>
+        <source>Restart now</source>
+        <translation>Reiniciar agora</translation>
+    </message>
+    <message>
+        <source>Download page</source>
+        <translation>Página de download</translation>
+    </message>
+    <message>
+        <source>Check for updates</source>
+        <translation>Verificar atualizações</translation>
+    </message>
+    <message>
+        <source>Update automatically</source>
+        <translation>Atualizar automaticamente</translation>
+    </message>
+    <message>
+        <source>Your name, as the others see it</source>
+        <translation>Seu nome, como os outros o veem</translation>
+    </message>
+    <message>
+        <source>Make a room</source>
+        <translation>Criar uma sala</translation>
+    </message>
+    <message>
+        <source>or a rats:// link to a room</source>
+        <translation>ou um link rats:// de uma sala</translation>
+    </message>
+    <message>
+        <source>Join</source>
+        <translation>Entrar</translation>
+    </message>
+    <message>
+        <source>Joining the room…</source>
+        <translation>Entrando na sala…</translation>
+    </message>
+    <message>
+        <source>Cancel</source>
+        <translation>Cancelar</translation>
+    </message>
+    <message>
+        <source>Room</source>
+        <translation>Sala</translation>
+    </message>
+    <message>
+        <source>Send a link to whoever is to join:</source>
+        <translation>Envie um link para quem vai entrar:</translation>
+    </message>
+    <message>
+        <source>Copy</source>
+        <translation>Copiar</translation>
+    </message>
+    <message>
+        <source>Copy the link</source>
+        <translation>Copiar o link</translation>
+    </message>
+    <message>
+        <source>1 more link</source>
+        <translation>Mais 1 link</translation>
+    </message>
+    <message numerus="yes">
+        <source>%n more links</source>
+        <translation>
+            <numerusform>Mais %n link</numerusform>
+            <numerusform>Mais %n links</numerusform>
+        </translation>
+    </message>
+    <message>
+        <source>In the room</source>
+        <translation>Na sala</translation>
+    </message>
+    <message>
+        <source>%1 (you)</source>
+        <translation>%1 (você)</translation>
+    </message>
+    <message>
+        <source>off for you</source>
+        <translation>silenciado para você</translation>
+    </message>
+    <message>
+        <source>reconnecting…</source>
+        <translation>reconectando…</translation>
+    </message>
+    <message>
+        <source>Watching</source>
+        <translation>Assistindo</translation>
+    </message>
+    <message>
+        <source>Watch</source>
+        <translation>Assistir</translation>
+    </message>
+    <message>
+        <source>%1, for you</source>
+        <translation>%1, para você</translation>
+    </message>
+    <message>
+        <source>Mute for me</source>
+        <translation>Silenciar para mim</translation>
+    </message>
+    <message>
+        <source>Reset</source>
+        <translation>Redefinir</translation>
+    </message>
+    <message>
+        <source>Stop watching</source>
+        <translation>Parar de assistir</translation>
+    </message>
+    <message>
+        <source>Full screen</source>
+        <translation>Tela cheia</translation>
+    </message>
+    <message>
+        <source>F, or a double click on the share; Esc to leave</source>
+        <translation>F ou clique duplo na transmissão; Esc para sair</translation>
+    </message>
+    <message>
+        <source>Everyone here hears everyone. Share a screen or turn a camera on, and the others see it.</source>
+        <translation>Aqui todos ouvem todos. Compartilhe uma tela ou ative uma câmera, e os outros verão.</translation>
+    </message>
+    <message>
+        <source>camera hidden</source>
+        <translation>câmera oculta</translation>
+    </message>
+    <message>
+        <source>You</source>
+        <translation>Você</translation>
+    </message>
+    <message>
+        <source>Your share</source>
+        <translation>Sua transmissão</translation>
+    </message>
+    <message>
+        <source>Your share · paused</source>
+        <translation>Sua transmissão · pausada</translation>
+    </message>
+    <message>
+        <source>Hide your share</source>
+        <translation>Ocultar sua transmissão</translation>
+    </message>
+    <message>
+        <source>See what the others see</source>
+        <translation>Ver o que os outros veem</translation>
+    </message>
+    <message>
+        <source>What the others see, paused while you are elsewhere. Drag it to another corner.</source>
+        <translation>O que os outros veem, pausado enquanto você está em outro lugar. Arraste para outro canto.</translation>
+    </message>
+    <message>
+        <source>Measuring…</source>
+        <translation>Medindo…</translation>
+    </message>
+    <message>
+        <source>Chat</source>
+        <translation>Chat</translation>
+    </message>
+    <message>
+        <source>Close</source>
+        <translation>Fechar</translation>
+    </message>
+    <message>
+        <source>Nothing said yet</source>
+        <translation>Nenhuma mensagem ainda</translation>
+    </message>
+    <message>
+        <source>Say something</source>
+        <translation>Escreva algo</translation>
+    </message>
+    <message>
+        <source>Send</source>
+        <translation>Enviar</translation>
+    </message>
+    <message>
+        <source>Send (Enter)</source>
+        <translation>Enviar (Enter)</translation>
+    </message>
+    <message>
+        <source>Unmute: the others hear you again</source>
+        <translation>Ativar microfone: os outros voltam a ouvir você</translation>
+    </message>
+    <message>
+        <source>Mute: the others do not hear you</source>
+        <translation>Silenciar: os outros não ouvem você</translation>
+    </message>
+    <message>
+        <source>Undeafen</source>
+        <translation>Voltar a ouvir</translation>
+    </message>
+    <message>
+        <source>Deafen</source>
+        <translation>Ensurdecer</translation>
+    </message>
+    <message>
+        <source>Undeafen: hear the others, and be heard</source>
+        <translation>Voltar a ouvir: você ouve os outros e eles ouvem você</translation>
+    </message>
+    <message>
+        <source>Deafen: you hear nobody, and nobody hears you</source>
+        <translation>Ensurdecer: você não ouve ninguém e ninguém ouve você</translation>
+    </message>
+    <message>
+        <source>Camera off</source>
+        <translation>Desativar câmera</translation>
+    </message>
+    <message>
+        <source>Camera</source>
+        <translation>Câmera</translation>
+    </message>
+    <message>
+        <source>Turn the camera off</source>
+        <translation>Desativar a câmera</translation>
+    </message>
+    <message>
+        <source>Turn the camera on</source>
+        <translation>Ativar a câmera</translation>
+    </message>
+    <message>
+        <source>Choosing…</source>
+        <translation>Escolhendo…</translation>
+    </message>
+    <message>
+        <source>Sharing</source>
+        <translation>Compartilhando</translation>
+    </message>
+    <message>
+        <source>Share</source>
+        <translation>Compartilhar</translation>
+    </message>
+    <message>
+        <source>Choosing what to share: click to call it off</source>
+        <translation>Escolhendo o que compartilhar: clique para cancelar</translation>
+    </message>
+    <message>
+        <source>Sharing: show another, or stop</source>
+        <translation>Compartilhando: mostre outra coisa ou pare</translation>
+    </message>
+    <message>
+        <source>Share a screen or a window</source>
+        <translation>Compartilhar uma tela ou uma janela</translation>
+    </message>
+    <message>
+        <source>A screen</source>
+        <translation>Uma tela</translation>
+    </message>
+    <message>
+        <source>A window</source>
+        <translation>Uma janela</translation>
+    </message>
+    <message>
+        <source>With its sound</source>
+        <translation>Com o som</translation>
+    </message>
+    <message>
+        <source>Show another screen</source>
+        <translation>Mostrar outra tela</translation>
+    </message>
+    <message>
+        <source>Show another window</source>
+        <translation>Mostrar outra janela</translation>
+    </message>
+    <message>
+        <source>Stop sharing</source>
+        <translation>Parar de compartilhar</translation>
+    </message>
+    <message>
+        <source>Stats</source>
+        <translation>Estatísticas</translation>
+    </message>
+    <message>
+        <source>How the call goes (Ctrl+I)</source>
+        <translation>Como está a chamada (Ctrl+I)</translation>
+    </message>
+    <message>
+        <source>More</source>
+        <translation>Mais</translation>
+    </message>
+    <message>
+        <source>Switch camera</source>
+        <translation>Trocar de câmera</translation>
+    </message>
+    <message>
+        <source>Share the screen</source>
+        <translation>Compartilhar a tela</translation>
+    </message>
+    <message>
+        <source>Share a screen</source>
+        <translation>Compartilhar uma tela</translation>
+    </message>
+    <message>
+        <source>Share a window</source>
+        <translation>Compartilhar uma janela</translation>
+    </message>
+    <message>
+        <source>Call off choosing</source>
+        <translation>Cancelar a escolha</translation>
+    </message>
+    <message>
+        <source>Leave</source>
+        <translation>Sair</translation>
+    </message>
+    <message>
+        <source>%1&apos;s share</source>
+        <translation>Transmissão de %1</translation>
+    </message>
+    <message>
+        <source>Leave full screen</source>
+        <translation>Sair da tela cheia</translation>
+    </message>
+    <message>
+        <source>Esc, F, or a double click</source>
+        <translation>Esc, F ou clique duplo</translation>
+    </message>
+</context>
+<context>
+    <name>SettingsDialog</name>
+    <message>
+        <source>Devices</source>
+        <translation>Dispositivos</translation>
+    </message>
+    <message>
+        <source>Network</source>
+        <translation>Rede</translation>
+    </message>
+    <message>
+        <source>Language</source>
+        <translation>Idioma</translation>
+    </message>
+    <message>
+        <source>Window</source>
+        <translation>Janela</translation>
+    </message>
+    <message>
+        <source>Settings</source>
+        <translation>Configurações</translation>
+    </message>
+    <message>
+        <source>Close</source>
+        <translation>Fechar</translation>
+    </message>
+    <message>
+        <source>System default</source>
+        <translation>Padrão do sistema</translation>
+    </message>
+    <message>
+        <source>%1 (not connected)</source>
+        <translation>%1 (desconectado)</translation>
+    </message>
+    <message>
+        <source>Microphone</source>
+        <translation>Microfone</translation>
+    </message>
+    <message>
+        <source>Speaker</source>
+        <translation>Alto-falante</translation>
+    </message>
+    <message>
+        <source>Camera</source>
+        <translation>Câmera</translation>
+    </message>
+    <message>
+        <source>The first there is</source>
+        <translation>A primeira disponível</translation>
+    </message>
+    <message>
+        <source>The system&apos;s default follows the device the system is set to.</source>
+        <translation>O padrão do sistema acompanha o dispositivo configurado no sistema.</translation>
+    </message>
+    <message>
+        <source>Look again</source>
+        <translation>Procurar novamente</translation>
+    </message>
+    <message>
+        <source>For a device plugged in just now</source>
+        <translation>Para um dispositivo recém-conectado</translation>
+    </message>
+    <message>
+        <source>Server</source>
+        <translation>Servidor</translation>
+    </message>
+    <message>
+        <source>None: HOST or HOST:PORT</source>
+        <translation>Nenhum: HOST ou HOST:PORT</translation>
+    </message>
+    <message>
+        <source>A ratcast-server that rooms meet at: they get through any NAT, carried by it where no direct path does. Taken as a room is made or joined.</source>
+        <translation>Um ratcast-server onde as salas se encontram: elas passam por qualquer NAT, e o servidor leva a chamada onde não há conexão direta. Vale ao criar uma sala ou entrar nela.</translation>
+    </message>
+    <message>
+        <source>The system&apos;s (%1)</source>
+        <translation>Do sistema (%1)</translation>
+    </message>
+    <message>
+        <source>Takes effect at once.</source>
+        <translation>Aplicado imediatamente.</translation>
+    </message>
+    <message>
+        <source>Minimize to the tray</source>
+        <translation>Minimizar para a bandeja do sistema</translation>
+    </message>
+    <message>
+        <source>Close to the tray</source>
+        <translation>Fechar para a bandeja do sistema</translation>
+    </message>
+    <message>
+        <source>This desktop shows no tray icons.</source>
+        <translation>Esta área de trabalho não mostra ícones na bandeja do sistema.</translation>
+    </message>
+    <message>
+        <source>The window goes, the room stays: its icon in the tray brings it back, or quits.</source>
+        <translation>A janela fecha, mas você continua na sala: o ícone na bandeja a reabre ou fecha o ratcast.</translation>
+    </message>
+    <message>
+        <source>Minimized, it stays where it is: Wayland does not tell applications.</source>
+        <translation>Minimizada, ela fica onde está: o Wayland não informa isso aos aplicativos.</translation>
+    </message>
+</context>
+<context>
+    <name>ratcast::app::CallController</name>
+    <message>
+        <source>&apos;%1&apos; is no server: HOST or HOST:PORT, please.</source>
+        <translation>&apos;%1&apos; não é um servidor: use HOST ou HOST:PORT.</translation>
+    </message>
+    <message>
+        <source>That is not a rats:// link.</source>
+        <translation>Isso não é um link rats://.</translation>
+    </message>
+    <message>
+        <source>The call cannot start (%1).</source>
+        <translation>Não foi possível iniciar a chamada (%1).</translation>
+    </message>
+    <message>
+        <source>The microphone is not allowed: the others will not hear you.</source>
+        <translation>Sem permissão para usar o microfone: os outros não vão ouvir você.</translation>
+    </message>
+    <message>
+        <source>There is no microphone: the others will not hear you.</source>
+        <translation>Nenhum microfone encontrado: os outros não vão ouvir você.</translation>
+    </message>
+    <message>
+        <source>The microphone cannot be used (%1).</source>
+        <translation>Não é possível usar o microfone (%1).</translation>
+    </message>
+    <message>
+        <source>The screen cannot be shared (%1).</source>
+        <translation>Não é possível compartilhar a tela (%1).</translation>
+    </message>
+    <message>
+        <source>That speaker cannot be used.</source>
+        <translation>Não é possível usar esse alto-falante.</translation>
+    </message>
+    <message>
+        <source>That speaker cannot be used (%1).</source>
+        <translation>Não é possível usar esse alto-falante (%1).</translation>
+    </message>
+    <message>
+        <source>The camera is not allowed.</source>
+        <translation>Sem permissão para usar a câmera.</translation>
+    </message>
+    <message>
+        <source>There is no camera.</source>
+        <translation>Nenhuma câmera encontrada.</translation>
+    </message>
+    <message>
+        <source>The camera cannot be used (%1).</source>
+        <translation>Não é possível usar a câmera (%1).</translation>
+    </message>
+    <message>
+        <source>That is too long to send: say it in a few messages.</source>
+        <translation>A mensagem é longa demais: divida-a em várias.</translation>
+    </message>
+    <message>
+        <source>That cannot be sent (%1).</source>
+        <translation>Não foi possível enviar (%1).</translation>
+    </message>
+    <message>
+        <source>&apos;%1&apos; cannot be played (%2).</source>
+        <translation>Não é possível reproduzir &apos;%1&apos; (%2).</translation>
+    </message>
+    <message>
+        <source>The camera went.</source>
+        <translation>A câmera foi desconectada.</translation>
+    </message>
+    <message>
+        <source>The camera failed (%1).</source>
+        <translation>A câmera falhou (%1).</translation>
+    </message>
+    <message>
+        <source>Sharing stopped.</source>
+        <translation>A transmissão parou.</translation>
+    </message>
+    <message>
+        <source>Sharing failed (%1).</source>
+        <translation>A transmissão falhou (%1).</translation>
+    </message>
+</context>
+<context>
+    <name>ratcast::app::Updater</name>
+    <message>
+        <source>Could not look for a new version: %1</source>
+        <translation>Não foi possível procurar uma nova versão: %1</translation>
+    </message>
+    <message>
+        <source>This is the latest version.</source>
+        <translation>Esta é a versão mais recente.</translation>
+    </message>
+    <message>
+        <source>ratcast cannot update itself: %1 cannot be written to. Download version %2 yourself.</source>
+        <translation>O ratcast não consegue se atualizar: não é possível gravar em %1. Baixe a versão %2 manualmente.</translation>
+    </message>
+    <message>
+        <source>Could not download version %1: %2</source>
+        <translation>Não foi possível baixar a versão %1: %2</translation>
+    </message>
+    <message>
+        <source>Version %1 came damaged: it is downloaded again later.</source>
+        <translation>A versão %1 chegou corrompida: ela será baixada novamente mais tarde.</translation>
+    </message>
+    <message>
+        <source>ratcast cannot update itself: %1 cannot be replaced. Download version %2 yourself.</source>
+        <translation>O ratcast não consegue se atualizar: não é possível substituir %1. Baixe a versão %2 manualmente.</translation>
+    </message>
+    <message>
+        <source>Could not unpack version %1.</source>
+        <translation>Não foi possível descompactar a versão %1.</translation>
+    </message>
+    <message>
+        <source>Could not start ratcast again: start it yourself.</source>
+        <translation>Não foi possível reiniciar o ratcast: abra-o manualmente.</translation>
+    </message>
+</context>
+</TS>

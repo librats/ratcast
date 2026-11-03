@@ -1,5 +1,6 @@
 #include "call_controller.h"
 #include "install.h"
+#include "language.h"
 #include "librats/util/logger.h"
 #include "ratcast/client/log_file.h"
 #include "ratcast/version.h"
@@ -38,6 +39,7 @@
 Q_IMPORT_QML_PLUGIN(Ratcast_VideoPlugin)
 Q_IMPORT_QML_PLUGIN(Ratcast_CallPlugin)
 Q_IMPORT_QML_PLUGIN(Ratcast_UpdatePlugin)
+Q_IMPORT_QML_PLUGIN(Ratcast_LanguagePlugin)
 
 namespace {
 
@@ -198,6 +200,10 @@ int main(int argc, char* argv[]) {
     }
 
     QQmlApplicationEngine engine;
+    // The language kept, or the system's: in place before the window is made.
+    ratcast::app::Language language(&engine);
+    LOG_INFO("app", "language " << language.current().toStdString()
+                                << (language.chosen().isEmpty() ? ", the system's" : ", chosen"));
     engine.setInitialProperties({
         {QStringLiteral("ratcastVersion"), QString::fromLatin1(ratcast::version())},
         {QStringLiteral("libratsVersion"), QString::fromLatin1(ratcast::librats_version())},

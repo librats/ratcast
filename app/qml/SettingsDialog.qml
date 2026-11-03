@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Controls.Material
 import QtQuick.Layouts
 import Ratcast.Call
+import Ratcast.Language
 
 // The settings, a section at a time: its name in the list on the left, its
 // page on the right. A section more is a name in `sections` and a page in
@@ -23,10 +24,11 @@ Dialog {
 
     // The window's last: Android has no tray, and no section for it.
     readonly property var sections: Qt.platform.os === "android"
-                                    ? [qsTr("Devices"), qsTr("Network")]
-                                    : [qsTr("Devices"), qsTr("Network"), qsTr("Window")]
+                                    ? [qsTr("Devices"), qsTr("Network"), qsTr("Language")]
+                                    : [qsTr("Devices"), qsTr("Network"), qsTr("Language"),
+                                       qsTr("Window")]
     /// Each section's icon, of icons/.
-    readonly property var sectionIcons: ["headphones", "globe", "app-window"]
+    readonly property var sectionIcons: ["headphones", "globe", "languages", "app-window"]
     /// The section shown.
     property int section: 0
     readonly property bool narrow: width < 520
@@ -36,7 +38,15 @@ Dialog {
     anchors.centerIn: Overlay.overlay
     width: Math.min(parent.width - 48, 640)
     height: Math.min(parent.height - 48, 520)
-    standardButtons: Dialog.Close
+    // Its own button, not Dialog.Close: Qt's word for that is in Qt's
+    // translations, which the app does not carry.
+    footer: DialogButtonBox {
+        Button {
+            text: qsTr("Close")
+            flat: true
+            DialogButtonBox.buttonRole: DialogButtonBox.RejectRole
+        }
+    }
 
     // What is plugged in now: looked at as the dialog opens.
     onAboutToShow: call.listDevices()
@@ -105,7 +115,9 @@ Dialog {
             spacing: 16
 
             ListView {
-                Layout.preferredWidth: 140
+                // Wide enough for the longest name in any language
+                // ("Устройства", "Périphériques").
+                Layout.preferredWidth: 180
                 Layout.fillHeight: true
                 visible: !dialog.narrow
                 model: dialog.sections
@@ -195,6 +207,43 @@ Dialog {
                         text: qsTr("A ratcast-server that rooms meet at: they get through any NAT, " +
                                    "carried by it where no direct path does. Taken as a room is " +
                                    "made or joined.")
+                    }
+                    Item {
+                        Layout.fillHeight: true
+                    }
+                }
+
+                // ── Language ────────────────────────────────────────────────────
+                ColumnLayout {
+                    spacing: 4
+
+                    Label {
+                        text: qsTr("Language")
+                        font.bold: true
+                    }
+                    ComboBox {
+                        // The system's first, in the language it is now; the
+                        // rest each in its own.
+                        readonly property var entries: [{
+                            code: "",
+                            name: qsTr("The system's (%1)").arg(
+                                Language.languages.find(entry => entry.code === Language.current)?.name
+                                ?? "English")
+                        }].concat(Language.languages)
+
+                        Layout.fillWidth: true
+                        model: entries
+                        textRole: "name"
+                        valueRole: "code"
+                        currentIndex: Math.max(0, entries.findIndex(entry => entry.code === Language.chosen))
+                        onActivated: Language.chosen = currentValue
+                    }
+                    Label {
+                        Layout.fillWidth: true
+                        wrapMode: Text.Wrap
+                        opacity: 0.6
+                        font.pixelSize: 12
+                        text: qsTr("Takes effect at once.")
                     }
                     Item {
                         Layout.fillHeight: true

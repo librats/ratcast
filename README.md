@@ -46,6 +46,9 @@ ratcast is built on [librats](https://github.com/librats/librats). It comes in t
 - **Settings.** Pick the microphone, speaker and camera if the system's defaults are not the
   ones, even in the middle of a call. The window can go to the tray when minimized or closed,
   and the room goes on.
+- **Twelve languages.** English, Chinese, Hindi, Spanish, Arabic (laid out right to left), French,
+  Portuguese, Russian, German, Japanese, Korean and Turkish. The app speaks the system's
+  language, or the one chosen in its settings.
 - **Hardware encoding.** AV1, HEVC and H.264 run on NVENC, AMF or Quick Sync when a GPU has
   them, and HEVC and H.264 on VideoToolbox on a Mac. Otherwise SVT-AV1, libaom or OpenH264 encode
   on the CPU. On Windows, macOS and Android the screen goes to the encoder without leaving the
@@ -163,9 +166,11 @@ If you already cloned without `--recursive`, run `git submodule update --init --
 **Requirements:** CMake 3.22+, Ninja and a C++20 compiler. The media libraries are optional:
 FFmpeg, libopus, PipeWire (Linux) and `webrtc-audio-processing-1`, found through pkg-config.
 Without one of them, the parts that need it are left out. The app also needs Qt 6.6+ with Qt Quick,
-Qt Shader Tools, Qt SVG and QtGui's private headers. On Debian and Ubuntu, install
-`qt6-declarative-dev qt6-shadertools-dev qt6-svg-dev qt6-base-private-dev`. With the Qt installer,
-add the Qt Shader Tools module. Without Qt the app is skipped and the libraries still build.
+Qt Shader Tools, Qt SVG and QtGui's private headers, and Qt's Linguist tools (6.7+) for its
+translations. On Debian and Ubuntu, install
+`qt6-declarative-dev qt6-shadertools-dev qt6-svg-dev qt6-base-private-dev qt6-l10n-tools
+qt6-tools-dev`. With the Qt installer, add the Qt Shader Tools module. Without the Linguist tools
+the app speaks English only; without Qt it is skipped and the libraries still build.
 
 Programs are built into `build/<preset>/bin`.
 
