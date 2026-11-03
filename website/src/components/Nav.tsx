@@ -12,9 +12,9 @@ const LINKS = [
   ["Developers", "#developers"],
 ] as const;
 
-export function Logo() {
+export function Logo({ href = "#top" }: { href?: string }) {
   return (
-    <a href="#top" className="flex items-center gap-2.5 font-semibold tracking-tight">
+    <a href={href} className="flex items-center gap-2.5 font-semibold tracking-tight">
       <img src={icon} alt="" className="size-8 invert" />
       <span className="text-lg">ratcast</span>
     </a>

@@ -12,7 +12,7 @@ export function DownloadButton() {
   const target = platform === "other" ? null : platform;
   const pkg = target ? release?.packages.find((p) => p.platform === target) : undefined;
 
-  const href = pkg ? pkg.url : target ? RELEASES_URL : "#download";
+  const href = pkg ? pkg.url : target ? RELEASES_URL : "/#download";
   const Icon =
     target === "linux"
       ? LinuxIcon

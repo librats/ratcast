@@ -6,9 +6,9 @@ import { Logo } from "./Nav";
 import { GitHubIcon } from "./ui";
 
 const LINKS = [
-  { title: "Product", items: [["Features", "#features"], ["How it works", "#how"], ["Download", "#download"]] },
-  { title: "Developers", items: [["libratcast", "#developers"], ["Benchmarks", `${REPO_URL}/blob/main/docs/bench.md`], ["Roadmap", `${REPO_URL}/blob/main/docs/PLAN.md`]] },
-  { title: "Project", items: [["GitHub", REPO_URL], ["Releases", RELEASES_URL], ["librats", "https://github.com/librats/librats"]] },
+  { title: "Product", items: [["Features", "/#features"], ["How it works", "/#how"], ["Download", "/#download"]] },
+  { title: "Developers", items: [["libratcast", "/#developers"], ["Benchmarks", `${REPO_URL}/blob/main/docs/bench.md`], ["Roadmap", `${REPO_URL}/blob/main/docs/PLAN.md`]] },
+  { title: "Project", items: [["GitHub", REPO_URL], ["Releases", RELEASES_URL], ["librats", "https://github.com/librats/librats"], ["Privacy", "/privacy/"]] },
 ] as const;
 
 export function Footer() {
@@ -37,7 +37,7 @@ export function Footer() {
 
         <div className="mt-20 grid gap-10 border-t border-white/5 py-12 sm:grid-cols-2 md:grid-cols-4">
           <div>
-            <Logo />
+            <Logo href="/" />
             <p className="mt-4 max-w-xs text-sm text-fog/45">Peer-to-peer calls and screen sharing for watching things together.</p>
             <a href={REPO_URL} className="mt-5 inline-flex text-fog/50 transition hover:text-fog" aria-label="GitHub">
               <GitHubIcon />
