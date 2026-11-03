@@ -133,6 +133,8 @@ jobs:
 
           # The updater fetches from GitHub over TLS: Windows' own, through Qt's plugin.
           if (-not (Test-Path "$dir/plugins/tls/qschannelbackend.dll")) { throw "Qt's TLS plugin is not in the package" }
+          # The buttons' icons are SVG: Qt SVG's image plugin draws them.
+          if (-not (Test-Path "$dir/plugins/imageformats/qsvg.dll")) { throw "Qt's SVG plugin is not in the package" }
 
           $avcodec = Get-ChildItem "$dir/avcodec-*.dll" | Select-Object -First 1
           if (-not $avcodec) { throw "FFmpeg's libavcodec is not in the package" }
@@ -299,6 +301,9 @@ jobs:
           # through Qt's plugin.
           ls AppDir/usr/plugins/tls/libqopensslbackend.so > /dev/null ||
             { echo "::error::Qt's TLS plugin is not in the AppImage"; exit 1; }
+          # The buttons' icons are SVG: Qt SVG's image plugin draws them.
+          ls AppDir/usr/plugins/imageformats/libqsvg.so > /dev/null ||
+            { echo "::error::Qt's SVG plugin is not in the AppImage"; exit 1; }
           avcodec=$(ls AppDir/usr/lib/libavcodec.so.* | head -n 1)
           strings -n 4 "$avcodec" > avcodec.strings
           grep -qF "LGPL version 2.1 or later" avcodec.strings ||
@@ -436,6 +441,9 @@ jobs:
           # The updater fetches from GitHub over TLS: the system's, through Qt's plugin.
           ls "$app"/Contents/PlugIns/tls/libqsecuretransportbackend.dylib > /dev/null ||
             { echo "::error::Qt's TLS plugin is not in the bundle"; exit 1; }
+          # The buttons' icons are SVG: Qt SVG's image plugin draws them.
+          ls "$app"/Contents/PlugIns/imageformats/libqsvg.dylib > /dev/null ||
+            { echo "::error::Qt's SVG plugin is not in the bundle"; exit 1; }
           # Every library linked from the system's places or the bundle's own.
           outside=$(find "$app/Contents" -type f \( -perm -u+x -o -name '*.dylib' \) -print0 |
             xargs -0 otool -L 2> /dev/null |
@@ -685,6 +693,9 @@ jobs:
           libs=apk/lib/arm64-v8a
           [[ -e "$libs/libratcast_arm64-v8a.so" ]] ||
             { echo "::error::The app's library is not in the APK"; exit 1; }
+          # The buttons' icons are SVG: Qt SVG's image plugin draws them.
+          [[ -e "$libs/libplugins_imageformats_qsvg_arm64-v8a.so" ]] ||
+            { echo "::error::Qt's SVG plugin is not in the APK"; exit 1; }
           [[ -e apk/assets/licenses/ratcast.txt ]] ||
             { echo "::error::The licenses are not in the APK"; exit 1; }
           "$BUILD_TOOLS/aapt2" dump xmltree "$name.apk" --file AndroidManifest.xml |
