@@ -163,9 +163,9 @@ If you already cloned without `--recursive`, run `git submodule update --init --
 **Requirements:** CMake 3.22+, Ninja and a C++20 compiler. The media libraries are optional:
 FFmpeg, libopus, PipeWire (Linux) and `webrtc-audio-processing-1`, found through pkg-config.
 Without one of them, the parts that need it are left out. The app also needs Qt 6.6+ with Qt Quick,
-Qt Shader Tools and QtGui's private headers. On Debian and Ubuntu, install
-`qt6-declarative-dev qt6-shadertools-dev qt6-base-private-dev`. With the Qt installer, add the
-Qt Shader Tools module. Without Qt the app is skipped and the libraries still build.
+Qt Shader Tools, Qt SVG and QtGui's private headers. On Debian and Ubuntu, install
+`qt6-declarative-dev qt6-shadertools-dev qt6-svg-dev qt6-base-private-dev`. With the Qt installer,
+add the Qt Shader Tools module. Without Qt the app is skipped and the libraries still build.
 
 Programs are built into `build/<preset>/bin`.
 

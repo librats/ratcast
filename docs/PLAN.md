@@ -116,7 +116,7 @@ told to whoever connects.
 | GIO (GLib) | xdg-desktop-portal over D-Bus | system | — | — |
 | libdrm, GBM, EGL, Vulkan | DMA-BUF import, GPU colour conversion (stage 4) | system | — | — |
 | SDL3 | windows of the CLI tools | system | vcpkg | Homebrew |
-| Qt ≥ 6.6 with Quick, Shader Tools, QtGui private headers (QRhi) | app | system | official installer / aqtinstall | official installer / aqtinstall |
+| Qt ≥ 6.6 with Quick, Shader Tools, SVG, QtGui private headers (QRhi) | app | system | official installer / aqtinstall | official installer / aqtinstall |
 | libopus ≥ 1.3 | audio | system (`libopus-dev`) | vcpkg | Homebrew; vcpkg's we ship |
 | WebRTC AudioProcessing 1.x | voice: echo, noise, gain | system (`libwebrtc-audio-processing-dev`) | vcpkg, overlay port in `cmake/vcpkg-ports` | vcpkg, the same overlay port |
 | GoogleTest | tests | fetched by CMake | fetched by CMake | fetched by CMake |

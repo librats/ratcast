@@ -4,21 +4,24 @@ import QtQuick
 // so that it is deployed with the app (windeployqt brings what is imported).
 import QtQuick.Controls
 import QtQuick.Controls.Material
+// IconImage: an icon of icons/ outside a button, in the colour of its text.
+import QtQuick.Controls.impl
 import QtQuick.Layouts
 import Qt.labs.platform as Platform
 import Ratcast.Call
 import Ratcast.Update
 import Ratcast.Video
 
-// One window, three faces: the start (a name, a room to make or a link to
-// join), joining, and the room. CallController says which. In the room, the
+// One window, three faces: the start (the rat, alive — RatLogo — a name, a
+// room to make or a link to join), joining, and the room. CallController says which. In the room, the
 // members down the side — who speaks, who is muted or deafened, whose camera
 // and share are on — the share watched in the middle with the cameras beside
 // it, what is said in a pane on the right (on a button that counts what is
 // unread), and the controls along the bottom: microphone, sound, camera,
 // sharing (and, while sharing, another screen or window shown in its place),
 // chat, how the call goes (a panel on a button or Ctrl+I, its quality a dot),
-// leave. What this side shares it sees small in a corner of the stage, which
+// leave — round buttons of icons (icons/: Lucide's), named on hovering, red
+// while they keep this side unheard or unhearing. What this side shares it sees small in a corner of the stage, which
 // it drags to another or hides; paused while the window is not the one in use.
 // A share watched may go full screen (F, a double click): only the share, on
 // black, its controls and the cursor there while the mouse moves.
@@ -334,6 +337,75 @@ ApplicationWindow {
         opacity: 0.7
     }
 
+    /// An icon of icons/ by its name, in the colour of the text beside it.
+    component Glyph: IconImage {
+        /// Its name in icons/ (IconImage's own name is a theme's).
+        property string glyph
+        source: glyph.length > 0 ? "icons/" + glyph + ".svg" : ""
+        sourceSize: Qt.size(16, 16)
+        color: Material.foreground
+        opacity: 0.8
+    }
+
+    /// A button of the call's: round, its icon alone, its name (or `tip`) on
+    /// hovering. `alarm` paints it red: this side unheard or unhearing.
+    component CallButton: RoundButton {
+        id: callButton
+        property string iconName
+        property string tip: text
+        property bool alarm: false
+        /// A number in its corner: messages unread.
+        property int count: 0
+        /// A dot in its corner, in this colour: the call's quality.
+        property color dot: "transparent"
+
+        Layout.preferredWidth: 52
+        Layout.preferredHeight: 52
+        topInset: 2
+        bottomInset: 2
+        leftInset: 2
+        rightInset: 2
+        display: AbstractButton.IconOnly
+        icon.source: "icons/" + iconName + ".svg"
+        icon.width: 22
+        icon.height: 22
+        Material.background: alarm ? Material.color(Material.Red, Material.Shade700) : undefined
+        ToolTip.visible: hovered && tip.length > 0
+        ToolTip.text: tip
+        ToolTip.delay: 300
+
+        Rectangle {
+            anchors.right: parent.right
+            anchors.top: parent.top
+            visible: callButton.count > 0
+            width: Math.max(height, unreadLabel.implicitWidth + 8)
+            height: 18
+            radius: height / 2
+            color: Material.color(Material.Red)
+
+            Label {
+                id: unreadLabel
+                anchors.centerIn: parent
+                text: callButton.count > 99 ? "99+" : callButton.count
+                font.pixelSize: 11
+                font.bold: true
+                color: "white"
+            }
+        }
+        Dot {
+            anchors.right: parent.right
+            anchors.top: parent.top
+            anchors.margins: 3
+            visible: callButton.dot.a > 0
+            color: callButton.dot
+            border.color: root.color
+            border.width: 2
+            implicitWidth: 14
+            implicitHeight: 14
+            radius: 7
+        }
+    }
+
     // ── The start ───────────────────────────────────────────────────────────
 
     ColumnLayout {
@@ -342,8 +414,19 @@ ApplicationWindow {
         spacing: 16
         visible: call.state === CallController.Idle
 
+        // As large as the window leaves room for under it.
+        RatLogo {
+            Layout.alignment: Qt.AlignHCenter
+            Layout.preferredWidth: Math.max(140, Math.min(parent.width, 440,
+                                                          (root.height - 420) * implicitWidth / implicitHeight))
+            Layout.preferredHeight: Layout.preferredWidth * implicitHeight / implicitWidth
+            running: parent.visible && root.visibility !== Window.Minimized
+                     && root.visibility !== Window.Hidden
+        }
+
         Label {
             Layout.alignment: Qt.AlignHCenter
+            Layout.topMargin: -8
             text: "ratcast"
             font.pixelSize: 32
             font.bold: true
@@ -364,6 +447,7 @@ ApplicationWindow {
             Button {
                 Layout.alignment: Qt.AlignHCenter
                 text: qsTr("Open log folder")
+                icon.source: "icons/folder-open.svg"
                 flat: true
                 visible: !root.mobile
                 onClicked: Qt.openUrlExternally(root.dataFolder)
@@ -371,6 +455,7 @@ ApplicationWindow {
             Button {
                 Layout.alignment: Qt.AlignHCenter
                 text: qsTr("Settings")
+                icon.source: "icons/settings.svg"
                 flat: true
                 onClicked: settingsDialog.open()
             }
@@ -410,12 +495,14 @@ ApplicationWindow {
 
                 Button {
                     text: qsTr("Restart now")
+                    icon.source: "icons/rotate-ccw.svg"
                     highlighted: true
                     visible: updater.state === Updater.Installed
                     onClicked: updater.restart()
                 }
                 Button {
                     text: qsTr("Download page")
+                    icon.source: "icons/external-link.svg"
                     flat: true
                     visible: updater.state === Updater.Idle && updater.notice.length > 0
                              && updater.page.toString().length > 0
@@ -423,6 +510,7 @@ ApplicationWindow {
                 }
                 Button {
                     text: qsTr("Check for updates")
+                    icon.source: "icons/refresh-cw.svg"
                     flat: true
                     visible: updater.state === Updater.Idle && !updater.automatic
                     onClicked: updater.check()
@@ -447,6 +535,7 @@ ApplicationWindow {
         Button {
             Layout.alignment: Qt.AlignHCenter
             text: qsTr("Make a room")
+            icon.source: "icons/plus.svg"
             highlighted: true
             onClicked: call.create()
         }
@@ -462,6 +551,7 @@ ApplicationWindow {
             }
             Button {
                 text: qsTr("Join")
+                icon.source: "icons/log-in.svg"
                 enabled: linkField.text.length > 0
                 onClicked: call.join(linkField.text)
             }
@@ -479,13 +569,16 @@ ApplicationWindow {
 
     // ── Joining ─────────────────────────────────────────────────────────────
 
+    // The rat sending its signal while the room is looked for.
     ColumnLayout {
         anchors.centerIn: parent
         spacing: 12
         visible: call.state === CallController.Joining
 
-        BusyIndicator {
+        RatLogo {
             Layout.alignment: Qt.AlignHCenter
+            Layout.preferredWidth: Math.min(root.width - 48, 260)
+            Layout.preferredHeight: Layout.preferredWidth * implicitHeight / implicitWidth
             running: parent.visible
         }
         Label {
@@ -495,6 +588,7 @@ ApplicationWindow {
         Button {
             Layout.alignment: Qt.AlignHCenter
             text: qsTr("Cancel")
+            icon.source: "icons/x.svg"
             flat: true
             onClicked: call.leave()
         }
@@ -546,10 +640,13 @@ ApplicationWindow {
                         selectByMouse: true
                         font.pixelSize: 11
                     }
-                    Button {
+                    ToolButton {
                         text: qsTr("Copy")
-                        flat: true
+                        display: AbstractButton.IconOnly
+                        icon.source: "icons/copy.svg"
                         onClicked: call.copy(modelData)
+                        ToolTip.visible: hovered
+                        ToolTip.text: qsTr("Copy the link")
                     }
                 }
             }
@@ -580,12 +677,13 @@ ApplicationWindow {
                     Layout.fillWidth: true
                     text: qsTr("%1 (you)").arg(root.memberName(call.name, ""))
                 }
-                Badge {
-                    text: call.deafened ? qsTr("deafened")
-                                        : call.muted ? qsTr("muted") : ""
+                Glyph {
+                    glyph: "screen-share"
+                    visible: call.sharing
                 }
-                Badge {
-                    text: call.sharing ? qsTr("sharing") : ""
+                Glyph {
+                    glyph: call.deafened ? "headphone-off" : "mic-off"
+                    visible: call.deafened || call.muted
                 }
             }
 
@@ -635,16 +733,21 @@ ApplicationWindow {
                                                  : ""
                     }
                     Badge {
-                        text: member.reconnecting ? qsTr("reconnecting…")
-                              : member.deafened ? qsTr("deafened")
-                              : member.muted ? qsTr("muted") : ""
-                        color: member.reconnecting ? Material.color(Material.Orange)
-                                                   : Material.foreground
+                        text: member.reconnecting ? qsTr("reconnecting…") : ""
+                        color: Material.color(Material.Orange)
+                    }
+                    Glyph {
+                        glyph: member.deafened ? "headphone-off" : "mic-off"
+                        visible: !member.reconnecting && (member.deafened || member.muted)
                     }
                     Button {
                         visible: member.sharing
                         flat: true
                         font.pixelSize: 11
+                        icon.source: call.watching === member.peerId ? "icons/eye.svg"
+                                                                     : "icons/tv-minimal-play.svg"
+                        icon.width: 16
+                        icon.height: 16
                         text: call.watching === member.peerId ? qsTr("Watching") : qsTr("Watch")
                         enabled: call.watching !== member.peerId
                         onClicked: call.watch(member.peerId)
@@ -700,6 +803,7 @@ ApplicationWindow {
                                 }
                                 Button {
                                     text: qsTr("Reset")
+                                    icon.source: "icons/rotate-ccw.svg"
                                     flat: true
                                     visible: member.volume !== 1
                                     onClicked: {
@@ -779,11 +883,13 @@ ApplicationWindow {
             Button {
                 Layout.fillWidth: stage.column
                 text: qsTr("Stop watching")
+                icon.source: "icons/eye-off.svg"
                 onClicked: call.watch("")
             }
             Button {
                 Layout.fillWidth: stage.column
                 text: qsTr("Full screen")
+                icon.source: "icons/maximize.svg"
                 onClicked: root.setFullScreen(true)
                 ToolTip.visible: hovered
                 ToolTip.text: qsTr("F, or a double click on the share; Esc to leave")
@@ -1047,7 +1153,11 @@ ApplicationWindow {
                 width: 26
                 height: 26
                 visible: root.ownShareShown
-                text: "–"
+                display: AbstractButton.IconOnly
+                icon.source: "icons/eye-off.svg"
+                icon.width: 14
+                icon.height: 14
+                padding: 0
                 background: Rectangle {
                     radius: width / 2
                     color: parent.hovered ? "#e6111214" : "#99111214"
@@ -1060,6 +1170,7 @@ ApplicationWindow {
                 id: showOwnShare
                 visible: !root.ownShareShown
                 text: qsTr("Your share")
+                icon.source: "icons/eye.svg"
                 onClicked: root.ownShareShown = true
                 ToolTip.visible: hovered
                 ToolTip.text: qsTr("See what the others see")
@@ -1177,6 +1288,7 @@ ApplicationWindow {
 
                 Button {
                     text: qsTr("Open log folder")
+                    icon.source: "icons/folder-open.svg"
                     flat: true
                     visible: !root.mobile
                     onClicked: Qt.openUrlExternally(root.dataFolder)
@@ -1232,7 +1344,9 @@ ApplicationWindow {
                     font.bold: true
                 }
                 ToolButton {
-                    text: "✕"
+                    text: qsTr("Close")
+                    display: AbstractButton.IconOnly
+                    icon.source: "icons/x.svg"
                     onClicked: chatPane.shown = false
                 }
             }
@@ -1322,25 +1436,45 @@ ApplicationWindow {
                 }
             }
 
-            ScrollView {
+            // The box, and a button that sends it as Enter does.
+            RowLayout {
                 Layout.fillWidth: true
                 Layout.margins: 8
-                Layout.maximumHeight: 120
+                spacing: 4
 
-                TextArea {
-                    id: draft
-                    placeholderText: qsTr("Say something")
-                    wrapMode: TextArea.Wrap
+                ScrollView {
+                    Layout.fillWidth: true
+                    Layout.maximumHeight: 120
 
-                    function send(event) {
-                        if (event.modifiers & Qt.ShiftModifier) {
-                            event.accepted = false
-                            return
+                    TextArea {
+                        id: draft
+                        placeholderText: qsTr("Say something")
+                        wrapMode: TextArea.Wrap
+
+                        function send() {
+                            if (call.say(text)) clear()
                         }
-                        if (call.say(text)) clear()
+                        function sendOn(event) {
+                            if (event.modifiers & Qt.ShiftModifier) {
+                                event.accepted = false
+                                return
+                            }
+                            send()
+                        }
+                        Keys.onReturnPressed: event => sendOn(event)
+                        Keys.onEnterPressed: event => sendOn(event)
                     }
-                    Keys.onReturnPressed: event => send(event)
-                    Keys.onEnterPressed: event => send(event)
+                }
+                ToolButton {
+                    Layout.alignment: Qt.AlignBottom
+                    text: qsTr("Send")
+                    display: AbstractButton.IconOnly
+                    icon.source: "icons/send.svg"
+                    icon.color: draft.text.trim().length > 0 ? Material.accent : Material.hintTextColor
+                    enabled: draft.text.trim().length > 0
+                    onClicked: draft.send()
+                    ToolTip.visible: hovered
+                    ToolTip.text: qsTr("Send (Enter)")
                 }
             }
         }
@@ -1374,38 +1508,43 @@ ApplicationWindow {
 
         RowLayout {
             anchors.horizontalCenter: parent.horizontalCenter
-            spacing: 8
+            spacing: 6
 
-            Button {
+            CallButton {
                 text: call.muted ? qsTr("Unmute") : qsTr("Mute")
-                checkable: true
-                checked: call.muted
-                onToggled: call.muted = checked
-                ToolTip.visible: hovered
-                ToolTip.text: qsTr("The others do not hear you")
+                tip: call.muted ? qsTr("Unmute: the others hear you again")
+                                : qsTr("Mute: the others do not hear you")
+                iconName: call.muted ? "mic-off" : "mic"
+                alarm: call.muted
+                onClicked: call.muted = !call.muted
             }
-            Button {
+            CallButton {
                 text: call.deafened ? qsTr("Undeafen") : qsTr("Deafen")
+                tip: call.deafened ? qsTr("Undeafen: hear the others, and be heard")
+                                   : qsTr("Deafen: you hear nobody, and nobody hears you")
+                iconName: call.deafened ? "headphone-off" : "headphones"
                 visible: !root.compact
-                checkable: true
-                checked: call.deafened
-                onToggled: call.deafened = checked
-                ToolTip.visible: hovered
-                ToolTip.text: qsTr("You hear nobody, and nobody hears you")
+                alarm: call.deafened
+                onClicked: call.deafened = !call.deafened
             }
-            Button {
+            CallButton {
                 text: call.camera ? qsTr("Camera off") : qsTr("Camera")
+                tip: call.camera ? qsTr("Turn the camera off") : qsTr("Turn the camera on")
+                iconName: call.camera ? "video" : "video-off"
                 visible: !root.compact
-                checkable: true
-                checked: call.camera
-                onToggled: call.camera = checked
+                highlighted: call.camera
+                onClicked: call.camera = !call.camera
             }
-            Button {
+            CallButton {
                 id: shareButton
                 visible: !root.compact
                 text: call.choosing ? qsTr("Choosing…")
                                     : call.sharing ? qsTr("Sharing") : qsTr("Share")
-                highlighted: call.sharing
+                tip: call.choosing ? qsTr("Choosing what to share: click to call it off")
+                                   : call.sharing ? qsTr("Sharing: show another, or stop")
+                                                  : qsTr("Share a screen or a window")
+                iconName: call.choosing ? "loader-circle" : "screen-share"
+                highlighted: call.sharing || call.choosing
                 // The dialog open: called off, a share going on as it was.
                 onClicked: call.choosing ? call.stopSharing()
                                          : call.sharing ? sharingMenu.open() : shareMenu.open()
@@ -1416,10 +1555,12 @@ ApplicationWindow {
 
                     MenuItem {
                         text: qsTr("A screen")
+                        icon.source: "icons/monitor.svg"
                         onTriggered: call.share(false, withSound.checked)
                     }
                     MenuItem {
                         text: qsTr("A window")
+                        icon.source: "icons/app-window.svg"
                         visible: !root.mobile
                         height: visible ? implicitHeight : 0
                         onTriggered: call.share(true, withSound.checked)
@@ -1440,10 +1581,12 @@ ApplicationWindow {
 
                     MenuItem {
                         text: qsTr("Show another screen")
+                        icon.source: "icons/monitor.svg"
                         onTriggered: call.share(false, false)
                     }
                     MenuItem {
                         text: qsTr("Show another window")
+                        icon.source: "icons/app-window.svg"
                         visible: !root.mobile
                         height: visible ? implicitHeight : 0
                         onTriggered: call.share(true, false)
@@ -1451,51 +1594,45 @@ ApplicationWindow {
                     MenuSeparator {}
                     MenuItem {
                         text: qsTr("Stop sharing")
+                        icon.source: "icons/screen-share-off.svg"
                         onTriggered: call.stopSharing()
                     }
                 }
             }
-            RowLayout {
+            // How the call goes, its quality the dot in the corner; why, on
+            // hovering.
+            CallButton {
                 Layout.leftMargin: 8
-                spacing: 6
-
-                // The call's quality, panel shown or not; why, on hovering.
-                Dot {
-                    color: root.qualityColor(call.quality)
-
-                    HoverHandler {
-                        id: qualityHover
-                    }
-                    ToolTip.visible: qualityHover.hovered && call.quality.length > 0
-                    ToolTip.text: call.qualityReason.length > 0
-                                  ? call.quality + ": " + call.qualityReason : call.quality
-                }
-                Button {
-                    text: qsTr("Stats")
-                    visible: !root.compact
-                    checkable: true
-                    checked: stats.shown
-                    onToggled: stats.shown = checked
-                    ToolTip.visible: hovered
-                    ToolTip.text: qsTr("How the call goes (Ctrl+I)")
-                }
+                text: qsTr("Stats")
+                tip: qsTr("How the call goes (Ctrl+I)")
+                     + (call.quality.length === 0 ? ""
+                        : call.qualityReason.length > 0 ? "\n" + call.quality + ": " + call.qualityReason
+                                                        : "\n" + call.quality)
+                iconName: "activity"
+                visible: !root.compact
+                highlighted: stats.shown
+                dot: root.qualityColor(call.quality)
+                onClicked: stats.shown = !stats.shown
             }
-            Button {
-                text: call.chat.unread > 0 ? qsTr("Chat (%1)").arg(call.chat.unread) : qsTr("Chat")
-                checkable: true
-                checked: chatPane.shown
-                highlighted: call.chat.unread > 0
-                onToggled: chatPane.shown = checked
+            CallButton {
+                text: qsTr("Chat")
+                iconName: "message-square"
+                highlighted: chatPane.shown
+                count: call.chat.unread
+                onClicked: chatPane.shown = !chatPane.shown
             }
-            Button {
+            CallButton {
                 text: qsTr("Settings")
+                iconName: "settings"
                 visible: !root.compact
                 onClicked: settingsDialog.open()
             }
-            // Narrow, what does not fit.
-            Button {
-                text: "⋯"
+            // Narrow, what does not fit; the call's quality in its corner.
+            CallButton {
+                text: qsTr("More")
+                iconName: "ellipsis"
                 visible: root.compact
+                dot: root.qualityColor(call.quality)
                 onClicked: moreMenu.open()
 
                 Menu {
@@ -1512,15 +1649,18 @@ ApplicationWindow {
 
                     MoreItem {
                         text: call.deafened ? qsTr("Undeafen") : qsTr("Deafen")
+                        icon.source: call.deafened ? "icons/headphones.svg" : "icons/headphone-off.svg"
                         onTriggered: call.deafened = !call.deafened
                     }
                     MoreItem {
                         text: call.camera ? qsTr("Camera off") : qsTr("Camera")
+                        icon.source: call.camera ? "icons/video-off.svg" : "icons/video.svg"
                         onTriggered: call.camera = !call.camera
                     }
                     // The next of those listed: a phone's front and back.
                     MoreItem {
                         text: qsTr("Switch camera")
+                        icon.source: "icons/switch-camera.svg"
                         visible: call.camera && call.cameraDevices.length > 1
                         onTriggered: {
                             const listed = call.cameraDevices
@@ -1530,46 +1670,61 @@ ApplicationWindow {
                     }
                     MoreItem {
                         text: root.mobile ? qsTr("Share the screen") : qsTr("Share a screen")
+                        icon.source: root.mobile ? "icons/screen-share.svg" : "icons/monitor.svg"
                         visible: !call.sharing && !call.choosing
                         onTriggered: call.share(false, true)
                     }
                     MoreItem {
                         text: qsTr("Share a window")
+                        icon.source: "icons/app-window.svg"
                         visible: !root.mobile && !call.sharing && !call.choosing
                         onTriggered: call.share(true, true)
                     }
                     MoreItem {
                         text: qsTr("Show another screen")
+                        icon.source: "icons/monitor.svg"
                         visible: !root.mobile && call.sharing && !call.choosing
                         onTriggered: call.share(false, false)
                     }
                     MoreItem {
                         text: qsTr("Show another window")
+                        icon.source: "icons/app-window.svg"
                         visible: !root.mobile && call.sharing && !call.choosing
                         onTriggered: call.share(true, false)
                     }
                     MoreItem {
                         text: call.choosing ? qsTr("Call off choosing") : qsTr("Stop sharing")
+                        icon.source: "icons/screen-share-off.svg"
                         visible: call.sharing || call.choosing
                         onTriggered: call.stopSharing()
                     }
                     MoreItem {
                         text: qsTr("Stats")
+                        icon.source: "icons/activity.svg"
                         checkable: true
                         checked: stats.shown
                         onTriggered: stats.shown = checked
                     }
                     MoreItem {
                         text: qsTr("Settings")
+                        icon.source: "icons/settings.svg"
                         onTriggered: settingsDialog.open()
                     }
                 }
             }
             Button {
                 Layout.leftMargin: root.compact ? 0 : 8
+                Layout.preferredHeight: 52
+                topInset: 2
+                bottomInset: 2
                 text: qsTr("Leave")
+                icon.source: "icons/phone-off.svg"
+                display: root.compact ? AbstractButton.IconOnly : AbstractButton.TextBesideIcon
                 Material.background: Material.color(Material.Red, Material.Shade700)
+                Material.roundedScale: Material.FullScale
                 onClicked: call.leave()
+                ToolTip.visible: hovered && root.compact
+                ToolTip.text: text
             }
         }
     }
@@ -1664,17 +1819,19 @@ ApplicationWindow {
                     Layout.fillWidth: root.compact
                     Layout.preferredWidth: root.compact ? 1 : -1  // columns alike
                     text: call.muted ? qsTr("Unmute") : qsTr("Mute")
-                    checkable: true
-                    checked: call.muted
-                    onToggled: call.muted = checked
+                    icon.source: call.muted ? "icons/mic-off.svg" : "icons/mic.svg"
+                    Material.background: call.muted ? Material.color(Material.Red, Material.Shade700)
+                                                    : undefined
+                    onClicked: call.muted = !call.muted
                 }
                 Button {
                     Layout.fillWidth: root.compact
                     Layout.preferredWidth: root.compact ? 1 : -1  // columns alike
                     text: call.deafened ? qsTr("Undeafen") : qsTr("Deafen")
-                    checkable: true
-                    checked: call.deafened
-                    onToggled: call.deafened = checked
+                    icon.source: call.deafened ? "icons/headphone-off.svg" : "icons/headphones.svg"
+                    Material.background: call.deafened ? Material.color(Material.Red, Material.Shade700)
+                                                       : undefined
+                    onClicked: call.deafened = !call.deafened
                 }
                 Dot {
                     Layout.leftMargin: 8
@@ -1698,6 +1855,7 @@ ApplicationWindow {
                     Layout.preferredWidth: root.compact ? 1 : -1  // columns alike
                     Layout.leftMargin: root.compact ? 0 : 8
                     text: qsTr("Stop watching")
+                    icon.source: "icons/eye-off.svg"
                     onClicked: {
                         root.setFullScreen(false)
                         call.watch("")
@@ -1707,6 +1865,7 @@ ApplicationWindow {
                     Layout.fillWidth: root.compact
                     Layout.preferredWidth: root.compact ? 1 : -1  // columns alike
                     text: qsTr("Leave full screen")
+                    icon.source: "icons/minimize.svg"
                     highlighted: true
                     onClicked: root.setFullScreen(false)
                     ToolTip.visible: hovered

@@ -16,6 +16,7 @@
 #include <QPointer>
 #include <QQmlApplicationEngine>
 #include <QString>
+#include <QSvgRenderer>
 #include <QSysInfo>
 #include <QUrl>
 #include <QVariant>
@@ -144,6 +145,11 @@ int main(int argc, char* argv[]) {
     QPalette palette = QGuiApplication::palette();
     palette.setColor(QPalette::Link, QColor(0x81, 0xd4, 0xfa));  // Material Light Blue 200
     QGuiApplication::setPalette(palette);
+    // The buttons' icons are SVG, drawn by Qt SVG's image plugin. Used here,
+    // the library is linked for real (a linker drops one nothing uses), and so
+    // each deploy tool — windeployqt, macdeployqt, androiddeployqt, linuxdeploy
+    // — brings it and its plugin along.
+    static_cast<void>(QSvgRenderer::staticMetaObject.className());
     // An update an earlier run downloaded, put in place before anything else
     // is loaded: the new version then starts in this one's place.
     if (ratcast::app::update::start_updated()) return EXIT_SUCCESS;

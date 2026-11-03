@@ -9,7 +9,7 @@
 # QRhi's API is semi-public: it may change between Qt's minor versions, which
 # is understood (Qt Multimedia draws video the same way).
 set(QT_NO_PRIVATE_MODULE_WARNING ON)
-find_package(Qt6 6.6 QUIET COMPONENTS Quick ShaderTools GuiPrivate Network)
+find_package(Qt6 6.6 QUIET COMPONENTS Quick ShaderTools GuiPrivate Network Svg)
 
 # Before Qt 6.9 a private module is no CMake package of its own: Qt6Gui's
 # brings the target.
@@ -35,7 +35,7 @@ if(NOT qrhi_found)
 endif()
 
 set(qt_missing)
-foreach(component IN ITEMS Quick ShaderTools GuiPrivate Network)
+foreach(component IN ITEMS Quick ShaderTools GuiPrivate Network Svg)
     if(NOT Qt6${component}_FOUND)
         list(APPEND qt_missing ${component})
     endif()
@@ -43,9 +43,9 @@ endforeach()
 if(qt_missing)
     list(JOIN qt_missing ", " qt_missing)
     message(WARNING
-        "Qt 6.6+ with Qt Quick, Qt Shader Tools and QtGui's private headers not found "
+        "Qt 6.6+ with Qt Quick, Qt Shader Tools, Qt SVG and QtGui's private headers not found "
         "(${qt_missing}): skipping the desktop app.\n"
-        "Install them (Debian/Ubuntu: qt6-declarative-dev qt6-shadertools-dev "
+        "Install them (Debian/Ubuntu: qt6-declarative-dev qt6-shadertools-dev qt6-svg-dev "
         "qt6-base-private-dev; the Qt installer: the Qt Shader Tools module) or configure "
         "with -DRATCAST_BUILD_APP=OFF to silence this.")
     return()
@@ -146,7 +146,45 @@ qt_add_qml_module(ratcast_app
     VERSION 1.0
     QML_FILES
         qml/Main.qml
+        qml/RatLogo.qml
         qml/SettingsDialog.qml
+        qml/logo.js
+    # The buttons' icons: Lucide's (ISC, qml/icons/LICENSE), drawn by Qt SVG's
+    # image plugin.
+    RESOURCES
+        qml/icons/activity.svg
+        qml/icons/app-window.svg
+        qml/icons/copy.svg
+        qml/icons/ellipsis.svg
+        qml/icons/external-link.svg
+        qml/icons/eye-off.svg
+        qml/icons/eye.svg
+        qml/icons/folder-open.svg
+        qml/icons/globe.svg
+        qml/icons/headphone-off.svg
+        qml/icons/headphones.svg
+        qml/icons/loader-circle.svg
+        qml/icons/log-in.svg
+        qml/icons/maximize.svg
+        qml/icons/message-square.svg
+        qml/icons/mic-off.svg
+        qml/icons/mic.svg
+        qml/icons/minimize.svg
+        qml/icons/monitor.svg
+        qml/icons/phone-off.svg
+        qml/icons/plus.svg
+        qml/icons/refresh-cw.svg
+        qml/icons/rotate-ccw.svg
+        qml/icons/screen-share-off.svg
+        qml/icons/screen-share.svg
+        qml/icons/send.svg
+        qml/icons/settings.svg
+        qml/icons/switch-camera.svg
+        qml/icons/tv-minimal-play.svg
+        qml/icons/video-off.svg
+        qml/icons/video.svg
+        qml/icons/volume-2.svg
+        qml/icons/x.svg
 )
 
 # The QML import scan exists to link QML plugins into a static Qt. A shared Qt
@@ -159,6 +197,7 @@ endif()
 
 target_link_libraries(ratcast_app PRIVATE
     Qt6::Quick
+    Qt6::Svg
     ratcast_videoplugin
     ratcast_callplugin
     ratcast_call

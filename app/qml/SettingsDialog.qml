@@ -25,6 +25,8 @@ Dialog {
     readonly property var sections: Qt.platform.os === "android"
                                     ? [qsTr("Devices"), qsTr("Network")]
                                     : [qsTr("Devices"), qsTr("Network"), qsTr("Window")]
+    /// Each section's icon, of icons/.
+    readonly property var sectionIcons: ["headphones", "globe", "app-window"]
     /// The section shown.
     property int section: 0
     readonly property bool narrow: width < 520
@@ -91,6 +93,7 @@ Dialog {
                     required property string modelData
                     required property int index
                     text: modelData
+                    icon.source: "icons/" + dialog.sectionIcons[index] + ".svg"
                     onClicked: dialog.section = index
                 }
             }
@@ -114,6 +117,7 @@ Dialog {
                     required property int index
                     width: ListView.view.width
                     text: modelData
+                    icon.source: "icons/" + dialog.sectionIcons[index] + ".svg"
                     highlighted: ListView.isCurrentItem
                     onClicked: dialog.section = index
                 }
@@ -157,6 +161,7 @@ Dialog {
                         }
                         Button {
                             text: qsTr("Look again")
+                            icon.source: "icons/refresh-cw.svg"
                             flat: true
                             onClicked: dialog.call.listDevices()
                             ToolTip.visible: hovered
