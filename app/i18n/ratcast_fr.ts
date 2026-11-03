@@ -68,8 +68,12 @@
         <translation>refusé</translation>
     </message>
     <message>
-        <source>waiting until they are online and accept</source>
-        <translation>en attente de sa connexion et de son accord</translation>
+        <source>waiting for them to accept</source>
+        <translation>en attente de son acceptation</translation>
+    </message>
+    <message>
+        <source>looking for them…</source>
+        <translation>recherche en cours…</translation>
     </message>
     <message>
         <source>Remove</source>

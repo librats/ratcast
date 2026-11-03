@@ -68,8 +68,12 @@
         <translation>recusado</translation>
     </message>
     <message>
-        <source>waiting until they are online and accept</source>
-        <translation>aguardando a pessoa ficar online e aceitar</translation>
+        <source>waiting for them to accept</source>
+        <translation>aguardando a aceitação</translation>
+    </message>
+    <message>
+        <source>looking for them…</source>
+        <translation>procurando…</translation>
     </message>
     <message>
         <source>Remove</source>

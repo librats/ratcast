@@ -15,7 +15,9 @@
 #include "ratcast/client/known_servers.h"
 
 #include "librats/node/node.h"
+#include "librats/subsystems/dht_discovery.h"
 #include "librats/subsystems/hole_punch.h"
+#include "librats/subsystems/port_mapping_service.h"
 #include "librats/subsystems/relay.h"
 #include "librats/subsystems/rendezvous.h"
 #include "librats/util/json.h"
@@ -188,7 +190,8 @@ struct RequestEntry {
     Secret secret{};  ///< an outgoing one's: the secret of theirs it was made with
     uint64_t made = 0;
     uint64_t at = 0;
-    bool gone = false;  ///< answered or taken back
+    bool gone = false;       ///< answered or taken back
+    bool delivered = false;  ///< an outgoing one's: told to a device of theirs
 };
 
 struct Book {
@@ -245,6 +248,7 @@ librats::Json to_json(const Book& book) {
         r["made"] = entry.made;
         r["at"] = entry.at;
         r["gone"] = entry.gone;
+        r["delivered"] = entry.delivered;
         requests.push_back(std::move(r));
     }
     json["requests"] = std::move(requests);
@@ -314,6 +318,7 @@ std::optional<Book> book_from(std::string_view text) {
             entry.made = read_u64(r, "made");
             entry.at = read_u64(r, "at");
             entry.gone = read_bool(r, "gone");
+            entry.delivered = read_bool(r, "delivered");
             book.requests[*person] = std::move(entry);
         }
     }
@@ -495,6 +500,11 @@ struct People::State {
         if (!key.save(file(kKeyFile))) LOG_WARN("people", "the person's key not kept");
     }
 
+    /// The keys met under: registered at servers, and in the DHT each both
+    /// announced and searched, at both ends — the person's own and those of
+    /// others alike. Two behind NATs get through only by dialing each other at
+    /// once (each one's dial opening the way for the other's: L21), so each
+    /// must find the other, not only the one that asks find the one asked.
     std::vector<std::string> keys() const {
         // The person's own first: a server keeping fewer keeps those.
         std::vector<std::string> keys = {meeting_key(key.id(), book.link),
@@ -511,7 +521,9 @@ struct People::State {
 
     void update_keys() {
         if (pairing && Steady::now() >= pairing->until && !pairing->asking) pairing.reset();
-        if (rendezvous) rendezvous->set_keys(keys());
+        const std::vector<std::string> now = keys();
+        if (rendezvous) rendezvous->set_keys(now);
+        if (dht) dht->set_keys(now);
     }
 
     void send(const PeerId& peer, const Out& out) {
@@ -601,6 +613,18 @@ struct People::State {
         std::optional<std::string> device_asks;
         std::optional<bool> joined;
     };
+
+    /// An outgoing request told to a device of theirs (on a link, which
+    /// carries it or is lost: then it is told again at the next Hello).
+    void delivered(const PersonId& person, After& after) {
+        const auto it = book.requests.find(person);
+        if (it == book.requests.end() || it->second.delivered) return;
+        it->second.delivered = true;
+        it->second.at = std::max(seconds_now(), it->second.at + 1);
+        save();
+        tell_own();
+        after.changed = true;
+    }
 
     void on_message(const PeerId& peer, std::span<const uint8_t> bytes, After& after) {
         In in(bytes);
@@ -711,8 +735,10 @@ struct People::State {
         if (after.changed) save();
         const auto request = book.requests.find(person);
         if (request != book.requests.end() && !request->second.incoming &&
-            !request->second.declined && !request->second.gone)
+            !request->second.declined && !request->second.gone) {
             send_request(peer, person);
+            delivered(person, after);
+        }
         if (joining && joining->person == person) {
             Out out(Kind::Pair);
             out.bytes(proof(joining->secret, "ratcast pair", node.local_id(), peer));
@@ -800,13 +826,15 @@ struct People::State {
             befriend(person, entry.name, random_bytes<32>());
             for (const PeerId& peer : met_of(person)) send_answer(peer, person);
         } else {
+            const std::vector<PeerId> met_now = met_of(person);
             entry = RequestEntry{.name = name.empty() ? entry.name : told_name(std::move(name)),
                                  .incoming = false,
                                  .via = via,
                                  .secret = secret,
                                  .made = now,
-                                 .at = std::max(now, entry.at + 1)};
-            for (const PeerId& peer : met_of(person)) send_request(peer, person);
+                                 .at = std::max(now, entry.at + 1),
+                                 .delivered = !met_now.empty()};
+            for (const PeerId& peer : met_now) send_request(peer, person);
         }
         save();
         update_keys();
@@ -830,6 +858,7 @@ struct People::State {
     std::optional<PersonLink> joining;
     librats::Node node;
     librats::Rendezvous* rendezvous = nullptr;
+    librats::DhtDiscovery* dht = nullptr;
 };
 
 Result<std::unique_ptr<People>> People::start(PeopleConfig config, PeopleHandlers handlers) {
@@ -885,6 +914,22 @@ People::People(PeopleConfig config, PeopleHandlers handlers) {
     s.rendezvous = s.node.add_subsystem(std::make_unique<librats::Rendezvous>(meeting));
     s.node.add_subsystem(std::make_unique<librats::HolePunch>());
     s.node.add_subsystem(std::make_unique<librats::Relay>());
+    // And through the DHT, with no server, under the same keys — slower (a
+    // search a round, every half minute), and two behind NATs that map a port
+    // per peer never meet so (no relay).
+    if (s.config.dht) {
+        const bool internet = s.config.dht_bootstrap.empty();
+        if (internet) s.node.add_subsystem(std::make_unique<librats::PortMappingService>());
+        librats::DhtDiscovery::Config discovery;
+        discovery.data_dir = State::node_config(s.config).data_dir;
+        discovery.bind_address = s.config.bind_address;
+        discovery.bootstrap_nodes = s.config.dht_bootstrap;
+        discovery.discover_external_ip = internet;
+        discovery.search_interval = s.config.dht_search_interval;
+        auto dht = std::make_unique<librats::DhtDiscovery>(std::move(discovery));
+        dht->set_keys(s.keys());
+        s.dht = s.node.add_subsystem(std::move(dht));
+    }
 
     s.node.on_peer_connected([&s](const librats::Peer& peer) {
         if (s.rendezvous->is_server(peer.id())) return;
@@ -1064,6 +1109,7 @@ std::vector<FriendRequest> People::requests() const {
                                     .name = entry.name,
                                     .incoming = entry.incoming,
                                     .declined = entry.declined,
+                                    .delivered = entry.delivered,
                                     .made = entry.made});
     }
     std::ranges::sort(

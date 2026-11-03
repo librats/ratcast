@@ -68,8 +68,12 @@
         <translation>отклонено</translation>
     </message>
     <message>
-        <source>waiting until they are online and accept</source>
-        <translation>ждёт, пока человек будет в сети и примет</translation>
+        <source>waiting for them to accept</source>
+        <translation>ждёт, пока примет</translation>
+    </message>
+    <message>
+        <source>looking for them…</source>
+        <translation>ищем…</translation>
     </message>
     <message>
         <source>Remove</source>

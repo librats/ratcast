@@ -1078,6 +1078,7 @@ TEST_F(CallControllerTest, AMemberIsKnownByWhoseItIsAndAskedToBeAFriend) {
         env.people.bind_address = "127.0.0.1";
         env.people.protocol = node.protocol;
         env.people.watch_network = false;
+        env.people.dht = false;  // the server alone, as the room
         env.name = name;
         people.setEnvironment(env);
         ASSERT_TRUE(people.ready());

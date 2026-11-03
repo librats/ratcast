@@ -68,8 +68,12 @@
         <translation>abgelehnt</translation>
     </message>
     <message>
-        <source>waiting until they are online and accept</source>
-        <translation>wartet, bis die Person online ist und annimmt</translation>
+        <source>waiting for them to accept</source>
+        <translation>wartet, bis die Person annimmt</translation>
+    </message>
+    <message>
+        <source>looking for them…</source>
+        <translation>wird gesucht…</translation>
     </message>
     <message>
         <source>Remove</source>

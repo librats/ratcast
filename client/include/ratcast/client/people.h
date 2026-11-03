@@ -88,6 +88,8 @@ struct FriendRequest {
     bool incoming = false;
     /// An outgoing one they declined.
     bool declined = false;
+    /// An outgoing one told to a device of theirs: not looked for any more.
+    bool delivered = false;
     uint64_t made = 0;
 };
 
@@ -108,6 +110,15 @@ struct PeopleConfig {
     std::string bind_address = {};
     std::string protocol = RATCAST_PROTOCOL;
     bool watch_network = true;
+    /// Met through the DHT as well, under the same keys: no server needed.
+    bool dht = true;
+    /// The DHT's nodes to start from; none: the internet's — the router then
+    /// asked to forward a port, and STUN where the node is seen. Given: a DHT
+    /// of one's own (tests).
+    std::vector<librats::HostEndpoint> dht_bootstrap = {};
+    /// How often the DHT is searched for those sought: whoever an outgoing
+    /// request is to, the device a link opened here is of, the person's own.
+    std::chrono::milliseconds dht_search_interval = std::chrono::seconds(30);
     /// How long a device link lasts.
     std::chrono::seconds device_link_for = std::chrono::minutes(10);
 };

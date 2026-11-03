@@ -1,7 +1,8 @@
 // People on loopback: friends asked by link and from a room, accepted and
 // declined, a link reset, a device that becomes its person, what is known
 // kept from one run to the next — each side's home node met at a stand-in
-// server, as the app's are at a ratcast-server.
+// server, as the app's are at a ratcast-server; and with no server, through a
+// DHT of the tests' own.
 
 #include "ratcast/client/people.h"
 
@@ -18,6 +19,7 @@
 #include <thread>
 
 #include "librats/node/node.h"
+#include "librats/subsystems/dht_discovery.h"
 #include "librats/subsystems/hole_punch.h"
 #include "librats/subsystems/relay.h"
 #include "librats/subsystems/rendezvous.h"
@@ -67,23 +69,63 @@ private:
     librats::Node node_;
 };
 
+/// The first node of a DHT of the tests' own, which keeps what is announced
+/// as the internet's many do.
+class Seed {
+public:
+    explicit Seed(const std::filesystem::path& dir) : node_(node_config()) {
+        librats::DhtDiscovery::Config config;
+        config.bind_address = "127.0.0.1";
+        config.data_dir = dir.string();
+        // Nothing answers there: not the internet's.
+        config.bootstrap_nodes = {librats::HostEndpoint("127.0.0.1", 9)};
+        config.discover_external_ip = false;
+        auto dht = std::make_unique<librats::DhtDiscovery>(config);
+        dht->set_keys(std::vector<std::string>{});
+        dht_ = node_.add_subsystem(std::move(dht));
+        EXPECT_TRUE(node_.start());
+        EXPECT_TRUE(wait_for([&] { return dht_->dht_port() != 0; }, 5s));
+    }
+    ~Seed() { node_.stop(); }
+    librats::HostEndpoint address() const { return {"127.0.0.1", dht_->dht_port()}; }
+
+private:
+    static librats::NodeConfig node_config() {
+        librats::NodeConfig node;
+        node.bind_address = "127.0.0.1";
+        node.protocol = protocol();
+        return node;
+    }
+    librats::Node node_;
+    librats::DhtDiscovery* dht_ = nullptr;
+};
+
+/// Where home nodes meet: at servers, or through a DHT (none: not so).
+struct Meeting {
+    std::vector<librats::HostEndpoint> servers;
+    std::vector<librats::HostEndpoint> dht;
+};
+
 /// A person's device: its People, its data directory, what it was told.
 class Device {
 public:
-    Device(const Server& server, std::string name, std::filesystem::path dir)
-        : server_(server.address()), name_(std::move(name)), dir_(std::move(dir)) {
+    Device(Meeting meeting, std::string name, std::filesystem::path dir)
+        : meeting_(std::move(meeting)), name_(std::move(name)), dir_(std::move(dir)) {
         start();
     }
 
     void start() {
         PeopleConfig config{.data_dir = dir_.string(),
-                            .servers = {server_},
+                            .servers = meeting_.servers,
                             .built_in_servers = {},
                             .name = name_,
                             .device_name = name_ + "'s device",
                             .bind_address = "127.0.0.1",
                             .protocol = protocol(),
-                            .watch_network = false};
+                            .watch_network = false,
+                            .dht = !meeting_.dht.empty(),
+                            .dht_bootstrap = meeting_.dht,
+                            .dht_search_interval = 500ms};
         PeopleHandlers handlers{
             .changed = [this] { ++changes; },
             .device_asks =
@@ -128,29 +170,52 @@ public:
     std::atomic<int> joined_{-1};
 
 private:
-    librats::HostEndpoint server_;
+    Meeting meeting_;
     std::string name_;
     std::filesystem::path dir_;
     mutable std::mutex mutex_;
     std::optional<std::string> asking_;
 };
 
-class PeopleTest : public ::testing::Test {
-protected:
-    PeopleTest()
+/// Each test's devices in a folder of their own.
+class Folder {
+public:
+    Folder()
         : root_(std::filesystem::temp_directory_path() /
                 ("ratcast-people-" + to_hex(random_bytes<8>()))) {}
-    ~PeopleTest() override {
+    ~Folder() {
         std::error_code error;
         std::filesystem::remove_all(root_, error);
     }
-
-    std::unique_ptr<Device> device(const std::string& name, const std::string& dir = {}) {
-        return std::make_unique<Device>(server_, name, root_ / (dir.empty() ? name : dir));
+    std::filesystem::path of(const std::string& name, const std::string& dir) const {
+        return root_ / (dir.empty() ? name : dir);
     }
 
-    Server server_;
+private:
     std::filesystem::path root_;
+};
+
+class PeopleTest : public ::testing::Test {
+protected:
+    std::unique_ptr<Device> device(const std::string& name, const std::string& dir = {}) {
+        return std::make_unique<Device>(Meeting{.servers = {server_.address()}}, name,
+                                        folder_.of(name, dir));
+    }
+
+    Folder folder_;
+    Server server_;
+};
+
+/// No server: home nodes met through the DHT alone.
+class PeopleOverTheDhtTest : public ::testing::Test {
+protected:
+    std::unique_ptr<Device> device(const std::string& name, const std::string& dir = {}) {
+        return std::make_unique<Device>(Meeting{.dht = {seed_.address()}}, name,
+                                        folder_.of(name, dir));
+    }
+
+    Folder folder_;
+    Seed seed_{folder_.of("seed", {})};
 };
 
 TEST(PersonLinks, AreWrittenAndReadBothWays) {
@@ -346,6 +411,46 @@ TEST_F(PeopleTest, ABackupBringsThePersonBack) {
     ASSERT_TRUE(fresh->people->restore(backup));
     EXPECT_EQ(fresh->people->person(), ann_id);
     EXPECT_TRUE(fresh->has_friend(*bob->people));
+}
+
+TEST_F(PeopleOverTheDhtTest, OneAsksByLinkTheOtherAcceptsWithNoServer) {
+    auto ann = device("Ann");
+    auto bob = device("Bob");
+    ASSERT_TRUE(bob->people->add(ann->people->link()));
+    EXPECT_FALSE(bob->people->requests()[0].delivered) << "looked for";
+
+    ASSERT_TRUE(wait_for([&] { return ann->request_of(*bob->people).has_value(); }, 20s));
+    EXPECT_TRUE(wait_for([&] { return bob->request_of(*ann->people)->delivered; }))
+        << "found, and told";
+    ann->people->accept(bob->people->person());
+    EXPECT_TRUE(wait_for([&] { return bob->has_friend(*ann->people); }));
+    EXPECT_TRUE(ann->has_friend(*bob->people));
+}
+
+TEST_F(PeopleOverTheDhtTest, ARequestWaitsForThePersonToComeOnline) {
+    auto ann = device("Ann");
+    const std::string link = ann->people->link();
+    ann->stop();
+    auto bob = device("Bob");
+    ASSERT_TRUE(bob->people->add(link));
+    std::this_thread::sleep_for(1500ms);
+    EXPECT_FALSE(bob->people->requests()[0].delivered);
+    ann->start();
+    EXPECT_TRUE(wait_for([&] { return ann->request_of(*bob->people).has_value(); }, 20s));
+}
+
+TEST_F(PeopleOverTheDhtTest, ADeviceBecomesItsPersonWithNoServer) {
+    auto ann = device("Ann");
+    auto phone = device("Phone", "Ann's phone");
+    ASSERT_TRUE(phone->people->join_as_device(ann->people->device_link()));
+    ASSERT_TRUE(wait_for([&] { return ann->asking().has_value(); }, 20s));
+    ann->people->allow_device(true);
+    ASSERT_TRUE(wait_for([&] { return phone->joined_.load() == 1; }));
+    EXPECT_EQ(phone->people->person(), ann->people->person());
+
+    // Its devices meet under their key, and keep alike.
+    ann->people->set_name("Anna");
+    EXPECT_TRUE(wait_for([&] { return phone->people->name() == "Anna"; }, 20s));
 }
 
 }  // namespace

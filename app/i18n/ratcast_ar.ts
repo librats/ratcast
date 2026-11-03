@@ -68,8 +68,12 @@
         <translation>مرفوض</translation>
     </message>
     <message>
-        <source>waiting until they are online and accept</source>
-        <translation>بانتظار أن يتصل ويقبل</translation>
+        <source>waiting for them to accept</source>
+        <translation>بانتظار أن يقبل</translation>
+    </message>
+    <message>
+        <source>looking for them…</source>
+        <translation>جارٍ البحث عنه…</translation>
     </message>
     <message>
         <source>Remove</source>

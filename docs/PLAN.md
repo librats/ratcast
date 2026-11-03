@@ -1896,6 +1896,23 @@ devices, and Ann's phone, added by a QR code from her PC, is Ann to Bob.
   kept the next run, a request that waits for the other to come online, declined and told, a
   reset link refused, asked from a room, asked both ways at once; on the controller, a member's
   tag, asked and a friend, heard as set in the next room from another node.
+- **14.3b With no server** ✅: what 14.1 and 14.3 do at a server, done through the DHT as well,
+  so that a person's link, a device link and their devices keeping alike work where no server
+  is reached — the same steps, only slower (a search every half minute, where a server
+  introduces at once). Done so: the home node runs a `DhtDiscovery` of its own beside its
+  `Rendezvous`, under the same keys, which it changes as they do (librats, L27): each both
+  announced and searched, at both ends — the person's own (their link's, their room secret's,
+  their devices', a device link made here) and those of others (an outgoing request's, a
+  device link opened here) alike. Not the asker searching alone and the one asked announcing
+  alone: two behind NATs get through only by dialing each other at once (L21), so each must
+  find the other. The router asked to forward a port (UPnP, NAT-PMP), STUN
+  asked where the node is seen; two behind NATs that map a port per peer still never meet so
+  (no relay without a server). An outgoing request now says whether a device of theirs was
+  told (`FriendRequest::delivered`): "looking for them…" until then, "waiting for them to
+  accept" after. Tested: asked by link and accepted, a request that waits for the other to come
+  online, a device that becomes its person and keeps alike — all with no server, over a DHT of
+  the test's own. Left: a LAN with no internet (mDNS, keyed so as not to tell strangers on
+  it who is there).
 - **14.4 Presence**: online, or in a room, seen by friends — each device registered under its
   person's presence key, friends' watched (librats: **needs** L26).
 - **14.5 Ringing**: a call to a friend a room of two, rung on each of their devices online,
@@ -1993,6 +2010,7 @@ and the list is in priority order:
 | | L23 | A peer that moves: told of by the server, its dead link replaced | needed | 12.1 | ✅ |
 | | L24 | Servers that know each other, and tell their peers of the others | needed | 12.2 | ✅ |
 | | L25 | A key's servers chosen alike of many known: rendezvous hashing | needed | 12.3 | ✅ |
+| | L27 | Several DHT keys, each announced, searched or both, set as a node runs | needed | 14.3b | ✅ |
 | 2 | L2 (a) | A live flow's start: the initial window | needed | 1.2 (long paths) | put off; eased by (b) |
 | 3 | L26 | A key watched: told as its registrations come and go | needed | 14.4 | |
 | 4 | L15 | Fewer system calls per reactor turn | improves | 3.2 (CPU) | |
@@ -2224,6 +2242,18 @@ IP, the first listed of two at one address; one also of `Config::servers` dialed
 choose the first of those both know. Unweighted: a weight a server says it can carry would
 rank by `weight / −ln(hash)`, which with weights all alike is this ranking — so weights can come
 later without moving any room.
+
+**L27 — Several DHT keys, set as a node runs.** ✅ *Needed by 14.3b.* `DhtDiscovery`
+announced and searched one hash, fixed at start; a home node meets under several, which
+change as requests are made and answered. Done so: `Config::keys`, and `set_keys()` as it runs
+(as `Rendezvous` has), each key announced (the node found under it, seeking nobody), searched
+(the node finding who is there, not found there itself) or both; one DHT for them all, a key
+new announced or searched at once, the rest on their rounds, one gone no longer announced (the
+DHT forgets it in half an hour). And an announce is no longer lost to the bootstrap: a DHT that
+knows no node yet is asked nothing (its lookup would end at once, with none, and the node go
+unfound for the ten minutes to the next announce) — what is held back goes half a second on.
+Tested: the hashes of the keys given and set; two nodes with no key alike meeting as soon as
+one seeks what the other only announces; an announce that waits for the DHT to know a node.
 
 **L26 — A key watched: told as its registrations come and go.** *Needed by 14.4.* A node
 meets others under a key only by registering under it, and a server then introduces them: to

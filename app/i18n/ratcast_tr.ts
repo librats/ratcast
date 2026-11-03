@@ -68,8 +68,12 @@
         <translation>reddedildi</translation>
     </message>
     <message>
-        <source>waiting until they are online and accept</source>
-        <translation>çevrimiçi olup kabul etmesi bekleniyor</translation>
+        <source>waiting for them to accept</source>
+        <translation>kabul etmesi bekleniyor</translation>
+    </message>
+    <message>
+        <source>looking for them…</source>
+        <translation>aranıyor…</translation>
     </message>
     <message>
         <source>Remove</source>

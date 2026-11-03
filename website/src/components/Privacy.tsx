@@ -5,7 +5,7 @@ import { Footer } from "./Footer";
 import { Logo } from "./Nav";
 
 /** When the policy last changed: change it with the text. */
-export const PRIVACY_UPDATED = "November 3, 2026";
+export const PRIVACY_UPDATED = "November 4, 2026";
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
@@ -123,8 +123,10 @@ export function Privacy() {
             </li>
             <li>
               While the app is running, it stays reachable for friend requests and your other devices: it connects to
-              a ratcast server and is listed there under codes derived from your links. The server sees your IP address
-              and those codes, not who you are or who your friends are.
+              a ratcast server and is listed there under codes derived from your links, and it announces itself under
+              the same codes in the public DHT, so that it can be found when no server is reached. The server and the
+              DHT's devices see your IP address and those codes, not who you are or who your friends are: a code can
+              only be worked out from a link.
             </li>
           </ul>
         </Section>
@@ -139,7 +141,7 @@ export function Privacy() {
             <li>the other members of a room, whose apps connect to yours;</li>
             <li>
               the public distributed hash table (DHT), a network of other people's devices, through which rooms are
-              found by their peer id; the app joins it through well-known entry points such as{" "}
+              found by their peer id, and your devices by those who have your links; the app joins it through well-known entry points such as{" "}
               <code className="font-mono text-sm">router.bittorrent.com</code>;
             </li>
             <li>

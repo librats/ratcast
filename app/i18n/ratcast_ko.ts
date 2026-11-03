@@ -68,8 +68,12 @@
         <translation>거절됨</translation>
     </message>
     <message>
-        <source>waiting until they are online and accept</source>
-        <translation>상대가 온라인이 되어 수락하기를 기다리는 중</translation>
+        <source>waiting for them to accept</source>
+        <translation>상대의 수락을 기다리는 중</translation>
+    </message>
+    <message>
+        <source>looking for them…</source>
+        <translation>상대를 찾는 중…</translation>
     </message>
     <message>
         <source>Remove</source>

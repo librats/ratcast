@@ -68,8 +68,12 @@
         <translation>अस्वीकार किया</translation>
     </message>
     <message>
-        <source>waiting until they are online and accept</source>
-        <translation>उनके ऑनलाइन आने और स्वीकार करने की प्रतीक्षा</translation>
+        <source>waiting for them to accept</source>
+        <translation>उनके स्वीकार करने की प्रतीक्षा</translation>
+    </message>
+    <message>
+        <source>looking for them…</source>
+        <translation>उन्हें खोजा जा रहा है…</translation>
     </message>
     <message>
         <source>Remove</source>

@@ -68,8 +68,12 @@
         <translation>拒否されました</translation>
     </message>
     <message>
-        <source>waiting until they are online and accept</source>
-        <translation>相手がオンラインになって承認するのを待っています</translation>
+        <source>waiting for them to accept</source>
+        <translation>相手の承認待ち</translation>
+    </message>
+    <message>
+        <source>looking for them…</source>
+        <translation>相手を探しています…</translation>
     </message>
     <message>
         <source>Remove</source>

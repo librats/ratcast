@@ -161,6 +161,7 @@ QVariantList PeopleController::requests() const {
             {QStringLiteral("tag"), QString::fromStdString(r.person.tag())},
             {QStringLiteral("incoming"), r.incoming},
             {QStringLiteral("declined"), r.declined},
+            {QStringLiteral("delivered"), r.delivered},
         });
     }
     return list;

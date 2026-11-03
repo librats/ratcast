@@ -274,8 +274,11 @@ ColumnLayout {
                     tag: modelData.tag
                 }
                 Label {
+                    // Not delivered: looked for, at servers and through the DHT,
+                    // until a device of theirs is online.
                     text: modelData.declined ? qsTr("declined")
-                                             : qsTr("waiting until they are online and accept")
+                        : modelData.delivered ? qsTr("waiting for them to accept")
+                        : qsTr("looking for them…")
                     font.pixelSize: 11
                     opacity: 0.6
                     color: modelData.declined ? Material.color(Material.Orange) : Material.foreground
