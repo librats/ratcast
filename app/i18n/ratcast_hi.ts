@@ -2,6 +2,101 @@
 <!DOCTYPE TS>
 <TS version="2.1" language="hi" sourcelanguage="en">
 <context>
+    <name>FriendsPanel</name>
+    <message>
+        <source>Someone</source>
+        <translation>कोई</translation>
+    </message>
+    <message>
+        <source>Friends</source>
+        <translation>दोस्त</translation>
+    </message>
+    <message>
+        <source>You</source>
+        <translation>आप</translation>
+    </message>
+    <message>
+        <source>Send your link to whoever is to be your friend:</source>
+        <translation>जिसे दोस्त बनाना हो, उसे अपना लिंक भेजें:</translation>
+    </message>
+    <message>
+        <source>Copied</source>
+        <translation>कॉपी हो गया</translation>
+    </message>
+    <message>
+        <source>Copy your link</source>
+        <translation>अपना लिंक कॉपी करें</translation>
+    </message>
+    <message>
+        <source>Show it as a QR code</source>
+        <translation>QR कोड के रूप में दिखाएँ</translation>
+    </message>
+    <message>
+        <source>A new link (the old one stops working)</source>
+        <translation>नया लिंक (पुराना काम करना बंद कर देगा)</translation>
+    </message>
+    <message>
+        <source>Point a phone&apos;s camera at it to open your link there.</source>
+        <translation>अपना लिंक वहाँ खोलने के लिए फ़ोन का कैमरा इस पर रखें।</translation>
+    </message>
+    <message>
+        <source>a friend&apos;s link</source>
+        <translation>किसी दोस्त का लिंक</translation>
+    </message>
+    <message>
+        <source>Add</source>
+        <translation>जोड़ें</translation>
+    </message>
+    <message>
+        <source>Asking you</source>
+        <translation>आपसे अनुरोध</translation>
+    </message>
+    <message>
+        <source>Accept</source>
+        <translation>स्वीकार करें</translation>
+    </message>
+    <message>
+        <source>Decline</source>
+        <translation>अस्वीकार करें</translation>
+    </message>
+    <message>
+        <source>Asked by you</source>
+        <translation>आपके अनुरोध</translation>
+    </message>
+    <message>
+        <source>declined</source>
+        <translation>अस्वीकार किया</translation>
+    </message>
+    <message>
+        <source>waiting until they are online and accept</source>
+        <translation>उनके ऑनलाइन आने और स्वीकार करने की प्रतीक्षा</translation>
+    </message>
+    <message>
+        <source>Remove</source>
+        <translation>हटाएँ</translation>
+    </message>
+    <message>
+        <source>Take back</source>
+        <translation>वापस लें</translation>
+    </message>
+    <message>
+        <source>Your friends (%1)</source>
+        <translation>आपके दोस्त (%1)</translation>
+    </message>
+    <message>
+        <source>Your friends</source>
+        <translation>आपके दोस्त</translation>
+    </message>
+    <message>
+        <source>None yet. Send your link, or add someone you meet in a room: click their name there.</source>
+        <translation>अभी कोई नहीं। अपना लिंक भेजें, या रूम में मिले किसी को जोड़ें: वहाँ उनके नाम पर क्लिक करें।</translation>
+    </message>
+    <message>
+        <source>Remove from friends</source>
+        <translation>दोस्तों से हटाएँ</translation>
+    </message>
+</context>
+<context>
     <name>Main</name>
     <message>
         <source>%1 stopped sharing</source>
@@ -116,6 +211,42 @@
         <translation>रद्द करें</translation>
     </message>
     <message>
+        <source>A device asks to become you</source>
+        <translation>एक डिवाइस आप बनना चाहता है</translation>
+    </message>
+    <message>
+        <source>“%1” opened your device link. Allowed, it gets your key and your friends, and is you from then on.</source>
+        <translation>“%1” ने आपका डिवाइस लिंक खोला। अनुमति देने पर उसे आपकी कुंजी और आपके दोस्त मिलेंगे, और तब से वह आप होगा।</translation>
+    </message>
+    <message>
+        <source>Allow</source>
+        <translation>अनुमति दें</translation>
+    </message>
+    <message>
+        <source>Refuse</source>
+        <translation>मना करें</translation>
+    </message>
+    <message>
+        <source>Become this person on this device?</source>
+        <translation>इस डिवाइस पर यह व्यक्ति बनें?</translation>
+    </message>
+    <message>
+        <source>This device asks the one that made the link. Once it says yes, this device has that person&apos;s key and friends in place of its own.</source>
+        <translation>यह डिवाइस लिंक बनाने वाले डिवाइस से पूछता है। उसके हाँ कहते ही इस डिवाइस में अपनी जगह उस व्यक्ति की कुंजी और दोस्त होंगे।</translation>
+    </message>
+    <message>
+        <source>Ask</source>
+        <translation>पूछें</translation>
+    </message>
+    <message>
+        <source>Friends (%1 asking)</source>
+        <translation>दोस्त (%1 अनुरोध)</translation>
+    </message>
+    <message>
+        <source>Friends</source>
+        <translation>दोस्त</translation>
+    </message>
+    <message>
         <source>Room</source>
         <translation>रूम</translation>
     </message>
@@ -169,6 +300,22 @@
     <message>
         <source>%1, for you</source>
         <translation>%1, आपके लिए</translation>
+    </message>
+    <message>
+        <source>You, on another device</source>
+        <translation>आप, दूसरे डिवाइस पर</translation>
+    </message>
+    <message>
+        <source>Your friend</source>
+        <translation>आपका दोस्त</translation>
+    </message>
+    <message>
+        <source>Asked to be your friend</source>
+        <translation>दोस्ती का अनुरोध भेजा</translation>
+    </message>
+    <message>
+        <source>Add friend</source>
+        <translation>दोस्त जोड़ें</translation>
     </message>
     <message>
         <source>Mute for me</source>
@@ -402,6 +549,10 @@
         <translation>भाषा</translation>
     </message>
     <message>
+        <source>You</source>
+        <translation>आप</translation>
+    </message>
+    <message>
         <source>Window</source>
         <translation>विंडो</translation>
     </message>
@@ -468,6 +619,70 @@
     <message>
         <source>Takes effect at once.</source>
         <translation>तुरंत लागू होता है।</translation>
+    </message>
+    <message>
+        <source>Your name</source>
+        <translation>आपका नाम</translation>
+    </message>
+    <message>
+        <source>The four characters after it are yours alone: they tell two of a name apart.</source>
+        <translation>इसके बाद के चार अक्षर सिर्फ़ आपके हैं: इनसे एक नाम वाले दो लोग अलग पहचाने जाते हैं।</translation>
+    </message>
+    <message>
+        <source>Your other devices</source>
+        <translation>आपके दूसरे डिवाइस</translation>
+    </message>
+    <message>
+        <source>A phone or another computer can be you too: the same friends, the same name. Make a link here and open it there, or point that phone&apos;s camera at its QR code.</source>
+        <translation>फ़ोन या दूसरा कंप्यूटर भी आप हो सकता है: वही दोस्त, वही नाम। यहाँ लिंक बनाएँ और वहाँ खोलें, या उस फ़ोन का कैमरा इसके QR कोड पर रखें।</translation>
+    </message>
+    <message>
+        <source>Add a device</source>
+        <translation>डिवाइस जोड़ें</translation>
+    </message>
+    <message>
+        <source>Copy the link</source>
+        <translation>लिंक कॉपी करें</translation>
+    </message>
+    <message>
+        <source>For the next ten minutes, and for one device: you are asked before it becomes you. Send it to nobody else.</source>
+        <translation>अगले दस मिनट और एक डिवाइस के लिए: आप बनने से पहले आपसे पूछा जाएगा। इसे किसी और को न भेजें।</translation>
+    </message>
+    <message>
+        <source>Cancel</source>
+        <translation>रद्द करें</translation>
+    </message>
+    <message>
+        <source>Make this device someone else&apos;s</source>
+        <translation>इस डिवाइस को किसी और का बनाएँ</translation>
+    </message>
+    <message>
+        <source>the link your other device made</source>
+        <translation>आपके दूसरे डिवाइस ने जो लिंक बनाया</translation>
+    </message>
+    <message>
+        <source>Ask</source>
+        <translation>पूछें</translation>
+    </message>
+    <message>
+        <source>Backup</source>
+        <translation>बैकअप</translation>
+    </message>
+    <message>
+        <source>Your key and your friends in a file: with it, a new device is you again even if every other is lost. Whoever has the file can be you.</source>
+        <translation>आपकी कुंजी और आपके दोस्त एक फ़ाइल में: इससे बाकी सब खो जाने पर भी नया डिवाइस फिर से आप बन जाता है। जिसके पास यह फ़ाइल है, वह आप बन सकता है।</translation>
+    </message>
+    <message>
+        <source>Save a backup…</source>
+        <translation>बैकअप सहेजें…</translation>
+    </message>
+    <message>
+        <source>Restore…</source>
+        <translation>पुनर्स्थापित करें…</translation>
+    </message>
+    <message>
+        <source>Backups (*.txt)</source>
+        <translation>बैकअप (*.txt)</translation>
     </message>
     <message>
         <source>Minimize to the tray</source>
@@ -567,6 +782,85 @@
     <message>
         <source>Sharing failed (%1).</source>
         <translation>शेयर नहीं हो सका (%1)।</translation>
+    </message>
+</context>
+<context>
+    <name>ratcast::app::PeopleController</name>
+    <message>
+        <source>A device</source>
+        <translation>एक डिवाइस</translation>
+    </message>
+    <message>
+        <source>This device is %1 now.</source>
+        <translation>यह डिवाइस अब %1 है।</translation>
+    </message>
+    <message>
+        <source>The other device said no.</source>
+        <translation>दूसरे डिवाइस ने मना कर दिया।</translation>
+    </message>
+    <message>
+        <source>Your key in the data folder could not be read.</source>
+        <translation>डेटा फ़ोल्डर में आपकी कुंजी पढ़ी नहीं जा सकी।</translation>
+    </message>
+    <message>
+        <source>Friends are not reachable: the network did not start.</source>
+        <translation>दोस्तों तक नहीं पहुँच सकते: नेटवर्क शुरू नहीं हुआ।</translation>
+    </message>
+    <message>
+        <source>That is not a link to a person.</source>
+        <translation>यह किसी व्यक्ति का लिंक नहीं है।</translation>
+    </message>
+    <message>
+        <source>That is your own link.</source>
+        <translation>यह आपका अपना लिंक है।</translation>
+    </message>
+    <message>
+        <source>You are friends already.</source>
+        <translation>आप पहले से दोस्त हैं।</translation>
+    </message>
+    <message>
+        <source>Asked. They become your friend once they accept.</source>
+        <translation>अनुरोध भेजा। स्वीकार करते ही वे आपके दोस्त बन जाएँगे।</translation>
+    </message>
+    <message>
+        <source>Your link is new: the old one no longer works.</source>
+        <translation>आपका लिंक नया है: पुराना अब काम नहीं करता।</translation>
+    </message>
+    <message>
+        <source>The device is you now.</source>
+        <translation>वह डिवाइस अब आप है।</translation>
+    </message>
+    <message>
+        <source>That is not a link to add a device.</source>
+        <translation>यह डिवाइस जोड़ने का लिंक नहीं है।</translation>
+    </message>
+    <message>
+        <source>That link is this device&apos;s own.</source>
+        <translation>यह इसी डिवाइस का अपना लिंक है।</translation>
+    </message>
+    <message>
+        <source>Waiting for the other device to say yes…</source>
+        <translation>दूसरे डिवाइस की हाँ की प्रतीक्षा…</translation>
+    </message>
+    <message>
+        <source>The backup could not be written there.</source>
+        <translation>बैकअप वहाँ लिखा नहीं जा सका।</translation>
+    </message>
+    <message>
+        <source>Backed up. Keep the file to yourself: it is you.</source>
+        <translation>बैकअप हो गया। फ़ाइल अपने पास ही रखें: यह आप हैं।</translation>
+    </message>
+    <message>
+        <source>The backup could not be read.</source>
+        <translation>बैकअप पढ़ा नहीं जा सका।</translation>
+    </message>
+    <message>
+        <source>That file is no backup of ratcast&apos;s.</source>
+        <translation>यह फ़ाइल ratcast का बैकअप नहीं है।</translation>
+    </message>
+    <message>
+        <source>Restored: this device is %1 again.</source>
+        <translation>पुनर्स्थापित: यह डिवाइस फिर से %1 है।</translation>
     </message>
 </context>
 <context>

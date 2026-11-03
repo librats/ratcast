@@ -90,8 +90,14 @@ ApplicationWindow {
     LayoutMirroring.enabled: Qt.application.layoutDirection === Qt.RightToLeft
     LayoutMirroring.childrenInherit: true
 
+    // The people one knows: up for as long as the app is.
+    PeopleController {
+        id: people
+    }
+
     CallController {
         id: call
+        people: people
         video: picture
         preview: ownCamera
         // Hidden, or the window not the one in use — a game played over it —
@@ -108,13 +114,31 @@ ApplicationWindow {
 
     Component.onCompleted: if (root.link.length > 0) call.join(root.link)
 
-    /// A link the system opened the app with (links.h): joined as one given
-    /// at the start is, unless a room is already on; whether it was taken.
+    /// A link the system opened the app with (links.h), or one given: a
+    /// person's asked to be a friend, a device's asked to become them first,
+    /// a room's joined as one given at the start is, unless a room is already
+    /// on; whether it was taken.
     function openLink(link) {
+        if (people.isDeviceLink(link)) {
+            joinAsDevice.link = link
+            joinAsDevice.open()
+            return true
+        }
+        if (people.isPersonLink(link)) {
+            people.add(link)
+            root.showFriends()
+            return true
+        }
         if (call.state !== CallController.Idle)
             return false
         call.join(link)
         return true
+    }
+
+    /// The friends shown: beside the start, or, narrow, in their drawer.
+    function showFriends() {
+        if (root.compact && call.state === CallController.Idle)
+            friendsDrawer.open()
     }
 
     /// The name of the member watched, as the members' list shows it.
@@ -262,9 +286,105 @@ ApplicationWindow {
     SettingsDialog {
         id: settingsDialog
         call: call
+        people: people
         trayAvailable: tray.available
         // Wayland does not tell a window it was minimized.
         minimizedKnown: Qt.platform.pluginName !== "wayland"
+    }
+
+    // Another device opened this person's device link: it may become them.
+    Dialog {
+        id: deviceAsks
+
+        title: qsTr("A device asks to become you")
+        modal: true
+        anchors.centerIn: Overlay.overlay
+        width: Math.min(root.width - 48, 420)
+        visible: people.deviceAsking.length > 0
+        closePolicy: Popup.NoAutoClose
+
+        Label {
+            width: parent.width
+            text: qsTr("“%1” opened your device link. Allowed, it gets your key and your friends, and is you from then on.")
+                      .arg(people.deviceAsking)
+            wrapMode: Text.Wrap
+        }
+        footer: DialogButtonBox {
+            Button {
+                text: qsTr("Allow")
+                icon.source: "icons/check.svg"
+                highlighted: true
+                DialogButtonBox.buttonRole: DialogButtonBox.AcceptRole
+            }
+            Button {
+                text: qsTr("Refuse")
+                flat: true
+                DialogButtonBox.buttonRole: DialogButtonBox.RejectRole
+            }
+        }
+        onAccepted: people.allowDevice(true)
+        onRejected: people.allowDevice(false)
+    }
+
+    // A device link opened here: this device becomes its person, if they say yes.
+    Dialog {
+        id: joinAsDevice
+
+        property string link
+
+        title: qsTr("Become this person on this device?")
+        modal: true
+        anchors.centerIn: Overlay.overlay
+        width: Math.min(root.width - 48, 420)
+
+        Label {
+            width: parent.width
+            text: qsTr("This device asks the one that made the link. Once it says yes, this device has that person's key and friends in place of its own.")
+            wrapMode: Text.Wrap
+        }
+        footer: DialogButtonBox {
+            Button {
+                text: qsTr("Ask")
+                icon.source: "icons/smartphone.svg"
+                highlighted: true
+                DialogButtonBox.buttonRole: DialogButtonBox.AcceptRole
+            }
+            Button {
+                text: qsTr("Cancel")
+                flat: true
+                DialogButtonBox.buttonRole: DialogButtonBox.RejectRole
+            }
+        }
+        onAccepted: if (people.joinAsDevice(link)) root.showFriends()
+    }
+
+    // Narrow, the friends in a drawer of their own, over the start.
+    Drawer {
+        id: friendsDrawer
+
+        edge: Qt.RightEdge
+        width: root.width
+        height: root.height
+        interactive: root.compact && call.state === CallController.Idle
+
+        ScrollView {
+            anchors.fill: parent
+            anchors.margins: 16
+            contentWidth: availableWidth
+
+            FriendsPanel {
+                width: parent.width
+                people: people
+            }
+        }
+        ToolButton {
+            anchors.top: parent.top
+            anchors.right: parent.right
+            anchors.margins: 8
+            display: AbstractButton.IconOnly
+            icon.source: "icons/x.svg"
+            onClicked: friendsDrawer.close()
+        }
     }
 
     Timer {
@@ -414,9 +534,32 @@ ApplicationWindow {
 
     // ── The start ───────────────────────────────────────────────────────────
 
+    // Wide, the friends beside the start.
+    Pane {
+        id: friendsPane
+
+        anchors.right: parent.right
+        anchors.top: parent.top
+        anchors.bottom: parent.bottom
+        width: 320
+        visible: call.state === CallController.Idle && !root.compact
+        Material.elevation: 2
+
+        ScrollView {
+            anchors.fill: parent
+            contentWidth: availableWidth
+
+            FriendsPanel {
+                width: parent.width
+                people: people
+            }
+        }
+    }
+
     ColumnLayout {
         anchors.centerIn: parent
-        width: Math.min(parent.width - 48, 520)
+        anchors.horizontalCenterOffset: friendsPane.visible ? -friendsPane.width / 2 : 0
+        width: Math.min(parent.width - 48 - (friendsPane.visible ? friendsPane.width : 0), 520)
         spacing: 16
         visible: call.state === CallController.Idle
 
@@ -464,6 +607,17 @@ ApplicationWindow {
                 icon.source: "icons/settings.svg"
                 flat: true
                 onClicked: settingsDialog.open()
+            }
+            // Narrow, the friends are a drawer away.
+            Button {
+                Layout.alignment: Qt.AlignHCenter
+                text: people.asking > 0 ? qsTr("Friends (%1 asking)").arg(people.asking)
+                                        : qsTr("Friends")
+                icon.source: "icons/users.svg"
+                flat: true
+                highlighted: people.asking > 0
+                visible: root.compact
+                onClicked: friendsDrawer.open()
             }
         }
 
@@ -533,9 +687,9 @@ ApplicationWindow {
             Layout.alignment: Qt.AlignHCenter
             Layout.preferredWidth: 280
             placeholderText: qsTr("Your name, as the others see it")
-            text: call.name
+            text: people.name
             maximumLength: 32
-            onTextEdited: call.name = text
+            onTextEdited: people.name = text
         }
 
         Button {
@@ -553,13 +707,13 @@ ApplicationWindow {
                 id: linkField
                 Layout.fillWidth: true
                 placeholderText: qsTr("or a link to a room")
-                onAccepted: if (text.length > 0) call.join(text)
+                onAccepted: if (text.length > 0) root.openLink(text.trim())
             }
             Button {
                 text: qsTr("Join")
                 icon.source: "icons/log-in.svg"
                 enabled: linkField.text.length > 0
-                onClicked: call.join(linkField.text)
+                onClicked: root.openLink(linkField.text.trim())
             }
         }
 
@@ -732,6 +886,16 @@ ApplicationWindow {
                             onTapped: hearing.open()
                         }
                     }
+                    // Whose: four characters that tell two of a name apart.
+                    Badge {
+                        text: member.tag
+                        opacity: 0.45
+                        visible: text.length > 0
+                    }
+                    Glyph {
+                        glyph: "user"
+                        visible: member.isFriend
+                    }
                     Badge {
                         text: member.mutedHere ? qsTr("off for you")
                                                : member.volume !== 1
@@ -778,6 +942,31 @@ ApplicationWindow {
                                 Layout.fillWidth: true
                                 text: qsTr("%1, for you").arg(root.memberName(member.name, member.peer))
                                 font.bold: true
+                            }
+                            // Whose the member is, and being friends.
+                            RowLayout {
+                                Layout.fillWidth: true
+                                visible: member.person.length > 0
+
+                                Label {
+                                    Layout.fillWidth: true
+                                    wrapMode: Text.Wrap
+                                    font.pixelSize: 12
+                                    opacity: 0.7
+                                    text: member.person === people.person
+                                          ? qsTr("You, on another device")
+                                          : member.isFriend ? qsTr("Your friend")
+                                          : member.befriendable ? ""
+                                          : qsTr("Asked to be your friend")
+                                    visible: text.length > 0
+                                }
+                                Button {
+                                    text: qsTr("Add friend")
+                                    icon.source: "icons/user-plus.svg"
+                                    flat: true
+                                    visible: member.befriendable
+                                    onClicked: call.addFriend(member.peerId)
+                                }
                             }
                             RowLayout {
                                 Layout.fillWidth: true

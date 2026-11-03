@@ -13,7 +13,9 @@ add_library(ratcast_client STATIC
     src/cpu_meter.cpp
     src/data_player.cpp
     src/data_publisher.cpp
+    src/identity.cpp
     src/known_servers.cpp
+    src/people.cpp
     src/log_file.cpp
     src/playback_meter.cpp
     src/playout_clock.cpp
@@ -33,7 +35,7 @@ target_include_directories(ratcast_client
     PUBLIC  "${CMAKE_CURRENT_SOURCE_DIR}/include"
     PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src"
 )
-target_link_libraries(ratcast_client PUBLIC ratcast::engine ratcast::ratcast)
+target_link_libraries(ratcast_client PUBLIC ratcast::engine ratcast::ratcast PRIVATE monocypher)
 # Commas between them: a CMake list's semicolons would split the definition.
 string(REPLACE ";" "," _ratcast_servers "${RATCAST_SERVERS}")
 target_compile_definitions(ratcast_client PRIVATE RATCAST_SERVERS="${_ratcast_servers}")

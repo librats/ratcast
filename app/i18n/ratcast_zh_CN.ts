@@ -2,6 +2,101 @@
 <!DOCTYPE TS>
 <TS version="2.1" language="zh_CN" sourcelanguage="en">
 <context>
+    <name>FriendsPanel</name>
+    <message>
+        <source>Someone</source>
+        <translation>某人</translation>
+    </message>
+    <message>
+        <source>Friends</source>
+        <translation>好友</translation>
+    </message>
+    <message>
+        <source>You</source>
+        <translation>你</translation>
+    </message>
+    <message>
+        <source>Send your link to whoever is to be your friend:</source>
+        <translation>把你的链接发给想加你为好友的人：</translation>
+    </message>
+    <message>
+        <source>Copied</source>
+        <translation>已复制</translation>
+    </message>
+    <message>
+        <source>Copy your link</source>
+        <translation>复制你的链接</translation>
+    </message>
+    <message>
+        <source>Show it as a QR code</source>
+        <translation>显示为二维码</translation>
+    </message>
+    <message>
+        <source>A new link (the old one stops working)</source>
+        <translation>新链接（旧链接将失效）</translation>
+    </message>
+    <message>
+        <source>Point a phone&apos;s camera at it to open your link there.</source>
+        <translation>用手机相机对准它，就能在手机上打开你的链接。</translation>
+    </message>
+    <message>
+        <source>a friend&apos;s link</source>
+        <translation>好友的链接</translation>
+    </message>
+    <message>
+        <source>Add</source>
+        <translation>添加</translation>
+    </message>
+    <message>
+        <source>Asking you</source>
+        <translation>好友请求</translation>
+    </message>
+    <message>
+        <source>Accept</source>
+        <translation>接受</translation>
+    </message>
+    <message>
+        <source>Decline</source>
+        <translation>拒绝</translation>
+    </message>
+    <message>
+        <source>Asked by you</source>
+        <translation>你发出的请求</translation>
+    </message>
+    <message>
+        <source>declined</source>
+        <translation>已拒绝</translation>
+    </message>
+    <message>
+        <source>waiting until they are online and accept</source>
+        <translation>等待对方上线并接受</translation>
+    </message>
+    <message>
+        <source>Remove</source>
+        <translation>移除</translation>
+    </message>
+    <message>
+        <source>Take back</source>
+        <translation>撤回</translation>
+    </message>
+    <message>
+        <source>Your friends (%1)</source>
+        <translation>你的好友（%1）</translation>
+    </message>
+    <message>
+        <source>Your friends</source>
+        <translation>你的好友</translation>
+    </message>
+    <message>
+        <source>None yet. Send your link, or add someone you meet in a room: click their name there.</source>
+        <translation>还没有好友。发送你的链接，或添加在房间里遇到的人：点击他们的名字即可。</translation>
+    </message>
+    <message>
+        <source>Remove from friends</source>
+        <translation>从好友中移除</translation>
+    </message>
+</context>
+<context>
     <name>Main</name>
     <message>
         <source>%1 stopped sharing</source>
@@ -116,6 +211,42 @@
         <translation>取消</translation>
     </message>
     <message>
+        <source>A device asks to become you</source>
+        <translation>有设备请求成为你</translation>
+    </message>
+    <message>
+        <source>“%1” opened your device link. Allowed, it gets your key and your friends, and is you from then on.</source>
+        <translation>“%1”打开了你的设备链接。允许后，它将获得你的密钥和好友，从此就是你。</translation>
+    </message>
+    <message>
+        <source>Allow</source>
+        <translation>允许</translation>
+    </message>
+    <message>
+        <source>Refuse</source>
+        <translation>拒绝</translation>
+    </message>
+    <message>
+        <source>Become this person on this device?</source>
+        <translation>要在此设备上成为此人吗？</translation>
+    </message>
+    <message>
+        <source>This device asks the one that made the link. Once it says yes, this device has that person&apos;s key and friends in place of its own.</source>
+        <translation>此设备会询问创建链接的设备。对方同意后，此设备将用那个人的密钥和好友替换自己的。</translation>
+    </message>
+    <message>
+        <source>Ask</source>
+        <translation>询问</translation>
+    </message>
+    <message>
+        <source>Friends (%1 asking)</source>
+        <translation>好友（%1 个请求）</translation>
+    </message>
+    <message>
+        <source>Friends</source>
+        <translation>好友</translation>
+    </message>
+    <message>
         <source>Room</source>
         <translation>房间</translation>
     </message>
@@ -168,6 +299,22 @@
     <message>
         <source>%1, for you</source>
         <translation>%1（仅对你生效）</translation>
+    </message>
+    <message>
+        <source>You, on another device</source>
+        <translation>你，在另一台设备上</translation>
+    </message>
+    <message>
+        <source>Your friend</source>
+        <translation>你的好友</translation>
+    </message>
+    <message>
+        <source>Asked to be your friend</source>
+        <translation>已发送好友请求</translation>
+    </message>
+    <message>
+        <source>Add friend</source>
+        <translation>加为好友</translation>
     </message>
     <message>
         <source>Mute for me</source>
@@ -401,6 +548,10 @@
         <translation>语言</translation>
     </message>
     <message>
+        <source>You</source>
+        <translation>你</translation>
+    </message>
+    <message>
         <source>Window</source>
         <translation>窗口</translation>
     </message>
@@ -467,6 +618,70 @@
     <message>
         <source>Takes effect at once.</source>
         <translation>立即生效。</translation>
+    </message>
+    <message>
+        <source>Your name</source>
+        <translation>你的名字</translation>
+    </message>
+    <message>
+        <source>The four characters after it are yours alone: they tell two of a name apart.</source>
+        <translation>后面的四个字符只属于你：用来区分同名的人。</translation>
+    </message>
+    <message>
+        <source>Your other devices</source>
+        <translation>你的其他设备</translation>
+    </message>
+    <message>
+        <source>A phone or another computer can be you too: the same friends, the same name. Make a link here and open it there, or point that phone&apos;s camera at its QR code.</source>
+        <translation>手机或另一台电脑也可以是你：同样的好友，同样的名字。在这里创建链接并在那里打开，或用那部手机的相机扫描二维码。</translation>
+    </message>
+    <message>
+        <source>Add a device</source>
+        <translation>添加设备</translation>
+    </message>
+    <message>
+        <source>Copy the link</source>
+        <translation>复制链接</translation>
+    </message>
+    <message>
+        <source>For the next ten minutes, and for one device: you are asked before it becomes you. Send it to nobody else.</source>
+        <translation>十分钟内有效，仅限一台设备：成为你之前会先征得你的同意。不要发给其他人。</translation>
+    </message>
+    <message>
+        <source>Cancel</source>
+        <translation>取消</translation>
+    </message>
+    <message>
+        <source>Make this device someone else&apos;s</source>
+        <translation>让此设备成为别人的</translation>
+    </message>
+    <message>
+        <source>the link your other device made</source>
+        <translation>你另一台设备创建的链接</translation>
+    </message>
+    <message>
+        <source>Ask</source>
+        <translation>询问</translation>
+    </message>
+    <message>
+        <source>Backup</source>
+        <translation>备份</translation>
+    </message>
+    <message>
+        <source>Your key and your friends in a file: with it, a new device is you again even if every other is lost. Whoever has the file can be you.</source>
+        <translation>你的密钥和好友保存在一个文件中：有了它，即使其他设备全部丢失，新设备也能重新成为你。拥有此文件的人都可以成为你。</translation>
+    </message>
+    <message>
+        <source>Save a backup…</source>
+        <translation>保存备份…</translation>
+    </message>
+    <message>
+        <source>Restore…</source>
+        <translation>恢复…</translation>
+    </message>
+    <message>
+        <source>Backups (*.txt)</source>
+        <translation>备份 (*.txt)</translation>
     </message>
     <message>
         <source>Minimize to the tray</source>
@@ -566,6 +781,85 @@
     <message>
         <source>Sharing failed (%1).</source>
         <translation>共享失败（%1）。</translation>
+    </message>
+</context>
+<context>
+    <name>ratcast::app::PeopleController</name>
+    <message>
+        <source>A device</source>
+        <translation>一台设备</translation>
+    </message>
+    <message>
+        <source>This device is %1 now.</source>
+        <translation>此设备现在是 %1。</translation>
+    </message>
+    <message>
+        <source>The other device said no.</source>
+        <translation>另一台设备拒绝了。</translation>
+    </message>
+    <message>
+        <source>Your key in the data folder could not be read.</source>
+        <translation>无法读取数据文件夹中的密钥。</translation>
+    </message>
+    <message>
+        <source>Friends are not reachable: the network did not start.</source>
+        <translation>无法连接好友：网络未能启动。</translation>
+    </message>
+    <message>
+        <source>That is not a link to a person.</source>
+        <translation>这不是指向某人的链接。</translation>
+    </message>
+    <message>
+        <source>That is your own link.</source>
+        <translation>这是你自己的链接。</translation>
+    </message>
+    <message>
+        <source>You are friends already.</source>
+        <translation>你们已经是好友了。</translation>
+    </message>
+    <message>
+        <source>Asked. They become your friend once they accept.</source>
+        <translation>已发送请求。对方接受后即成为你的好友。</translation>
+    </message>
+    <message>
+        <source>Your link is new: the old one no longer works.</source>
+        <translation>你的链接已更新：旧链接不再有效。</translation>
+    </message>
+    <message>
+        <source>The device is you now.</source>
+        <translation>该设备现在就是你。</translation>
+    </message>
+    <message>
+        <source>That is not a link to add a device.</source>
+        <translation>这不是添加设备的链接。</translation>
+    </message>
+    <message>
+        <source>That link is this device&apos;s own.</source>
+        <translation>这是此设备自己的链接。</translation>
+    </message>
+    <message>
+        <source>Waiting for the other device to say yes…</source>
+        <translation>正在等待另一台设备同意…</translation>
+    </message>
+    <message>
+        <source>The backup could not be written there.</source>
+        <translation>无法将备份写入该位置。</translation>
+    </message>
+    <message>
+        <source>Backed up. Keep the file to yourself: it is you.</source>
+        <translation>已备份。请妥善保管此文件：它就是你。</translation>
+    </message>
+    <message>
+        <source>The backup could not be read.</source>
+        <translation>无法读取备份。</translation>
+    </message>
+    <message>
+        <source>That file is no backup of ratcast&apos;s.</source>
+        <translation>该文件不是 ratcast 的备份。</translation>
+    </message>
+    <message>
+        <source>Restored: this device is %1 again.</source>
+        <translation>已恢复：此设备再次成为 %1。</translation>
     </message>
 </context>
 <context>

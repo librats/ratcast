@@ -72,7 +72,8 @@ export function Privacy() {
               system's own dialog. Android shows that the screen is being shared until you stop.
             </li>
             <li>
-              <strong>Network access</strong>, to connect to the others in the room.
+              <strong>Network access</strong>, to connect to the others in the room, and to your friends and your
+              other devices.
             </li>
             <li>
               <strong>A foreground service and its notification</strong>, so a call or a share goes on while the app is
@@ -104,6 +105,30 @@ export function Privacy() {
           </p>
         </Section>
 
+        <Section title="Friends and your devices">
+          <p>
+            ratcast has no accounts. Who you are is a <strong>key made on your device</strong>, which nobody else has
+            unless you give it: to another device of yours, by a link you make that you approve, or in a backup file
+            you save. Your name, your friends and the requests between you are kept on your devices and passed only
+            between them, encrypted, when they meet.
+          </p>
+          <ul>
+            <li>
+              The members of a room see your name, the public part of your key (as four characters beside your name)
+              and a code that lets them ask to be your friend. Nobody becomes your friend unless you accept.
+            </li>
+            <li>
+              Anyone you send your personal link to can ask to be your friend. You can make a new link at any time;
+              the old one then stops working.
+            </li>
+            <li>
+              While the app is running, it stays reachable for friend requests and your other devices: it connects to
+              a ratcast server and is listed there under codes derived from your links. The server sees your IP address
+              and those codes, not who you are or who your friends are.
+            </li>
+          </ul>
+        </Section>
+
         <Section title="What the network sees">
           <p>
             ratcast connects devices directly to each other. Like any internet connection, that means some parties see
@@ -132,16 +157,18 @@ export function Privacy() {
 
         <Section title="What is kept on your device">
           <ul>
-            <li>the app's identity key, from which its peer id comes;</li>
+            <li>the app's identity keys, from which its peer ids come, and your personal key;</li>
+            <li>your name, your friends and the friend requests between you;</li>
             <li>the ratcast servers it has heard of;</li>
             <li>
               your settings: the language, the microphone, speaker and camera you chose, the volume you set for each
-              member (by their peer id) and, on a computer, the screen or window you last shared.
+              member (by their key) and, on a computer, the screen or window you last shared.
             </li>
           </ul>
           <p>
-            These stay on the device and are never sent to the makers of ratcast. On Android they are left out of the
-            system's backups. Uninstalling the app, or clearing its data, deletes them all.
+            These stay on your devices and are never sent to the makers of ratcast. On Android they are left out of
+            the system's backups. Uninstalling the app, or clearing its data, deletes them all; a backup file you
+            saved yourself stays where you put it.
           </p>
         </Section>
 

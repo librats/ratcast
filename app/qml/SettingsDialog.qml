@@ -1,5 +1,6 @@
 import QtQuick
 import QtQuick.Controls.Material
+import QtQuick.Dialogs
 import QtQuick.Layouts
 import Ratcast.Call
 import Ratcast.Language
@@ -14,6 +15,7 @@ Dialog {
     id: dialog
 
     required property CallController call
+    required property PeopleController people
     /// Whether the desktop shows icons in a tray, for the window to go to,
     /// and tells a window it was minimized.
     required property bool trayAvailable
@@ -24,11 +26,12 @@ Dialog {
 
     // The window's last: Android has no tray, and no section for it.
     readonly property var sections: Qt.platform.os === "android"
-                                    ? [qsTr("Devices"), qsTr("Network"), qsTr("Language")]
+                                    ? [qsTr("Devices"), qsTr("Network"), qsTr("Language"),
+                                       qsTr("You")]
                                     : [qsTr("Devices"), qsTr("Network"), qsTr("Language"),
-                                       qsTr("Window")]
+                                       qsTr("You"), qsTr("Window")]
     /// Each section's icon, of icons/.
-    readonly property var sectionIcons: ["headphones", "globe", "languages", "app-window"]
+    readonly property var sectionIcons: ["headphones", "globe", "languages", "user", "app-window"]
     /// The section shown.
     property int section: 0
     readonly property bool narrow: width < 520
@@ -247,6 +250,179 @@ Dialog {
                     }
                     Item {
                         Layout.fillHeight: true
+                    }
+                }
+
+                // ── You: this person on their devices, and backed up ────────────
+                ScrollView {
+                    contentWidth: availableWidth
+                    clip: true
+
+                    ColumnLayout {
+                        width: parent.width
+                        spacing: 4
+
+                        Label {
+                            text: qsTr("Your name")
+                            font.bold: true
+                        }
+                        RowLayout {
+                            Layout.fillWidth: true
+
+                            TextField {
+                                Layout.fillWidth: true
+                                text: dialog.people.name
+                                maximumLength: 32
+                                onTextEdited: dialog.people.name = text
+                            }
+                            Label {
+                                text: dialog.people.tag
+                                opacity: 0.5
+                            }
+                        }
+                        Label {
+                            Layout.fillWidth: true
+                            wrapMode: Text.Wrap
+                            opacity: 0.6
+                            font.pixelSize: 12
+                            text: qsTr("The four characters after it are yours alone: they tell two of a name apart.")
+                        }
+
+                        Label {
+                            Layout.topMargin: 12
+                            text: qsTr("Your other devices")
+                            font.bold: true
+                        }
+                        Label {
+                            Layout.fillWidth: true
+                            wrapMode: Text.Wrap
+                            opacity: 0.6
+                            font.pixelSize: 12
+                            text: qsTr("A phone or another computer can be you too: the same friends, " +
+                                       "the same name. Make a link here and open it there, " +
+                                       "or point that phone's camera at its QR code.")
+                        }
+                        Button {
+                            text: qsTr("Add a device")
+                            icon.source: "icons/smartphone.svg"
+                            visible: dialog.people.deviceLink.length === 0
+                            enabled: dialog.people.ready
+                            onClicked: dialog.people.makeDeviceLink()
+                        }
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: 4
+                            visible: dialog.people.deviceLink.length > 0
+
+                            QrCode {
+                                Layout.alignment: Qt.AlignHCenter
+                                Layout.preferredWidth: 200
+                                Layout.preferredHeight: 200
+                                text: dialog.people.deviceLink
+                            }
+                            RowLayout {
+                                Layout.fillWidth: true
+
+                                TextField {
+                                    Layout.fillWidth: true
+                                    readOnly: true
+                                    selectByMouse: true
+                                    font.pixelSize: 11
+                                    text: dialog.people.deviceLink
+                                    onTextChanged: cursorPosition = 0
+                                }
+                                ToolButton {
+                                    display: AbstractButton.IconOnly
+                                    icon.source: "icons/copy.svg"
+                                    onClicked: dialog.people.copy(dialog.people.deviceLink)
+                                    ToolTip.visible: hovered
+                                    ToolTip.text: qsTr("Copy the link")
+                                }
+                            }
+                            Label {
+                                Layout.fillWidth: true
+                                wrapMode: Text.Wrap
+                                opacity: 0.6
+                                font.pixelSize: 12
+                                text: qsTr("For the next ten minutes, and for one device: you are asked before it becomes you. Send it to nobody else.")
+                            }
+                            Button {
+                                text: qsTr("Cancel")
+                                flat: true
+                                onClicked: dialog.people.cancelDeviceLink()
+                            }
+                        }
+
+                        Label {
+                            Layout.topMargin: 12
+                            text: qsTr("Make this device someone else's")
+                            font.bold: true
+                        }
+                        RowLayout {
+                            Layout.fillWidth: true
+
+                            TextField {
+                                id: deviceField
+                                Layout.fillWidth: true
+                                placeholderText: qsTr("the link your other device made")
+                            }
+                            Button {
+                                text: qsTr("Ask")
+                                enabled: deviceField.text.length > 0 && !dialog.people.joining
+                                onClicked: if (dialog.people.joinAsDevice(deviceField.text)) deviceField.text = ""
+                            }
+                        }
+
+                        Label {
+                            Layout.topMargin: 12
+                            text: qsTr("Backup")
+                            font.bold: true
+                        }
+                        Label {
+                            Layout.fillWidth: true
+                            wrapMode: Text.Wrap
+                            opacity: 0.6
+                            font.pixelSize: 12
+                            text: qsTr("Your key and your friends in a file: with it, a new device is you again " +
+                                       "even if every other is lost. Whoever has the file can be you.")
+                        }
+                        RowLayout {
+                            Button {
+                                text: qsTr("Save a backup…")
+                                icon.source: "icons/save.svg"
+                                flat: true
+                                enabled: dialog.people.ready
+                                onClicked: saveBackup.open()
+                            }
+                            Button {
+                                text: qsTr("Restore…")
+                                icon.source: "icons/upload.svg"
+                                flat: true
+                                enabled: dialog.people.ready
+                                onClicked: restoreBackup.open()
+                            }
+                        }
+                        Label {
+                            Layout.fillWidth: true
+                            wrapMode: Text.Wrap
+                            text: dialog.people.notice
+                            color: Material.color(Material.Teal)
+                            visible: text.length > 0
+                        }
+
+                        FileDialog {
+                            id: saveBackup
+                            fileMode: FileDialog.SaveFile
+                            defaultSuffix: "txt"
+                            nameFilters: [qsTr("Backups (*.txt)")]
+                            onAccepted: dialog.people.saveBackup(selectedFile)
+                        }
+                        FileDialog {
+                            id: restoreBackup
+                            fileMode: FileDialog.OpenFile
+                            nameFilters: [qsTr("Backups (*.txt)")]
+                            onAccepted: dialog.people.restoreBackup(selectedFile)
+                        }
                     }
                 }
 

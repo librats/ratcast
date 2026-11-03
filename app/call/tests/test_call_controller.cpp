@@ -13,6 +13,7 @@
 #include <gtest/gtest.h>
 
 #include <QCoreApplication>
+#include <QDir>
 #include <QGuiApplication>
 #include <QTemporaryDir>
 
@@ -1053,6 +1054,73 @@ TEST_F(CallControllerTest, LeavingOrStoppingWhileTheDialogIsOpenCallsItOff) {
     QCoreApplication::processEvents();  // the dialog's answer, dropped
     EXPECT_EQ(ann_.state(), State::Idle);
     EXPECT_TRUE(ann_.notice().isEmpty());
+}
+
+// Members known by whose they are: a tag beside the name, asked to be friends
+// from the room, a friend once accepted, heard as loud as their person is set
+// to be — whichever device or room they come in.
+TEST_F(CallControllerTest, AMemberIsKnownByWhoseItIsAndAskedToBeAFriend) {
+    librats::NodeConfig node;
+    node.bind_address = "127.0.0.1";
+    node.protocol = environment().call.protocol;
+    librats::Node server(node);
+    librats::Rendezvous::Config serving;
+    serving.serve = true;
+    server.add_subsystem(std::make_unique<librats::Rendezvous>(serving));
+    ASSERT_TRUE(server.start());
+
+    QTemporaryDir data;
+    ASSERT_TRUE(data.isValid());
+    const auto people_of = [&](PeopleController& people, const QString& name) {
+        PeopleController::Environment env;
+        env.people.data_dir = QDir(data.path()).filePath(name).toStdString();
+        env.people.servers = {{"127.0.0.1", server.listen_port()}};
+        env.people.bind_address = "127.0.0.1";
+        env.people.protocol = node.protocol;
+        env.people.watch_network = false;
+        env.name = name;
+        people.setEnvironment(env);
+        ASSERT_TRUE(people.ready());
+    };
+    PeopleController ann_people;
+    PeopleController bob_people;
+    people_of(ann_people, "Ann");
+    people_of(bob_people, "Bob");
+    ann_.setPeople(&ann_people);
+    bob_.setPeople(&bob_people);
+    EXPECT_EQ(bob_.name(), "Bob") << "the person's name";
+
+    both_in();
+    ASSERT_TRUE(wait_for([&] { return member(bob_, "Ann").value("tag") == ann_people.tag(); }));
+    QVariantMap ann = member(bob_, "Ann");
+    EXPECT_EQ(ann.value("person"), ann_people.person());
+    EXPECT_TRUE(ann.value("befriendable").toBool());
+    EXPECT_FALSE(ann.value("isFriend").toBool());
+
+    bob_.addFriend(ann.value("peerId").toString());
+    EXPECT_TRUE(wait_for([&] { return !member(bob_, "Ann").value("befriendable").toBool(); }))
+        << "asked already";
+    ASSERT_TRUE(wait_for([&] { return ann_people.asking() == 1; }));
+    ann_people.accept(bob_people.person());
+    EXPECT_TRUE(wait_for([&] { return member(bob_, "Ann").value("isFriend").toBool(); }));
+    EXPECT_TRUE(wait_for([&] { return member(ann_, "Bob").value("isFriend").toBool(); }));
+
+    // How loud Ann is heard is kept for her person, not this node of hers.
+    bob_.setVolume(ann.value("peerId").toString(), 0.5);
+    EXPECT_TRUE(wait_for([&] { return member(bob_, "Ann").value("volume").toDouble() == 0.5; }));
+    bob_.leave();
+    ann_.leave();
+    ann_.create();
+    ASSERT_EQ(ann_.state(), State::InRoom);
+    bob_.join(ann_.invites().value(0));
+    ASSERT_TRUE(wait_for([&] { return member(bob_, "Ann").value("tag") == ann_people.tag(); }));
+    EXPECT_NE(member(bob_, "Ann").value("peerId"), ann.value("peerId")) << "another node of hers";
+    EXPECT_EQ(member(bob_, "Ann").value("volume").toDouble(), 0.5);
+    bob_.leave();
+    ann_.leave();
+    ann_.setPeople(nullptr);
+    bob_.setPeople(nullptr);
+    server.stop();
 }
 
 TEST_F(CallControllerTest, ALinkThatIsNoneIsRefused) {

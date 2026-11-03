@@ -2,13 +2,14 @@
 
 /**
  * @file links.h
- * @brief Links to rooms the system opens the app with.
+ * @brief Links the system opens the app with: rooms', people's, devices'.
  *
- * However a link comes, it goes to the window's openLink(), which joins it
- * unless a room is already on:
- * - Android: rats:// links and the website's (https://ratcast.app/r/#…, its
- *   App Links) by the manifest's intent filters, handed on by Qt to
- *   QDesktopServices' handlers;
+ * However a link comes, it goes to the window's openLink(), which joins a
+ * room's unless one is already on, and takes a person's or a device's
+ * (people.h):
+ * - Android: rats:// links and the website's (https://ratcast.app/r/#…,
+ *   /u/#…, /d/#…: its App Links) by the manifest's intent filters, handed on
+ *   by Qt to QDesktopServices' handlers;
  * - macOS: rats:// by the bundle's CFBundleURLTypes, as a QFileOpenEvent (and
  *   the handler, where Qt calls it);
  * - Windows and Linux: rats:// as the command line's link, the scheme

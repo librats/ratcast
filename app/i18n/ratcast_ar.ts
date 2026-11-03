@@ -2,6 +2,101 @@
 <!DOCTYPE TS>
 <TS version="2.1" language="ar" sourcelanguage="en">
 <context>
+    <name>FriendsPanel</name>
+    <message>
+        <source>Someone</source>
+        <translation>شخص ما</translation>
+    </message>
+    <message>
+        <source>Friends</source>
+        <translation>الأصدقاء</translation>
+    </message>
+    <message>
+        <source>You</source>
+        <translation>أنت</translation>
+    </message>
+    <message>
+        <source>Send your link to whoever is to be your friend:</source>
+        <translation>أرسل رابطك إلى من تريد أن يكون صديقك:</translation>
+    </message>
+    <message>
+        <source>Copied</source>
+        <translation>تم النسخ</translation>
+    </message>
+    <message>
+        <source>Copy your link</source>
+        <translation>انسخ رابطك</translation>
+    </message>
+    <message>
+        <source>Show it as a QR code</source>
+        <translation>اعرضه كرمز QR</translation>
+    </message>
+    <message>
+        <source>A new link (the old one stops working)</source>
+        <translation>رابط جديد (يتوقف الرابط القديم عن العمل)</translation>
+    </message>
+    <message>
+        <source>Point a phone&apos;s camera at it to open your link there.</source>
+        <translation>وجّه كاميرا هاتف نحوه لفتح رابطك هناك.</translation>
+    </message>
+    <message>
+        <source>a friend&apos;s link</source>
+        <translation>رابط صديق</translation>
+    </message>
+    <message>
+        <source>Add</source>
+        <translation>إضافة</translation>
+    </message>
+    <message>
+        <source>Asking you</source>
+        <translation>يطلبون صداقتك</translation>
+    </message>
+    <message>
+        <source>Accept</source>
+        <translation>قبول</translation>
+    </message>
+    <message>
+        <source>Decline</source>
+        <translation>رفض</translation>
+    </message>
+    <message>
+        <source>Asked by you</source>
+        <translation>طلباتك</translation>
+    </message>
+    <message>
+        <source>declined</source>
+        <translation>مرفوض</translation>
+    </message>
+    <message>
+        <source>waiting until they are online and accept</source>
+        <translation>بانتظار أن يتصل ويقبل</translation>
+    </message>
+    <message>
+        <source>Remove</source>
+        <translation>إزالة</translation>
+    </message>
+    <message>
+        <source>Take back</source>
+        <translation>سحب الطلب</translation>
+    </message>
+    <message>
+        <source>Your friends (%1)</source>
+        <translation>أصدقاؤك (%1)</translation>
+    </message>
+    <message>
+        <source>Your friends</source>
+        <translation>أصدقاؤك</translation>
+    </message>
+    <message>
+        <source>None yet. Send your link, or add someone you meet in a room: click their name there.</source>
+        <translation>لا أحد بعد. أرسل رابطك، أو أضف شخصًا قابلته في غرفة: انقر على اسمه هناك.</translation>
+    </message>
+    <message>
+        <source>Remove from friends</source>
+        <translation>إزالة من الأصدقاء</translation>
+    </message>
+</context>
+<context>
     <name>Main</name>
     <message>
         <source>%1 stopped sharing</source>
@@ -116,6 +211,42 @@
         <translation>إلغاء</translation>
     </message>
     <message>
+        <source>A device asks to become you</source>
+        <translation>جهاز يطلب أن يصبح أنت</translation>
+    </message>
+    <message>
+        <source>“%1” opened your device link. Allowed, it gets your key and your friends, and is you from then on.</source>
+        <translation>فتح «%1» رابط جهازك. إن سمحت، يحصل على مفتاحك وأصدقائك ويصبح أنت من الآن فصاعدًا.</translation>
+    </message>
+    <message>
+        <source>Allow</source>
+        <translation>السماح</translation>
+    </message>
+    <message>
+        <source>Refuse</source>
+        <translation>رفض</translation>
+    </message>
+    <message>
+        <source>Become this person on this device?</source>
+        <translation>هل تريد أن تصبح هذا الشخص على هذا الجهاز؟</translation>
+    </message>
+    <message>
+        <source>This device asks the one that made the link. Once it says yes, this device has that person&apos;s key and friends in place of its own.</source>
+        <translation>يسأل هذا الجهاز الجهازَ الذي أنشأ الرابط. وحين يوافق، يصبح لدى هذا الجهاز مفتاح ذلك الشخص وأصدقاؤه بدلًا من مفتاحه وأصدقائه.</translation>
+    </message>
+    <message>
+        <source>Ask</source>
+        <translation>اطلب</translation>
+    </message>
+    <message>
+        <source>Friends (%1 asking)</source>
+        <translation>الأصدقاء (%1 طلبات)</translation>
+    </message>
+    <message>
+        <source>Friends</source>
+        <translation>الأصدقاء</translation>
+    </message>
+    <message>
         <source>Room</source>
         <translation>الغرفة</translation>
     </message>
@@ -173,6 +304,22 @@
     <message>
         <source>%1, for you</source>
         <translation>%1، لديك فقط</translation>
+    </message>
+    <message>
+        <source>You, on another device</source>
+        <translation>أنت، على جهاز آخر</translation>
+    </message>
+    <message>
+        <source>Your friend</source>
+        <translation>صديقك</translation>
+    </message>
+    <message>
+        <source>Asked to be your friend</source>
+        <translation>تم إرسال طلب الصداقة</translation>
+    </message>
+    <message>
+        <source>Add friend</source>
+        <translation>إضافة صديق</translation>
     </message>
     <message>
         <source>Mute for me</source>
@@ -406,6 +553,10 @@
         <translation>اللغة</translation>
     </message>
     <message>
+        <source>You</source>
+        <translation>أنت</translation>
+    </message>
+    <message>
         <source>Window</source>
         <translation>النافذة</translation>
     </message>
@@ -472,6 +623,70 @@
     <message>
         <source>Takes effect at once.</source>
         <translation>يسري فورًا.</translation>
+    </message>
+    <message>
+        <source>Your name</source>
+        <translation>اسمك</translation>
+    </message>
+    <message>
+        <source>The four characters after it are yours alone: they tell two of a name apart.</source>
+        <translation>الأحرف الأربعة بعده لك وحدك: تميّز بين شخصين يحملان الاسم نفسه.</translation>
+    </message>
+    <message>
+        <source>Your other devices</source>
+        <translation>أجهزتك الأخرى</translation>
+    </message>
+    <message>
+        <source>A phone or another computer can be you too: the same friends, the same name. Make a link here and open it there, or point that phone&apos;s camera at its QR code.</source>
+        <translation>يمكن لهاتف أو حاسوب آخر أن يكون أنت أيضًا: الأصدقاء أنفسهم والاسم نفسه. أنشئ رابطًا هنا وافتحه هناك، أو وجّه كاميرا ذلك الهاتف نحو رمز QR الخاص به.</translation>
+    </message>
+    <message>
+        <source>Add a device</source>
+        <translation>إضافة جهاز</translation>
+    </message>
+    <message>
+        <source>Copy the link</source>
+        <translation>نسخ الرابط</translation>
+    </message>
+    <message>
+        <source>For the next ten minutes, and for one device: you are asked before it becomes you. Send it to nobody else.</source>
+        <translation>صالح لعشر دقائق ولجهاز واحد: يُطلب إذنك قبل أن يصبح أنت. لا ترسله إلى أي شخص آخر.</translation>
+    </message>
+    <message>
+        <source>Cancel</source>
+        <translation>إلغاء</translation>
+    </message>
+    <message>
+        <source>Make this device someone else&apos;s</source>
+        <translation>اجعل هذا الجهاز لشخص آخر</translation>
+    </message>
+    <message>
+        <source>the link your other device made</source>
+        <translation>الرابط الذي أنشأه جهازك الآخر</translation>
+    </message>
+    <message>
+        <source>Ask</source>
+        <translation>اطلب</translation>
+    </message>
+    <message>
+        <source>Backup</source>
+        <translation>نسخة احتياطية</translation>
+    </message>
+    <message>
+        <source>Your key and your friends in a file: with it, a new device is you again even if every other is lost. Whoever has the file can be you.</source>
+        <translation>مفتاحك وأصدقاؤك في ملف: به يصبح جهاز جديد أنت مرة أخرى حتى لو فُقدت كل الأجهزة الأخرى. من يملك الملف يمكنه أن يكون أنت.</translation>
+    </message>
+    <message>
+        <source>Save a backup…</source>
+        <translation>حفظ نسخة احتياطية…</translation>
+    </message>
+    <message>
+        <source>Restore…</source>
+        <translation>استعادة…</translation>
+    </message>
+    <message>
+        <source>Backups (*.txt)</source>
+        <translation>النسخ الاحتياطية (*.txt)</translation>
     </message>
     <message>
         <source>Minimize to the tray</source>
@@ -571,6 +786,85 @@
     <message>
         <source>Sharing failed (%1).</source>
         <translation>فشلت المشاركة (%1).</translation>
+    </message>
+</context>
+<context>
+    <name>ratcast::app::PeopleController</name>
+    <message>
+        <source>A device</source>
+        <translation>جهاز</translation>
+    </message>
+    <message>
+        <source>This device is %1 now.</source>
+        <translation>هذا الجهاز الآن %1.</translation>
+    </message>
+    <message>
+        <source>The other device said no.</source>
+        <translation>رفض الجهاز الآخر.</translation>
+    </message>
+    <message>
+        <source>Your key in the data folder could not be read.</source>
+        <translation>تعذّرت قراءة مفتاحك في مجلد البيانات.</translation>
+    </message>
+    <message>
+        <source>Friends are not reachable: the network did not start.</source>
+        <translation>لا يمكن الوصول إلى الأصدقاء: لم تبدأ الشبكة.</translation>
+    </message>
+    <message>
+        <source>That is not a link to a person.</source>
+        <translation>هذا ليس رابطًا إلى شخص.</translation>
+    </message>
+    <message>
+        <source>That is your own link.</source>
+        <translation>هذا رابطك أنت.</translation>
+    </message>
+    <message>
+        <source>You are friends already.</source>
+        <translation>أنتما صديقان بالفعل.</translation>
+    </message>
+    <message>
+        <source>Asked. They become your friend once they accept.</source>
+        <translation>تم الإرسال. يصبح صديقك عندما يقبل.</translation>
+    </message>
+    <message>
+        <source>Your link is new: the old one no longer works.</source>
+        <translation>رابطك جديد: الرابط القديم لم يعد يعمل.</translation>
+    </message>
+    <message>
+        <source>The device is you now.</source>
+        <translation>أصبح الجهاز أنت الآن.</translation>
+    </message>
+    <message>
+        <source>That is not a link to add a device.</source>
+        <translation>هذا ليس رابطًا لإضافة جهاز.</translation>
+    </message>
+    <message>
+        <source>That link is this device&apos;s own.</source>
+        <translation>هذا الرابط هو رابط هذا الجهاز نفسه.</translation>
+    </message>
+    <message>
+        <source>Waiting for the other device to say yes…</source>
+        <translation>بانتظار موافقة الجهاز الآخر…</translation>
+    </message>
+    <message>
+        <source>The backup could not be written there.</source>
+        <translation>تعذّرت كتابة النسخة الاحتياطية هناك.</translation>
+    </message>
+    <message>
+        <source>Backed up. Keep the file to yourself: it is you.</source>
+        <translation>تم النسخ الاحتياطي. احتفظ بالملف لنفسك: إنه أنت.</translation>
+    </message>
+    <message>
+        <source>The backup could not be read.</source>
+        <translation>تعذّرت قراءة النسخة الاحتياطية.</translation>
+    </message>
+    <message>
+        <source>That file is no backup of ratcast&apos;s.</source>
+        <translation>هذا الملف ليس نسخة احتياطية من ratcast.</translation>
+    </message>
+    <message>
+        <source>Restored: this device is %1 again.</source>
+        <translation>تمت الاستعادة: هذا الجهاز هو %1 مرة أخرى.</translation>
     </message>
 </context>
 <context>

@@ -54,9 +54,10 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="rats" />
             </intent-filter>
-            <!-- The website's links to rooms, https://ratcast.app/r/#…: App
-                 Links, verified by the site's /.well-known/assetlinks.json;
-                 unverified, they open the page, which opens rats://. -->
+            <!-- The website's links to rooms, people and devices,
+                 https://ratcast.app/r/#…, /u/#…, /d/#…: App Links, verified
+                 by the site's /.well-known/assetlinks.json; unverified, they
+                 open the page, which opens rats://. -->
             <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />
@@ -64,6 +65,8 @@
                 <data android:scheme="https" />
                 <data android:host="ratcast.app" />
                 <data android:pathPrefix="/r/" />
+                <data android:pathPrefix="/u/" />
+                <data android:pathPrefix="/d/" />
             </intent-filter>
 
             <meta-data

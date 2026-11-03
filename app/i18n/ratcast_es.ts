@@ -2,6 +2,101 @@
 <!DOCTYPE TS>
 <TS version="2.1" language="es" sourcelanguage="en">
 <context>
+    <name>FriendsPanel</name>
+    <message>
+        <source>Someone</source>
+        <translation>Alguien</translation>
+    </message>
+    <message>
+        <source>Friends</source>
+        <translation>Amigos</translation>
+    </message>
+    <message>
+        <source>You</source>
+        <translation>Tú</translation>
+    </message>
+    <message>
+        <source>Send your link to whoever is to be your friend:</source>
+        <translation>Envía tu enlace a quien quieras tener de amigo:</translation>
+    </message>
+    <message>
+        <source>Copied</source>
+        <translation>Copiado</translation>
+    </message>
+    <message>
+        <source>Copy your link</source>
+        <translation>Copiar tu enlace</translation>
+    </message>
+    <message>
+        <source>Show it as a QR code</source>
+        <translation>Mostrarlo como código QR</translation>
+    </message>
+    <message>
+        <source>A new link (the old one stops working)</source>
+        <translation>Un enlace nuevo (el anterior deja de funcionar)</translation>
+    </message>
+    <message>
+        <source>Point a phone&apos;s camera at it to open your link there.</source>
+        <translation>Apunta la cámara de un teléfono para abrir allí tu enlace.</translation>
+    </message>
+    <message>
+        <source>a friend&apos;s link</source>
+        <translation>el enlace de un amigo</translation>
+    </message>
+    <message>
+        <source>Add</source>
+        <translation>Añadir</translation>
+    </message>
+    <message>
+        <source>Asking you</source>
+        <translation>Te lo piden</translation>
+    </message>
+    <message>
+        <source>Accept</source>
+        <translation>Aceptar</translation>
+    </message>
+    <message>
+        <source>Decline</source>
+        <translation>Rechazar</translation>
+    </message>
+    <message>
+        <source>Asked by you</source>
+        <translation>Pedidos por ti</translation>
+    </message>
+    <message>
+        <source>declined</source>
+        <translation>rechazado</translation>
+    </message>
+    <message>
+        <source>waiting until they are online and accept</source>
+        <translation>esperando a que esté en línea y acepte</translation>
+    </message>
+    <message>
+        <source>Remove</source>
+        <translation>Quitar</translation>
+    </message>
+    <message>
+        <source>Take back</source>
+        <translation>Retirar</translation>
+    </message>
+    <message>
+        <source>Your friends (%1)</source>
+        <translation>Tus amigos (%1)</translation>
+    </message>
+    <message>
+        <source>Your friends</source>
+        <translation>Tus amigos</translation>
+    </message>
+    <message>
+        <source>None yet. Send your link, or add someone you meet in a room: click their name there.</source>
+        <translation>Nadie todavía. Envía tu enlace o añade a alguien que conozcas en una sala: haz clic en su nombre.</translation>
+    </message>
+    <message>
+        <source>Remove from friends</source>
+        <translation>Quitar de amigos</translation>
+    </message>
+</context>
+<context>
     <name>Main</name>
     <message>
         <source>%1 stopped sharing</source>
@@ -116,6 +211,42 @@
         <translation>Cancelar</translation>
     </message>
     <message>
+        <source>A device asks to become you</source>
+        <translation>Un dispositivo pide convertirse en ti</translation>
+    </message>
+    <message>
+        <source>“%1” opened your device link. Allowed, it gets your key and your friends, and is you from then on.</source>
+        <translation>«%1» abrió tu enlace de dispositivo. Si lo permites, recibe tu clave y tus amigos, y desde entonces es tú.</translation>
+    </message>
+    <message>
+        <source>Allow</source>
+        <translation>Permitir</translation>
+    </message>
+    <message>
+        <source>Refuse</source>
+        <translation>Rechazar</translation>
+    </message>
+    <message>
+        <source>Become this person on this device?</source>
+        <translation>¿Convertirte en esta persona en este dispositivo?</translation>
+    </message>
+    <message>
+        <source>This device asks the one that made the link. Once it says yes, this device has that person&apos;s key and friends in place of its own.</source>
+        <translation>Este dispositivo pregunta al que creó el enlace. Cuando diga que sí, este dispositivo tendrá la clave y los amigos de esa persona en lugar de los suyos.</translation>
+    </message>
+    <message>
+        <source>Ask</source>
+        <translation>Preguntar</translation>
+    </message>
+    <message>
+        <source>Friends (%1 asking)</source>
+        <translation>Amigos (%1 piden)</translation>
+    </message>
+    <message>
+        <source>Friends</source>
+        <translation>Amigos</translation>
+    </message>
+    <message>
         <source>Room</source>
         <translation>Sala</translation>
     </message>
@@ -169,6 +300,22 @@
     <message>
         <source>%1, for you</source>
         <translation>%1, para ti</translation>
+    </message>
+    <message>
+        <source>You, on another device</source>
+        <translation>Tú, en otro dispositivo</translation>
+    </message>
+    <message>
+        <source>Your friend</source>
+        <translation>Tu amigo</translation>
+    </message>
+    <message>
+        <source>Asked to be your friend</source>
+        <translation>Solicitud de amistad enviada</translation>
+    </message>
+    <message>
+        <source>Add friend</source>
+        <translation>Añadir amigo</translation>
     </message>
     <message>
         <source>Mute for me</source>
@@ -402,6 +549,10 @@
         <translation>Idioma</translation>
     </message>
     <message>
+        <source>You</source>
+        <translation>Tú</translation>
+    </message>
+    <message>
         <source>Window</source>
         <translation>Ventana</translation>
     </message>
@@ -468,6 +619,70 @@
     <message>
         <source>Takes effect at once.</source>
         <translation>Se aplica de inmediato.</translation>
+    </message>
+    <message>
+        <source>Your name</source>
+        <translation>Tu nombre</translation>
+    </message>
+    <message>
+        <source>The four characters after it are yours alone: they tell two of a name apart.</source>
+        <translation>Los cuatro caracteres que lo siguen son solo tuyos: distinguen a dos personas con el mismo nombre.</translation>
+    </message>
+    <message>
+        <source>Your other devices</source>
+        <translation>Tus otros dispositivos</translation>
+    </message>
+    <message>
+        <source>A phone or another computer can be you too: the same friends, the same name. Make a link here and open it there, or point that phone&apos;s camera at its QR code.</source>
+        <translation>Un teléfono u otro ordenador también puede ser tú: los mismos amigos, el mismo nombre. Crea un enlace aquí y ábrelo allí, o apunta la cámara de ese teléfono a su código QR.</translation>
+    </message>
+    <message>
+        <source>Add a device</source>
+        <translation>Añadir un dispositivo</translation>
+    </message>
+    <message>
+        <source>Copy the link</source>
+        <translation>Copiar el enlace</translation>
+    </message>
+    <message>
+        <source>For the next ten minutes, and for one device: you are asked before it becomes you. Send it to nobody else.</source>
+        <translation>Durante diez minutos y para un solo dispositivo: se te pregunta antes de que se convierta en ti. No lo envíes a nadie más.</translation>
+    </message>
+    <message>
+        <source>Cancel</source>
+        <translation>Cancelar</translation>
+    </message>
+    <message>
+        <source>Make this device someone else&apos;s</source>
+        <translation>Hacer este dispositivo de otra persona</translation>
+    </message>
+    <message>
+        <source>the link your other device made</source>
+        <translation>el enlace que creó tu otro dispositivo</translation>
+    </message>
+    <message>
+        <source>Ask</source>
+        <translation>Preguntar</translation>
+    </message>
+    <message>
+        <source>Backup</source>
+        <translation>Copia de seguridad</translation>
+    </message>
+    <message>
+        <source>Your key and your friends in a file: with it, a new device is you again even if every other is lost. Whoever has the file can be you.</source>
+        <translation>Tu clave y tus amigos en un archivo: con él, un dispositivo nuevo vuelve a ser tú aunque se pierdan todos los demás. Quien tenga el archivo puede ser tú.</translation>
+    </message>
+    <message>
+        <source>Save a backup…</source>
+        <translation>Guardar una copia…</translation>
+    </message>
+    <message>
+        <source>Restore…</source>
+        <translation>Restaurar…</translation>
+    </message>
+    <message>
+        <source>Backups (*.txt)</source>
+        <translation>Copias de seguridad (*.txt)</translation>
     </message>
     <message>
         <source>Minimize to the tray</source>
@@ -567,6 +782,85 @@
     <message>
         <source>Sharing failed (%1).</source>
         <translation>La transmisión falló (%1).</translation>
+    </message>
+</context>
+<context>
+    <name>ratcast::app::PeopleController</name>
+    <message>
+        <source>A device</source>
+        <translation>Un dispositivo</translation>
+    </message>
+    <message>
+        <source>This device is %1 now.</source>
+        <translation>Este dispositivo ahora es %1.</translation>
+    </message>
+    <message>
+        <source>The other device said no.</source>
+        <translation>El otro dispositivo dijo que no.</translation>
+    </message>
+    <message>
+        <source>Your key in the data folder could not be read.</source>
+        <translation>No se pudo leer tu clave en la carpeta de datos.</translation>
+    </message>
+    <message>
+        <source>Friends are not reachable: the network did not start.</source>
+        <translation>No se puede llegar a los amigos: la red no se inició.</translation>
+    </message>
+    <message>
+        <source>That is not a link to a person.</source>
+        <translation>Eso no es un enlace a una persona.</translation>
+    </message>
+    <message>
+        <source>That is your own link.</source>
+        <translation>Ese es tu propio enlace.</translation>
+    </message>
+    <message>
+        <source>You are friends already.</source>
+        <translation>Ya sois amigos.</translation>
+    </message>
+    <message>
+        <source>Asked. They become your friend once they accept.</source>
+        <translation>Solicitado. Será tu amigo en cuanto acepte.</translation>
+    </message>
+    <message>
+        <source>Your link is new: the old one no longer works.</source>
+        <translation>Tu enlace es nuevo: el anterior ya no funciona.</translation>
+    </message>
+    <message>
+        <source>The device is you now.</source>
+        <translation>El dispositivo ahora es tú.</translation>
+    </message>
+    <message>
+        <source>That is not a link to add a device.</source>
+        <translation>Eso no es un enlace para añadir un dispositivo.</translation>
+    </message>
+    <message>
+        <source>That link is this device&apos;s own.</source>
+        <translation>Ese enlace es de este mismo dispositivo.</translation>
+    </message>
+    <message>
+        <source>Waiting for the other device to say yes…</source>
+        <translation>Esperando a que el otro dispositivo diga que sí…</translation>
+    </message>
+    <message>
+        <source>The backup could not be written there.</source>
+        <translation>No se pudo guardar la copia ahí.</translation>
+    </message>
+    <message>
+        <source>Backed up. Keep the file to yourself: it is you.</source>
+        <translation>Copia guardada. Guarda el archivo para ti: eres tú.</translation>
+    </message>
+    <message>
+        <source>The backup could not be read.</source>
+        <translation>No se pudo leer la copia.</translation>
+    </message>
+    <message>
+        <source>That file is no backup of ratcast&apos;s.</source>
+        <translation>Ese archivo no es una copia de seguridad de ratcast.</translation>
+    </message>
+    <message>
+        <source>Restored: this device is %1 again.</source>
+        <translation>Restaurado: este dispositivo vuelve a ser %1.</translation>
     </message>
 </context>
 <context>

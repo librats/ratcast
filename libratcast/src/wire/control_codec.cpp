@@ -67,6 +67,10 @@ void write(Out& out, const PresenceUpdate& update) {
     out.u8(static_cast<uint8_t>((p.muted ? kMuted : 0) | (p.deafened ? kDeafened : 0)));
     out.varint(p.decodes.size());
     for (const Codec codec : p.decodes) out.u8(static_cast<uint8_t>(codec));
+    if (!p.identity.empty()) {
+        out.varint(p.identity.size());
+        out.bytes(p.identity);
+    }
 }
 
 // Times go as the bits of their microseconds: a probe's comes back as it went.
@@ -363,6 +367,15 @@ Result<ControlMessage> read_presence(Reader& in) {
         if (media_kind_of(codec) == MediaKind::Video) p.decodes.push_back(codec);
     }
     if (!in.ok()) return fail(in.error());
+    // An earlier build says no identity.
+    if (in.remaining() > 0) {
+        const uint64_t size = in.varint();
+        if (!in.ok()) return fail(in.error());
+        if (size > Presence::kMaxIdentitySize) return fail(Errc::Malformed);
+        const std::span<const uint8_t> identity = in.bytes(size);
+        if (!in.ok()) return fail(in.error());
+        p.identity.assign(identity.begin(), identity.end());
+    }
     if (!is_valid(p)) return fail(Errc::Malformed);
     return ControlMessage{PresenceUpdate{std::move(p)}};
 }

@@ -61,6 +61,7 @@
 #include <chrono>
 #include <cstdint>
 #include <functional>
+#include <map>
 #include <memory>
 #include <stop_token>
 #include <string>
@@ -69,6 +70,7 @@
 
 #include "chat_model.h"
 #include "members_model.h"
+#include "people_controller.h"
 #include "ratcast/client/call.h"
 #include "ratcast/client/call_monitor.h"
 #include "ratcast/client/camera.h"
@@ -174,6 +176,11 @@ class CallController : public QObject {
     /// Print the monitor's report on standard output every so many seconds
     /// while in a room; 0: never.
     Q_PROPERTY(int statsEvery READ statsEvery WRITE setStatsEvery NOTIFY statsEveryChanged)
+    /// The people this side knows (PeopleController): its rooms certified as
+    /// the person's, its members told apart by whose they are and asked to be
+    /// friends, its name the person's. Null: a room of nobody's.
+    Q_PROPERTY(
+        ratcast::app::PeopleController* people READ people WRITE setPeople NOTIFY peopleChanged)
 
 public:
     enum class State { Idle, Joining, InRoom };
@@ -276,7 +283,12 @@ public:
     /// and the next.
     Q_INVOKABLE void setVolume(const QString& id, double volume);
     /// The member of `id` not heard on this side at all, their volume kept.
+    /// Both are kept for the person whose the member is, whichever of their
+    /// devices or rooms, where it is known (Member::person).
     Q_INVOKABLE void setMutedHere(const QString& id, bool muted);
+    /// Ask the member of `id` to be a friend, by the card its presence
+    /// carries (Member::befriendable).
+    Q_INVOKABLE void addFriend(const QString& id);
     /// Draw the camera of the member of `id` into `view`; null: nowhere.
     Q_INVOKABLE void setCameraView(const QString& id, ratcast::app::VideoView* view);
     /// Say `text` to the room, its ends trimmed, its line breaks kept and
@@ -333,6 +345,8 @@ public:
     QString qualityReason() const { return quality_reason_; }
     int statsEvery() const { return stats_every_; }
     void setStatsEvery(int seconds);
+    PeopleController* people() const { return people_; }
+    void setPeople(PeopleController* people);
 
 Q_SIGNALS:
     void stateChanged();
@@ -359,6 +373,7 @@ Q_SIGNALS:
     void sharePreviewChanged();
     void statsChanged();
     void statsEveryChanged();
+    void peopleChanged();
 
 private:
     struct Pictures;
@@ -437,6 +452,9 @@ private:
     /// `id` heard so from now on: kept, saved, the call told.
     void hear(const QString& id, Hearing hearing);
     void tell_hearing(const QString& id, const Hearing& hearing);
+    /// What how `peer` is heard is kept under: their person's key where it is
+    /// known, else the peer's.
+    QString hearing_key(const PeerId& peer) const;
     void update_levels();
     /// Report on the call just started, every second and, if asked, on
     /// standard output.
@@ -456,7 +474,9 @@ private:
     QString server_;
     MembersModel members_;
     ChatModel chat_;
-    QMap<QString, Hearing> hearing_;  ///< the members not heard as they come, by id
+    QMap<QString, Hearing> hearing_;          ///< the members not heard as they come, by id
+    std::map<PeerId, Hearing> told_hearing_;  ///< what the call was told of each peer
+    QPointer<PeopleController> people_;
     std::array<QVariantList, kDevices> listed_;
     std::array<Chosen, kDevices> chosen_;
     int cameras_on_ = 0;

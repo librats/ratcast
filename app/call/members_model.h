@@ -35,6 +35,14 @@ struct Member {
     bool reconnecting = false;
     double volume = 1.0;      ///< how loud it is heard here: 1 as it comes
     bool muted_here = false;  ///< not heard here, whatever its volume (role `mutedHere`)
+    /// Whose it is, by the card its presence carries (identity.h): the
+    /// person's key in hex (role `person`) and tag; "" for nobody's.
+    QString person;
+    QString tag;
+    /// A friend of this side's (role `isFriend`); or one that may be asked to
+    /// be, by its card (role `befriendable`): asked already, it is not.
+    bool is_friend = false;
+    bool befriendable = false;
 
     friend bool operator==(const Member&, const Member&) = default;
 };
@@ -56,6 +64,10 @@ public:
         ReconnectingRole,
         VolumeRole,
         MutedHereRole,
+        PersonRole,
+        TagRole,
+        IsFriendRole,
+        BefriendableRole,
     };
 
     using QAbstractListModel::QAbstractListModel;

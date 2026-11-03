@@ -148,6 +148,7 @@ qt_add_qml_module(ratcast_app
     URI     Ratcast
     VERSION 1.0
     QML_FILES
+        qml/FriendsPanel.qml
         qml/Main.qml
         qml/RatLogo.qml
         qml/SettingsDialog.qml
@@ -157,6 +158,7 @@ qt_add_qml_module(ratcast_app
     RESOURCES
         qml/icons/activity.svg
         qml/icons/app-window.svg
+        qml/icons/check.svg
         qml/icons/copy.svg
         qml/icons/ellipsis.svg
         qml/icons/external-link.svg
@@ -177,14 +179,21 @@ qt_add_qml_module(ratcast_app
         qml/icons/monitor.svg
         qml/icons/phone-off.svg
         qml/icons/plus.svg
+        qml/icons/qr-code.svg
         qml/icons/refresh-cw.svg
         qml/icons/rotate-ccw.svg
+        qml/icons/save.svg
         qml/icons/screen-share-off.svg
         qml/icons/screen-share.svg
         qml/icons/send.svg
         qml/icons/settings.svg
+        qml/icons/smartphone.svg
         qml/icons/switch-camera.svg
         qml/icons/tv-minimal-play.svg
+        qml/icons/upload.svg
+        qml/icons/user-plus.svg
+        qml/icons/user.svg
+        qml/icons/users.svg
         qml/icons/video-off.svg
         qml/icons/video.svg
         qml/icons/volume-2.svg

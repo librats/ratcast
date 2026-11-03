@@ -1824,12 +1824,36 @@ no account: the first run asks a name and an avatar. *Done when* Ann adds Bob by
 in a messenger, each sees the other online, Ann rings Bob and he answers on one of his
 devices, and Ann's phone, added by a QR code from her PC, is Ann to Bob.
 
-- **14.1 A person and their devices**: a person's key (Ed25519; a small vendored library,
+- **14.1 A person and their devices** ✅: a person's key (Ed25519; a small vendored library,
   Monocypher, CC0 / BSD-2) in the data directory; each device the librats node it is today,
   under a certificate the person's key signs. Shown as a name, an avatar and a tag of the key
   (`Ann · 4F2K`): names are not unique. A device added from another by a QR code, which hands
   over the key and the person's list of friends and groups, synced as two of their
   devices meet. Backup: the key in a file. Today's identity becomes the first device.
+  Done so: `identity.h` — `PersonKey` (Monocypher's EdDSA, Ed25519 over BLAKE2b, in
+  `external/monocypher`; kept as `person.key`, one broken never replaced), `Certificate` (a
+  node's peer id and when, signed), `IdentityCard` (a certificate and the person's room secret,
+  told in a call's presence: `Presence::identity`, bytes libratcast passes on unread, appended
+  to its wire message as a later field), `PersonId::tag()` (four characters of Crockford's
+  base32 of the key's hash). Every node of a device — a room's maker, a guest, the home node —
+  is the person's by its card (`CallConfig::identity`, `Call::identity()`). The home node
+  (`people.h`, `People`): a librats node of its own in the data directory's `home`, up while the
+  app runs, met at servers under keys only the right peers work out — the person's link's and
+  room secret's (a MAC of the person under each), their devices' (of the key's secret), a
+  device link's — which `Rendezvous::set_keys()` changes as it runs (librats; a server keeps 16
+  keys a peer now, 4 before, and an older one keeps the first: the person's own are first). What
+  the person knows — name, friends, requests both ways, the secrets — is `people.json`, merged
+  between their devices as they meet, whatever changed last winning. A device link
+  (`https://ratcast.app/d/#PERSON.SECRET`, 10 minutes, a QR code — qrcodegen, MIT, in
+  `external/qrcodegen` — for a phone's camera, whose App Link opens the app) opened on another
+  device has it prove the secret; the user is asked, and allowed, the key and the book go over
+  Noise. Backup: the key and the book in a text file, restored in place. The app:
+  `PeopleController` (Ratcast.Call), the name the person's on every device, the settings' "You"
+  (name and tag, a device added or this one made another's, backup and restore); an avatar is
+  a letter on a colour of the tag. Tested: keys, MACs, base64url, certificates and cards, cut and
+  tampered; presence's identity on the wire; a call's card checked against its peer; a device
+  that becomes its person, refused, or whose link was taken back; devices kept alike; a backup
+  restored. Left: pictures for avatars; a device revoked; the person's key rotated.
 - **14.2 Links that open the app** — rooms' ✅: `https://ratcast.app/u/#…` (a person), `/g/#…`
   (a group), `/r/#…` (a room) — clickable in every messenger, which `rats://` is not. What
   follows `#` never reaches a server: the static page reads it in an effect, opens `rats://…`
@@ -1838,7 +1862,7 @@ devices, and Ann's phone, added by a QR code from her PC, is Ann to Bob.
   Done so, for rooms: `to_web_link()` (`rats_url.h`), the rats:// link without its scheme after
   `https://ratcast.app/r/#`, which `parse_rats_link()` takes as it takes rats:// (escaped or
   not; the site's www., http, `/r` too); the app's invites are web links, its field and its
-  command line take both. The website's `/r/` (`Room.tsx`, prerendered without the link, kept
+  command line take both. The website's `/r/` (`Opener.tsx`, prerendered without the link, kept
   from search engines): opens `rats://` at once, a button to again, the download, the rats://
   link to copy. The app (`app/src/links.h`): on Android a second intent filter, the site's
   `/r/` with `autoVerify`, its https links handed to the window and every other the app opens
@@ -1854,9 +1878,24 @@ devices, and Ann's phone, added by a QR code from her PC, is Ann to Bob.
   the system joined, one given to a second process taken by the first. Left: the site's
   `/.well-known/assetlinks.json` (the release key's SHA-256): until it is there, Android opens
   the page, whose button opens the app; QR codes; macOS, Linux and Android tried by hand.
-- **14.3 Friends**: a personal link (the person's key and a secret, reset at will) opened sends
+- **14.3 Friends** ✅: a personal link (the person's key and a secret, reset at will) opened sends
   a request, shown on the other's devices: accept or decline; Add friend at a member's name in
   a room too. Until accepted nothing reaches but the request: no ringing by strangers.
+  Done so: `https://ratcast.app/u/#PERSON.SECRET` (`parse_person_link()`, `rats://u/…`; the
+  site's `/u/` and `/d/` the room's page made general, `Opener.tsx`). Whoever opens it registers
+  under the person's key for it and, meeting their home node, sends a proof of the secret (a
+  MAC of both peer ids); a request from a room is the same with the room secret of the member's
+  card. A request waits on the asker's devices until both are online; accepted, the two share a
+  secret (for 14.4), and two who asked each other are friends with one (the lower key's).
+  Declined, the asker is told; a link reset refuses the old secret from then on. The app: the
+  friends beside the start (narrow, in a drawer): one's link copied or as a QR code and made
+  anew, a friend's link to add, the requests both ways, the friends; a link opened or pasted —
+  a person's asks, a device's asks first — wherever; in a room each member's tag beside the
+  name, a friend marked, Add friend in the member's popup, and how loud a member is heard kept
+  for their person, whichever node or room they come in. Tested: asked by link and accepted,
+  kept the next run, a request that waits for the other to come online, declined and told, a
+  reset link refused, asked from a room, asked both ways at once; on the controller, a member's
+  tag, asked and a friend, heard as set in the next room from another node.
 - **14.4 Presence**: online, or in a room, seen by friends — each device registered under its
   person's presence key, friends' watched (librats: **needs** L26).
 - **14.5 Ringing**: a call to a friend a room of two, rung on each of their devices online,

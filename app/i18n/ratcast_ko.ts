@@ -2,6 +2,101 @@
 <!DOCTYPE TS>
 <TS version="2.1" language="ko" sourcelanguage="en">
 <context>
+    <name>FriendsPanel</name>
+    <message>
+        <source>Someone</source>
+        <translation>누군가</translation>
+    </message>
+    <message>
+        <source>Friends</source>
+        <translation>친구</translation>
+    </message>
+    <message>
+        <source>You</source>
+        <translation>나</translation>
+    </message>
+    <message>
+        <source>Send your link to whoever is to be your friend:</source>
+        <translation>친구가 될 사람에게 내 링크를 보내세요:</translation>
+    </message>
+    <message>
+        <source>Copied</source>
+        <translation>복사됨</translation>
+    </message>
+    <message>
+        <source>Copy your link</source>
+        <translation>내 링크 복사</translation>
+    </message>
+    <message>
+        <source>Show it as a QR code</source>
+        <translation>QR 코드로 보기</translation>
+    </message>
+    <message>
+        <source>A new link (the old one stops working)</source>
+        <translation>새 링크 (이전 링크는 더 이상 작동하지 않음)</translation>
+    </message>
+    <message>
+        <source>Point a phone&apos;s camera at it to open your link there.</source>
+        <translation>휴대폰 카메라를 대면 그 기기에서 내 링크가 열립니다.</translation>
+    </message>
+    <message>
+        <source>a friend&apos;s link</source>
+        <translation>친구의 링크</translation>
+    </message>
+    <message>
+        <source>Add</source>
+        <translation>추가</translation>
+    </message>
+    <message>
+        <source>Asking you</source>
+        <translation>받은 요청</translation>
+    </message>
+    <message>
+        <source>Accept</source>
+        <translation>수락</translation>
+    </message>
+    <message>
+        <source>Decline</source>
+        <translation>거절</translation>
+    </message>
+    <message>
+        <source>Asked by you</source>
+        <translation>보낸 요청</translation>
+    </message>
+    <message>
+        <source>declined</source>
+        <translation>거절됨</translation>
+    </message>
+    <message>
+        <source>waiting until they are online and accept</source>
+        <translation>상대가 온라인이 되어 수락하기를 기다리는 중</translation>
+    </message>
+    <message>
+        <source>Remove</source>
+        <translation>삭제</translation>
+    </message>
+    <message>
+        <source>Take back</source>
+        <translation>취소</translation>
+    </message>
+    <message>
+        <source>Your friends (%1)</source>
+        <translation>내 친구 (%1)</translation>
+    </message>
+    <message>
+        <source>Your friends</source>
+        <translation>내 친구</translation>
+    </message>
+    <message>
+        <source>None yet. Send your link, or add someone you meet in a room: click their name there.</source>
+        <translation>아직 없습니다. 링크를 보내거나 방에서 만난 사람을 추가하세요: 그 사람의 이름을 클릭하면 됩니다.</translation>
+    </message>
+    <message>
+        <source>Remove from friends</source>
+        <translation>친구에서 삭제</translation>
+    </message>
+</context>
+<context>
     <name>Main</name>
     <message>
         <source>%1 stopped sharing</source>
@@ -116,6 +211,42 @@
         <translation>취소</translation>
     </message>
     <message>
+        <source>A device asks to become you</source>
+        <translation>기기가 나로 전환하려고 합니다</translation>
+    </message>
+    <message>
+        <source>“%1” opened your device link. Allowed, it gets your key and your friends, and is you from then on.</source>
+        <translation>“%1” 기기가 내 기기 링크를 열었습니다. 허용하면 내 키와 친구를 받아 그때부터 내가 됩니다.</translation>
+    </message>
+    <message>
+        <source>Allow</source>
+        <translation>허용</translation>
+    </message>
+    <message>
+        <source>Refuse</source>
+        <translation>거부</translation>
+    </message>
+    <message>
+        <source>Become this person on this device?</source>
+        <translation>이 기기에서 이 사람이 될까요?</translation>
+    </message>
+    <message>
+        <source>This device asks the one that made the link. Once it says yes, this device has that person&apos;s key and friends in place of its own.</source>
+        <translation>이 기기가 링크를 만든 기기에 묻습니다. 승인되면 이 기기는 자신의 것 대신 그 사람의 키와 친구를 갖게 됩니다.</translation>
+    </message>
+    <message>
+        <source>Ask</source>
+        <translation>요청</translation>
+    </message>
+    <message>
+        <source>Friends (%1 asking)</source>
+        <translation>친구 (요청 %1)</translation>
+    </message>
+    <message>
+        <source>Friends</source>
+        <translation>친구</translation>
+    </message>
+    <message>
         <source>Room</source>
         <translation>방</translation>
     </message>
@@ -168,6 +299,22 @@
     <message>
         <source>%1, for you</source>
         <translation>%1 (나에게만 적용)</translation>
+    </message>
+    <message>
+        <source>You, on another device</source>
+        <translation>다른 기기의 나</translation>
+    </message>
+    <message>
+        <source>Your friend</source>
+        <translation>내 친구</translation>
+    </message>
+    <message>
+        <source>Asked to be your friend</source>
+        <translation>친구 요청 보냄</translation>
+    </message>
+    <message>
+        <source>Add friend</source>
+        <translation>친구 추가</translation>
     </message>
     <message>
         <source>Mute for me</source>
@@ -401,6 +548,10 @@
         <translation>언어</translation>
     </message>
     <message>
+        <source>You</source>
+        <translation>나</translation>
+    </message>
+    <message>
         <source>Window</source>
         <translation>창</translation>
     </message>
@@ -467,6 +618,70 @@
     <message>
         <source>Takes effect at once.</source>
         <translation>바로 적용돼요.</translation>
+    </message>
+    <message>
+        <source>Your name</source>
+        <translation>내 이름</translation>
+    </message>
+    <message>
+        <source>The four characters after it are yours alone: they tell two of a name apart.</source>
+        <translation>뒤의 네 글자는 나만의 것으로, 이름이 같은 두 사람을 구분해 줍니다.</translation>
+    </message>
+    <message>
+        <source>Your other devices</source>
+        <translation>내 다른 기기</translation>
+    </message>
+    <message>
+        <source>A phone or another computer can be you too: the same friends, the same name. Make a link here and open it there, or point that phone&apos;s camera at its QR code.</source>
+        <translation>휴대폰이나 다른 컴퓨터도 내가 될 수 있습니다: 같은 친구, 같은 이름. 여기서 링크를 만들어 그 기기에서 열거나, 휴대폰 카메라를 QR 코드에 대세요.</translation>
+    </message>
+    <message>
+        <source>Add a device</source>
+        <translation>기기 추가</translation>
+    </message>
+    <message>
+        <source>Copy the link</source>
+        <translation>링크 복사</translation>
+    </message>
+    <message>
+        <source>For the next ten minutes, and for one device: you are asked before it becomes you. Send it to nobody else.</source>
+        <translation>10분 동안, 기기 한 대에만 유효합니다. 내가 되기 전에 확인을 받습니다. 다른 사람에게는 보내지 마세요.</translation>
+    </message>
+    <message>
+        <source>Cancel</source>
+        <translation>취소</translation>
+    </message>
+    <message>
+        <source>Make this device someone else&apos;s</source>
+        <translation>이 기기를 다른 사람의 것으로</translation>
+    </message>
+    <message>
+        <source>the link your other device made</source>
+        <translation>다른 기기에서 만든 링크</translation>
+    </message>
+    <message>
+        <source>Ask</source>
+        <translation>요청</translation>
+    </message>
+    <message>
+        <source>Backup</source>
+        <translation>백업</translation>
+    </message>
+    <message>
+        <source>Your key and your friends in a file: with it, a new device is you again even if every other is lost. Whoever has the file can be you.</source>
+        <translation>내 키와 친구를 파일 하나에: 다른 기기를 모두 잃어도 새 기기가 다시 내가 됩니다. 이 파일을 가진 사람은 누구나 내가 될 수 있습니다.</translation>
+    </message>
+    <message>
+        <source>Save a backup…</source>
+        <translation>백업 저장…</translation>
+    </message>
+    <message>
+        <source>Restore…</source>
+        <translation>복원…</translation>
+    </message>
+    <message>
+        <source>Backups (*.txt)</source>
+        <translation>백업 (*.txt)</translation>
     </message>
     <message>
         <source>Minimize to the tray</source>
@@ -566,6 +781,85 @@
     <message>
         <source>Sharing failed (%1).</source>
         <translation>공유하지 못했어요 (%1).</translation>
+    </message>
+</context>
+<context>
+    <name>ratcast::app::PeopleController</name>
+    <message>
+        <source>A device</source>
+        <translation>기기</translation>
+    </message>
+    <message>
+        <source>This device is %1 now.</source>
+        <translation>이제 이 기기는 %1입니다.</translation>
+    </message>
+    <message>
+        <source>The other device said no.</source>
+        <translation>다른 기기가 거부했습니다.</translation>
+    </message>
+    <message>
+        <source>Your key in the data folder could not be read.</source>
+        <translation>데이터 폴더의 키를 읽을 수 없습니다.</translation>
+    </message>
+    <message>
+        <source>Friends are not reachable: the network did not start.</source>
+        <translation>친구에게 연결할 수 없습니다: 네트워크가 시작되지 않았습니다.</translation>
+    </message>
+    <message>
+        <source>That is not a link to a person.</source>
+        <translation>사람에게 가는 링크가 아닙니다.</translation>
+    </message>
+    <message>
+        <source>That is your own link.</source>
+        <translation>내 링크입니다.</translation>
+    </message>
+    <message>
+        <source>You are friends already.</source>
+        <translation>이미 친구입니다.</translation>
+    </message>
+    <message>
+        <source>Asked. They become your friend once they accept.</source>
+        <translation>요청했습니다. 상대가 수락하면 친구가 됩니다.</translation>
+    </message>
+    <message>
+        <source>Your link is new: the old one no longer works.</source>
+        <translation>새 링크입니다: 이전 링크는 더 이상 작동하지 않습니다.</translation>
+    </message>
+    <message>
+        <source>The device is you now.</source>
+        <translation>이제 그 기기가 나입니다.</translation>
+    </message>
+    <message>
+        <source>That is not a link to add a device.</source>
+        <translation>기기를 추가하는 링크가 아닙니다.</translation>
+    </message>
+    <message>
+        <source>That link is this device&apos;s own.</source>
+        <translation>이 기기 자신의 링크입니다.</translation>
+    </message>
+    <message>
+        <source>Waiting for the other device to say yes…</source>
+        <translation>다른 기기의 승인을 기다리는 중…</translation>
+    </message>
+    <message>
+        <source>The backup could not be written there.</source>
+        <translation>그곳에 백업을 저장할 수 없습니다.</translation>
+    </message>
+    <message>
+        <source>Backed up. Keep the file to yourself: it is you.</source>
+        <translation>백업했습니다. 파일은 혼자만 보관하세요: 그것이 바로 나입니다.</translation>
+    </message>
+    <message>
+        <source>The backup could not be read.</source>
+        <translation>백업을 읽을 수 없습니다.</translation>
+    </message>
+    <message>
+        <source>That file is no backup of ratcast&apos;s.</source>
+        <translation>ratcast 백업 파일이 아닙니다.</translation>
+    </message>
+    <message>
+        <source>Restored: this device is %1 again.</source>
+        <translation>복원됨: 이 기기는 다시 %1입니다.</translation>
     </message>
 </context>
 <context>

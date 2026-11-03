@@ -12,7 +12,8 @@ bool is_valid(const Presence& presence) noexcept {
             std::find(presence.decodes.begin(), it, *it) != it)
             return false;
     }
-    return presence.name.size() <= Presence::kMaxNameSize && is_plain_text(presence.name);
+    return presence.name.size() <= Presence::kMaxNameSize && is_plain_text(presence.name) &&
+           presence.identity.size() <= Presence::kMaxIdentitySize;
 }
 
 }  // namespace ratcast

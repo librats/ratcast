@@ -2,6 +2,101 @@
 <!DOCTYPE TS>
 <TS version="2.1" language="tr" sourcelanguage="en">
 <context>
+    <name>FriendsPanel</name>
+    <message>
+        <source>Someone</source>
+        <translation>Biri</translation>
+    </message>
+    <message>
+        <source>Friends</source>
+        <translation>Arkadaşlar</translation>
+    </message>
+    <message>
+        <source>You</source>
+        <translation>Siz</translation>
+    </message>
+    <message>
+        <source>Send your link to whoever is to be your friend:</source>
+        <translation>Arkadaşın olacak kişiye bağlantını gönder:</translation>
+    </message>
+    <message>
+        <source>Copied</source>
+        <translation>Kopyalandı</translation>
+    </message>
+    <message>
+        <source>Copy your link</source>
+        <translation>Bağlantını kopyala</translation>
+    </message>
+    <message>
+        <source>Show it as a QR code</source>
+        <translation>QR kod olarak göster</translation>
+    </message>
+    <message>
+        <source>A new link (the old one stops working)</source>
+        <translation>Yeni bağlantı (eskisi artık çalışmaz)</translation>
+    </message>
+    <message>
+        <source>Point a phone&apos;s camera at it to open your link there.</source>
+        <translation>Bağlantını orada açmak için bir telefonun kamerasını ona tut.</translation>
+    </message>
+    <message>
+        <source>a friend&apos;s link</source>
+        <translation>bir arkadaşın bağlantısı</translation>
+    </message>
+    <message>
+        <source>Add</source>
+        <translation>Ekle</translation>
+    </message>
+    <message>
+        <source>Asking you</source>
+        <translation>Sana istek gönderenler</translation>
+    </message>
+    <message>
+        <source>Accept</source>
+        <translation>Kabul et</translation>
+    </message>
+    <message>
+        <source>Decline</source>
+        <translation>Reddet</translation>
+    </message>
+    <message>
+        <source>Asked by you</source>
+        <translation>Senin isteklerin</translation>
+    </message>
+    <message>
+        <source>declined</source>
+        <translation>reddedildi</translation>
+    </message>
+    <message>
+        <source>waiting until they are online and accept</source>
+        <translation>çevrimiçi olup kabul etmesi bekleniyor</translation>
+    </message>
+    <message>
+        <source>Remove</source>
+        <translation>Kaldır</translation>
+    </message>
+    <message>
+        <source>Take back</source>
+        <translation>Geri al</translation>
+    </message>
+    <message>
+        <source>Your friends (%1)</source>
+        <translation>Arkadaşların (%1)</translation>
+    </message>
+    <message>
+        <source>Your friends</source>
+        <translation>Arkadaşların</translation>
+    </message>
+    <message>
+        <source>None yet. Send your link, or add someone you meet in a room: click their name there.</source>
+        <translation>Henüz kimse yok. Bağlantını gönder ya da bir odada tanıştığın birini ekle: oradaki adına tıkla.</translation>
+    </message>
+    <message>
+        <source>Remove from friends</source>
+        <translation>Arkadaşlardan çıkar</translation>
+    </message>
+</context>
+<context>
     <name>Main</name>
     <message>
         <source>%1 stopped sharing</source>
@@ -116,6 +211,42 @@
         <translation>İptal</translation>
     </message>
     <message>
+        <source>A device asks to become you</source>
+        <translation>Bir cihaz sen olmak istiyor</translation>
+    </message>
+    <message>
+        <source>“%1” opened your device link. Allowed, it gets your key and your friends, and is you from then on.</source>
+        <translation>“%1” cihaz bağlantını açtı. İzin verirsen anahtarını ve arkadaşlarını alır ve o andan itibaren sen olur.</translation>
+    </message>
+    <message>
+        <source>Allow</source>
+        <translation>İzin ver</translation>
+    </message>
+    <message>
+        <source>Refuse</source>
+        <translation>Reddet</translation>
+    </message>
+    <message>
+        <source>Become this person on this device?</source>
+        <translation>Bu cihazda bu kişi olunsun mu?</translation>
+    </message>
+    <message>
+        <source>This device asks the one that made the link. Once it says yes, this device has that person&apos;s key and friends in place of its own.</source>
+        <translation>Bu cihaz, bağlantıyı oluşturana sorar. O kabul edince bu cihazda kendi anahtarı ve arkadaşları yerine o kişininkiler olur.</translation>
+    </message>
+    <message>
+        <source>Ask</source>
+        <translation>Sor</translation>
+    </message>
+    <message>
+        <source>Friends (%1 asking)</source>
+        <translation>Arkadaşlar (%1 istek)</translation>
+    </message>
+    <message>
+        <source>Friends</source>
+        <translation>Arkadaşlar</translation>
+    </message>
+    <message>
         <source>Room</source>
         <translation>Oda</translation>
     </message>
@@ -168,6 +299,22 @@
     <message>
         <source>%1, for you</source>
         <translation>%1 (yalnızca sizin için)</translation>
+    </message>
+    <message>
+        <source>You, on another device</source>
+        <translation>Sen, başka bir cihazda</translation>
+    </message>
+    <message>
+        <source>Your friend</source>
+        <translation>Arkadaşın</translation>
+    </message>
+    <message>
+        <source>Asked to be your friend</source>
+        <translation>Arkadaşlık isteği gönderildi</translation>
+    </message>
+    <message>
+        <source>Add friend</source>
+        <translation>Arkadaş ekle</translation>
     </message>
     <message>
         <source>Mute for me</source>
@@ -401,6 +548,10 @@
         <translation>Dil</translation>
     </message>
     <message>
+        <source>You</source>
+        <translation>Siz</translation>
+    </message>
+    <message>
         <source>Window</source>
         <translation>Pencere</translation>
     </message>
@@ -467,6 +618,70 @@
     <message>
         <source>Takes effect at once.</source>
         <translation>Hemen uygulanır.</translation>
+    </message>
+    <message>
+        <source>Your name</source>
+        <translation>Adın</translation>
+    </message>
+    <message>
+        <source>The four characters after it are yours alone: they tell two of a name apart.</source>
+        <translation>Ardından gelen dört karakter yalnızca senin: aynı adı taşıyan iki kişiyi ayırt eder.</translation>
+    </message>
+    <message>
+        <source>Your other devices</source>
+        <translation>Diğer cihazların</translation>
+    </message>
+    <message>
+        <source>A phone or another computer can be you too: the same friends, the same name. Make a link here and open it there, or point that phone&apos;s camera at its QR code.</source>
+        <translation>Bir telefon ya da başka bir bilgisayar da sen olabilir: aynı arkadaşlar, aynı ad. Burada bir bağlantı oluştur ve orada aç ya da o telefonun kamerasını QR koduna tut.</translation>
+    </message>
+    <message>
+        <source>Add a device</source>
+        <translation>Cihaz ekle</translation>
+    </message>
+    <message>
+        <source>Copy the link</source>
+        <translation>Bağlantıyı kopyala</translation>
+    </message>
+    <message>
+        <source>For the next ten minutes, and for one device: you are asked before it becomes you. Send it to nobody else.</source>
+        <translation>On dakika ve tek bir cihaz için geçerli: sen olmadan önce sana sorulur. Başka kimseye gönderme.</translation>
+    </message>
+    <message>
+        <source>Cancel</source>
+        <translation>İptal</translation>
+    </message>
+    <message>
+        <source>Make this device someone else&apos;s</source>
+        <translation>Bu cihazı başkasının yap</translation>
+    </message>
+    <message>
+        <source>the link your other device made</source>
+        <translation>diğer cihazının oluşturduğu bağlantı</translation>
+    </message>
+    <message>
+        <source>Ask</source>
+        <translation>Sor</translation>
+    </message>
+    <message>
+        <source>Backup</source>
+        <translation>Yedek</translation>
+    </message>
+    <message>
+        <source>Your key and your friends in a file: with it, a new device is you again even if every other is lost. Whoever has the file can be you.</source>
+        <translation>Anahtarın ve arkadaşların bir dosyada: onunla, diğer tüm cihazlar kaybolsa bile yeni bir cihaz yeniden sen olur. Dosyaya sahip olan sen olabilir.</translation>
+    </message>
+    <message>
+        <source>Save a backup…</source>
+        <translation>Yedek kaydet…</translation>
+    </message>
+    <message>
+        <source>Restore…</source>
+        <translation>Geri yükle…</translation>
+    </message>
+    <message>
+        <source>Backups (*.txt)</source>
+        <translation>Yedekler (*.txt)</translation>
     </message>
     <message>
         <source>Minimize to the tray</source>
@@ -566,6 +781,85 @@
     <message>
         <source>Sharing failed (%1).</source>
         <translation>Paylaşım başarısız oldu (%1).</translation>
+    </message>
+</context>
+<context>
+    <name>ratcast::app::PeopleController</name>
+    <message>
+        <source>A device</source>
+        <translation>Bir cihaz</translation>
+    </message>
+    <message>
+        <source>This device is %1 now.</source>
+        <translation>Bu cihaz artık %1.</translation>
+    </message>
+    <message>
+        <source>The other device said no.</source>
+        <translation>Diğer cihaz reddetti.</translation>
+    </message>
+    <message>
+        <source>Your key in the data folder could not be read.</source>
+        <translation>Veri klasöründeki anahtarın okunamadı.</translation>
+    </message>
+    <message>
+        <source>Friends are not reachable: the network did not start.</source>
+        <translation>Arkadaşlara ulaşılamıyor: ağ başlamadı.</translation>
+    </message>
+    <message>
+        <source>That is not a link to a person.</source>
+        <translation>Bu bir kişinin bağlantısı değil.</translation>
+    </message>
+    <message>
+        <source>That is your own link.</source>
+        <translation>Bu senin kendi bağlantın.</translation>
+    </message>
+    <message>
+        <source>You are friends already.</source>
+        <translation>Zaten arkadaşsınız.</translation>
+    </message>
+    <message>
+        <source>Asked. They become your friend once they accept.</source>
+        <translation>İstek gönderildi. Kabul ettiğinde arkadaşın olur.</translation>
+    </message>
+    <message>
+        <source>Your link is new: the old one no longer works.</source>
+        <translation>Bağlantın yeni: eskisi artık çalışmıyor.</translation>
+    </message>
+    <message>
+        <source>The device is you now.</source>
+        <translation>Cihaz artık sen.</translation>
+    </message>
+    <message>
+        <source>That is not a link to add a device.</source>
+        <translation>Bu, cihaz eklemek için bir bağlantı değil.</translation>
+    </message>
+    <message>
+        <source>That link is this device&apos;s own.</source>
+        <translation>Bu bağlantı bu cihazın kendisine ait.</translation>
+    </message>
+    <message>
+        <source>Waiting for the other device to say yes…</source>
+        <translation>Diğer cihazın kabul etmesi bekleniyor…</translation>
+    </message>
+    <message>
+        <source>The backup could not be written there.</source>
+        <translation>Yedek oraya yazılamadı.</translation>
+    </message>
+    <message>
+        <source>Backed up. Keep the file to yourself: it is you.</source>
+        <translation>Yedeklendi. Dosyayı kendine sakla: o sensin.</translation>
+    </message>
+    <message>
+        <source>The backup could not be read.</source>
+        <translation>Yedek okunamadı.</translation>
+    </message>
+    <message>
+        <source>That file is no backup of ratcast&apos;s.</source>
+        <translation>Bu dosya bir ratcast yedeği değil.</translation>
+    </message>
+    <message>
+        <source>Restored: this device is %1 again.</source>
+        <translation>Geri yüklendi: bu cihaz yeniden %1.</translation>
     </message>
 </context>
 <context>

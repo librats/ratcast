@@ -1,12 +1,14 @@
 import { StrictMode } from "react";
 import { createRoot, hydrateRoot } from "react-dom/client";
-import { Room } from "./components/Room";
+import { type LinkKind, Opener } from "./components/Opener";
 import "./index.css";
 
+// The pages of links (r/, u/, d/ index.html), each saying its kind on its root.
 const root = document.getElementById("root")!;
+const kind = (root.dataset.kind ?? "room") as LinkKind;
 const page = (
   <StrictMode>
-    <Room />
+    <Opener kind={kind} />
   </StrictMode>
 );
 

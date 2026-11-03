@@ -337,6 +337,13 @@ void CallController::join(const QString& link) {
 void CallController::start(CallConfig config, State state) {
     set_notice({});
     chat_.clear();
+    told_hearing_.clear();
+    // The room's node certified as the person's: those in it know whose it is.
+    if (people_ && people_->people()) {
+        config.identity = [people = people_->people()](const PeerId& node) {
+            return people->card(node);
+        };
+    }
     const uint64_t generation = ++generation_;
     // Told first: the call's sound goes where the call is routed.
     in_call_ = environment_.enter_call ? environment_.enter_call() : nullptr;
@@ -535,9 +542,42 @@ void CallController::update_members() {
         std::vector<PeerId> peers = call_->peers();
         std::ranges::copy(call_->away(), std::back_inserter(peers));
         std::sort(peers.begin(), peers.end());
+        // Whose each is, and whether a friend or asked to be.
+        People* people = people_ ? people_->people() : nullptr;
+        std::optional<PersonId> self;
+        std::vector<PersonId> asked;
+        if (people) {
+            self = people->person();
+            for (const FriendRequest& request : people->requests())
+                if (!request.incoming) asked.push_back(request.person);
+        }
         for (const PeerId& peer : peers) {
             const Presence presence = call_->presence(peer).value_or(Presence{});
-            const Hearing hearing = hearing_.value(id_of(peer));
+            const std::optional<IdentityCard> card = call_->identity(peer);
+            const QString key = hearing_key(peer);
+            const Hearing hearing = hearing_.value(key);
+            // How a person is heard follows them to whichever device they are on.
+            if (const auto told = told_hearing_.find(peer);
+                told == told_hearing_.end() || told->second != hearing) {
+                call_->set_volume(peer, hearing.muted ? 0.0f : float(hearing.volume));
+                told_hearing_[peer] = hearing;
+            }
+            QString person;
+            QString tag;
+            bool is_friend = false;
+            bool befriendable = false;
+            if (card) {
+                const PersonId& whose = card->certificate.person;
+                person = QString::fromStdString(whose.to_hex());
+                tag = QString::fromStdString(whose.tag());
+                if (people && whose != self) {
+                    is_friend = people->is_friend(whose);
+                    const bool has_secret =
+                        std::ranges::any_of(card->request_secret, [](uint8_t b) { return b != 0; });
+                    befriendable =
+                        !is_friend && has_secret && std::ranges::find(asked, whose) == asked.end();
+                }
+            }
             members.push_back({
                 .id = id_of(peer),
                 .peer = QString::fromStdString(peer.short_hex()),
@@ -551,6 +591,10 @@ void CallController::update_members() {
                 .reconnecting = call_->interrupted(peer),
                 .volume = hearing.volume,
                 .muted_here = hearing.muted,
+                .person = person,
+                .tag = tag,
+                .is_friend = is_friend,
+                .befriendable = befriendable,
             });
         }
     }
@@ -660,16 +704,56 @@ void CallController::watch(const QString& id) {
 // Kept in the settings as hearing/<id>/volume and hearing/<id>/muted, for
 // the members not heard as they come.
 
+QString CallController::hearing_key(const PeerId& peer) const {
+    if (call_) {
+        if (const std::optional<IdentityCard> card = call_->identity(peer))
+            return QString::fromStdString(card->certificate.person.to_hex());
+    }
+    return id_of(peer);
+}
+
 void CallController::setVolume(const QString& id, double volume) {
-    Hearing hearing = hearing_.value(id);
+    const std::optional<PeerId> peer = PeerId::from_hex(id.toStdString());
+    const QString key = peer ? hearing_key(*peer) : id;
+    Hearing hearing = hearing_.value(key);
     hearing.volume = volume > 0.0 ? std::min(volume, kMaxVolume) : 0.0;  // NaN: 0
-    hear(id, hearing);
+    hear(key, hearing);
 }
 
 void CallController::setMutedHere(const QString& id, bool muted) {
-    Hearing hearing = hearing_.value(id);
+    const std::optional<PeerId> peer = PeerId::from_hex(id.toStdString());
+    const QString key = peer ? hearing_key(*peer) : id;
+    Hearing hearing = hearing_.value(key);
     hearing.muted = muted;
-    hear(id, hearing);
+    hear(key, hearing);
+}
+
+void CallController::addFriend(const QString& id) {
+    const std::optional<PeerId> peer = PeerId::from_hex(id.toStdString());
+    if (!call_ || !peer || !people_ || !people_->people()) return;
+    const std::optional<IdentityCard> card = call_->identity(*peer);
+    if (!card) return;
+    const Presence presence = call_->presence(*peer).value_or(Presence{});
+    if (people_->people()->add(*card, presence.name)) {
+        LOG_INFO("app", "asked " << card->certificate.person.tag() << " to be a friend");
+    }
+    update_members();
+}
+
+void CallController::setPeople(PeopleController* people) {
+    if (people == people_) return;
+    if (people_) disconnect(people_, nullptr, this, nullptr);
+    people_ = people;
+    if (people_) {
+        // The person's name, the same on each of their devices.
+        const auto follow = [this] {
+            if (people_ && people_->ready()) setName(people_->name());
+            update_members();
+        };
+        connect(people_, &PeopleController::changed, this, follow);
+        follow();
+    }
+    Q_EMIT peopleChanged();
 }
 
 void CallController::load_hearing() {
@@ -711,6 +795,7 @@ void CallController::hear(const QString& id, Hearing hearing) {
 void CallController::tell_hearing(const QString& id, const Hearing& hearing) {
     const std::optional<PeerId> peer = PeerId::from_hex(id.toStdString());
     if (call_ && peer) call_->set_volume(*peer, hearing.muted ? 0.0f : float(hearing.volume));
+    // A person's: told to each of their members (update_members()).
 }
 
 // ── The devices ─────────────────────────────────────────────────────────────

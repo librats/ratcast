@@ -81,6 +81,7 @@
 #include "ratcast/client/audio_publisher.h"
 #include "ratcast/client/data_player.h"
 #include "ratcast/client/data_publisher.h"
+#include "ratcast/client/identity.h"
 #include "ratcast/client/known_servers.h"
 #include "ratcast/client/playout_clock.h"
 #include "ratcast/client/rats_url.h"
@@ -211,6 +212,10 @@ struct CallConfig {
     /// once. A peer that hangs up is left at once.
     Duration redial_for = std::chrono::minutes(2);
     CallPlayback playback = {};
+    /// Whose this side is beyond its node: the person's card for the call's
+    /// node (identity.h, People::card()), told in its presence from the
+    /// start; none, nobody's.
+    std::function<IdentityCard(const PeerId& node)> identity = {};
 };
 
 struct CallHandlers {
@@ -302,6 +307,9 @@ public:
     /// What `peer` last said of itself — while it is away, before it was
     /// lost; none before it said anything, or once it left.
     std::optional<Presence> presence(const PeerId& peer) const;
+    /// Whose `peer` is, by the card its presence carries (identity.h): none
+    /// before it said, or for a card not of it.
+    std::optional<IdentityCard> identity(const PeerId& peer) const;
     /// The path to `peer`, sampled every 100 ms: round trip, bandwidth, loss.
     std::optional<librats::PathStats> path(const PeerId& peer) const;
     /// Whether that path goes through a relay — a server carrying the
@@ -448,6 +456,7 @@ private:
     MediaService* media_ = nullptr;              ///< the node's
     librats::Rendezvous* rendezvous_ = nullptr;  ///< the node's, if it meets by peer id
     std::vector<Codec> decodes_;                 ///< what this side's presence says it decodes
+    std::vector<uint8_t> identity_;              ///< the card its presence carries, encoded
     KnownServers known_servers_;
     /// The peers away, and what each member last said of itself: kept while
     /// it is away and as it comes back, until it says again.

@@ -2,6 +2,101 @@
 <!DOCTYPE TS>
 <TS version="2.1" language="ru" sourcelanguage="en">
 <context>
+    <name>FriendsPanel</name>
+    <message>
+        <source>Someone</source>
+        <translation>Кто-то</translation>
+    </message>
+    <message>
+        <source>Friends</source>
+        <translation>Друзья</translation>
+    </message>
+    <message>
+        <source>You</source>
+        <translation>Вы</translation>
+    </message>
+    <message>
+        <source>Send your link to whoever is to be your friend:</source>
+        <translation>Отправьте свою ссылку тому, с кем хотите дружить:</translation>
+    </message>
+    <message>
+        <source>Copied</source>
+        <translation>Скопировано</translation>
+    </message>
+    <message>
+        <source>Copy your link</source>
+        <translation>Скопировать вашу ссылку</translation>
+    </message>
+    <message>
+        <source>Show it as a QR code</source>
+        <translation>Показать как QR-код</translation>
+    </message>
+    <message>
+        <source>A new link (the old one stops working)</source>
+        <translation>Новая ссылка (старая перестанет работать)</translation>
+    </message>
+    <message>
+        <source>Point a phone&apos;s camera at it to open your link there.</source>
+        <translation>Наведите на него камеру телефона, чтобы открыть там вашу ссылку.</translation>
+    </message>
+    <message>
+        <source>a friend&apos;s link</source>
+        <translation>ссылка друга</translation>
+    </message>
+    <message>
+        <source>Add</source>
+        <translation>Добавить</translation>
+    </message>
+    <message>
+        <source>Asking you</source>
+        <translation>Хотят дружить</translation>
+    </message>
+    <message>
+        <source>Accept</source>
+        <translation>Принять</translation>
+    </message>
+    <message>
+        <source>Decline</source>
+        <translation>Отклонить</translation>
+    </message>
+    <message>
+        <source>Asked by you</source>
+        <translation>Ваши запросы</translation>
+    </message>
+    <message>
+        <source>declined</source>
+        <translation>отклонено</translation>
+    </message>
+    <message>
+        <source>waiting until they are online and accept</source>
+        <translation>ждёт, пока человек будет в сети и примет</translation>
+    </message>
+    <message>
+        <source>Remove</source>
+        <translation>Убрать</translation>
+    </message>
+    <message>
+        <source>Take back</source>
+        <translation>Отозвать</translation>
+    </message>
+    <message>
+        <source>Your friends (%1)</source>
+        <translation>Ваши друзья (%1)</translation>
+    </message>
+    <message>
+        <source>Your friends</source>
+        <translation>Ваши друзья</translation>
+    </message>
+    <message>
+        <source>None yet. Send your link, or add someone you meet in a room: click their name there.</source>
+        <translation>Пока никого. Отправьте свою ссылку или добавьте того, с кем встретились в комнате: нажмите там на его имя.</translation>
+    </message>
+    <message>
+        <source>Remove from friends</source>
+        <translation>Удалить из друзей</translation>
+    </message>
+</context>
+<context>
     <name>Main</name>
     <message>
         <source>%1 stopped sharing</source>
@@ -116,6 +211,42 @@
         <translation>Отмена</translation>
     </message>
     <message>
+        <source>A device asks to become you</source>
+        <translation>Устройство просит стать вами</translation>
+    </message>
+    <message>
+        <source>“%1” opened your device link. Allowed, it gets your key and your friends, and is you from then on.</source>
+        <translation>«%1» открыло вашу ссылку для устройства. Если разрешить, оно получит ваш ключ и ваших друзей и с этого момента будет вами.</translation>
+    </message>
+    <message>
+        <source>Allow</source>
+        <translation>Разрешить</translation>
+    </message>
+    <message>
+        <source>Refuse</source>
+        <translation>Отказать</translation>
+    </message>
+    <message>
+        <source>Become this person on this device?</source>
+        <translation>Стать этим человеком на этом устройстве?</translation>
+    </message>
+    <message>
+        <source>This device asks the one that made the link. Once it says yes, this device has that person&apos;s key and friends in place of its own.</source>
+        <translation>Это устройство спросит то, что создало ссылку. Когда оно согласится, здесь будут ключ и друзья того человека вместо своих.</translation>
+    </message>
+    <message>
+        <source>Ask</source>
+        <translation>Спросить</translation>
+    </message>
+    <message>
+        <source>Friends (%1 asking)</source>
+        <translation>Друзья (просят: %1)</translation>
+    </message>
+    <message>
+        <source>Friends</source>
+        <translation>Друзья</translation>
+    </message>
+    <message>
         <source>Room</source>
         <translation>Комната</translation>
     </message>
@@ -170,6 +301,22 @@
     <message>
         <source>%1, for you</source>
         <translation>%1 — только для вас</translation>
+    </message>
+    <message>
+        <source>You, on another device</source>
+        <translation>Вы, на другом устройстве</translation>
+    </message>
+    <message>
+        <source>Your friend</source>
+        <translation>Ваш друг</translation>
+    </message>
+    <message>
+        <source>Asked to be your friend</source>
+        <translation>Запрос в друзья отправлен</translation>
+    </message>
+    <message>
+        <source>Add friend</source>
+        <translation>Добавить в друзья</translation>
     </message>
     <message>
         <source>Mute for me</source>
@@ -403,6 +550,10 @@
         <translation>Язык</translation>
     </message>
     <message>
+        <source>You</source>
+        <translation>Вы</translation>
+    </message>
+    <message>
         <source>Window</source>
         <translation>Окно</translation>
     </message>
@@ -469,6 +620,70 @@
     <message>
         <source>Takes effect at once.</source>
         <translation>Применяется сразу.</translation>
+    </message>
+    <message>
+        <source>Your name</source>
+        <translation>Ваше имя</translation>
+    </message>
+    <message>
+        <source>The four characters after it are yours alone: they tell two of a name apart.</source>
+        <translation>Четыре знака после него есть только у вас: по ним различают людей с одним именем.</translation>
+    </message>
+    <message>
+        <source>Your other devices</source>
+        <translation>Ваши другие устройства</translation>
+    </message>
+    <message>
+        <source>A phone or another computer can be you too: the same friends, the same name. Make a link here and open it there, or point that phone&apos;s camera at its QR code.</source>
+        <translation>Телефон или другой компьютер тоже могут быть вами: те же друзья, то же имя. Создайте ссылку здесь и откройте её там или наведите камеру телефона на её QR-код.</translation>
+    </message>
+    <message>
+        <source>Add a device</source>
+        <translation>Добавить устройство</translation>
+    </message>
+    <message>
+        <source>Copy the link</source>
+        <translation>Скопировать ссылку</translation>
+    </message>
+    <message>
+        <source>For the next ten minutes, and for one device: you are asked before it becomes you. Send it to nobody else.</source>
+        <translation>Действует десять минут и для одного устройства: вас спросят, прежде чем оно станет вами. Не отправляйте её никому другому.</translation>
+    </message>
+    <message>
+        <source>Cancel</source>
+        <translation>Отмена</translation>
+    </message>
+    <message>
+        <source>Make this device someone else&apos;s</source>
+        <translation>Сделать это устройство чужим</translation>
+    </message>
+    <message>
+        <source>the link your other device made</source>
+        <translation>ссылка с вашего другого устройства</translation>
+    </message>
+    <message>
+        <source>Ask</source>
+        <translation>Спросить</translation>
+    </message>
+    <message>
+        <source>Backup</source>
+        <translation>Резервная копия</translation>
+    </message>
+    <message>
+        <source>Your key and your friends in a file: with it, a new device is you again even if every other is lost. Whoever has the file can be you.</source>
+        <translation>Ваш ключ и ваши друзья в файле: с ним новое устройство снова станет вами, даже если все остальные потеряны. Тот, у кого этот файл, может быть вами.</translation>
+    </message>
+    <message>
+        <source>Save a backup…</source>
+        <translation>Сохранить копию…</translation>
+    </message>
+    <message>
+        <source>Restore…</source>
+        <translation>Восстановить…</translation>
+    </message>
+    <message>
+        <source>Backups (*.txt)</source>
+        <translation>Резервные копии (*.txt)</translation>
     </message>
     <message>
         <source>Minimize to the tray</source>
@@ -568,6 +783,85 @@
     <message>
         <source>Sharing failed (%1).</source>
         <translation>Сбой показа (%1).</translation>
+    </message>
+</context>
+<context>
+    <name>ratcast::app::PeopleController</name>
+    <message>
+        <source>A device</source>
+        <translation>Устройство</translation>
+    </message>
+    <message>
+        <source>This device is %1 now.</source>
+        <translation>Теперь это устройство — %1.</translation>
+    </message>
+    <message>
+        <source>The other device said no.</source>
+        <translation>Другое устройство отказало.</translation>
+    </message>
+    <message>
+        <source>Your key in the data folder could not be read.</source>
+        <translation>Не удалось прочитать ваш ключ в папке данных.</translation>
+    </message>
+    <message>
+        <source>Friends are not reachable: the network did not start.</source>
+        <translation>Друзья недоступны: сеть не запустилась.</translation>
+    </message>
+    <message>
+        <source>That is not a link to a person.</source>
+        <translation>Это не ссылка на человека.</translation>
+    </message>
+    <message>
+        <source>That is your own link.</source>
+        <translation>Это ваша собственная ссылка.</translation>
+    </message>
+    <message>
+        <source>You are friends already.</source>
+        <translation>Вы уже друзья.</translation>
+    </message>
+    <message>
+        <source>Asked. They become your friend once they accept.</source>
+        <translation>Запрос отправлен. Человек станет вашим другом, когда примет его.</translation>
+    </message>
+    <message>
+        <source>Your link is new: the old one no longer works.</source>
+        <translation>У вас новая ссылка: старая больше не работает.</translation>
+    </message>
+    <message>
+        <source>The device is you now.</source>
+        <translation>Теперь это устройство — вы.</translation>
+    </message>
+    <message>
+        <source>That is not a link to add a device.</source>
+        <translation>Это не ссылка для добавления устройства.</translation>
+    </message>
+    <message>
+        <source>That link is this device&apos;s own.</source>
+        <translation>Это ссылка этого же устройства.</translation>
+    </message>
+    <message>
+        <source>Waiting for the other device to say yes…</source>
+        <translation>Ждём согласия другого устройства…</translation>
+    </message>
+    <message>
+        <source>The backup could not be written there.</source>
+        <translation>Не удалось записать копию туда.</translation>
+    </message>
+    <message>
+        <source>Backed up. Keep the file to yourself: it is you.</source>
+        <translation>Копия сохранена. Храните файл при себе: это вы.</translation>
+    </message>
+    <message>
+        <source>The backup could not be read.</source>
+        <translation>Не удалось прочитать копию.</translation>
+    </message>
+    <message>
+        <source>That file is no backup of ratcast&apos;s.</source>
+        <translation>Это не резервная копия ratcast.</translation>
+    </message>
+    <message>
+        <source>Restored: this device is %1 again.</source>
+        <translation>Восстановлено: это устройство снова %1.</translation>
     </message>
 </context>
 <context>

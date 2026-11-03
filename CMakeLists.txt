@@ -88,6 +88,8 @@ add_subdirectory(server)
 
 if(NOT RATCAST_SERVER_ONLY)
     add_subdirectory(engine)
+    add_subdirectory(external/monocypher)
+    add_subdirectory(external/qrcodegen)
     add_subdirectory(client)
 
     if(RATCAST_BUILD_TOOLS)

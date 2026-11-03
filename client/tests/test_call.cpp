@@ -817,6 +817,32 @@ TEST_F(CallTest, EachSaysWhoItIs) {
               Errc::InvalidArgument);
 }
 
+TEST_F(CallTest, EachSaysWhoseItIs) {
+    const PersonKey ann = PersonKey::generate();
+    const std::array<uint8_t, 16> secret = random_bytes<16>();
+    Side host;
+    CallConfig config = room();
+    config.identity = [&](const PeerId& node) {
+        return IdentityCard{.certificate = certify(ann, node), .request_secret = secret};
+    };
+    host.start(std::move(config), false, false);
+    ASSERT_TRUE(host->set_presence({"Ann"}));
+    Side guest;
+    guest.start(room(RatsUrl{host.address()}), false, false);
+    ASSERT_TRUE(wait_for([&] { return guest.told("presence Ann"); }));
+    const std::optional<IdentityCard> card = guest->identity(host->id());
+    ASSERT_TRUE(card);
+    EXPECT_EQ(card->certificate.person, ann.id());
+    EXPECT_EQ(card->certificate.device, host->id());
+    EXPECT_EQ(card->request_secret, secret);
+    EXPECT_EQ(guest->presence(host->id())->name, "Ann") << "the name beside it";
+    // Muted, and still whose it is.
+    ASSERT_TRUE(host->set_presence({"Ann", true, false}));
+    ASSERT_TRUE(wait_for([&] { return guest.told("presence Ann muted"); }));
+    EXPECT_TRUE(guest->identity(host->id()));
+    EXPECT_FALSE(host->identity(guest->id())) << "the guest is nobody's";
+}
+
 TEST_F(CallTest, ASideThatPlaysPicturesSaysWhatItDecodes) {
     Side host;
     host.start(room(), false, false);

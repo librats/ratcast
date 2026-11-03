@@ -2,6 +2,101 @@
 <!DOCTYPE TS>
 <TS version="2.1" language="ja" sourcelanguage="en">
 <context>
+    <name>FriendsPanel</name>
+    <message>
+        <source>Someone</source>
+        <translation>誰か</translation>
+    </message>
+    <message>
+        <source>Friends</source>
+        <translation>フレンド</translation>
+    </message>
+    <message>
+        <source>You</source>
+        <translation>あなた</translation>
+    </message>
+    <message>
+        <source>Send your link to whoever is to be your friend:</source>
+        <translation>フレンドになりたい相手にリンクを送ってください：</translation>
+    </message>
+    <message>
+        <source>Copied</source>
+        <translation>コピーしました</translation>
+    </message>
+    <message>
+        <source>Copy your link</source>
+        <translation>リンクをコピー</translation>
+    </message>
+    <message>
+        <source>Show it as a QR code</source>
+        <translation>QRコードで表示</translation>
+    </message>
+    <message>
+        <source>A new link (the old one stops working)</source>
+        <translation>新しいリンク（古いリンクは使えなくなります）</translation>
+    </message>
+    <message>
+        <source>Point a phone&apos;s camera at it to open your link there.</source>
+        <translation>スマートフォンのカメラを向けると、そこでリンクが開きます。</translation>
+    </message>
+    <message>
+        <source>a friend&apos;s link</source>
+        <translation>フレンドのリンク</translation>
+    </message>
+    <message>
+        <source>Add</source>
+        <translation>追加</translation>
+    </message>
+    <message>
+        <source>Asking you</source>
+        <translation>あなたへのリクエスト</translation>
+    </message>
+    <message>
+        <source>Accept</source>
+        <translation>承認</translation>
+    </message>
+    <message>
+        <source>Decline</source>
+        <translation>拒否</translation>
+    </message>
+    <message>
+        <source>Asked by you</source>
+        <translation>送ったリクエスト</translation>
+    </message>
+    <message>
+        <source>declined</source>
+        <translation>拒否されました</translation>
+    </message>
+    <message>
+        <source>waiting until they are online and accept</source>
+        <translation>相手がオンラインになって承認するのを待っています</translation>
+    </message>
+    <message>
+        <source>Remove</source>
+        <translation>削除</translation>
+    </message>
+    <message>
+        <source>Take back</source>
+        <translation>取り消す</translation>
+    </message>
+    <message>
+        <source>Your friends (%1)</source>
+        <translation>フレンド（%1）</translation>
+    </message>
+    <message>
+        <source>Your friends</source>
+        <translation>フレンド</translation>
+    </message>
+    <message>
+        <source>None yet. Send your link, or add someone you meet in a room: click their name there.</source>
+        <translation>まだいません。リンクを送るか、ルームで会った人を追加しましょう：その人の名前をクリックします。</translation>
+    </message>
+    <message>
+        <source>Remove from friends</source>
+        <translation>フレンドから削除</translation>
+    </message>
+</context>
+<context>
     <name>Main</name>
     <message>
         <source>%1 stopped sharing</source>
@@ -116,6 +211,42 @@
         <translation>キャンセル</translation>
     </message>
     <message>
+        <source>A device asks to become you</source>
+        <translation>デバイスがあなたになろうとしています</translation>
+    </message>
+    <message>
+        <source>“%1” opened your device link. Allowed, it gets your key and your friends, and is you from then on.</source>
+        <translation>「%1」があなたのデバイスリンクを開きました。許可すると、あなたの鍵とフレンドを受け取り、以後あなたになります。</translation>
+    </message>
+    <message>
+        <source>Allow</source>
+        <translation>許可</translation>
+    </message>
+    <message>
+        <source>Refuse</source>
+        <translation>拒否</translation>
+    </message>
+    <message>
+        <source>Become this person on this device?</source>
+        <translation>このデバイスでこの人になりますか？</translation>
+    </message>
+    <message>
+        <source>This device asks the one that made the link. Once it says yes, this device has that person&apos;s key and friends in place of its own.</source>
+        <translation>このデバイスはリンクを作ったデバイスに確認します。承認されると、このデバイスは自分のものの代わりにその人の鍵とフレンドを持ちます。</translation>
+    </message>
+    <message>
+        <source>Ask</source>
+        <translation>確認する</translation>
+    </message>
+    <message>
+        <source>Friends (%1 asking)</source>
+        <translation>フレンド（リクエスト %1）</translation>
+    </message>
+    <message>
+        <source>Friends</source>
+        <translation>フレンド</translation>
+    </message>
+    <message>
         <source>Room</source>
         <translation>ルーム</translation>
     </message>
@@ -168,6 +299,22 @@
     <message>
         <source>%1, for you</source>
         <translation>%1（自分にのみ適用）</translation>
+    </message>
+    <message>
+        <source>You, on another device</source>
+        <translation>別のデバイスのあなた</translation>
+    </message>
+    <message>
+        <source>Your friend</source>
+        <translation>フレンド</translation>
+    </message>
+    <message>
+        <source>Asked to be your friend</source>
+        <translation>フレンドリクエスト送信済み</translation>
+    </message>
+    <message>
+        <source>Add friend</source>
+        <translation>フレンドに追加</translation>
     </message>
     <message>
         <source>Mute for me</source>
@@ -401,6 +548,10 @@
         <translation>言語</translation>
     </message>
     <message>
+        <source>You</source>
+        <translation>あなた</translation>
+    </message>
+    <message>
         <source>Window</source>
         <translation>ウィンドウ</translation>
     </message>
@@ -467,6 +618,70 @@
     <message>
         <source>Takes effect at once.</source>
         <translation>すぐに反映されます。</translation>
+    </message>
+    <message>
+        <source>Your name</source>
+        <translation>あなたの名前</translation>
+    </message>
+    <message>
+        <source>The four characters after it are yours alone: they tell two of a name apart.</source>
+        <translation>後ろの4文字はあなただけのもので、同じ名前の人を見分けます。</translation>
+    </message>
+    <message>
+        <source>Your other devices</source>
+        <translation>ほかのデバイス</translation>
+    </message>
+    <message>
+        <source>A phone or another computer can be you too: the same friends, the same name. Make a link here and open it there, or point that phone&apos;s camera at its QR code.</source>
+        <translation>スマートフォンや別のコンピューターもあなたにできます：同じフレンド、同じ名前。ここでリンクを作ってそこで開くか、スマートフォンのカメラをQRコードに向けてください。</translation>
+    </message>
+    <message>
+        <source>Add a device</source>
+        <translation>デバイスを追加</translation>
+    </message>
+    <message>
+        <source>Copy the link</source>
+        <translation>リンクをコピー</translation>
+    </message>
+    <message>
+        <source>For the next ten minutes, and for one device: you are asked before it becomes you. Send it to nobody else.</source>
+        <translation>有効なのは10分間、1台のデバイスだけです。あなたになる前に確認されます。ほかの人には送らないでください。</translation>
+    </message>
+    <message>
+        <source>Cancel</source>
+        <translation>キャンセル</translation>
+    </message>
+    <message>
+        <source>Make this device someone else&apos;s</source>
+        <translation>このデバイスを別の人のものにする</translation>
+    </message>
+    <message>
+        <source>the link your other device made</source>
+        <translation>別のデバイスが作ったリンク</translation>
+    </message>
+    <message>
+        <source>Ask</source>
+        <translation>確認する</translation>
+    </message>
+    <message>
+        <source>Backup</source>
+        <translation>バックアップ</translation>
+    </message>
+    <message>
+        <source>Your key and your friends in a file: with it, a new device is you again even if every other is lost. Whoever has the file can be you.</source>
+        <translation>あなたの鍵とフレンドを1つのファイルに。ほかのデバイスをすべて失っても、新しいデバイスがまたあなたになれます。ファイルを持つ人は誰でもあなたになれます。</translation>
+    </message>
+    <message>
+        <source>Save a backup…</source>
+        <translation>バックアップを保存…</translation>
+    </message>
+    <message>
+        <source>Restore…</source>
+        <translation>復元…</translation>
+    </message>
+    <message>
+        <source>Backups (*.txt)</source>
+        <translation>バックアップ (*.txt)</translation>
     </message>
     <message>
         <source>Minimize to the tray</source>
@@ -566,6 +781,85 @@
     <message>
         <source>Sharing failed (%1).</source>
         <translation>共有に失敗しました（%1）。</translation>
+    </message>
+</context>
+<context>
+    <name>ratcast::app::PeopleController</name>
+    <message>
+        <source>A device</source>
+        <translation>デバイス</translation>
+    </message>
+    <message>
+        <source>This device is %1 now.</source>
+        <translation>このデバイスは %1 になりました。</translation>
+    </message>
+    <message>
+        <source>The other device said no.</source>
+        <translation>相手のデバイスが拒否しました。</translation>
+    </message>
+    <message>
+        <source>Your key in the data folder could not be read.</source>
+        <translation>データフォルダーの鍵を読み込めませんでした。</translation>
+    </message>
+    <message>
+        <source>Friends are not reachable: the network did not start.</source>
+        <translation>フレンドに接続できません：ネットワークが起動しませんでした。</translation>
+    </message>
+    <message>
+        <source>That is not a link to a person.</source>
+        <translation>人へのリンクではありません。</translation>
+    </message>
+    <message>
+        <source>That is your own link.</source>
+        <translation>それはあなた自身のリンクです。</translation>
+    </message>
+    <message>
+        <source>You are friends already.</source>
+        <translation>すでにフレンドです。</translation>
+    </message>
+    <message>
+        <source>Asked. They become your friend once they accept.</source>
+        <translation>リクエストしました。相手が承認するとフレンドになります。</translation>
+    </message>
+    <message>
+        <source>Your link is new: the old one no longer works.</source>
+        <translation>リンクを新しくしました：古いリンクはもう使えません。</translation>
+    </message>
+    <message>
+        <source>The device is you now.</source>
+        <translation>そのデバイスはあなたになりました。</translation>
+    </message>
+    <message>
+        <source>That is not a link to add a device.</source>
+        <translation>デバイスを追加するリンクではありません。</translation>
+    </message>
+    <message>
+        <source>That link is this device&apos;s own.</source>
+        <translation>それはこのデバイス自身のリンクです。</translation>
+    </message>
+    <message>
+        <source>Waiting for the other device to say yes…</source>
+        <translation>相手のデバイスの承認を待っています…</translation>
+    </message>
+    <message>
+        <source>The backup could not be written there.</source>
+        <translation>そこにバックアップを書き込めませんでした。</translation>
+    </message>
+    <message>
+        <source>Backed up. Keep the file to yourself: it is you.</source>
+        <translation>バックアップしました。ファイルは自分だけで保管してください：それはあなた自身です。</translation>
+    </message>
+    <message>
+        <source>The backup could not be read.</source>
+        <translation>バックアップを読み込めませんでした。</translation>
+    </message>
+    <message>
+        <source>That file is no backup of ratcast&apos;s.</source>
+        <translation>そのファイルは ratcast のバックアップではありません。</translation>
+    </message>
+    <message>
+        <source>Restored: this device is %1 again.</source>
+        <translation>復元しました：このデバイスは再び %1 です。</translation>
     </message>
 </context>
 <context>

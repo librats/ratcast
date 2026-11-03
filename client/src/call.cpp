@@ -207,9 +207,11 @@ Call::Call(CallConfig config, CallHandlers handlers)
     // What this side decodes, for senders to code their pictures to it in.
     if (config_.playback.pictures || config_.playback.cameras)
         decodes_ = config_.playback.decodes.value_or(live_video_decoders());
-    if (!decodes_.empty()) {
+    if (config_.identity) identity_ = encode(config_.identity(node_.local_id()));
+    if (!decodes_.empty() || !identity_.empty()) {
         Presence presence;
         presence.decodes = decodes_;
+        presence.identity = identity_;
         (void)session().set_presence(presence);
     }
     // One key to meet under: the peer dialed, or this call's own — in the
@@ -416,7 +418,14 @@ bool Call::is_server(const PeerId& peer) const {
 Result<void> Call::set_presence(const Presence& presence) {
     Presence told = presence;
     told.decodes = decodes_;
+    told.identity = identity_;
     return session().set_presence(told);
+}
+
+std::optional<IdentityCard> Call::identity(const PeerId& peer) const {
+    const std::optional<Presence> said = presence(peer);
+    if (!said) return std::nullopt;
+    return identity_of(said->identity, peer);
 }
 
 std::optional<Presence> Call::presence(const PeerId& peer) const {

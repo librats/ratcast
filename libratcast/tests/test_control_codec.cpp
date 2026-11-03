@@ -140,6 +140,35 @@ TEST(ControlCodec, RoundTripsWhatAPresenceDecodes) {
     EXPECT_EQ(round_trip(PresenceUpdate{phone}).presence, phone);
 }
 
+TEST(ControlCodec, RoundTripsAPresencesIdentity) {
+    Presence ann{"Ann", false, false, {Codec::H264}};
+    ann.identity = {1, 2, 3, 250};
+    EXPECT_EQ(round_trip(PresenceUpdate{ann}).presence, ann);
+    ann.identity.assign(Presence::kMaxIdentitySize, 7);
+    EXPECT_EQ(round_trip(PresenceUpdate{ann}).presence, ann);
+
+    // Cut inside it: truncated; before it, an earlier build's presence.
+    ann.identity = {1, 2, 3, 250};
+    const auto bytes = bytes_of(encode_control(PresenceUpdate{ann}));
+    const size_t before = bytes.size() - ann.identity.size() - 1;
+    const Result<ControlMessage> earlier =
+        decode_control({bytes.begin(), bytes.begin() + static_cast<ptrdiff_t>(before)});
+    ASSERT_TRUE(earlier);
+    EXPECT_TRUE(std::get<PresenceUpdate>(*earlier).presence.identity.empty());
+    for (size_t cut = before + 1; cut < bytes.size(); ++cut) {
+        EXPECT_EQ(decode_error({bytes.begin(), bytes.begin() + static_cast<ptrdiff_t>(cut)}),
+                  Errc::Truncated)
+            << "cut at " << cut;
+    }
+
+    // Past its most: malformed.
+    std::vector<uint8_t> big = {message_prefix(MessageKind::Presence), 0, 0, 0};
+    big.push_back(0x81);  // 513 as a varint
+    big.push_back(0x04);
+    big.resize(big.size() + Presence::kMaxIdentitySize + 1, 7);
+    EXPECT_EQ(decode_error(big), Errc::Malformed);
+}
+
 TEST(ControlCodec, LeavesOutACodecAPresenceDecodesThatItDoesNotKnow) {
     std::vector<uint8_t> bytes = {
         message_prefix(MessageKind::Presence), 0, 0, 3, static_cast<uint8_t>(Codec::AV1), 99,

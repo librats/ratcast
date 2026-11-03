@@ -23,6 +23,7 @@ namespace ratcast {
 struct Presence {
     /// The longest name, in bytes of UTF-8: 32 characters of any script.
     static constexpr size_t kMaxNameSize = 128;
+    static constexpr size_t kMaxIdentitySize = 512;
 
     std::string name;       ///< UTF-8 without control characters; may be empty
     bool muted = false;     ///< not heard: its microphone off
@@ -32,12 +33,17 @@ struct Presence {
     /// coded in follows them. Empty: not said (a server, which decodes
     /// nothing), which holds no sender to anything.
     std::vector<Codec> decodes = {};
+    /// Who it is, beyond its peer id — the client's (an identity card: whose
+    /// device it is, signed by them); bytes this library passes on and never
+    /// reads, at most kMaxIdentitySize. Empty: not said.
+    std::vector<uint8_t> identity = {};
 
     friend bool operator==(const Presence&, const Presence&) = default;
 };
 
 /// Whether `presence` can be told: a name of at most kMaxNameSize bytes of
-/// valid UTF-8 without control characters, and video codecs, each once.
+/// valid UTF-8 without control characters, video codecs, each once, and an
+/// identity of at most kMaxIdentitySize bytes.
 RATCAST_EXPORT bool is_valid(const Presence& presence) noexcept;
 
 }  // namespace ratcast

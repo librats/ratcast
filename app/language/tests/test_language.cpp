@@ -81,9 +81,9 @@ TEST_F(LanguageTest, RussianTranslatesTheWindowAtOnce) {
     EXPECT_EQ(language.current(), QStringLiteral("ru"));
     EXPECT_EQ(object->property("text").toString(), QString::fromUtf8("Настройки"));
     // C++ too, the call's notices.
-    EXPECT_NE(
-        QCoreApplication::translate("ratcast::app::CallController", "That is not a rats:// link."),
-        QStringLiteral("That is not a rats:// link."));
+    EXPECT_NE(QCoreApplication::translate("ratcast::app::CallController",
+                                          "That is not a link to a room."),
+              QStringLiteral("That is not a link to a room."));
 
     language.setChosen(QString());
     EXPECT_FALSE(settings()()->contains(QStringLiteral("language")));
