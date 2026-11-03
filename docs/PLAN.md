@@ -16,6 +16,7 @@ ratcast is two things built together:
 | UI | Qt 6 / QML (QRhi for zero-copy video), same code for Android later |
 | Servers | Optional SFU / relay nodes are allowed; P2P stays the default for small rooms |
 | Scope, first stages | Calls and streams; text chat in a room (7.1) |
+| Identity | A person is a key of their own, each device a librats node whose key the person's signs; friends and groups kept by their members (14, 15); an account (a name, a login) optional, on a service, pointing at the key (16) |
 | License | MIT, open source. No GPL dependencies (no x264) |
 | Language | C++20 for ratcast, librats stays C++17 |
 
@@ -147,7 +148,8 @@ The current stage and the next are broken into steps; later ones stay coarse unt
 Stages keep their numbers when their order changes (steps and `docs/bench.md` refer to them):
 the app (6) comes before watching together (5), as one viewer is enough for its first version,
 the call monitor (9) right after the app, the room (10) after it and full screen (11) after
-that, before 5; Android (13) taken out of 8 and done before it.
+that, before 5; Android (13) taken out of 8 and done before it; people (14), groups (15) and
+accounts (16) after Android.
 Every step ends with tests (and benchmarks when it moves a number) and leaves the code in its
 final place and shape: stage 0 is a walking skeleton, not a throwaway prototype.
 
@@ -167,6 +169,9 @@ final place and shape: stage 0 is a walking skeleton, not a throwaway prototype.
 | **12. Getting through** — in part | a call that holds as a member's address changes (a VPN, another network); servers found without being typed in, the room's met at by all its members alike; joining fast and seen to be | L23 ✅, L24 ✅, L25 ✅ |
 | **11. Full screen** ✅ | a share watched on the whole screen with nothing else on it, the controls and the cursor there while the mouse moves; the picture pixel-exact; the screen kept awake while watching | — |
 | **13. Android** | the app on phones: a share watched first, then talking, the camera and the screen shared; the call held in the background | — |
+| **14. People** | one person on all their devices; friends added once by a link, seen online, called with a ring — no server but stage 12's, no account | L26 |
+| **15. Groups** | a room that lasts: joined once by its link, who is in it now seen from the list, a click to join; laid out to grow into a community as Discord's when one is wanted | — |
+| **16. Accounts** (optional) | a service beside the P2P: a name to be found by, a phone that rings with the app closed, everything back with every device lost | — |
 
 ### Stage 0 — Skeleton ✅
 
@@ -1811,10 +1816,96 @@ a desktop, the call held while the app is in the background.
   Android installs a newer APK over the old. Left: a link handed to Android's share sheet,
   edge to edge on Android 15 (Qt's safe areas).
 
+### Stage 14 — People
+
+People who know each other found again without a link each time: one person on all their
+devices, friends added once, seen online and called with a ring. No server beyond stage 12's,
+no account: the first run asks a name and an avatar. *Done when* Ann adds Bob by a link opened
+in a messenger, each sees the other online, Ann rings Bob and he answers on one of his
+devices, and Ann's phone, added by a QR code from her PC, is Ann to Bob.
+
+- **14.1 A person and their devices**: a person's key (Ed25519; a small vendored library,
+  Monocypher, CC0 / BSD-2) in the data directory; each device the librats node it is today,
+  under a certificate the person's key signs. Shown as a name, an avatar and a tag of the key
+  (`Ann · 4F2K`): names are not unique. A device added from another by a QR code, which hands
+  over the key and the person's list of friends and groups, synced as two of their
+  devices meet. Backup: the key in a file. Today's identity becomes the first device.
+- **14.2 Links that open the app**: `https://ratcast.app/u/#…` (a person), `/g/#…` (a
+  group), `/r/#…` (a room) — clickable in every messenger, which `rats://` is not. What
+  follows `#` never reaches a server: the static page reads it in an effect, opens `rats://…`
+  and offers the download to one without the app. Android App Links; `rats://` links keep
+  working.
+- **14.3 Friends**: a personal link (the person's key and a secret, reset at will) opened sends
+  a request, shown on the other's devices: accept or decline; Add friend at a member's name in
+  a room too. Until accepted nothing reaches but the request: no ringing by strangers.
+- **14.4 Presence**: online, or in a room, seen by friends — each device registered under its
+  person's presence key, friends' watched (librats: **needs** L26).
+- **14.5 Ringing**: a call to a friend a room of two, rung on each of their devices online,
+  stopped on the others once answered on one; declined or missed told back. On Android only
+  while the app runs (pushes are 16's).
+
+Later: direct messages kept between calls, statuses (idle, do not disturb), blocking, device
+revocation.
+
+### Stage 15 — Groups
+
+A room that lasts: friends who meet often keep one, joined once by its link. A group is meant
+to grow into a community as Discord's servers are — channels, roles, history, moderation —
+when one is wanted; none of that is built now, but the group is laid out so that it comes as
+more of the same, with no group moved or remade. *Done when* four join a group by one link,
+see from the list who is in it now and join with a click, and the link reset keeps out one who
+had the old.
+
+- **15.1 A group**: a room with a name and a lasting link (`ratcast.app/g/#…`: an id and a
+  secret — 7.5's room key, proven before a peer is a member, before `joined` and any
+  `FrameKey`), kept with its members by each member's devices; its maker resets the link at
+  will (the old refused, members kept). Laid out for a community:
+  - the group's id is a key of its own, the maker's: whatever changes the group is signed by
+    one allowed to (the maker alone for now; roles later say who else);
+  - its state is a log of signed changes (`{type, version, data}`: named, link reset, joined,
+    left), held by every member and caught up as members meet; a change of a type a member
+    does not know is kept and passed on, not shown — channels, roles and bans come as new
+    types, and apps of both kinds share a group;
+  - its room is its channel 0: the meeting key comes from the group and a channel id
+    (`main`), so another voice channel is another id;
+  - a link reset is a new epoch of the secret, given to every member — what a ban will be,
+    given to all but one;
+  - a member is a person (14.1's key), not a device: what is kept of members, and roles later,
+    is by person.
+- **15.2 Who is there**: who is in the group's room now and who shares there, seen from the
+  list without being in it; a click joins; a notice as someone starts sharing. Inside, the room
+  is stage 10's and 7's as they are.
+- **15.3 The app**: groups listed beside friends (14) on the start page.
+
+Later, when a community is wanted, each a new type of change in the same log: text and voice
+channels, roles and what they allow, kick and ban (7.5, stage 8), a chat whose history stays
+(messages signed by their authors, a log per channel), many members (presence by librats'
+PubSub, keepers always on that hold a group's log), the app laid out as Discord's.
+
+### Stage 16 — Accounts (optional)
+
+What only a service always on can give, beside the P2P and never instead of it: a name to be
+found by, a phone that rings with the app closed, everything back with every device lost. The
+app without signing in is the app after stage 15; the service carries no media and reads
+nothing. *Done when* Ann signs in with Google and takes `@anya`, Bob finds her by it, Ann's
+phone rings for Bob's call with the app closed, and her new phone, the old one lost, signs in
+and has her friends and groups back.
+
+- **16.1 A name**: signing in by OAuth (Google, Apple, GitHub); a unique name (`@anya`) bound to
+  the person's key by its signature; found by it as by 14.3's link; `ratcast.app/@anya`.
+- **16.2 Pushes**: a device's push token (FCM on Android) kept by the service; a ring for a
+  device that is off a push that only wakes the app, shown as a full-screen call.
+- **16.3 Backup**: the person's key and list sealed by a passphrase and kept by the service.
+- **16.4 The policy**: the privacy policy says what the service keeps (the name, the key, the
+  sign-in's subject, push tokens, backups).
+
+Later: a mailbox for what was sent while one was off.
+Not decided until reached: who hosts the project's service, how names are kept from abuse.
+
 ### Stage 8 — Beyond
 
-Cinema mode (5.5), HDR, polish; from stage 7, moderation (7.5), push-to-talk and the
-room's sounds (7.3), rooms past a mesh (7.6).
+Cinema mode (5.5), HDR, polish; from stage 7, moderation (7.5, but the room's key: 15.1),
+push-to-talk and the room's sounds (7.3), rooms past a mesh (7.6).
 
 ## librats track
 
@@ -1845,18 +1936,19 @@ and the list is in priority order:
 | | L24 | Servers that know each other, and tell their peers of the others | needed | 12.2 | ✅ |
 | | L25 | A key's servers chosen alike of many known: rendezvous hashing | needed | 12.3 | ✅ |
 | 2 | L2 (a) | A live flow's start: the initial window | needed | 1.2 (long paths) | put off; eased by (b) |
-| 3 | L15 | Fewer system calls per reactor turn | improves | 3.2 (CPU) | |
-| 4 | L16 | ProbeRTT that does not starve a live flow | improves | 3.2 (`reorder`) | |
-| 5 | L8 | `send_many` with a shared buffer | improves | stage 5 (SFU) | |
-| 6 | L11 | One copy fewer on the send path | improves | with L8 | |
-| 7 | L6 | FEC across messages | optional | 2.1 | if Opus FEC + RED fall short |
-| 8 | L9 | Path MTU discovery | optional | 3.4, 4K | |
-| 9 | L10 | A clock-sync service | not needed | stage 5 (playout) | libratcast does it on its media lane (5.2) |
-| 10 | L7 | A delay-sensitive realtime mode | optional | — | mostly done with L2 (c) |
-| 11 | L12 | Live outcomes and ranks in the C ABI | optional | other bindings | when one needs them |
-| 12 | L13 | Fewer ACKs for live data | optional | feedback on a narrow uplink | tried: needs receive timestamps |
-| 13 | L14 | A faster ChaCha20-Poly1305 | optional | — | ~0.5% of a core at 8 Mbit/s |
-| 14 | L17 | A finer timer on Windows | optional | 4.3 | tried: no gain measured |
+| 3 | L26 | A key watched: told as its registrations come and go | needed | 14.4 | |
+| 4 | L15 | Fewer system calls per reactor turn | improves | 3.2 (CPU) | |
+| 5 | L16 | ProbeRTT that does not starve a live flow | improves | 3.2 (`reorder`) | |
+| 6 | L8 | `send_many` with a shared buffer | improves | stage 5 (SFU) | |
+| 7 | L11 | One copy fewer on the send path | improves | with L8 | |
+| 8 | L6 | FEC across messages | optional | 2.1 | if Opus FEC + RED fall short |
+| 9 | L9 | Path MTU discovery | optional | 3.4, 4K | |
+| 10 | L10 | A clock-sync service | not needed | stage 5 (playout) | libratcast does it on its media lane (5.2) |
+| 11 | L7 | A delay-sensitive realtime mode | optional | — | mostly done with L2 (c) |
+| 12 | L12 | Live outcomes and ranks in the C ABI | optional | other bindings | when one needs them |
+| 13 | L13 | Fewer ACKs for live data | optional | feedback on a narrow uplink | tried: needs receive timestamps |
+| 14 | L14 | A faster ChaCha20-Poly1305 | optional | — | ~0.5% of a core at 8 Mbit/s |
+| 15 | L17 | A finer timer on Windows | optional | 4.3 | tried: no gain measured |
 
 Where it stands after L1, L2 (c) and L3: the steady state holds — one-way delay + ~18 ms on a
 clean path, 59–60 fps under 1–5% loss, bursts, jitter and reordering, and BBR's estimate follows
@@ -2074,6 +2166,16 @@ IP, the first listed of two at one address; one also of `Config::servers` dialed
 choose the first of those both know. Unweighted: a weight a server says it can carry would
 rank by `weight / −ln(hash)`, which with weights all alike is this ranking — so weights can come
 later without moving any room.
+
+**L26 — A key watched: told as its registrations come and go.** *Needed by 14.4.* A node
+meets others under a key only by registering under it, and a server then introduces them: to
+see a hundred friends online a device would register under a hundred keys and be connected to
+every device of each. Wanted: `Rendezvous` asked to watch keys (a list, replaced whole), the
+server telling the watcher as a node registers under one and as its registration ends —
+the key and how many are there, no address, no introduction — and the watcher dialing only
+whom it chooses (a friend rung, written to). Servers that know each other (L24) do not share
+watches: the key's servers (L25) are the ones watched at. Bounded per peer; the DHT has
+nothing alike, so presence without a server stays what dialing finds.
 
 **L13 — Fewer ACKs for live data.** *Optional; tried, put off.* An ACK every second packet
 (RFC 9000) is ~440 a second for an 8 Mbit/s feed in full frames — 0.22 Mbit/s back (2.7% of the
