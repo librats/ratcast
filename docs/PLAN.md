@@ -169,7 +169,7 @@ final place and shape: stage 0 is a walking skeleton, not a throwaway prototype.
 | **12. Getting through** — in part | a call that holds as a member's address changes (a VPN, another network); servers found without being typed in, the room's met at by all its members alike; joining fast and seen to be | L23 ✅, L24 ✅, L25 ✅ |
 | **11. Full screen** ✅ | a share watched on the whole screen with nothing else on it, the controls and the cursor there while the mouse moves; the picture pixel-exact; the screen kept awake while watching | — |
 | **13. Android** | the app on phones: a share watched first, then talking, the camera and the screen shared; the call held in the background | — |
-| **14. People** | one person on all their devices; friends added once by a link, seen online, called with a ring — no server but stage 12's, no account | L26 |
+| **14. People** | one person on all their devices; friends added once by a link, seen online, called with a ring — no server but stage 12's, no account | L26 ✅ |
 | **15. Groups** | a room that lasts: joined once by its link, who is in it now seen from the list, a click to join; laid out to grow into a community as Discord's when one is wanted | — |
 | **16. Accounts** (optional) | a service beside the P2P: a name to be found by, a phone that rings with the app closed, everything back with every device lost | — |
 
@@ -1913,8 +1913,21 @@ devices, and Ann's phone, added by a QR code from her PC, is Ann to Bob.
   online, a device that becomes its person and keeps alike — all with no server, over a DHT of
   the test's own. Left: a LAN with no internet (mDNS, keyed so as not to tell strangers on
   it who is there).
-- **14.4 Presence**: online, or in a room, seen by friends — each device registered under its
-  person's presence key, friends' watched (librats: **needs** L26).
+- **14.4 Presence** ✅: online, or in a room, seen by friends — each device registered under its
+  person's presence key, friends' watched (librats: L26). Done so: a presence secret of the
+  person's key (the same on each of their devices, no new state), told to a friend as they
+  become one and whenever their home nodes meet (Presence, on the people channel), kept with
+  the friend in what is known and so on the person's other devices; under it two keys, online
+  and in a room, each device registered at the servers under the first while it runs and the
+  second while `People::set_in_room()` says so (the call controller, as it enters a room and
+  leaves); every friend's two watched (`Rendezvous::set_watched()`), `Friend::online` and
+  `in_room` read from the counts — a friend met counted online too, all there is with no
+  server: the DHT has nothing to watch with. The app: a dot on a friend's avatar, "online", "in
+  a room" or "offline" under the name, those in a room first. Tested: two friends seeing each
+  other online, one gone and back seen at the server without meeting, in a room and out, and a
+  device that became the person seeing the friends at once. Left: a friend removed still holds
+  the secret and may watch (a new one given to the rest: with revocation, below); friends from
+  before this see each other once their home nodes meet.
 - **14.5 Ringing**: a call to a friend a room of two, rung on each of their devices online,
   stopped on the others once answered on one; declined or missed told back. On Android only
   while the app runs (pushes are 16's).
@@ -2011,20 +2024,20 @@ and the list is in priority order:
 | | L24 | Servers that know each other, and tell their peers of the others | needed | 12.2 | ✅ |
 | | L25 | A key's servers chosen alike of many known: rendezvous hashing | needed | 12.3 | ✅ |
 | | L27 | Several DHT keys, each announced, searched or both, set as a node runs | needed | 14.3b | ✅ |
+| | L26 | A key watched: told as its registrations come and go | needed | 14.4 | ✅ |
 | 2 | L2 (a) | A live flow's start: the initial window | needed | 1.2 (long paths) | put off; eased by (b) |
-| 3 | L26 | A key watched: told as its registrations come and go | needed | 14.4 | |
-| 4 | L15 | Fewer system calls per reactor turn | improves | 3.2 (CPU) | |
-| 5 | L16 | ProbeRTT that does not starve a live flow | improves | 3.2 (`reorder`) | |
-| 6 | L8 | `send_many` with a shared buffer | improves | stage 5 (SFU) | |
-| 7 | L11 | One copy fewer on the send path | improves | with L8 | |
-| 8 | L6 | FEC across messages | optional | 2.1 | if Opus FEC + RED fall short |
-| 9 | L9 | Path MTU discovery | optional | 3.4, 4K | |
-| 10 | L10 | A clock-sync service | not needed | stage 5 (playout) | libratcast does it on its media lane (5.2) |
-| 11 | L7 | A delay-sensitive realtime mode | optional | — | mostly done with L2 (c) |
-| 12 | L12 | Live outcomes and ranks in the C ABI | optional | other bindings | when one needs them |
-| 13 | L13 | Fewer ACKs for live data | optional | feedback on a narrow uplink | tried: needs receive timestamps |
-| 14 | L14 | A faster ChaCha20-Poly1305 | optional | — | ~0.5% of a core at 8 Mbit/s |
-| 15 | L17 | A finer timer on Windows | optional | 4.3 | tried: no gain measured |
+| 3 | L15 | Fewer system calls per reactor turn | improves | 3.2 (CPU) | |
+| 4 | L16 | ProbeRTT that does not starve a live flow | improves | 3.2 (`reorder`) | |
+| 5 | L8 | `send_many` with a shared buffer | improves | stage 5 (SFU) | |
+| 6 | L11 | One copy fewer on the send path | improves | with L8 | |
+| 7 | L6 | FEC across messages | optional | 2.1 | if Opus FEC + RED fall short |
+| 8 | L9 | Path MTU discovery | optional | 3.4, 4K | |
+| 9 | L10 | A clock-sync service | not needed | stage 5 (playout) | libratcast does it on its media lane (5.2) |
+| 10 | L7 | A delay-sensitive realtime mode | optional | — | mostly done with L2 (c) |
+| 11 | L12 | Live outcomes and ranks in the C ABI | optional | other bindings | when one needs them |
+| 12 | L13 | Fewer ACKs for live data | optional | feedback on a narrow uplink | tried: needs receive timestamps |
+| 13 | L14 | A faster ChaCha20-Poly1305 | optional | — | ~0.5% of a core at 8 Mbit/s |
+| 14 | L17 | A finer timer on Windows | optional | 4.3 | tried: no gain measured |
 
 Where it stands after L1, L2 (c) and L3: the steady state holds — one-way delay + ~18 ms on a
 clean path, 59–60 fps under 1–5% loss, bursts, jitter and reordering, and BBR's estimate follows
@@ -2255,7 +2268,7 @@ unfound for the ten minutes to the next announce) — what is held back goes hal
 Tested: the hashes of the keys given and set; two nodes with no key alike meeting as soon as
 one seeks what the other only announces; an announce that waits for the DHT to know a node.
 
-**L26 — A key watched: told as its registrations come and go.** *Needed by 14.4.* A node
+**L26 — A key watched: told as its registrations come and go.** ✅ *Needed by 14.4.* A node
 meets others under a key only by registering under it, and a server then introduces them: to
 see a hundred friends online a device would register under a hundred keys and be connected to
 every device of each. Wanted: `Rendezvous` asked to watch keys (a list, replaced whole), the
@@ -2264,6 +2277,18 @@ the key and how many are there, no address, no introduction — and the watcher 
 whom it chooses (a friend rung, written to). Servers that know each other (L24) do not share
 watches: the key's servers (L25) are the ones watched at. Bounded per peer; the DHT has
 nothing alike, so presence without a server stays what dialing finds.
+Done so: Watch (the whole list, at most 512 keys) answered by Watched (each key's count, the
+watcher not counted), and Watched again to each watcher as a key's count changes — a peer
+registers, is gone, or takes the key back: Unregister, which `set_keys()` now sends for a key
+left out (a registration lasted till the link ended before). The watcher keeps each server's
+counts and tells the most (`registered()`, `on_watched()`); a server lost counts no longer.
+Bounds: watches per peer, watchers per key, watches in all, and a budget of its own per second
+(the list told again at the next refresh if it changed, so one dropped is not lost); the
+registrations' budget raised to 32 a second — a node's 16 keys at once, twice, as one that
+becomes another person's registers and takes back all of them. Older servers ignore both new
+ops. Tested: a watcher told as peers come and go and meeting none; a key taken back told and
+no longer met under; a list replaced whole, the watcher not counted; a server lost; the bounds;
+malformed watches; a watch past the budget told again.
 
 **L13 — Fewer ACKs for live data.** *Optional; tried, put off.* An ACK every second packet
 (RFC 9000) is ~440 a second for an 8 Mbit/s feed in full frames — 0.22 Mbit/s back (2.7% of the

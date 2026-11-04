@@ -748,6 +748,7 @@ void CallController::setPeople(PeopleController* people) {
         // The person's name, the same on each of their devices.
         const auto follow = [this] {
             if (people_ && people_->ready()) setName(people_->name());
+            tell_in_room();  // a home node started since
             update_members();
         };
         connect(people_, &PeopleController::changed, this, follow);
@@ -1158,7 +1159,13 @@ void CallController::post(uint64_t generation, std::function<void()> event) {
 void CallController::set_state(State state) {
     if (state == state_) return;
     state_ = state;
+    tell_in_room();
     Q_EMIT stateChanged();
+}
+
+void CallController::tell_in_room() {
+    // Friends see it (People::set_in_room()), while it is.
+    if (people_ && people_->people()) people_->people()->set_in_room(state_ == State::InRoom);
 }
 
 void CallController::set_notice(QString notice) {

@@ -50,11 +50,12 @@ constexpr std::string_view kDeviceScheme = "rats://d/";
 //   Grant    32-byte seed, u32 length + the book (JSON)
 //   Refuse
 //   Sync     u32 length + the book (JSON)
+//   Presence 16-byte secret: the sender's person's presence secret, to a friend
 // A proof is the MAC of what it proves under the secret: "ratcast request" or
 // "ratcast pair", the sender's peer id, the receiver's.
 
 constexpr uint8_t kVersion = 1;
-enum class Kind : uint8_t { Hello = 1, Request, Answer, Pair, Grant, Refuse, Sync };
+enum class Kind : uint8_t { Hello = 1, Request, Answer, Pair, Grant, Refuse, Sync, Presence };
 enum class Via : uint8_t { Link = 0, Room = 1 };
 
 constexpr size_t kMostBook = 1 << 20;
@@ -155,6 +156,26 @@ std::string devices_key(const PersonKey& key) {
                       std::span(reinterpret_cast<const uint8_t*>(what.data()), what.size())));
 }
 
+/// The secret a person is seen online by, told to friends: of their key's, the
+/// same on each of their devices.
+Secret presence_secret(const PersonKey& key) {
+    constexpr std::string_view what = "ratcast presence";
+    const auto full =
+        mac(key.seed(), std::span(reinterpret_cast<const uint8_t*>(what.data()), what.size()));
+    Secret out{};
+    std::copy_n(full.begin(), out.size(), out.begin());
+    return out;
+}
+
+/// The key a person's devices are registered under, for friends to watch;
+/// and the one they are under while in a room.
+std::string presence_key(const PersonId& person, const Secret& secret) {
+    return "ratcast/0/online/" + to_hex(mac(secret, person.key));
+}
+std::string room_key(const PersonId& person, const Secret& secret) {
+    return "ratcast/0/in-room/" + to_hex(mac(secret, person.key));
+}
+
 uint64_t seconds_now() {
     return uint64_t(std::chrono::duration_cast<std::chrono::seconds>(
                         std::chrono::system_clock::now().time_since_epoch())
@@ -177,6 +198,7 @@ std::string told_name(std::string name) {
 struct FriendEntry {
     std::string name;
     Shared shared{};
+    Secret presence{};  ///< theirs, once told; zero before
     uint64_t since = 0;
     uint64_t at = 0;  ///< when last changed: the latest wins
     bool removed = false;
@@ -230,6 +252,7 @@ librats::Json to_json(const Book& book) {
         f["person"] = person.to_hex();
         f["name"] = entry.name;
         f["shared"] = to_base64url(entry.shared);
+        if (!is_zero(entry.presence)) f["presence"] = to_base64url(entry.presence);
         f["since"] = entry.since;
         f["at"] = entry.at;
         f["removed"] = entry.removed;
@@ -297,6 +320,7 @@ std::optional<Book> book_from(std::string_view text) {
             FriendEntry entry;
             if (!person || !read_secret(f, "shared", entry.shared)) continue;
             entry.name = read_text(f, "name");
+            read_secret(f, "presence", entry.presence);
             entry.since = read_u64(f, "since");
             entry.at = read_u64(f, "at");
             entry.removed = read_bool(f, "removed");
@@ -519,11 +543,49 @@ struct People::State {
         return keys;
     }
 
+    /// What is registered at servers: those, and the person's presence key —
+    /// their room key too while in a room — last: a server that keeps fewer
+    /// keys is an older one, which nobody watches at. Not in the DHT: it has
+    /// nothing to watch with (L26), and a friend not met there is not seen.
+    std::vector<std::string> server_keys() const {
+        std::vector<std::string> all = keys();
+        const Secret own = presence_secret(key);
+        all.push_back(presence_key(key.id(), own));
+        if (in_room) all.push_back(room_key(key.id(), own));
+        return all;
+    }
+
+    /// What is watched at servers: each friend's presence and room keys.
+    std::vector<std::string> watched() const {
+        std::vector<std::string> out;
+        for (const auto& [person, entry] : book.friends) {
+            if (entry.removed || is_zero(entry.presence)) continue;
+            out.push_back(presence_key(person, entry.presence));
+            out.push_back(room_key(person, entry.presence));
+        }
+        return out;
+    }
+
     void update_keys() {
         if (pairing && Steady::now() >= pairing->until && !pairing->asking) pairing.reset();
-        const std::vector<std::string> now = keys();
-        if (rendezvous) rendezvous->set_keys(now);
-        if (dht) dht->set_keys(now);
+        if (rendezvous) {
+            rendezvous->set_keys(server_keys());
+            rendezvous->set_watched(watched());
+        }
+        if (dht) dht->set_keys(keys());
+    }
+
+    void send_presence(const PeerId& peer) {
+        Out out(Kind::Presence);
+        out.bytes(presence_secret(key));
+        send(peer, out);
+    }
+
+    /// Whether `person`, a friend, is online: seen at a server, or met.
+    bool online(const PersonId& person, const FriendEntry& entry) const {
+        if (!met_of(person).empty()) return true;
+        return rendezvous && !is_zero(entry.presence) &&
+               rendezvous->registered(presence_key(person, entry.presence)) > 0;
     }
 
     void send(const PeerId& peer, const Out& out) {
@@ -583,6 +645,7 @@ struct People::State {
         out.u8(accepted ? 1 : 0);
         if (accepted) out.bytes(it->second.shared);
         send(peer, out);
+        if (accepted) send_presence(peer);
     }
 
     void befriend(const PersonId& person, const std::string& name, const Shared& shared) {
@@ -656,7 +719,21 @@ struct People::State {
                 const bool accepted = in.u8() == 1;
                 const Shared shared = accepted ? in.array<32>() : Shared{};
                 if (!in.ok()) return;
-                on_answer(person, who->second.name, accepted, shared, after);
+                on_answer(peer, person, who->second.name, accepted, shared, after);
+                return;
+            }
+            case Kind::Presence: {
+                const Secret got = in.array<16>();
+                if (!in.ok() || person == key.id() || is_zero(got)) return;
+                const auto it = book.friends.find(person);
+                if (it == book.friends.end() || it->second.removed || it->second.presence == got)
+                    return;
+                it->second.presence = got;
+                it->second.at = std::max(seconds_now(), it->second.at + 1);
+                save();
+                update_keys();
+                tell_own();
+                after.changed = true;
                 return;
             }
             case Kind::Pair: {
@@ -686,6 +763,7 @@ struct People::State {
                 joining.reset();
                 save_key();
                 save();
+                update_keys();
                 LOG_INFO("people", "this device is " << key.id().tag() << " now");
                 tell_all_hello();
                 after.joined = true;
@@ -706,6 +784,7 @@ struct People::State {
                 const std::optional<Book> theirs = book_from(text);
                 if (theirs && merge(book, *theirs)) {
                     save();
+                    update_keys();  // friends, their presence, requests made there
                     after.changed = true;
                 }
                 return;
@@ -716,23 +795,33 @@ struct People::State {
 
     void on_hello(const PeerId& peer, const PersonId& person, const std::string& name,
                   After& after) {
+        const bool first = met_of(person).empty();
         met[peer] = Met{person, name};
         if (person == key.id()) {
             send(peer, sync());
             return;
         }
+        if (friends_with(person)) {
+            // A friend's device met: theirs, and ours, to be seen online by.
+            send_presence(peer);
+            if (first) after.changed = true;
+        }
         // Names follow what friends and those asked say now.
+        bool renamed = false;
         if (auto it = book.friends.find(person);
             it != book.friends.end() && !name.empty() && it->second.name != name) {
             it->second.name = name;
-            after.changed = true;
+            renamed = true;
         }
         if (auto it = book.requests.find(person);
             it != book.requests.end() && !name.empty() && it->second.name != name) {
             it->second.name = name;
+            renamed = true;
+        }
+        if (renamed) {
+            save();
             after.changed = true;
         }
-        if (after.changed) save();
         const auto request = book.requests.find(person);
         if (request != book.requests.end() && !request->second.incoming &&
             !request->second.declined && !request->second.gone) {
@@ -768,6 +857,7 @@ struct People::State {
                 // end — that of the one with the lower key (on_answer()).
                 befriend(person, met[peer].name, random_bytes<32>());
                 save();
+                update_keys();
                 send_answer(peer, person);
                 tell_own();
                 after.changed = true;
@@ -785,11 +875,12 @@ struct People::State {
         after.changed = true;
     }
 
-    void on_answer(const PersonId& person, const std::string& name, bool accepted,
-                   const Shared& shared, After& after) {
+    void on_answer(const PeerId& peer, const PersonId& person, const std::string& name,
+                   bool accepted, const Shared& shared, After& after) {
         const auto it = book.requests.find(person);
         const bool asked = it != book.requests.end() && !it->second.incoming && !it->second.gone;
         if (friends_with(person)) {
+            if (accepted) send_presence(peer);
             // Both asked at once: the lower key's secret.
             if (accepted && person < key.id() && book.friends[person].shared != shared) {
                 book.friends[person].shared = shared;
@@ -802,6 +893,7 @@ struct People::State {
         if (!asked) return;
         if (accepted) {
             befriend(person, name.empty() ? it->second.name : name, shared);
+            send_presence(peer);  // a friend now: told what to watch
             LOG_INFO("people", person.tag() << " accepted");
         } else {
             it->second.declined = true;
@@ -856,6 +948,7 @@ struct People::State {
     std::map<PeerId, Met> met;
     std::optional<Pairing> pairing;
     std::optional<PersonLink> joining;
+    bool in_room = false;  ///< this device, as set_in_room() says
     librats::Node node;
     librats::Rendezvous* rendezvous = nullptr;
     librats::DhtDiscovery* dht = nullptr;
@@ -910,8 +1003,14 @@ People::People(PeopleConfig config, PeopleHandlers handlers) {
     for (const librats::HostEndpoint& at : known.all())
         if (std::ranges::find(meeting.servers, at) == meeting.servers.end())
             meeting.servers.push_back(at);
-    meeting.keys = s.keys();
+    meeting.keys = s.server_keys();
+    meeting.watched = s.watched();
     s.rendezvous = s.node.add_subsystem(std::make_unique<librats::Rendezvous>(meeting));
+    // A friend came online or went, or into a room or out (friends() reads
+    // the counts as they are).
+    s.rendezvous->on_watched([&s](const std::string&, size_t) {
+        if (s.handlers.changed) s.handlers.changed();
+    });
     s.node.add_subsystem(std::make_unique<librats::HolePunch>());
     s.node.add_subsystem(std::make_unique<librats::Relay>());
     // And through the DHT, with no server, under the same keys — slower (a
@@ -944,9 +1043,17 @@ People::People(PeopleConfig config, PeopleHandlers handlers) {
         s.send(peer.id(), s.hello());
     });
     s.node.on_peer_disconnected([&s](const PeerId& peer, librats::CloseReason) {
-        std::lock_guard lock(s.mutex);
-        s.met.erase(peer);
-        if (s.pairing && s.pairing->asking == peer) s.pairing->asking.reset();
+        bool gone = false;  // a friend's last device met here
+        {
+            std::lock_guard lock(s.mutex);
+            if (const auto it = s.met.find(peer); it != s.met.end()) {
+                const PersonId person = it->second.person;
+                s.met.erase(it);
+                gone = s.friends_with(person) && s.met_of(person).empty();
+            }
+            if (s.pairing && s.pairing->asking == peer) s.pairing->asking.reset();
+        }
+        if (gone && s.handlers.changed) s.handlers.changed();
     });
     s.node.on(kChannel, [&s](const librats::Peer& peer, librats::ByteView payload) {
         State::After after;
@@ -1083,9 +1190,18 @@ void People::remove(const PersonId& person) {
         it->second.removed = true;
         it->second.at = std::max(seconds_now(), it->second.at + 1);
         s.save();
+        s.update_keys();  // no longer watched
         s.tell_own();
     }
     if (s.handlers.changed) s.handlers.changed();
+}
+
+void People::set_in_room(bool in_room) {
+    State& s = *state_;
+    std::lock_guard lock(s.mutex);
+    if (s.in_room == in_room) return;
+    s.in_room = in_room;
+    s.update_keys();
 }
 
 std::vector<Friend> People::friends() const {
@@ -1093,8 +1209,15 @@ std::vector<Friend> People::friends() const {
     std::vector<Friend> out;
     for (const auto& [person, entry] : state_->book.friends) {
         if (entry.removed) continue;
-        out.push_back(Friend{
-            .person = person, .name = entry.name, .shared = entry.shared, .since = entry.since});
+        const State& s = *state_;
+        const bool in_room = s.rendezvous && !is_zero(entry.presence) &&
+                             s.rendezvous->registered(room_key(person, entry.presence)) > 0;
+        out.push_back(Friend{.person = person,
+                             .name = entry.name,
+                             .shared = entry.shared,
+                             .since = entry.since,
+                             .online = in_room || s.online(person, entry),
+                             .in_room = in_room});
     }
     std::ranges::sort(out, [](const Friend& a, const Friend& b) { return a.name < b.name; });
     return out;

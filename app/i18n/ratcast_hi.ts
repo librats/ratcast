@@ -96,6 +96,18 @@
         <translation>अभी कोई नहीं। अपना लिंक भेजें, या रूम में मिले किसी को जोड़ें: वहाँ उनके नाम पर क्लिक करें।</translation>
     </message>
     <message>
+        <source>in a room</source>
+        <translation>एक रूम में</translation>
+    </message>
+    <message>
+        <source>online</source>
+        <translation>ऑनलाइन</translation>
+    </message>
+    <message>
+        <source>offline</source>
+        <translation>ऑफ़लाइन</translation>
+    </message>
+    <message>
         <source>Remove from friends</source>
         <translation>दोस्तों से हटाएँ</translation>
     </message>

@@ -17,8 +17,13 @@ ColumnLayout {
 
     /// A person's first letter on a colour of their tag: the same everywhere.
     component Avatar: Rectangle {
+        id: avatar
         property string name
         property string tag
+        /// A friend's: a dot, green when online, the accent's when in a room.
+        property bool shows: false
+        property bool online: false
+        property bool inRoom: false
 
         readonly property var colors: ["#5865f2", "#3ba55c", "#faa61a", "#ed4245", "#eb459e",
                                        "#00a8fc", "#9b59b6", "#1abc9c"]
@@ -38,6 +43,18 @@ ColumnLayout {
             text: name.length > 0 ? name.charAt(0).toUpperCase() : "?"
             font.bold: true
             textFormat: Text.PlainText
+        }
+        Rectangle {
+            visible: avatar.shows && avatar.online
+            anchors.right: parent.right
+            anchors.bottom: parent.bottom
+            anchors.margins: -1
+            width: 11
+            height: 11
+            radius: width / 2
+            color: avatar.inRoom ? Material.accent : "#3ba55c"
+            border.width: 2
+            border.color: Material.background
         }
     }
 
@@ -319,11 +336,29 @@ ColumnLayout {
             Avatar {
                 name: modelData.name
                 tag: modelData.tag
+                shows: true
+                online: modelData.online
+                inRoom: modelData.inRoom
+                opacity: modelData.online ? 1 : 0.6
             }
-            Named {
+            ColumnLayout {
                 Layout.fillWidth: true
-                name: modelData.name
-                tag: modelData.tag
+                spacing: 0
+
+                Named {
+                    Layout.fillWidth: true
+                    name: modelData.name
+                    tag: modelData.tag
+                }
+                Label {
+                    // Seen at a server, or met; with no server, only met.
+                    text: modelData.inRoom ? qsTr("in a room")
+                        : modelData.online ? qsTr("online")
+                        : qsTr("offline")
+                    font.pixelSize: 11
+                    opacity: modelData.online ? 0.8 : 0.5
+                    color: modelData.inRoom ? Material.accent : Material.foreground
+                }
             }
             ToolButton {
                 display: AbstractButton.IconOnly

@@ -96,6 +96,18 @@
         <translation>Пока никого. Отправьте свою ссылку или добавьте того, с кем встретились в комнате: нажмите там на его имя.</translation>
     </message>
     <message>
+        <source>in a room</source>
+        <translation>в комнате</translation>
+    </message>
+    <message>
+        <source>online</source>
+        <translation>в сети</translation>
+    </message>
+    <message>
+        <source>offline</source>
+        <translation>не в сети</translation>
+    </message>
+    <message>
         <source>Remove from friends</source>
         <translation>Удалить из друзей</translation>
     </message>

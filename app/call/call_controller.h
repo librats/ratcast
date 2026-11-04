@@ -380,6 +380,8 @@ private:
     struct Cameras;
 
     void set_state(State state);
+    /// The people's home node told whether this side is in a room.
+    void tell_in_room();
     void set_notice(QString notice);
     void set_sharing(bool sharing);
     void set_choosing(bool choosing);

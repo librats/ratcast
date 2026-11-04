@@ -96,6 +96,18 @@
         <translation>Nadie todavía. Envía tu enlace o añade a alguien que conozcas en una sala: haz clic en su nombre.</translation>
     </message>
     <message>
+        <source>in a room</source>
+        <translation>en una sala</translation>
+    </message>
+    <message>
+        <source>online</source>
+        <translation>en línea</translation>
+    </message>
+    <message>
+        <source>offline</source>
+        <translation>desconectado</translation>
+    </message>
+    <message>
         <source>Remove from friends</source>
         <translation>Quitar de amigos</translation>
     </message>

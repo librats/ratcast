@@ -126,7 +126,9 @@ export function Privacy() {
               a ratcast server and is listed there under codes derived from your links, and it announces itself under
               the same codes in the public DHT, so that it can be found when no server is reached. The server and the
               DHT's devices see your IP address and those codes, not who you are or who your friends are: a code can
-              only be worked out from a link.
+              only be worked out from a link. Your friends see whether you are online or in a room: your devices are
+              listed at the server under a code only your friends can work out, and watch your friends' codes there,
+              which tells the server how many devices are listed under each, never who they are.
             </li>
           </ul>
         </Section>

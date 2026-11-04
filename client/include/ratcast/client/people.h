@@ -30,6 +30,13 @@
  * leave (allow_device()) hands the person's key and all they know over Noise.
  * The new device is the person from then on.
  *
+ * Friends see each other online (Friend::online, in_room): each device of a
+ * person registers at the servers under their presence key — of a secret of
+ * the person's key, told to each friend as they become one or meet — and
+ * under its room key while in a room; each watches its friends' (librats'
+ * Rendezvous::set_watched()), told how many are there, meeting none of them.
+ * With no server, a friend is online only while met.
+ *
  * Threads: every method may be called from any thread. Handlers run on the
  * network's threads, never under People's lock, and must not block or
  * destroy it.
@@ -75,9 +82,14 @@ std::string to_string(const PersonLink& link);
 struct Friend {
     PersonId person;
     std::string name;  ///< as they last said it
-    /// A secret the two share, for what friends do later (being seen online).
+    /// A secret the two share, for what friends do later.
     std::array<uint8_t, 32> shared{};
     uint64_t since = 0;  ///< seconds since the Unix epoch
+    /// A device of theirs is online: seen at a server, or met here.
+    bool online = false;
+    /// A device of theirs is in a room (People::set_in_room()), as seen at a
+    /// server.
+    bool in_room = false;
 };
 
 struct FriendRequest {
@@ -124,8 +136,8 @@ struct PeopleConfig {
 };
 
 struct PeopleHandlers {
-    /// Friends or requests changed, or the name, or the person (a device
-    /// joined as another's).
+    /// Friends or requests changed — a friend came online or went, too —
+    /// or the name, or the person (a device joined as another's).
     std::function<void()> changed = {};
     /// A device asks to become this person, by the device link: answer with
     /// allow_device().
@@ -179,6 +191,9 @@ public:
     std::vector<Friend> friends() const;
     std::vector<FriendRequest> requests() const;
     bool is_friend(const PersonId& person) const;
+
+    /// This device is in a room, or no longer: friends see so while it is.
+    void set_in_room(bool in_room);
 
     // ── Devices ─────────────────────────────────────────────────────────────
 

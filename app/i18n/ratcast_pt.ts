@@ -96,6 +96,18 @@
         <translation>Ninguém ainda. Envie seu link ou adicione alguém que você encontrar numa sala: clique no nome dele lá.</translation>
     </message>
     <message>
+        <source>in a room</source>
+        <translation>em uma sala</translation>
+    </message>
+    <message>
+        <source>online</source>
+        <translation>online</translation>
+    </message>
+    <message>
+        <source>offline</source>
+        <translation>offline</translation>
+    </message>
+    <message>
         <source>Remove from friends</source>
         <translation>Remover dos amigos</translation>
     </message>

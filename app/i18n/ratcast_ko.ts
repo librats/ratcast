@@ -96,6 +96,18 @@
         <translation>아직 없습니다. 링크를 보내거나 방에서 만난 사람을 추가하세요: 그 사람의 이름을 클릭하면 됩니다.</translation>
     </message>
     <message>
+        <source>in a room</source>
+        <translation>방에 있음</translation>
+    </message>
+    <message>
+        <source>online</source>
+        <translation>온라인</translation>
+    </message>
+    <message>
+        <source>offline</source>
+        <translation>오프라인</translation>
+    </message>
+    <message>
         <source>Remove from friends</source>
         <translation>친구에서 삭제</translation>
     </message>

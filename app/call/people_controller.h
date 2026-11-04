@@ -41,7 +41,8 @@ class PeopleController : public QObject, public QQmlParserStatus {
     Q_PROPERTY(QString person READ person NOTIFY changed)
     /// The person's link, the website's: to send to whoever is to ask.
     Q_PROPERTY(QString link READ link NOTIFY changed)
-    /// Friends, by name: each a map of person (the key in hex), name, tag.
+    /// Friends, those in a room first, then those online, each by name: a
+    /// map of person (the key in hex), name, tag, online, inRoom.
     Q_PROPERTY(QVariantList friends READ friends NOTIFY changed)
     /// Requests, the newest first: person, name, tag, incoming, declined.
     Q_PROPERTY(QVariantList requests READ requests NOTIFY changed)

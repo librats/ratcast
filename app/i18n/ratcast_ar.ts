@@ -96,6 +96,18 @@
         <translation>لا أحد بعد. أرسل رابطك، أو أضف شخصًا قابلته في غرفة: انقر على اسمه هناك.</translation>
     </message>
     <message>
+        <source>in a room</source>
+        <translation>في غرفة</translation>
+    </message>
+    <message>
+        <source>online</source>
+        <translation>متصل</translation>
+    </message>
+    <message>
+        <source>offline</source>
+        <translation>غير متصل</translation>
+    </message>
+    <message>
         <source>Remove from friends</source>
         <translation>إزالة من الأصدقاء</translation>
     </message>

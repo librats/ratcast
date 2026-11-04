@@ -96,6 +96,18 @@
         <translation>Henüz kimse yok. Bağlantını gönder ya da bir odada tanıştığın birini ekle: oradaki adına tıkla.</translation>
     </message>
     <message>
+        <source>in a room</source>
+        <translation>bir odada</translation>
+    </message>
+    <message>
+        <source>online</source>
+        <translation>çevrimiçi</translation>
+    </message>
+    <message>
+        <source>offline</source>
+        <translation>çevrimdışı</translation>
+    </message>
+    <message>
         <source>Remove from friends</source>
         <translation>Arkadaşlardan çıkar</translation>
     </message>

@@ -158,8 +158,8 @@ public:
             if (r.person == person) return r;
         return std::nullopt;
     }
-    std::optional<Friend> friend_of(const People& other) const {
-        const PersonId person = other.person();
+    std::optional<Friend> friend_of(const People& other) const { return friend_of(other.person()); }
+    std::optional<Friend> friend_of(const PersonId& person) const {
         for (const Friend& f : people->friends())
             if (f.person == person) return f;
         return std::nullopt;
@@ -373,6 +373,47 @@ TEST_F(PeopleTest, ADeviceBecomesItsPersonAndTheirDevicesKeepAlike) {
     phone->stop();
     phone->start();
     EXPECT_EQ(phone->people->person(), ann_id);
+}
+
+// Friends see each other online, and in a room, at the server — not met: a
+// friend's device that comes back meets nobody, and is seen all the same.
+TEST_F(PeopleTest, FriendsSeeEachOtherOnlineAndInARoom) {
+    auto ann = device("Ann");
+    auto bob = device("Bob");
+    ASSERT_TRUE(bob->people->add(ann->people->link()));
+    ASSERT_TRUE(wait_for([&] { return ann->request_of(*bob->people).has_value(); }));
+    ann->people->accept(bob->people->person());
+    ASSERT_TRUE(wait_for([&] { return bob->has_friend(*ann->people); }));
+    EXPECT_TRUE(wait_for([&] { return ann->friend_of(*bob->people)->online; }));
+    EXPECT_TRUE(wait_for([&] { return bob->friend_of(*ann->people)->online; }));
+    EXPECT_FALSE(ann->friend_of(*bob->people)->in_room);
+
+    const PersonId bob_id = bob->people->person();
+    bob->stop();
+    EXPECT_TRUE(wait_for([&] { return !ann->friend_of(bob_id)->online; })) << "seen online, gone";
+    bob->start();
+    EXPECT_TRUE(wait_for([&] { return ann->friend_of(*bob->people)->online; }))
+        << "come back, unseen";
+    EXPECT_TRUE(wait_for([&] { return bob->friend_of(*ann->people)->online; }));
+
+    const int changes = ann->changes.load();
+    bob->people->set_in_room(true);
+    EXPECT_TRUE(wait_for([&] { return ann->friend_of(*bob->people)->in_room; }));
+    EXPECT_GT(ann->changes.load(), changes) << "not told";
+    bob->people->set_in_room(false);
+    EXPECT_TRUE(wait_for([&] { return !ann->friend_of(*bob->people)->in_room; }));
+    EXPECT_TRUE(ann->friend_of(*bob->people)->online);
+
+    // The person's other devices see them too: what to watch is kept alike.
+    auto phone = device("Phone", "Ann's phone");
+    ASSERT_TRUE(phone->people->join_as_device(ann->people->device_link()));
+    ASSERT_TRUE(wait_for([&] { return ann->asking().has_value(); }));
+    ann->people->allow_device(true);
+    ASSERT_TRUE(wait_for([&] { return phone->joined_.load() == 1; }));
+    EXPECT_TRUE(wait_for([&] {
+        const auto bob_seen = phone->friend_of(*bob->people);
+        return bob_seen && bob_seen->online;
+    }));
 }
 
 TEST_F(PeopleTest, ADeviceRefusedOrWithoutTheLinkBecomesNobody) {

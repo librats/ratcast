@@ -6,6 +6,7 @@
 #include <QSettings>
 #include <QSysInfo>
 
+#include <algorithm>
 #include <filesystem>
 #include <utility>
 
@@ -141,11 +142,19 @@ QString PeopleController::link() const {
 QVariantList PeopleController::friends() const {
     QVariantList list;
     if (!people_) return list;
-    for (const Friend& f : people_->friends()) {
+    std::vector<Friend> friends = people_->friends();
+    // Those in a room first, then those online, each by name (as given).
+    std::ranges::stable_sort(friends, [](const Friend& a, const Friend& b) {
+        const auto rank = [](const Friend& f) { return f.in_room ? 0 : f.online ? 1 : 2; };
+        return rank(a) < rank(b);
+    });
+    for (const Friend& f : friends) {
         list.push_back(QVariantMap{
             {QStringLiteral("person"), hex_of(f.person)},
             {QStringLiteral("name"), QString::fromStdString(f.name)},
             {QStringLiteral("tag"), QString::fromStdString(f.person.tag())},
+            {QStringLiteral("online"), f.online},
+            {QStringLiteral("inRoom"), f.in_room},
         });
     }
     return list;

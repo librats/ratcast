@@ -96,6 +96,18 @@
         <translation>まだいません。リンクを送るか、ルームで会った人を追加しましょう：その人の名前をクリックします。</translation>
     </message>
     <message>
+        <source>in a room</source>
+        <translation>ルームにいます</translation>
+    </message>
+    <message>
+        <source>online</source>
+        <translation>オンライン</translation>
+    </message>
+    <message>
+        <source>offline</source>
+        <translation>オフライン</translation>
+    </message>
+    <message>
         <source>Remove from friends</source>
         <translation>フレンドから削除</translation>
     </message>

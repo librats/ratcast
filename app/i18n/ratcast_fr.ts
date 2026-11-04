@@ -96,6 +96,18 @@
         <translation>Personne encore. Envoyez votre lien, ou ajoutez quelqu’un rencontré dans un salon : cliquez sur son nom.</translation>
     </message>
     <message>
+        <source>in a room</source>
+        <translation>dans un salon</translation>
+    </message>
+    <message>
+        <source>online</source>
+        <translation>en ligne</translation>
+    </message>
+    <message>
+        <source>offline</source>
+        <translation>hors ligne</translation>
+    </message>
+    <message>
         <source>Remove from friends</source>
         <translation>Retirer des amis</translation>
     </message>

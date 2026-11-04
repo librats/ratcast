@@ -96,6 +96,18 @@
         <translation>Noch niemand. Schick deinen Link oder füge jemanden hinzu, den du in einem Raum triffst: Klick dort auf den Namen.</translation>
     </message>
     <message>
+        <source>in a room</source>
+        <translation>in einem Raum</translation>
+    </message>
+    <message>
+        <source>online</source>
+        <translation>online</translation>
+    </message>
+    <message>
+        <source>offline</source>
+        <translation>offline</translation>
+    </message>
+    <message>
         <source>Remove from friends</source>
         <translation>Aus den Freunden entfernen</translation>
     </message>

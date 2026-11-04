@@ -96,6 +96,18 @@
         <translation>还没有好友。发送你的链接，或添加在房间里遇到的人：点击他们的名字即可。</translation>
     </message>
     <message>
+        <source>in a room</source>
+        <translation>在房间中</translation>
+    </message>
+    <message>
+        <source>online</source>
+        <translation>在线</translation>
+    </message>
+    <message>
+        <source>offline</source>
+        <translation>离线</translation>
+    </message>
+    <message>
         <source>Remove from friends</source>
         <translation>从好友中移除</translation>
     </message>
