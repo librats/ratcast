@@ -117,6 +117,65 @@
     </message>
 </context>
 <context>
+    <name>GroupsPanel</name>
+    <message>
+        <source>A group %1</source>
+        <translation>群组 %1</translation>
+    </message>
+    <message>
+        <source>Groups</source>
+        <translation>群组</translation>
+    </message>
+    <message>
+        <source>a new group&apos;s name</source>
+        <translation>新群组的名称</translation>
+    </message>
+    <message>
+        <source>Make</source>
+        <translation>创建</translation>
+    </message>
+    <message>
+        <source>None yet. Make one for those you meet often, or open a group&apos;s link.</source>
+        <translation>还没有。为常见面的人创建一个，或打开一个群组的链接。</translation>
+    </message>
+    <message>
+        <source>in the room: %1</source>
+        <translation>房间内：%1</translation>
+    </message>
+    <message>
+        <source>nobody in the room</source>
+        <translation>房间内没有人</translation>
+    </message>
+    <message>
+        <source>Join</source>
+        <translation>加入</translation>
+    </message>
+    <message>
+        <source>Copy the link</source>
+        <translation>复制链接</translation>
+    </message>
+    <message>
+        <source>Show it as a QR code</source>
+        <translation>显示为二维码</translation>
+    </message>
+    <message>
+        <source>Rename</source>
+        <translation>重命名</translation>
+    </message>
+    <message>
+        <source>Leave the group</source>
+        <translation>退出群组</translation>
+    </message>
+    <message>
+        <source>Point a phone&apos;s camera at it to join the group there.</source>
+        <translation>用手机摄像头扫描，即可在手机上加入群组。</translation>
+    </message>
+    <message>
+        <source>Rename the group</source>
+        <translation>重命名群组</translation>
+    </message>
+</context>
+<context>
     <name>Main</name>
     <message>
         <source>%1 stopped sharing</source>
@@ -255,6 +314,14 @@
         <translation>某人</translation>
     </message>
     <message>
+        <source>Answer to join the group %1 and its room.</source>
+        <translation>接听即可加入群组 %1 及其房间。</translation>
+    </message>
+    <message>
+        <source>Answer to leave this room and join the group %1 in its room.</source>
+        <translation>接听即可离开此房间，加入群组 %1 的房间。</translation>
+    </message>
+    <message>
         <source>Answer to join their room.</source>
         <translation>接听即可加入对方的房间。</translation>
     </message>
@@ -283,16 +350,20 @@
         <translation>询问</translation>
     </message>
     <message>
-        <source>Friends (%1 asking)</source>
-        <translation>好友（%1 个请求）</translation>
-    </message>
-    <message>
-        <source>Friends</source>
-        <translation>好友</translation>
-    </message>
-    <message>
         <source>Room</source>
         <translation>房间</translation>
+    </message>
+    <message>
+        <source>A group %1</source>
+        <translation>群组 %1</translation>
+    </message>
+    <message>
+        <source>Groups and friends (%1 asking)</source>
+        <translation>群组和好友（%1 个请求）</translation>
+    </message>
+    <message>
+        <source>Groups and friends</source>
+        <translation>群组和好友</translation>
     </message>
     <message>
         <source>Send a link to whoever is to join:</source>
@@ -763,8 +834,16 @@
         <translation>“%1”不是有效的服务器：请输入 HOST 或 HOST:PORT。</translation>
     </message>
     <message>
+        <source>Groups are not reachable: the network did not start.</source>
+        <translation>无法连接群组：网络未启动。</translation>
+    </message>
+    <message>
         <source>That is not a link to a room.</source>
         <translation>这不是房间链接。</translation>
+    </message>
+    <message>
+        <source>That group is not one of yours.</source>
+        <translation>该群组不是你的群组。</translation>
     </message>
     <message>
         <source>The call cannot start (%1).</source>
@@ -876,6 +955,10 @@
     <message>
         <source>Friends are not reachable: the network did not start.</source>
         <translation>无法连接好友：网络未能启动。</translation>
+    </message>
+    <message>
+        <source>A group needs a name.</source>
+        <translation>群组需要一个名称。</translation>
     </message>
     <message>
         <source>That is not a link to a person.</source>

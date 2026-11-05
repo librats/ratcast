@@ -117,6 +117,65 @@
     </message>
 </context>
 <context>
+    <name>GroupsPanel</name>
+    <message>
+        <source>A group %1</source>
+        <translation>Bir grup %1</translation>
+    </message>
+    <message>
+        <source>Groups</source>
+        <translation>Gruplar</translation>
+    </message>
+    <message>
+        <source>a new group&apos;s name</source>
+        <translation>yeni grubun adı</translation>
+    </message>
+    <message>
+        <source>Make</source>
+        <translation>Oluştur</translation>
+    </message>
+    <message>
+        <source>None yet. Make one for those you meet often, or open a group&apos;s link.</source>
+        <translation>Henüz yok. Sık buluştuğun kişiler için bir tane oluştur ya da bir grubun bağlantısını aç.</translation>
+    </message>
+    <message>
+        <source>in the room: %1</source>
+        <translation>odada: %1</translation>
+    </message>
+    <message>
+        <source>nobody in the room</source>
+        <translation>odada kimse yok</translation>
+    </message>
+    <message>
+        <source>Join</source>
+        <translation>Katıl</translation>
+    </message>
+    <message>
+        <source>Copy the link</source>
+        <translation>Bağlantıyı kopyala</translation>
+    </message>
+    <message>
+        <source>Show it as a QR code</source>
+        <translation>QR kod olarak göster</translation>
+    </message>
+    <message>
+        <source>Rename</source>
+        <translation>Yeniden adlandır</translation>
+    </message>
+    <message>
+        <source>Leave the group</source>
+        <translation>Gruptan ayrıl</translation>
+    </message>
+    <message>
+        <source>Point a phone&apos;s camera at it to join the group there.</source>
+        <translation>Orada gruba katılmak için bir telefonun kamerasını ona tut.</translation>
+    </message>
+    <message>
+        <source>Rename the group</source>
+        <translation>Grubu yeniden adlandır</translation>
+    </message>
+</context>
+<context>
     <name>Main</name>
     <message>
         <source>%1 stopped sharing</source>
@@ -255,6 +314,14 @@
         <translation>Biri</translation>
     </message>
     <message>
+        <source>Answer to join the group %1 and its room.</source>
+        <translation>%1 grubuna ve odasına katılmak için yanıtla.</translation>
+    </message>
+    <message>
+        <source>Answer to leave this room and join the group %1 in its room.</source>
+        <translation>Bu odadan çıkıp %1 grubuna, odasında katılmak için yanıtla.</translation>
+    </message>
+    <message>
         <source>Answer to join their room.</source>
         <translation>Odasına katılmak için yanıtlayın.</translation>
     </message>
@@ -283,16 +350,20 @@
         <translation>Sor</translation>
     </message>
     <message>
-        <source>Friends (%1 asking)</source>
-        <translation>Arkadaşlar (%1 istek)</translation>
-    </message>
-    <message>
-        <source>Friends</source>
-        <translation>Arkadaşlar</translation>
-    </message>
-    <message>
         <source>Room</source>
         <translation>Oda</translation>
+    </message>
+    <message>
+        <source>A group %1</source>
+        <translation>Bir grup %1</translation>
+    </message>
+    <message>
+        <source>Groups and friends (%1 asking)</source>
+        <translation>Gruplar ve arkadaşlar (%1 istek)</translation>
+    </message>
+    <message>
+        <source>Groups and friends</source>
+        <translation>Gruplar ve arkadaşlar</translation>
     </message>
     <message>
         <source>Send a link to whoever is to join:</source>
@@ -763,8 +834,16 @@
         <translation>&apos;%1&apos; bir sunucu değil: lütfen HOST ya da HOST:PORT girin.</translation>
     </message>
     <message>
+        <source>Groups are not reachable: the network did not start.</source>
+        <translation>Gruplara ulaşılamıyor: ağ başlamadı.</translation>
+    </message>
+    <message>
         <source>That is not a link to a room.</source>
         <translation>Bu bir odanın bağlantısı değil.</translation>
+    </message>
+    <message>
+        <source>That group is not one of yours.</source>
+        <translation>Bu grup senin gruplarından biri değil.</translation>
     </message>
     <message>
         <source>The call cannot start (%1).</source>
@@ -876,6 +955,10 @@
     <message>
         <source>Friends are not reachable: the network did not start.</source>
         <translation>Arkadaşlara ulaşılamıyor: ağ başlamadı.</translation>
+    </message>
+    <message>
+        <source>A group needs a name.</source>
+        <translation>Grubun bir adı olmalı.</translation>
     </message>
     <message>
         <source>That is not a link to a person.</source>

@@ -112,6 +112,7 @@ CallController::Environment environment() {
         std::string("ratcast-test/") + test->test_suite_name() + "." + test->name();
     environment.call.watch_network = false;
     environment.call.built_in_servers = {};
+    environment.call.dht = false;  // a room met by its secret: at a test's server, if any
     environment.open_share = [](const ScreenShareConfig& config,
                                 std::stop_token) -> Result<ScreenShareSources> {
         ScreenShareSources sources{.pictures = std::make_unique<PatternSource>(
@@ -153,11 +154,20 @@ protected:
     }
 
     /// Ann's room made, and its invite on loopback.
+    /// Ann's new room, and its link by the address it listens on: no server
+    /// to meet at by its secret.
     QString make_room() {
         ann_.create();
         EXPECT_EQ(ann_.state(), State::InRoom) << ann_.notice().toStdString();
-        EXPECT_EQ(ann_.invites().size(), 1) << "one address: the one it listens on";
-        return ann_.invites().value(0);
+        EXPECT_EQ(ann_.invites().size(), 2) << "its secret, and the address it listens on";
+        return address(ann_);
+    }
+
+    /// `side`'s room's link by the address it listens on, on loopback.
+    static QString address(const CallController& side) {
+        for (const QString& invite : side.invites())
+            if (invite.startsWith("https://ratcast.app/r/#127.0.0.1:")) return invite;
+        return {};
     }
 
     /// Bob in Ann's room, each knowing the other by name.
@@ -435,7 +445,7 @@ TEST_F(CallControllerTest, TheMicrophoneIsHeardOnceAllowedTheSystemToldOfTheCall
     bob_.leave();
     EXPECT_EQ(g_calls_told, 0);
     // An answer that comes after the room it was asked in is over is dropped.
-    bob_.join(ann_.invites().value(0));
+    bob_.join(address(ann_));
     ASSERT_TRUE(answer);
     bob_.leave();
     answer(false);
@@ -698,7 +708,7 @@ TEST_F(CallControllerTest, PastTheMostCamerasThoseOfTheLastToSpeakAreShown) {
     bob_.setCamera(true);
     carl_.setCamera(true);
     both_in();
-    carl_.join(ann_.invites().value(0));
+    carl_.join(address(ann_));
     const auto shown = [&] {
         QStringList names;
         for (int row = 0; row < members(ann_); ++row) {
@@ -1059,34 +1069,60 @@ TEST_F(CallControllerTest, LeavingOrStoppingWhileTheDialogIsOpenCallsItOff) {
 // Members known by whose they are: a tag beside the name, asked to be friends
 // from the room, a friend once accepted, heard as loud as their person is set
 // to be — whichever device or room they come in.
-TEST_F(CallControllerTest, AMemberIsKnownByWhoseItIsAndAskedToBeAFriend) {
-    librats::NodeConfig node;
-    node.bind_address = "127.0.0.1";
-    node.protocol = environment().call.protocol;
-    librats::Node server(node);
-    librats::Rendezvous::Config serving;
-    serving.serve = true;
-    server.add_subsystem(std::make_unique<librats::Rendezvous>(serving));
-    ASSERT_TRUE(server.start());
+/// A stand-in server home nodes meet at, and each person's home node there.
+class PeopleAtAServer {
+public:
+    PeopleAtAServer() : server_(node_config()) {
+        librats::Rendezvous::Config serving;
+        serving.serve = true;
+        server_.add_subsystem(std::make_unique<librats::Rendezvous>(serving));
+        EXPECT_TRUE(server_.start());
+        EXPECT_TRUE(data_.isValid());
+    }
+    ~PeopleAtAServer() { server_.stop(); }
 
-    QTemporaryDir data;
-    ASSERT_TRUE(data.isValid());
-    const auto people_of = [&](PeopleController& people, const QString& name) {
+    /// The server as CallController::server takes it.
+    QString server() const { return QStringLiteral("127.0.0.1:%1").arg(server_.listen_port()); }
+    /// `side`'s rooms met at the server.
+    void meet(CallController& side) const {
+        CallController::Environment env = environment();
+        env.server = server();
+        env.name = side.name();
+        side.setEnvironment(env);
+    }
+
+    void start(PeopleController& people, const QString& name) {
         PeopleController::Environment env;
-        env.people.data_dir = QDir(data.path()).filePath(name).toStdString();
-        env.people.servers = {{"127.0.0.1", server.listen_port()}};
+        env.people.data_dir = QDir(data_.path()).filePath(name).toStdString();
+        env.people.servers = {{"127.0.0.1", server_.listen_port()}};
         env.people.bind_address = "127.0.0.1";
-        env.people.protocol = node.protocol;
+        env.people.protocol = environment().call.protocol;
         env.people.watch_network = false;
         env.people.dht = false;  // the server alone, as the room
         env.name = name;
         people.setEnvironment(env);
         ASSERT_TRUE(people.ready());
-    };
+    }
+
+private:
+    static librats::NodeConfig node_config() {
+        librats::NodeConfig node;
+        node.bind_address = "127.0.0.1";
+        node.protocol = environment().call.protocol;
+        return node;
+    }
+    librats::Node server_;
+    QTemporaryDir data_;
+};
+
+TEST_F(CallControllerTest, AMemberIsKnownByWhoseItIsAndAskedToBeAFriend) {
+    PeopleAtAServer at;
     PeopleController ann_people;
     PeopleController bob_people;
-    people_of(ann_people, "Ann");
-    people_of(bob_people, "Bob");
+    at.start(ann_people, "Ann");
+    at.start(bob_people, "Bob");
+    at.meet(ann_);  // the room rung to met by its secret
+    at.meet(bob_);
     ann_.setPeople(&ann_people);
     bob_.setPeople(&bob_people);
     EXPECT_EQ(bob_.name(), "Bob") << "the person's name";
@@ -1142,7 +1178,72 @@ TEST_F(CallControllerTest, AMemberIsKnownByWhoseItIsAndAskedToBeAFriend) {
     ann_.leave();
     ann_.setPeople(nullptr);
     bob_.setPeople(nullptr);
-    server.stop();
+}
+
+// A group made is entered at once, its link the room's invite; whoever opens
+// the link is in its room too, the group theirs from then on, and sees from
+// the list who is there.
+TEST_F(CallControllerTest, AGroupsRoomIsEnteredFromTheListAndByItsLink) {
+    PeopleAtAServer at;
+    PeopleController ann_people;
+    PeopleController bob_people;
+    at.start(ann_people, "Ann");
+    at.start(bob_people, "Bob");
+    at.meet(ann_);
+    at.meet(bob_);
+    ann_.setPeople(&ann_people);
+    bob_.setPeople(&bob_people);
+
+    const QString id = ann_people.makeGroup("Films");
+    ASSERT_FALSE(id.isEmpty());
+    ASSERT_EQ(ann_people.groups().size(), 1);
+    const QVariantMap group = ann_people.groups().front().toMap();
+    EXPECT_EQ(group.value("name"), "Films");
+    EXPECT_TRUE(PeopleController::isGroupLink(group.value("link").toString()));
+    ann_.enter(id);
+    ASSERT_EQ(ann_.state(), State::InRoom) << "nobody's room, there at once";
+    EXPECT_EQ(ann_.group(), id);
+    ASSERT_FALSE(ann_.invites().isEmpty());
+    EXPECT_EQ(ann_.invites().front(), group.value("link")) << "its link the room's";
+
+    bob_.join(ann_.invites().front());
+    EXPECT_EQ(bob_.state(), State::InRoom);
+    EXPECT_EQ(bob_.group(), id);
+    ASSERT_TRUE(
+        wait_for([&] { return !member(bob_, "Ann").isEmpty() && !member(ann_, "Bob").isEmpty(); }));
+    const auto bobs = [&] {
+        const QVariantList groups = bob_people.groups();
+        return groups.isEmpty() ? QVariantMap{} : groups.front().toMap();
+    };
+    EXPECT_TRUE(wait_for([&] { return bobs().value("name") == "Films"; })) << "told in the room";
+
+    // Seen from the list: Ann in it, Bob out.
+    bob_.leave();
+    EXPECT_EQ(bob_.group(), "");
+    EXPECT_TRUE(wait_for([&] { return bobs().value("present").toInt() == 1; }));
+    bob_.enter(id);
+    EXPECT_EQ(bob_.state(), State::InRoom);
+    EXPECT_TRUE(wait_for([&] { return !member(bob_, "Ann").isEmpty(); }));
+    bob_.leave();
+    ann_.leave();
+    EXPECT_TRUE(wait_for([&] { return bobs().value("present").toInt() == 0; }));
+    ann_.setPeople(nullptr);
+    bob_.setPeople(nullptr);
+}
+
+// A room is made once: its link is its secret, and the next room's another —
+// whoever had this one's is not let into that.
+TEST_F(CallControllerTest, EachRoomMadeHasALinkOfItsOwn) {
+    ann_.create();
+    ASSERT_EQ(ann_.state(), State::InRoom);
+    const QString first = ann_.invites().value(0);
+    const std::optional<RatsLink> link = parse_rats_link(first.toStdString());
+    ASSERT_TRUE(link) << first.toStdString();
+    EXPECT_TRUE(std::holds_alternative<RoomSecret>(link->url)) << first.toStdString();
+    ann_.leave();
+    ann_.create();
+    ASSERT_EQ(ann_.state(), State::InRoom);
+    EXPECT_NE(ann_.invites().value(0), first);
 }
 
 TEST_F(CallControllerTest, ALinkThatIsNoneIsRefused) {

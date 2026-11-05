@@ -343,7 +343,13 @@ ApplicationWindow {
 
         Label {
             width: parent.width
+            // To a group's room: a member of the group from then on.
             text: ringDialog.ring === null ? ""
+                : ringDialog.ring.group.length > 0
+                    ? (call.state === CallController.Idle
+                        ? qsTr("Answer to join the group %1 and its room.")
+                        : qsTr("Answer to leave this room and join the group %1 in its room."))
+                          .arg(ringDialog.ring.group)
                 : call.state === CallController.Idle
                     ? qsTr("Answer to join their room.")
                     : qsTr("Answer to leave this room and join theirs.")
@@ -399,7 +405,16 @@ ApplicationWindow {
         onAccepted: if (people.joinAsDevice(link)) root.showFriends()
     }
 
-    // Narrow, the friends in a drawer of their own, over the start.
+    /// The name of the group of `id` (hex), or, until a member says it, its tag.
+    function groupName(id) {
+        const group = people.groups.find(g => g.id === id)
+        if (!group)
+            return qsTr("Room")
+        return group.name.length > 0 ? group.name : qsTr("A group %1").arg(group.tag)
+    }
+
+    // Narrow, the groups and the friends in a drawer of their own, over the
+    // start.
     Drawer {
         id: friendsDrawer
 
@@ -413,7 +428,7 @@ ApplicationWindow {
             anchors.margins: 16
             contentWidth: availableWidth
 
-            FriendsPanel {
+            PeoplePanel {
                 width: parent.width
                 people: people
                 call: call
@@ -591,7 +606,7 @@ ApplicationWindow {
             anchors.fill: parent
             contentWidth: availableWidth
 
-            FriendsPanel {
+            PeoplePanel {
                 width: parent.width
                 people: people
                 call: call
@@ -651,11 +666,11 @@ ApplicationWindow {
                 flat: true
                 onClicked: settingsDialog.open()
             }
-            // Narrow, the friends are a drawer away.
+            // Narrow, the groups and the friends are a drawer away.
             Button {
                 Layout.alignment: Qt.AlignHCenter
-                text: people.asking > 0 ? qsTr("Friends (%1 asking)").arg(people.asking)
-                                        : qsTr("Friends")
+                text: people.asking > 0 ? qsTr("Groups and friends (%1 asking)").arg(people.asking)
+                                        : qsTr("Groups and friends")
                 icon.source: "icons/users.svg"
                 flat: true
                 highlighted: people.asking > 0
@@ -819,8 +834,9 @@ ApplicationWindow {
             anchors.fill: parent
             spacing: 8
 
-            Label {
-                text: qsTr("Room")
+            PlainLabel {
+                Layout.fillWidth: true
+                text: call.group.length > 0 ? root.groupName(call.group) : qsTr("Room")
                 font.pixelSize: 20
                 font.bold: true
             }

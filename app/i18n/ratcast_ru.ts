@@ -117,6 +117,65 @@
     </message>
 </context>
 <context>
+    <name>GroupsPanel</name>
+    <message>
+        <source>A group %1</source>
+        <translation>Группа %1</translation>
+    </message>
+    <message>
+        <source>Groups</source>
+        <translation>Группы</translation>
+    </message>
+    <message>
+        <source>a new group&apos;s name</source>
+        <translation>название новой группы</translation>
+    </message>
+    <message>
+        <source>Make</source>
+        <translation>Создать</translation>
+    </message>
+    <message>
+        <source>None yet. Make one for those you meet often, or open a group&apos;s link.</source>
+        <translation>Пока нет. Создайте группу для тех, с кем часто собираетесь, или откройте ссылку на группу.</translation>
+    </message>
+    <message>
+        <source>in the room: %1</source>
+        <translation>в комнате: %1</translation>
+    </message>
+    <message>
+        <source>nobody in the room</source>
+        <translation>в комнате никого</translation>
+    </message>
+    <message>
+        <source>Join</source>
+        <translation>Войти</translation>
+    </message>
+    <message>
+        <source>Copy the link</source>
+        <translation>Скопировать ссылку</translation>
+    </message>
+    <message>
+        <source>Show it as a QR code</source>
+        <translation>Показать как QR-код</translation>
+    </message>
+    <message>
+        <source>Rename</source>
+        <translation>Переименовать</translation>
+    </message>
+    <message>
+        <source>Leave the group</source>
+        <translation>Выйти из группы</translation>
+    </message>
+    <message>
+        <source>Point a phone&apos;s camera at it to join the group there.</source>
+        <translation>Наведите на него камеру телефона, чтобы вступить в группу там.</translation>
+    </message>
+    <message>
+        <source>Rename the group</source>
+        <translation>Переименовать группу</translation>
+    </message>
+</context>
+<context>
     <name>Main</name>
     <message>
         <source>%1 stopped sharing</source>
@@ -255,6 +314,14 @@
         <translation>Кто-то</translation>
     </message>
     <message>
+        <source>Answer to join the group %1 and its room.</source>
+        <translation>Ответьте, чтобы вступить в группу %1 и войти в её комнату.</translation>
+    </message>
+    <message>
+        <source>Answer to leave this room and join the group %1 in its room.</source>
+        <translation>Ответьте, чтобы выйти из этой комнаты и вступить в группу %1 в её комнате.</translation>
+    </message>
+    <message>
         <source>Answer to join their room.</source>
         <translation>Ответьте, чтобы войти в комнату.</translation>
     </message>
@@ -283,16 +350,20 @@
         <translation>Спросить</translation>
     </message>
     <message>
-        <source>Friends (%1 asking)</source>
-        <translation>Друзья (просят: %1)</translation>
-    </message>
-    <message>
-        <source>Friends</source>
-        <translation>Друзья</translation>
-    </message>
-    <message>
         <source>Room</source>
         <translation>Комната</translation>
+    </message>
+    <message>
+        <source>A group %1</source>
+        <translation>Группа %1</translation>
+    </message>
+    <message>
+        <source>Groups and friends (%1 asking)</source>
+        <translation>Группы и друзья (просят: %1)</translation>
+    </message>
+    <message>
+        <source>Groups and friends</source>
+        <translation>Группы и друзья</translation>
     </message>
     <message>
         <source>Send a link to whoever is to join:</source>
@@ -765,8 +836,16 @@
         <translation>«%1» — не адрес сервера: нужно HOST или HOST:PORT.</translation>
     </message>
     <message>
+        <source>Groups are not reachable: the network did not start.</source>
+        <translation>Группы недоступны: сеть не запустилась.</translation>
+    </message>
+    <message>
         <source>That is not a link to a room.</source>
         <translation>Это не ссылка на комнату.</translation>
+    </message>
+    <message>
+        <source>That group is not one of yours.</source>
+        <translation>Это не ваша группа.</translation>
     </message>
     <message>
         <source>The call cannot start (%1).</source>
@@ -878,6 +957,10 @@
     <message>
         <source>Friends are not reachable: the network did not start.</source>
         <translation>Друзья недоступны: сеть не запустилась.</translation>
+    </message>
+    <message>
+        <source>A group needs a name.</source>
+        <translation>У группы должно быть название.</translation>
     </message>
     <message>
         <source>That is not a link to a person.</source>

@@ -3,6 +3,9 @@
 #include <algorithm>
 #include <cctype>
 
+#include "bytes.h"
+#include "ratcast/client/identity.h"
+
 namespace ratcast {
 namespace {
 
@@ -69,18 +72,34 @@ std::optional<std::string> from_web_link(std::string_view link) {
 
 }  // namespace
 
+RoomSecret RoomSecret::random() { return RoomSecret{random_bytes<16>()}; }
+
+std::string room_key(const RoomSecret& room) {
+    constexpr std::string_view what = "ratcast room";
+    return "ratcast/0/room/" + to_hex(mac(room.bytes, bytes_of(what)));
+}
+
 std::optional<RatsUrl> parse_rats_url(std::string_view url) {
     if (!url.starts_with(kScheme)) return std::nullopt;
     url.remove_prefix(kScheme.size());
     if (url.ends_with('/')) url.remove_suffix(1);
     if (auto endpoint = librats::HostEndpoint::parse(url)) return RatsUrl{std::move(*endpoint)};
     if (auto peer = PeerId::from_hex(url)) return RatsUrl{*peer};
+    // Neither a port nor 64 hex digits: 22 of base64url.
+    if (const std::optional<std::vector<uint8_t>> secret = from_base64url(url, 16)) {
+        RoomSecret room;
+        std::copy(secret->begin(), secret->end(), room.bytes.begin());
+        return RatsUrl{room};
+    }
     return std::nullopt;
 }
 
 std::string to_string(const RatsUrl& url) {
     if (const auto* endpoint = std::get_if<librats::HostEndpoint>(&url)) {
         return std::string(kScheme) + endpoint->to_string();
+    }
+    if (const auto* room = std::get_if<RoomSecret>(&url)) {
+        return std::string(kScheme) + to_base64url(room->bytes);
     }
     return std::string(kScheme) + std::get<PeerId>(url).to_hex();
 }

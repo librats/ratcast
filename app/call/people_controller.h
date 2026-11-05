@@ -7,7 +7,8 @@
  *
  * It starts the home node as the window is made (componentComplete()) and
  * keeps it for as long as the app runs: friends asked by link or from a
- * room, the requests both ways, this device made another's person's or
+ * room, the requests both ways, the groups (a CallController enters their
+ * rooms), this device made another's person's or
  * another device made this person's, the person's key backed up. People's
  * events are brought onto the GUI thread. A CallController given it
  * (CallController::people) certifies its rooms as this person's.
@@ -45,6 +46,10 @@ class PeopleController : public QObject, public QQmlParserStatus {
     /// Friends, those in a room first, then those online, each by name: a
     /// map of person (the key in hex), name, tag, online, inRoom.
     Q_PROPERTY(QVariantList friends READ friends NOTIFY changed)
+    /// Groups, by name: a map of id (hex), name ("" until a member met
+    /// says), tag, link, made (here: renamed here), present (how many are in
+    /// its room now).
+    Q_PROPERTY(QVariantList groups READ groups NOTIFY changed)
     /// Requests, the newest first: person, name, tag, incoming, declined.
     Q_PROPERTY(QVariantList requests READ requests NOTIFY changed)
     /// How many incoming requests wait for an answer.
@@ -57,7 +62,8 @@ class PeopleController : public QObject, public QQmlParserStatus {
     Q_PROPERTY(bool joining READ joining NOTIFY deviceChanged)
     /// What went wrong, or what came of what was asked; "" for nothing.
     Q_PROPERTY(QString notice READ notice NOTIFY noticeChanged)
-    /// Friends ringing, unanswered: each a map of id, person, name, tag, room.
+    /// Friends ringing, unanswered: each a map of id, person, name, tag, room,
+    /// group (the group's name, to a group's room; else "").
     Q_PROPERTY(QVariantList rings READ rings NOTIFY ringsChanged)
     /// The friend this device rings, as one of those; empty for none.
     Q_PROPERTY(QVariantMap ringing READ ringing NOTIFY ringsChanged)
@@ -92,6 +98,7 @@ public:
     QString link() const;
     QVariantList friends() const;
     QVariantList requests() const;
+    QVariantList groups() const;
     int asking() const;
     QString deviceLink() const { return device_link_; }
     QString deviceAsking() const { return device_asking_; }
@@ -111,6 +118,13 @@ public:
     /// friend's or a device's) rather than a room's.
     Q_INVOKABLE static bool isPersonLink(const QString& link);
     Q_INVOKABLE static bool isDeviceLink(const QString& link);
+    Q_INVOKABLE static bool isGroupLink(const QString& link);
+
+    /// A new group of this person's named `name`: its id, to enter its room
+    /// by (CallController::enter()); "" with a notice.
+    Q_INVOKABLE QString makeGroup(const QString& name);
+    Q_INVOKABLE void renameGroup(const QString& id, const QString& name);
+    Q_INVOKABLE void leaveGroup(const QString& id);
 
     /// Ask to be a friend by `link`; whether it was taken (else a notice).
     Q_INVOKABLE bool add(const QString& link);

@@ -92,7 +92,7 @@ bool LinkOpener::hand_on(const QString& link) {
 void LinkOpener::open(const QUrl& url) {
     const QString link = url.toString();
     if (url.scheme() != kRats && !parse_rats_link(link.toStdString()) &&
-        !parse_person_link(link.toStdString())) {
+        !parse_person_link(link.toStdString()) && !parse_group_link(link.toStdString())) {
         // The handler takes every https:// link the app opens too — the
         // chat's: those go on to the browser.
         const QString scheme = url.scheme();

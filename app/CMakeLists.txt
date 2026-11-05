@@ -148,8 +148,11 @@ qt_add_qml_module(ratcast_app
     URI     Ratcast
     VERSION 1.0
     QML_FILES
+        qml/Avatar.qml
         qml/FriendsPanel.qml
+        qml/GroupsPanel.qml
         qml/Main.qml
+        qml/PeoplePanel.qml
         qml/RatLogo.qml
         qml/SettingsDialog.qml
         qml/logo.js
@@ -177,6 +180,7 @@ qt_add_qml_module(ratcast_app
         qml/icons/mic.svg
         qml/icons/minimize.svg
         qml/icons/monitor.svg
+        qml/icons/pencil.svg
         qml/icons/phone-off.svg
         qml/icons/phone.svg
         qml/icons/plus.svg

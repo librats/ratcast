@@ -47,6 +47,18 @@
  * ring_for, it is Missed on both sides; taken back (hang_up()), Cancelled.
  * With no server, only a friend's device met already is rung.
  *
+ * A group (group.h) is made here (make_group(): its key kept with what the
+ * person knows, so that each of their devices may change it) or joined by
+ * its link (join_group()), and kept so on every device of the person's until
+ * they leave it. Its room is a room like any other (Group::room, its main
+ * channel's secret); who is there is seen without being there, each device
+ * watching the room's key at the servers (Group::present). Its
+ * log goes between members as their home nodes meet: while a device is in
+ * the group's room (set_in_room()), or knows nothing of it yet, it is
+ * registered under the group's key too (of the secret), and those met there
+ * prove the secret and tell each other what they know — the maker's
+ * renaming (rename_group()) as well, to members met.
+ *
  * Threads: every method may be called from any thread. Handlers run on the
  * network's threads, never under People's lock, and must not block or
  * destroy it.
@@ -62,6 +74,7 @@
 #include <string_view>
 #include <vector>
 
+#include "ratcast/client/group.h"
 #include "ratcast/client/identity.h"
 #include "ratcast/core/result.h"
 #include "ratcast/ratcast.h"
@@ -122,10 +135,30 @@ struct Ring {
     /// Who rings (an incoming one), or who is rung (an outgoing one).
     PersonId person;
     std::string name;
-    /// The room's link, to join() (rats:// or the website's).
+    /// The room's link, to join() (rats:// or the website's): a group's,
+    /// to a group's room.
     std::string room;
+    /// That group's name, as the caller knows it; "" for a room of nobody's.
+    std::string group;
     /// A friend's to this person, or this person's to a friend.
     bool incoming = false;
+};
+
+/// A group the person is a member of.
+struct Group {
+    GroupId id;
+    /// As its log last says; "" until a member met tells it.
+    std::string name;
+    /// The website's, to give whoever is to join.
+    std::string link;
+    /// Its room, the main channel's (channel()): CallConfig::dial.
+    RoomSecret room;
+    /// Made by this person: renamed here.
+    bool made = false;
+    uint64_t since = 0;  ///< a member since, seconds since the Unix epoch
+    /// How many are in its room now, as seen at the servers: this device
+    /// too, while it is there.
+    size_t present = 0;
 };
 
 enum class RingEnd : uint8_t {
@@ -230,8 +263,27 @@ public:
     std::vector<FriendRequest> requests() const;
     bool is_friend(const PersonId& person) const;
 
-    /// This device is in a room, or no longer: friends see so while it is.
-    void set_in_room(bool in_room);
+    /// This device is in a room — `group`'s, if it is a group's — or no
+    /// longer: friends see so while it is, and the group's members met.
+    void set_in_room(bool in_room, std::optional<GroupId> group = std::nullopt);
+
+    // ── Groups ──────────────────────────────────────────────────────────────
+
+    /// A new group named `name`, made by this person. InvalidArgument for no
+    /// name.
+    Result<Group> make_group(std::string name);
+    /// A member of the group at `link` from now on (again, if one left it);
+    /// its name told by the first member met. InvalidArgument for a link
+    /// that is none.
+    Result<Group> join_group(std::string_view link);
+    /// A new name, told to the members met and to each as they meet.
+    /// InvalidArgument for a group not made by this person, or no name.
+    Result<void> rename_group(const GroupId& group, std::string name);
+    /// No longer a member, on every device of the person's.
+    void leave_group(const GroupId& group);
+    /// The groups, by name.
+    std::vector<Group> groups() const;
+    std::optional<Group> group(const GroupId& group) const;
 
     // ── Ringing ─────────────────────────────────────────────────────────────
 

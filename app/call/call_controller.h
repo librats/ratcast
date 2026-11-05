@@ -4,7 +4,8 @@
  * @file call_controller.h
  * @brief A room as QML sees it: make one or join one, talk, share, watch.
  *
- *   Idle ── create() ───────────────▶ InRoom     (alone until others join)
+ *   Idle ── create() ───────────────▶ InRoom     (a room made once: alone until others join)
+ *     ├──── enter() ────────────────▶ InRoom     (a group's: whoever is there)
  *     └──── join() ──▶ Joining ─────▶ InRoom     (once a member answers)
  *
  * and leave() goes back to Idle from anywhere. A room is a call where
@@ -97,10 +98,14 @@ class CallController : public QObject {
     QML_ELEMENT
     Q_PROPERTY(State state READ state NOTIFY stateChanged)
     /// Links to the room, for the user to send, as web links
-    /// (https://ratcast.app/r/#…, to_web_link()): by peer id for the internet
-    /// if there is one, then the networks this host is on. Any member's will
-    /// do. join() takes them and rats:// links alike.
+    /// (https://ratcast.app/r/#…, to_web_link()): its secret for the
+    /// internet — a group's room by the group's link — then the addresses of
+    /// the networks this host is on. Any member's will do. join() takes them
+    /// and rats:// links alike.
     Q_PROPERTY(QStringList invites READ invites NOTIFY invitesChanged)
+    /// The group whose room this is (its id in hex, as PeopleController's
+    /// groups have it); "" for a room of nobody's.
+    Q_PROPERTY(QString group READ group NOTIFY groupChanged)
     Q_PROPERTY(QString notice READ notice NOTIFY noticeChanged)
     /// What the others call this side: the user's login name until they say
     /// otherwise. Whitespace runs and control characters are not told, nor
@@ -263,10 +268,16 @@ public:
     /// Before the first create() or join().
     void setEnvironment(Environment environment);
 
-    /// Make a room, and be in it: others join by its invites.
+    /// Make a room, and be in it: others join by its invites. Made once: a
+    /// secret of its own (RoomSecret::random()), the next room another.
     Q_INVOKABLE void create();
-    /// Join the room at `link`.
+    /// Join the room at `link`; a group's link (https://ratcast.app/g/#…),
+    /// the group joined (People::join_group()) and its room entered.
     Q_INVOKABLE void join(const QString& link);
+    /// Be in the room of `group` (its id in hex), one of the person's — its
+    /// main channel, a RoomSecret of the group's — with whoever is there:
+    /// nobody, maybe, until others come. Its invite is the group's link.
+    Q_INVOKABLE void enter(const QString& group);
     Q_INVOKABLE void leave();
     /// Ask the desktop for a screen (or a window) and share it, with the
     /// computer's sound if asked. In a room, while the dialog is not open.
@@ -307,6 +318,7 @@ public:
 
     State state() const { return state_; }
     QStringList invites() const { return invites_; }
+    QString group() const { return group_; }
     QString notice() const { return notice_; }
     QString name() const { return name_; }
     void setName(const QString& name);
@@ -356,6 +368,7 @@ public:
 Q_SIGNALS:
     void stateChanged();
     void invitesChanged();
+    void groupChanged();
     void noticeChanged();
     void nameChanged();
     void serverChanged();
@@ -476,6 +489,8 @@ private:
     Environment environment_;
     State state_ = State::Idle;
     QStringList invites_;
+    QString group_;       ///< the group whose room this is, in hex
+    QString group_link_;  ///< its link, the room's first invite
     QString notice_;
     QString name_;
     QString server_;

@@ -41,6 +41,9 @@ ratcast is built on [librats](https://github.com/librats/librats). It comes in t
   when none is reached. See which friends are online or in a room, and call one: each of
   their devices rings. Your friends and your key stay on your devices; save a backup if you
   like.
+- **Groups.** A room that lasts, for those who meet often: make one, send its link
+  (`https://ratcast.app/g/#…`) once, and see from the start who is in it now — a click and
+  you are there. Its members' devices keep it; no server holds it.
 - **Share a screen or a window with its sound.** Viewers hear what your applications play, but
   never the call's own voices.
 - **Voice that is easy to listen to.** Echo cancellation, noise suppression and automatic gain

@@ -31,6 +31,8 @@ std::optional<PersonId> person_of(const QString& hex) {
 
 QString hex_of(const PersonId& person) { return QString::fromStdString(person.to_hex()); }
 
+std::optional<GroupId> group_of(const QString& hex) { return GroupId::from_hex(hex.toStdString()); }
+
 }  // namespace
 
 PeopleController::Environment PeopleController::Environment::system() {
@@ -217,6 +219,7 @@ QVariantMap ring_map(const Ring& ring) {
         {QStringLiteral("name"), QString::fromStdString(ring.name)},
         {QStringLiteral("tag"), QString::fromStdString(ring.person.tag())},
         {QStringLiteral("room"), QString::fromStdString(ring.room)},
+        {QStringLiteral("group"), QString::fromStdString(ring.group)},
     };
 }
 
@@ -258,6 +261,48 @@ QString PeopleController::answerRing(const QString& id, bool accept) {
     people_->answer(*ring, accept);
     Q_EMIT ringsChanged();
     return accept ? room : QString();
+}
+
+QVariantList PeopleController::groups() const {
+    QVariantList list;
+    if (!people_) return list;
+    for (const Group& g : people_->groups()) {
+        list.push_back(QVariantMap{
+            {QStringLiteral("id"), QString::fromStdString(g.id.to_hex())},
+            {QStringLiteral("name"), QString::fromStdString(g.name)},
+            {QStringLiteral("tag"), QString::fromStdString(g.id.tag())},
+            {QStringLiteral("link"), QString::fromStdString(g.link)},
+            {QStringLiteral("made"), g.made},
+            {QStringLiteral("present"), int(g.present)},
+        });
+    }
+    return list;
+}
+
+bool PeopleController::isGroupLink(const QString& link) {
+    return parse_group_link(link.trimmed().toStdString()).has_value();
+}
+
+QString PeopleController::makeGroup(const QString& name) {
+    if (!people_) return {};
+    const Result<Group> made = people_->make_group(name.toStdString());
+    if (!made) {
+        set_notice(tr("A group needs a name."));
+        return {};
+    }
+    set_notice({});
+    return QString::fromStdString(made->id.to_hex());
+}
+
+void PeopleController::renameGroup(const QString& id, const QString& name) {
+    const std::optional<GroupId> group = group_of(id);
+    if (!people_ || !group) return;
+    if (!people_->rename_group(*group, name.toStdString())) set_notice(tr("A group needs a name."));
+}
+
+void PeopleController::leaveGroup(const QString& id) {
+    if (const std::optional<GroupId> group = group_of(id); group && people_)
+        people_->leave_group(*group);
 }
 
 int PeopleController::asking() const {

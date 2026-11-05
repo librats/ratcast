@@ -117,6 +117,65 @@
     </message>
 </context>
 <context>
+    <name>GroupsPanel</name>
+    <message>
+        <source>A group %1</source>
+        <translation>그룹 %1</translation>
+    </message>
+    <message>
+        <source>Groups</source>
+        <translation>그룹</translation>
+    </message>
+    <message>
+        <source>a new group&apos;s name</source>
+        <translation>새 그룹 이름</translation>
+    </message>
+    <message>
+        <source>Make</source>
+        <translation>만들기</translation>
+    </message>
+    <message>
+        <source>None yet. Make one for those you meet often, or open a group&apos;s link.</source>
+        <translation>아직 없습니다. 자주 만나는 사람들과 함께할 그룹을 만들거나 그룹 링크를 여세요.</translation>
+    </message>
+    <message>
+        <source>in the room: %1</source>
+        <translation>방에 %1명</translation>
+    </message>
+    <message>
+        <source>nobody in the room</source>
+        <translation>방에 아무도 없음</translation>
+    </message>
+    <message>
+        <source>Join</source>
+        <translation>참여</translation>
+    </message>
+    <message>
+        <source>Copy the link</source>
+        <translation>링크 복사</translation>
+    </message>
+    <message>
+        <source>Show it as a QR code</source>
+        <translation>QR 코드로 보기</translation>
+    </message>
+    <message>
+        <source>Rename</source>
+        <translation>이름 바꾸기</translation>
+    </message>
+    <message>
+        <source>Leave the group</source>
+        <translation>그룹 나가기</translation>
+    </message>
+    <message>
+        <source>Point a phone&apos;s camera at it to join the group there.</source>
+        <translation>휴대폰 카메라를 대면 그 기기에서 그룹에 들어갑니다.</translation>
+    </message>
+    <message>
+        <source>Rename the group</source>
+        <translation>그룹 이름 바꾸기</translation>
+    </message>
+</context>
+<context>
     <name>Main</name>
     <message>
         <source>%1 stopped sharing</source>
@@ -255,6 +314,14 @@
         <translation>누군가</translation>
     </message>
     <message>
+        <source>Answer to join the group %1 and its room.</source>
+        <translation>받으면 그룹 %1과 그 방에 들어갑니다.</translation>
+    </message>
+    <message>
+        <source>Answer to leave this room and join the group %1 in its room.</source>
+        <translation>받으면 이 방을 나가 그룹 %1의 방에 들어갑니다.</translation>
+    </message>
+    <message>
         <source>Answer to join their room.</source>
         <translation>받으면 상대의 방에 들어갑니다.</translation>
     </message>
@@ -283,16 +350,20 @@
         <translation>요청</translation>
     </message>
     <message>
-        <source>Friends (%1 asking)</source>
-        <translation>친구 (요청 %1)</translation>
-    </message>
-    <message>
-        <source>Friends</source>
-        <translation>친구</translation>
-    </message>
-    <message>
         <source>Room</source>
         <translation>방</translation>
+    </message>
+    <message>
+        <source>A group %1</source>
+        <translation>그룹 %1</translation>
+    </message>
+    <message>
+        <source>Groups and friends (%1 asking)</source>
+        <translation>그룹과 친구 (요청 %1개)</translation>
+    </message>
+    <message>
+        <source>Groups and friends</source>
+        <translation>그룹과 친구</translation>
     </message>
     <message>
         <source>Send a link to whoever is to join:</source>
@@ -763,8 +834,16 @@
         <translation>올바른 서버가 아니에요: &apos;%1&apos;. HOST 또는 HOST:PORT 형식으로 입력하세요.</translation>
     </message>
     <message>
+        <source>Groups are not reachable: the network did not start.</source>
+        <translation>그룹에 연결할 수 없습니다: 네트워크가 시작되지 않았습니다.</translation>
+    </message>
+    <message>
         <source>That is not a link to a room.</source>
         <translation>방 링크가 아닙니다.</translation>
+    </message>
+    <message>
+        <source>That group is not one of yours.</source>
+        <translation>내 그룹이 아닙니다.</translation>
     </message>
     <message>
         <source>The call cannot start (%1).</source>
@@ -876,6 +955,10 @@
     <message>
         <source>Friends are not reachable: the network did not start.</source>
         <translation>친구에게 연결할 수 없습니다: 네트워크가 시작되지 않았습니다.</translation>
+    </message>
+    <message>
+        <source>A group needs a name.</source>
+        <translation>그룹에는 이름이 필요합니다.</translation>
     </message>
     <message>
         <source>That is not a link to a person.</source>

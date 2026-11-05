@@ -1,5 +1,5 @@
 // Puts each page's HTML into its file in dist/ (index.html, privacy/index.html, and the pages of
-// links, r/, u/ and d/ index.html), so search engines and link previews read its text without
+// links, r/, g/, u/ and d/ index.html), so search engines and link previews read its text without
 // running scripts; the browser then hydrates it (src/main.tsx, src/privacy.tsx, src/opener.tsx).
 import { readFile, rm, writeFile } from "node:fs/promises";
 

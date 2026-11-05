@@ -36,6 +36,11 @@ const PeerId* dialed_peer(const CallConfig& config) {
     return config.dial ? std::get_if<PeerId>(&*config.dial) : nullptr;
 }
 
+/// The room called by its secret, if one is.
+const RoomSecret* dialed_room(const CallConfig& config) {
+    return config.dial ? std::get_if<RoomSecret>(&*config.dial) : nullptr;
+}
+
 /// Whether the first of what `peer` offers plays, with nothing chosen: it is
 /// the peer dialed, or none was dialed by peer id.
 bool first_of(const CallConfig& config, const PeerId& peer) {
@@ -46,7 +51,7 @@ bool first_of(const CallConfig& config, const PeerId& peer) {
 /// A call dialing by peer id listens, for the other side to dial back, and
 /// a room's member, for those who join later.
 bool listens(const CallConfig& config) {
-    return config.listen || dialed_peer(config) || config.mesh;
+    return config.listen || dialed_peer(config) || dialed_room(config) || config.mesh;
 }
 
 librats::NodeConfig node_config(const CallConfig& config) {
@@ -164,6 +169,8 @@ Result<std::unique_ptr<Call>> Call::start(CallConfig config, CallHandlers handle
                          << (made.servers.empty() ? "" : ", servers") << servers.str());
     if (const PeerId* dialed = dialed_peer(made)) {
         LOG_INFO("call", "looking for " << dialed->short_hex());
+    } else if (dialed_room(made)) {
+        LOG_INFO("call", "meeting the room's members");
     } else if (made.dial) {
         LOG_INFO("call", "dialing " << std::get<librats::HostEndpoint>(*made.dial).to_string());
     }
@@ -214,17 +221,19 @@ Call::Call(CallConfig config, CallHandlers handlers)
         presence.identity = identity_;
         (void)session().set_presence(presence);
     }
-    // One key to meet under: the peer dialed, or this call's own — in the
-    // DHT, where whoever is met dials the port the router forwards, if it
+    // One key to meet under: the room's, the peer dialed, or this call's
+    // own — in the DHT, where whoever is met dials the port the router forwards, if it
     // does (a NAT then needs no punch), and at servers, which tell each side
     // where the other's NAT maps it and carry what no punch gets through.
     // A room's member joined by address meets nobody so, but knows a server
     // its peers name for one.
     const PeerId* dialed = dialed_peer(config_);
-    const bool meets = dialed || config_.discoverable;
+    const RoomSecret* room = dialed_room(config_);
+    const bool meets = dialed || room || config_.discoverable;
     librats::Rendezvous::Config meeting;
     if (meets) {
-        const std::string key = discovery_key(dialed ? *dialed : node_.local_id());
+        const std::string key =
+            room ? room_key(*room) : discovery_key(dialed ? *dialed : node_.local_id());
         if (config_.dht) {
             node_.add_subsystem(std::make_unique<librats::PortMappingService>());
             librats::DhtDiscovery::Config discovery;
@@ -353,10 +362,12 @@ uint16_t Call::port() const noexcept { return listens(config_) ? node_.listen_po
 
 std::vector<std::string> Call::invites() const {
     std::vector<std::string> links;
-    // A room joined by peer id is found under that id: its members announce
-    // themselves there too.
-    // With the servers it meets at named, for whoever does not know them.
-    if (const PeerId* dialed = dialed_peer(config_); dialed && config_.mesh) {
+    // A room is found by its secret, or one joined by peer id under that id:
+    // its members announce themselves there too. With the servers it meets
+    // at named, for whoever does not know them.
+    if (const RoomSecret* room = dialed_room(config_)) {
+        links.push_back(to_string(RatsLink{*room, config_.servers}));
+    } else if (const PeerId* dialed = dialed_peer(config_); dialed && config_.mesh) {
         links.push_back(to_string(RatsLink{*dialed, config_.servers}));
     } else if (config_.discoverable && !dialed) {
         links.push_back(to_string(RatsLink{id(), config_.servers}));

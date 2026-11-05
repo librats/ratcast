@@ -6,6 +6,7 @@ ratcast_add_test(client_tests
         test_call_monitor.cpp
         test_camera_choice.cpp
         test_data_pipeline.cpp
+        test_group.cpp
         test_identity.cpp
         test_known_servers.cpp
         test_people.cpp

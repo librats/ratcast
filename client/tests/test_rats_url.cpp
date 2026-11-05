@@ -26,6 +26,22 @@ TEST(RatsUrl, APeerToLookFor) {
     EXPECT_EQ(std::get<PeerId>(*found), peer);
 }
 
+TEST(RatsUrl, ARoomBySecret) {
+    const RoomSecret room = RoomSecret::random();
+    const std::string url = to_string(RatsUrl{room});
+    EXPECT_EQ(url.size(), std::string("rats://").size() + 22) << url;
+    const std::optional<RatsUrl> found = parse_rats_url(url + "/");
+    ASSERT_TRUE(found);
+    EXPECT_EQ(std::get<RoomSecret>(*found), room);
+    // As the website gives it, with the servers it is met at.
+    const RatsLink link{room, {librats::HostEndpoint{"degitx.com", 7700}}};
+    EXPECT_EQ(parse_rats_link(to_web_link(link)), link);
+    // Each room made a secret of its own, and a key no secret tells.
+    EXPECT_NE(RoomSecret::random(), room);
+    EXPECT_NE(room_key(RoomSecret::random()), room_key(room));
+    EXPECT_EQ(room_key(room).find(url.substr(7)), std::string::npos);
+}
+
 TEST(RatsUrl, RefusesTheRest) {
     for (const char* url : {"rats://", "rats://nonsense", "http://host:7700", "rats://::1:80",
                             "rats://host:0", "rats://host:70000", "rats://host", "host:7700"}) {

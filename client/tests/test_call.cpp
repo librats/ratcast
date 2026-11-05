@@ -1192,6 +1192,35 @@ TEST_F(CallTest, CallsMeetAtAServerTheyChoseOfThoseTheyKnow) {
     EXPECT_EQ(guest->peers(), std::vector<PeerId>{host->id()});
 }
 
+// A room by its secret is nobody's: its members meet under its key, whoever
+// comes first — the one that made it too — and a call of another secret meets
+// none of them.
+TEST_F(CallTest, ARoomByItsSecretIsMetByWhoeverComes) {
+    StandInServer server;
+    const auto member = [&](const RoomSecret& secret) {
+        CallConfig config = room(RatsUrl{secret});
+        config.dht = false;
+        config.servers = {server.address()};
+        return config;
+    };
+    const RoomSecret ours = RoomSecret::random();
+    Side ann, bob, carl, eve;
+    ann.start(member(ours), false, false);
+    bob.start(member(ours), false, false);
+    carl.start(member(ours), false, false);
+    eve.start(member(RoomSecret::random()), false, false);
+
+    const auto with_two = [](Side& side) { return side->peers().size() == 2; };
+    ASSERT_TRUE(wait_for([&] { return with_two(ann) && with_two(bob) && with_two(carl); }));
+    EXPECT_TRUE(eve->peers().empty());
+    // Its first invite the room's secret, with the server it is met at.
+    const std::vector<std::string> invites = ann->invites();
+    ASSERT_FALSE(invites.empty());
+    EXPECT_EQ(parse_rats_link(invites.front()), (RatsLink{ours, {server.address()}}));
+    for (const std::string& invite : invites)
+        EXPECT_FALSE(std::holds_alternative<PeerId>(parse_rats_link(invite)->url)) << invite;
+}
+
 // A room's link names the servers its members meet at, which whoever joins by
 // it meets at too, and names in its own.
 TEST_F(CallTest, AnInviteNamesTheServersTheRoomIsMetAt) {

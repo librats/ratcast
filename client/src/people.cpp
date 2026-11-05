@@ -1,19 +1,18 @@
 #include "ratcast/client/people.h"
 
 #include <algorithm>
-#include <cctype>
 #include <chrono>
 #include <condition_variable>
 #include <filesystem>
-#include <fstream>
 #include <map>
 #include <mutex>
 #include <set>
 #include <span>
-#include <sstream>
-#include <system_error>
 #include <thread>
 
+#include "book.h"
+#include "bytes.h"
+#include "key_link.h"
 #include "ratcast/client/known_servers.h"
 
 #include "librats/node/node.h"
@@ -22,15 +21,12 @@
 #include "librats/subsystems/port_mapping_service.h"
 #include "librats/subsystems/relay.h"
 #include "librats/subsystems/rendezvous.h"
-#include "librats/util/json.h"
 #include "librats/util/logger.h"
 
 namespace ratcast {
 namespace {
 
 using Steady = std::chrono::steady_clock;
-using Secret = std::array<uint8_t, 16>;
-using Shared = std::array<uint8_t, 32>;
 using RingId = std::array<uint8_t, 16>;
 
 constexpr std::string_view kChannel = "ratcast/people";
@@ -38,28 +34,31 @@ constexpr std::string_view kKeyFile = "person.key";
 constexpr std::string_view kBookFile = "people.json";
 constexpr std::string_view kHomeDir = "home";
 
-constexpr std::string_view kFriendPage = "https://ratcast.app/u/#";
-constexpr std::string_view kDevicePage = "https://ratcast.app/d/#";
-constexpr std::string_view kFriendScheme = "rats://u/";
-constexpr std::string_view kDeviceScheme = "rats://d/";
+/// The links' kinds (key_link.h): a friend's, a device's.
+constexpr std::string_view kFriendKind = "u";
+constexpr std::string_view kDeviceKind = "d";
 
 // ── The wire ────────────────────────────────────────────────────────────────
 //
 // On the home node's channel, each message: u8 version, u8 kind, then
 //   Hello    u16 card length + IdentityCard, u8 name length + name
-//   Request  u8 via (0 the person's link, 1 their room secret), 32-byte proof
+//   Request  u8 via (0 the person's link, 1 their card's secret), 32-byte proof
 //   Answer   u8 accepted, [32-byte shared secret]
 //   Pair     32-byte proof, u8 name length + the device's name
 //   Grant    32-byte seed, u32 length + the book (JSON)
 //   Refuse
 //   Sync     u32 length + the book (JSON)
 //   Presence 16-byte secret: the sender's person's presence secret, to a friend
-//   Ring     16-byte id, u16 length + the room's link: a friend rings
+//   Ring     16-byte id, u16 length + the room's link: a friend rings; and,
+//            a group's room, u8 length + the group's name
 //   Rung     16-byte id, u8 accepted: a ring answered — to the caller, and to
 //            the answering person's other devices
 //   Unring   16-byte id, u8 why (0 hung up, 1 missed, 2 answered elsewhere)
-// A proof is the MAC of what it proves under the secret: "ratcast request" or
-// "ratcast pair", the sender's peer id, the receiver's.
+//   Group    32-byte proof, u32 length + the group's log (group.h; none: the
+//            sender asks for the receiver's)
+// A proof is the MAC of what it proves under the secret: "ratcast request",
+// "ratcast pair" or "ratcast group", the sender's peer id, the receiver's —
+// a group's under its secret, the group found by it.
 
 constexpr uint8_t kVersion = 1;
 enum class Kind : uint8_t {
@@ -73,7 +72,8 @@ enum class Kind : uint8_t {
     Presence,
     Ring,
     Rung,
-    Unring
+    Unring,
+    Group
 };
 enum class Why : uint8_t { HungUp = 0, Missed = 1, AnsweredElsewhere = 2 };
 
@@ -82,84 +82,18 @@ constexpr size_t kMostRoomLink = 4096;
 /// How much longer a ring rings where it is rung than where it is made: the
 /// caller's word that it was missed comes first.
 constexpr auto kRingGrace = std::chrono::seconds(5);
-enum class Via : uint8_t { Link = 0, Room = 1 };
 
 constexpr size_t kMostBook = 1 << 20;
 
-class Out {
+/// A message: its version and kind, then what the kind says.
+class Out : public ByteWriter {
 public:
-    explicit Out(Kind kind) : bytes_{kVersion, uint8_t(kind)} {}
-    void u8(uint8_t value) { bytes_.push_back(value); }
-    void u16(size_t value) {
-        bytes_.push_back(uint8_t(value >> 8));
-        bytes_.push_back(uint8_t(value));
+    explicit Out(Kind kind) {
+        u8(kVersion);
+        u8(uint8_t(kind));
     }
-    void u32(size_t value) {
-        for (int shift = 24; shift >= 0; shift -= 8) bytes_.push_back(uint8_t(value >> shift));
-    }
-    void bytes(std::span<const uint8_t> bytes) {
-        bytes_.insert(bytes_.end(), bytes.begin(), bytes.end());
-    }
-    void text8(std::string_view text) {
-        const size_t size = std::min<size_t>(text.size(), 255);
-        u8(uint8_t(size));
-        bytes_.insert(bytes_.end(), text.begin(), text.begin() + static_cast<ptrdiff_t>(size));
-    }
-    void text32(std::string_view text) {
-        u32(text.size());
-        bytes_.insert(bytes_.end(), text.begin(), text.end());
-    }
-    const std::vector<uint8_t>& bytes() const { return bytes_; }
-
-private:
-    std::vector<uint8_t> bytes_;
 };
-
-class In {
-public:
-    explicit In(std::span<const uint8_t> bytes) : bytes_(bytes) {}
-    bool ok() const { return ok_; }
-    uint8_t u8() {
-        if (!need(1)) return 0;
-        return bytes_[at_++];
-    }
-    size_t u16() {
-        const size_t high = u8();
-        return (high << 8) | u8();
-    }
-    size_t u32() {
-        size_t value = 0;
-        for (int i = 0; i < 4; ++i) value = (value << 8) | u8();
-        return value;
-    }
-    std::span<const uint8_t> bytes(size_t count) {
-        if (!need(count)) return {};
-        const std::span<const uint8_t> view = bytes_.subspan(at_, count);
-        at_ += count;
-        return view;
-    }
-    template <size_t N>
-    std::array<uint8_t, N> array() {
-        std::array<uint8_t, N> out{};
-        const std::span<const uint8_t> view = bytes(N);
-        if (ok_) std::copy(view.begin(), view.end(), out.begin());
-        return out;
-    }
-    std::string text(size_t size) {
-        const std::span<const uint8_t> view = bytes(size);
-        return std::string(view.begin(), view.end());
-    }
-
-private:
-    bool need(size_t count) {
-        if (!ok_ || bytes_.size() - at_ < count) ok_ = false;
-        return ok_;
-    }
-
-    std::span<const uint8_t> bytes_;
-    size_t at_ = 0;
-    bool ok_ = true;
-};
+using In = ByteReader;
 
 std::array<uint8_t, 32> proof(std::span<const uint8_t> secret, std::string_view what,
                               const PeerId& from, const PeerId& to) {
@@ -177,17 +111,14 @@ std::string meeting_key(const PersonId& person, std::span<const uint8_t> secret)
 /// The key a person's devices meet each other under: of their key's secret.
 std::string devices_key(const PersonKey& key) {
     constexpr std::string_view what = "ratcast devices";
-    return "ratcast/0/devices/" +
-           to_hex(mac(key.seed(),
-                      std::span(reinterpret_cast<const uint8_t*>(what.data()), what.size())));
+    return "ratcast/0/devices/" + to_hex(mac(key.seed(), bytes_of(what)));
 }
 
 /// The secret a person is seen online by, told to friends: of their key's, the
 /// same on each of their devices.
 Secret presence_secret(const PersonKey& key) {
     constexpr std::string_view what = "ratcast presence";
-    const auto full =
-        mac(key.seed(), std::span(reinterpret_cast<const uint8_t*>(what.data()), what.size()));
+    const auto full = mac(key.seed(), bytes_of(what));
     Secret out{};
     std::copy_n(full.begin(), out.size(), out.begin());
     return out;
@@ -198,7 +129,7 @@ Secret presence_secret(const PersonKey& key) {
 std::string presence_key(const PersonId& person, const Secret& secret) {
     return "ratcast/0/online/" + to_hex(mac(secret, person.key));
 }
-std::string room_key(const PersonId& person, const Secret& secret) {
+std::string in_room_key(const PersonId& person, const Secret& secret) {
     return "ratcast/0/in-room/" + to_hex(mac(secret, person.key));
 }
 /// The key a person's devices are rung under: a caller registered there
@@ -207,261 +138,10 @@ std::string ring_key(const PersonId& person, const Secret& secret) {
     return "ratcast/0/ring/" + to_hex(mac(secret, person.key));
 }
 
-uint64_t seconds_now() {
-    return uint64_t(std::chrono::duration_cast<std::chrono::seconds>(
-                        std::chrono::system_clock::now().time_since_epoch())
-                        .count());
-}
-
-bool is_zero(std::span<const uint8_t> bytes) {
-    return std::all_of(bytes.begin(), bytes.end(), [](uint8_t b) { return b == 0; });
-}
-
-/// A name as it may be told: plain, at most a Presence's.
-std::string told_name(std::string name) {
-    std::erase_if(name, [](char c) { return static_cast<unsigned char>(c) < 0x20; });
-    if (name.size() > 128) name.resize(128);
-    return name;
-}
-
-// ── The book: what the person knows, the same on each of their devices ──────
-
-struct FriendEntry {
-    std::string name;
-    Shared shared{};
-    Secret presence{};  ///< theirs, once told; zero before
-    uint64_t since = 0;
-    uint64_t at = 0;  ///< when last changed: the latest wins
-    bool removed = false;
-};
-
-struct RequestEntry {
-    std::string name;
-    bool incoming = false;
-    bool declined = false;
-    Via via = Via::Link;
-    Secret secret{};  ///< an outgoing one's: the secret of theirs it was made with
-    uint64_t made = 0;
-    uint64_t at = 0;
-    bool gone = false;       ///< answered or taken back
-    bool delivered = false;  ///< an outgoing one's: told to a device of theirs
-};
-
-struct Book {
-    std::string name;
-    uint64_t name_at = 0;
-    Secret link{};
-    uint64_t link_at = 0;
-    Secret room{};
-    uint64_t room_at = 0;
-    std::map<PersonId, FriendEntry> friends;
-    std::map<PersonId, RequestEntry> requests;
-
-    static Book fresh(std::string name) {
-        const uint64_t now = seconds_now();
-        return Book{.name = told_name(std::move(name)),
-                    .name_at = 0,
-                    .link = random_bytes<16>(),
-                    .link_at = now,
-                    .room = random_bytes<16>(),
-                    .room_at = now};
-    }
-};
-
-librats::Json to_json(const Book& book) {
-    librats::Json json = librats::Json::object();
-    json["version"] = 1;
-    json["name"] = book.name;
-    json["name_at"] = book.name_at;
-    json["link"] = to_base64url(book.link);
-    json["link_at"] = book.link_at;
-    json["room"] = to_base64url(book.room);
-    json["room_at"] = book.room_at;
-    librats::Json friends = librats::Json::array();
-    for (const auto& [person, entry] : book.friends) {
-        librats::Json f = librats::Json::object();
-        f["person"] = person.to_hex();
-        f["name"] = entry.name;
-        f["shared"] = to_base64url(entry.shared);
-        if (!is_zero(entry.presence)) f["presence"] = to_base64url(entry.presence);
-        f["since"] = entry.since;
-        f["at"] = entry.at;
-        f["removed"] = entry.removed;
-        friends.push_back(std::move(f));
-    }
-    json["friends"] = std::move(friends);
-    librats::Json requests = librats::Json::array();
-    for (const auto& [person, entry] : book.requests) {
-        librats::Json r = librats::Json::object();
-        r["person"] = person.to_hex();
-        r["name"] = entry.name;
-        r["incoming"] = entry.incoming;
-        r["declined"] = entry.declined;
-        r["via"] = int(entry.via);
-        r["secret"] = to_base64url(entry.secret);
-        r["made"] = entry.made;
-        r["at"] = entry.at;
-        r["gone"] = entry.gone;
-        r["delivered"] = entry.delivered;
-        requests.push_back(std::move(r));
-    }
-    json["requests"] = std::move(requests);
-    return json;
-}
-
-template <size_t N>
-bool read_secret(const librats::Json& json, const char* key, std::array<uint8_t, N>& out) {
-    if (!json.contains(key) || !json[key].is_string()) return false;
-    const std::optional<std::vector<uint8_t>> bytes =
-        from_base64url(json[key].get<std::string>(), N);
-    if (!bytes) return false;
-    std::copy(bytes->begin(), bytes->end(), out.begin());
-    return true;
-}
-
-uint64_t read_u64(const librats::Json& json, const char* key) {
-    if (!json.contains(key) || !json[key].is_number_integer()) return 0;
-    return json[key].get<uint64_t>();
-}
-
-bool read_bool(const librats::Json& json, const char* key) {
-    return json.contains(key) && json[key].is_boolean() && json[key].get<bool>();
-}
-
-std::string read_text(const librats::Json& json, const char* key) {
-    if (!json.contains(key) || !json[key].is_string()) return {};
-    return told_name(json[key].get<std::string>());
-}
-
-std::optional<Book> book_from(std::string_view text) {
-    const librats::Json json = librats::Json::parse(std::string(text), nullptr, false);
-    if (json.is_discarded() || !json.is_object()) return std::nullopt;
-    Book book;
-    book.name = read_text(json, "name");
-    book.name_at = read_u64(json, "name_at");
-    if (!read_secret(json, "link", book.link) || !read_secret(json, "room", book.room))
-        return std::nullopt;
-    book.link_at = read_u64(json, "link_at");
-    book.room_at = read_u64(json, "room_at");
-    if (json.contains("friends") && json["friends"].is_array()) {
-        for (const librats::Json& f : json["friends"]) {
-            if (!f.is_object() || !f.contains("person") || !f["person"].is_string()) continue;
-            const std::optional<PersonId> person =
-                PersonId::from_hex(f["person"].get<std::string>());
-            FriendEntry entry;
-            if (!person || !read_secret(f, "shared", entry.shared)) continue;
-            entry.name = read_text(f, "name");
-            read_secret(f, "presence", entry.presence);
-            entry.since = read_u64(f, "since");
-            entry.at = read_u64(f, "at");
-            entry.removed = read_bool(f, "removed");
-            book.friends[*person] = std::move(entry);
-        }
-    }
-    if (json.contains("requests") && json["requests"].is_array()) {
-        for (const librats::Json& r : json["requests"]) {
-            if (!r.is_object() || !r.contains("person") || !r["person"].is_string()) continue;
-            const std::optional<PersonId> person =
-                PersonId::from_hex(r["person"].get<std::string>());
-            if (!person) continue;
-            RequestEntry entry;
-            entry.name = read_text(r, "name");
-            entry.incoming = read_bool(r, "incoming");
-            entry.declined = read_bool(r, "declined");
-            entry.via = read_u64(r, "via") == 1 ? Via::Room : Via::Link;
-            read_secret(r, "secret", entry.secret);
-            entry.made = read_u64(r, "made");
-            entry.at = read_u64(r, "at");
-            entry.gone = read_bool(r, "gone");
-            entry.delivered = read_bool(r, "delivered");
-            book.requests[*person] = std::move(entry);
-        }
-    }
-    return book;
-}
-
-/// What `theirs` knows that `mine` does not, taken in: whatever was changed
-/// last wins. Whether anything was.
-bool merge(Book& mine, const Book& theirs) {
-    bool changed = false;
-    if (theirs.name_at > mine.name_at) {
-        mine.name = theirs.name;
-        mine.name_at = theirs.name_at;
-        changed = true;
-    }
-    if (theirs.link_at > mine.link_at) {
-        mine.link = theirs.link;
-        mine.link_at = theirs.link_at;
-        changed = true;
-    }
-    if (theirs.room_at > mine.room_at) {
-        mine.room = theirs.room;
-        mine.room_at = theirs.room_at;
-        changed = true;
-    }
-    for (const auto& [person, entry] : theirs.friends) {
-        const auto it = mine.friends.find(person);
-        if (it == mine.friends.end() || entry.at > it->second.at) {
-            mine.friends[person] = entry;
-            changed = true;
-        }
-    }
-    for (const auto& [person, entry] : theirs.requests) {
-        const auto it = mine.requests.find(person);
-        if (it == mine.requests.end() || entry.at > it->second.at) {
-            mine.requests[person] = entry;
-            changed = true;
-        }
-    }
-    return changed;
-}
-
-Result<void> write_file(const std::filesystem::path& path, std::string_view text) {
-    std::error_code error;
-    if (path.has_parent_path()) std::filesystem::create_directories(path.parent_path(), error);
-    std::filesystem::path written = path;
-    written += ".new";
-    {
-        std::ofstream file(written, std::ios::binary | std::ios::trunc);
-        if (!file) return fail(Errc::Unavailable);
-        file << text;
-        if (!file.flush()) return fail(Errc::Unavailable);
-    }
-    std::filesystem::rename(written, path, error);
-    if (error) return fail(Errc::Unavailable);
-    return {};
-}
-
-std::optional<std::string> read_file(const std::filesystem::path& path) {
-    std::ifstream file(path, std::ios::binary);
-    if (!file) return std::nullopt;
-    std::ostringstream text;
-    text << file.rdbuf();
-    return text.str();
-}
-
-std::optional<PersonLink> link_after(std::string_view rest, PersonLink::Kind kind) {
-    // An escaped '.' from a messenger: "%2E".
-    std::string text(rest);
-    for (size_t at = text.find("%2"); at != std::string::npos; at = text.find("%2", at)) {
-        if (at + 2 < text.size() && (text[at + 2] == 'E' || text[at + 2] == 'e')) {
-            text.replace(at, 3, ".");
-        } else {
-            ++at;
-        }
-    }
-    while (!text.empty() && (text.back() == '/' || text.back() == ' ')) text.pop_back();
-    const size_t dot = text.find('.');
-    if (dot == std::string::npos) return std::nullopt;
-    const std::optional<std::vector<uint8_t>> person =
-        from_base64url(std::string_view(text).substr(0, dot), 32);
-    const std::optional<std::vector<uint8_t>> secret =
-        from_base64url(std::string_view(text).substr(dot + 1), 16);
-    if (!person || !secret) return std::nullopt;
-    PersonLink link{.kind = kind};
-    std::copy(person->begin(), person->end(), link.person.key.begin());
-    std::copy(secret->begin(), secret->end(), link.secret.begin());
-    return link;
+/// The key a group's members' home nodes meet under, to catch each other up:
+/// of its secret, as its rooms' are.
+std::string group_key(const GroupId& group, const Secret& secret) {
+    return "ratcast/0/group/" + to_hex(mac(secret, group.key));
 }
 
 }  // namespace
@@ -469,39 +149,27 @@ std::optional<PersonLink> link_after(std::string_view rest, PersonLink::Kind kin
 // ── Links ───────────────────────────────────────────────────────────────────
 
 std::optional<PersonLink> parse_person_link(std::string_view link) {
-    while (!link.empty() && link.front() == ' ') link.remove_prefix(1);
-    const auto starts = [&](std::string_view prefix) {
-        if (link.size() < prefix.size()) return false;
-        return std::equal(prefix.begin(), prefix.end(), link.begin(), [](char a, char b) {
-            return std::tolower(static_cast<unsigned char>(a)) ==
-                   std::tolower(static_cast<unsigned char>(b));
-        });
-    };
-    for (const auto& [prefix, kind] : {std::pair{kFriendPage, PersonLink::Kind::Friend},
-                                       std::pair{kDevicePage, PersonLink::Kind::Device},
-                                       std::pair{kFriendScheme, PersonLink::Kind::Friend},
-                                       std::pair{kDeviceScheme, PersonLink::Kind::Device}}) {
-        if (starts(prefix)) return link_after(link.substr(prefix.size()), kind);
-        // The website's without its www., or over http.
-    }
-    for (const std::string_view other :
-         {"https://www.ratcast.app/", "http://ratcast.app/", "http://www.ratcast.app/"}) {
-        if (!starts(other)) continue;
-        const std::string_view rest = link.substr(other.size());
-        if (rest.starts_with("u/#")) return link_after(rest.substr(3), PersonLink::Kind::Friend);
-        if (rest.starts_with("d/#")) return link_after(rest.substr(3), PersonLink::Kind::Device);
+    for (const auto& [kind, as] : {std::pair{kFriendKind, PersonLink::Kind::Friend},
+                                   std::pair{kDeviceKind, PersonLink::Kind::Device}}) {
+        if (const std::optional<key_link::KeyAndSecret> parsed = key_link::parse(link, kind))
+            return PersonLink{
+                .kind = as, .person = PersonId{parsed->key}, .secret = parsed->secret};
     }
     return std::nullopt;
 }
 
+namespace {
+std::string_view kind_of(const PersonLink& link) {
+    return link.kind == PersonLink::Kind::Friend ? kFriendKind : kDeviceKind;
+}
+}  // namespace
+
 std::string to_web_link(const PersonLink& link) {
-    return std::string(link.kind == PersonLink::Kind::Friend ? kFriendPage : kDevicePage) +
-           to_base64url(link.person.key) + "." + to_base64url(link.secret);
+    return key_link::web(kind_of(link), link.person.key, link.secret);
 }
 
 std::string to_string(const PersonLink& link) {
-    return std::string(link.kind == PersonLink::Kind::Friend ? kFriendScheme : kDeviceScheme) +
-           to_base64url(link.person.key) + "." + to_base64url(link.secret);
+    return key_link::rats(kind_of(link), link.person.key, link.secret);
 }
 
 // ── People ──────────────────────────────────────────────────────────────────
@@ -546,7 +214,7 @@ struct People::State {
 
     void save() {
         if (config.data_dir.empty()) return;
-        if (!write_file(file(kBookFile), to_json(book).dump(2)))
+        if (!save_book(file(kBookFile), book))
             LOG_WARN("people", "what is known of people not kept");
     }
 
@@ -563,7 +231,7 @@ struct People::State {
     std::vector<std::string> keys() const {
         // The person's own first: a server keeping fewer keeps those.
         std::vector<std::string> keys = {meeting_key(key.id(), book.link),
-                                         meeting_key(key.id(), book.room), devices_key(key)};
+                                         meeting_key(key.id(), book.card_secret), devices_key(key)};
         if (pairing && Steady::now() < pairing->until)
             keys.push_back(meeting_key(key.id(), pairing->secret));
         if (joining) keys.push_back(meeting_key(joining->person, joining->secret));
@@ -571,6 +239,8 @@ struct People::State {
             if (!request.incoming && !request.declined && !request.gone)
                 keys.push_back(meeting_key(person, request.secret));
         }
+        for (const auto& [group, entry] : book.groups)
+            if (meets(group, entry)) keys.push_back(group_key(group, entry.secret));
         return keys;
     }
 
@@ -583,7 +253,7 @@ struct People::State {
         const Secret own = presence_secret(key);
         all.push_back(presence_key(key.id(), own));
         all.push_back(ring_key(key.id(), own));
-        if (in_room) all.push_back(room_key(key.id(), own));
+        if (in_room) all.push_back(in_room_key(key.id(), own));
         // While ringing a friend: where their devices are.
         if (ringing) {
             const auto it = book.friends.find(ringing->ring.person);
@@ -593,15 +263,61 @@ struct People::State {
         return all;
     }
 
-    /// What is watched at servers: each friend's presence and room keys.
+    /// What is watched at servers: each friend's presence and room keys,
+    /// each group's room.
     std::vector<std::string> watched() const {
         std::vector<std::string> out;
         for (const auto& [person, entry] : book.friends) {
             if (entry.removed || is_zero(entry.presence)) continue;
             out.push_back(presence_key(person, entry.presence));
-            out.push_back(room_key(person, entry.presence));
+            out.push_back(in_room_key(person, entry.presence));
         }
+        for (const auto& [group, entry] : book.groups)
+            if (!entry.left) out.push_back(room_key(channel(entry.link(group))));
         return out;
+    }
+
+    // ── Groups ───────────────────────────────────────────────────────────────
+
+    /// Whether this device meets `group`'s members now: while in its room,
+    /// or knowing nothing of it yet (joined by its link, nobody met).
+    bool meets(const GroupId& group, const GroupEntry& entry) const {
+        return !entry.left && (room_group == group || entry.log.empty());
+    }
+
+    Group group_of(const GroupId& id, const GroupEntry& entry) const {
+        const GroupLink link = entry.link(id);
+        const RoomSecret room = channel(link);
+        const size_t present = rendezvous ? rendezvous->registered(room_key(room)) : 0;
+        return Group{.id = id,
+                     .name = told_name(entry.log.name()),
+                     .link = to_web_link(link),
+                     .room = room,
+                     .made = entry.key.has_value(),
+                     .since = entry.since,
+                     .present = present};
+    }
+
+    /// The proof of the group's secret to `peer`, and the log if `with_log`
+    /// (else theirs asked for).
+    void send_group(const PeerId& peer, const GroupId& group, bool with_log) {
+        const GroupEntry& entry = book.groups.at(group);
+        Out out(Kind::Group);
+        out.bytes(proof(entry.secret, "ratcast group", node.local_id(), peer));
+        if (with_log) {
+            const std::vector<uint8_t> log = encode(entry.log);
+            out.u32(log.size());
+            out.bytes(log);
+        } else {
+            out.u32(0);
+        }
+        send(peer, out);
+    }
+
+    /// The group's log told to each of its members met: what changed here.
+    void tell_members(const GroupId& group) {
+        for (const auto& [peer, groups] : members_met)
+            if (groups.contains(group)) send_group(peer, group, true);
     }
 
     void update_keys() {
@@ -623,7 +339,8 @@ struct People::State {
         Out out(Kind::Ring);
         out.bytes(ring.id);
         out.u16(ring.room.size());
-        out.bytes(std::span(reinterpret_cast<const uint8_t*>(ring.room.data()), ring.room.size()));
+        out.bytes(bytes_of(ring.room));
+        if (!ring.group.empty()) out.text8(ring.group);
         send(peer, out);
     }
 
@@ -665,12 +382,13 @@ struct People::State {
     }
 
     IdentityCard card_for(const PeerId& device) const {
-        return IdentityCard{.certificate = certify(key, device), .request_secret = book.room};
+        return IdentityCard{.certificate = certify(key, device),
+                            .request_secret = book.card_secret};
     }
 
     Out sync() const {
         Out out(Kind::Sync);
-        out.text32(to_json(book).dump());
+        out.text32(to_json(book));
         return out;
     }
 
@@ -852,6 +570,8 @@ struct People::State {
                 const size_t size = in.u16();
                 if (!in.ok() || size == 0 || size > kMostRoomLink) return;
                 const std::string room = in.text(size);
+                // A group's, after it (none from a version before).
+                const std::string group = in.done() ? std::string() : told_name(in.text(in.u8()));
                 if (!in.ok() || person == key.id() || !friends_with(person) ||
                     incoming.contains(id))
                     return;
@@ -859,6 +579,7 @@ struct People::State {
                                 .person = person,
                                 .name = book.friends[person].name,
                                 .room = room,
+                                .group = group,
                                 .incoming = true};
                 incoming[id] = Incoming{.ring = ring,
                                         .from = peer,
@@ -898,6 +619,15 @@ struct People::State {
                                                               ? RingEnd::AnsweredElsewhere
                                                               : RingEnd::Cancelled);
                 incoming.erase(it);
+                return;
+            }
+            case Kind::Group: {
+                const auto got = in.array<32>();
+                const size_t size = in.u32();
+                if (!in.ok() || size > kMostBook) return;
+                const std::span<const uint8_t> log = in.bytes(size);
+                if (!in.ok()) return;
+                on_group(peer, person, got, log, after);
                 return;
             }
             case Kind::Pair: {
@@ -957,14 +687,45 @@ struct People::State {
         }
     }
 
+    void on_group(const PeerId& peer, const PersonId& person, const std::array<uint8_t, 32>& got,
+                  std::span<const uint8_t> bytes, After& after) {
+        if (person == key.id()) return;  // the person's own devices are told the book
+        for (auto& [group, entry] : book.groups) {
+            if (entry.left ||
+                !same_secret(got, proof(entry.secret, "ratcast group", peer, node.local_id())))
+                continue;
+            if (!bytes.empty()) {
+                const std::optional<GroupLog> theirs = decode_group_log(group, bytes);
+                if (theirs && entry.log.merge(group, *theirs)) {
+                    LOG_INFO("people", "group " << group.tag() << " caught up by " << person.tag());
+                    save();
+                    update_keys();  // known now: met for it only in its room
+                    tell_own();
+                    after.changed = true;
+                }
+            }
+            // What is known here, once to each member met.
+            bool& told = members_met[peer][group];
+            if (!told) {
+                told = true;
+                send_group(peer, group, true);
+            }
+            return;
+        }
+    }
+
     void on_hello(const PeerId& peer, const PersonId& person, const std::string& name,
                   After& after) {
         const bool first = met_of(person).empty();
         met[peer] = Met{person, name};
+        members_met.erase(peer);  // each says its part again
         if (person == key.id()) {
             send(peer, sync());
             return;
         }
+        // Met, maybe, as a member of a group met for: the secret proven.
+        for (const auto& [group, entry] : book.groups)
+            if (meets(group, entry)) send_group(peer, group, false);
         if (friends_with(person)) {
             // A friend's device met: theirs, and ours, to be seen online by.
             send_presence(peer);
@@ -1005,7 +766,7 @@ struct People::State {
     void on_request(const PeerId& peer, const PersonId& person, Via via,
                     const std::array<uint8_t, 32>& got, After& after) {
         if (person == key.id()) return;
-        const Secret& secret = via == Via::Room ? book.room : book.link;
+        const Secret& secret = via == Via::Card ? book.card_secret : book.link;
         if (!same_secret(got, proof(secret, "ratcast request", peer, node.local_id()))) return;
         if (friends_with(person)) {
             send_answer(peer, person);
@@ -1118,7 +879,11 @@ struct People::State {
     std::map<PeerId, Met> met;
     std::optional<Pairing> pairing;
     std::optional<PersonLink> joining;
-    bool in_room = false;  ///< this device, as set_in_room() says
+    bool in_room = false;               ///< this device, as set_in_room() says
+    std::optional<GroupId> room_group;  ///< the group whose room it is in
+    /// Peers met that proved a group's secret, and whether this side told
+    /// them its log since they said Hello.
+    std::map<PeerId, std::map<GroupId, bool>> members_met;
     /// The ring this device makes, until it is answered or missed.
     struct Outgoing {
         Ring ring;
@@ -1167,9 +932,7 @@ People::People(PeopleConfig config, PeopleHandlers handlers) {
     }
     std::optional<Book> book;
     if (!config.data_dir.empty()) {
-        if (const std::optional<std::string> text =
-                read_file(std::filesystem::path(config.data_dir) / kBookFile))
-            book = book_from(*text);
+        book = load_book(std::filesystem::path(config.data_dir) / kBookFile);
     }
     const bool fresh = !book;
     if (!book) book = Book::fresh(config.name);
@@ -1239,6 +1002,7 @@ People::People(PeopleConfig config, PeopleHandlers handlers) {
                 gone = s.friends_with(person) && s.met_of(person).empty();
             }
             if (s.pairing && s.pairing->asking == peer) s.pairing->asking.reset();
+            s.members_met.erase(peer);
         }
         if (gone && s.handlers.changed) s.handlers.changed();
     });
@@ -1335,7 +1099,7 @@ Result<void> People::add(const IdentityCard& card, std::string name) {
     {
         std::lock_guard lock(state_->mutex);
         asked =
-            state_->ask(card.certificate.person, Via::Room, card.request_secret, std::move(name));
+            state_->ask(card.certificate.person, Via::Card, card.request_secret, std::move(name));
     }
     if (asked && state_->handlers.changed) state_->handlers.changed();
     return asked;
@@ -1391,12 +1155,118 @@ void People::remove(const PersonId& person) {
     if (s.handlers.changed) s.handlers.changed();
 }
 
-void People::set_in_room(bool in_room) {
+void People::set_in_room(bool in_room, std::optional<GroupId> group) {
     State& s = *state_;
     std::lock_guard lock(s.mutex);
-    if (s.in_room == in_room) return;
+    if (!in_room) group.reset();
+    if (s.in_room == in_room && s.room_group == group) return;
     s.in_room = in_room;
-    s.update_keys();
+    s.room_group = group;
+    s.update_keys();  // met there by the group's members in it too
+}
+
+// ── Groups ──────────────────────────────────────────────────────────────────
+
+Result<Group> People::make_group(std::string name) {
+    name = group_name(std::move(name));
+    if (name.empty()) return fail(Errc::InvalidArgument);
+    State& s = *state_;
+    Group made;
+    {
+        std::lock_guard lock(s.mutex);
+        const PersonKey key = PersonKey::generate();
+        const GroupId id = GroupId::of(key);
+        const uint64_t now = seconds_now();
+        GroupEntry& entry = s.book.groups[id];
+        entry = GroupEntry{.secret = random_bytes<16>(), .since = now, .at = now};
+        entry.key.emplace();
+        std::copy(key.seed().begin(), key.seed().end(), entry.key->begin());
+        entry.log.append(key, ChangeType::Named, bytes_of(name));
+        s.save();
+        s.update_keys();  // its room watched
+        s.tell_own();
+        made = s.group_of(id, entry);
+        LOG_INFO("people", "made group " << id.tag());
+    }
+    if (s.handlers.changed) s.handlers.changed();
+    return made;
+}
+
+Result<Group> People::join_group(std::string_view link) {
+    const std::optional<GroupLink> parsed = parse_group_link(link);
+    if (!parsed) return fail(Errc::InvalidArgument);
+    State& s = *state_;
+    Group joined;
+    {
+        std::lock_guard lock(s.mutex);
+        GroupEntry& entry = s.book.groups[parsed->group];
+        if (entry.at != 0 && !entry.left && entry.secret == parsed->secret)
+            return s.group_of(parsed->group, entry);
+        const uint64_t now = seconds_now();
+        if (entry.at == 0 || entry.left) entry.since = now;
+        entry.secret = parsed->secret;
+        entry.left = false;
+        entry.at = std::max(now, entry.at + 1);
+        s.save();
+        s.update_keys();  // its members looked for, its room watched
+        s.tell_own();
+        joined = s.group_of(parsed->group, entry);
+        LOG_INFO("people", "joined group " << parsed->group.tag());
+    }
+    if (s.handlers.changed) s.handlers.changed();
+    return joined;
+}
+
+Result<void> People::rename_group(const GroupId& group, std::string name) {
+    name = group_name(std::move(name));
+    State& s = *state_;
+    {
+        std::lock_guard lock(s.mutex);
+        const auto it = s.book.groups.find(group);
+        if (name.empty() || it == s.book.groups.end() || it->second.left || !it->second.key)
+            return fail(Errc::InvalidArgument);
+        if (it->second.log.name() == name) return {};
+        it->second.log.append(PersonKey::from_seed(*it->second.key), ChangeType::Named,
+                              bytes_of(name));
+        s.save();
+        s.tell_own();
+        s.tell_members(group);
+    }
+    if (s.handlers.changed) s.handlers.changed();
+    return {};
+}
+
+void People::leave_group(const GroupId& group) {
+    State& s = *state_;
+    {
+        std::lock_guard lock(s.mutex);
+        const auto it = s.book.groups.find(group);
+        if (it == s.book.groups.end() || it->second.left) return;
+        it->second.left = true;
+        it->second.at = std::max(seconds_now(), it->second.at + 1);
+        for (auto& [peer, groups] : s.members_met) groups.erase(group);
+        s.save();
+        s.update_keys();  // neither met for nor watched
+        s.tell_own();
+        LOG_INFO("people", "left group " << group.tag());
+    }
+    if (s.handlers.changed) s.handlers.changed();
+}
+
+std::vector<Group> People::groups() const {
+    std::lock_guard lock(state_->mutex);
+    std::vector<Group> out;
+    for (const auto& [id, entry] : state_->book.groups)
+        if (!entry.left) out.push_back(state_->group_of(id, entry));
+    std::ranges::stable_sort(out, [](const Group& a, const Group& b) { return a.name < b.name; });
+    return out;
+}
+
+std::optional<Group> People::group(const GroupId& group) const {
+    std::lock_guard lock(state_->mutex);
+    const auto it = state_->book.groups.find(group);
+    if (it == state_->book.groups.end() || it->second.left) return std::nullopt;
+    return state_->group_of(group, it->second);
 }
 
 Result<Ring> People::ring(const PersonId& person, std::string room) {
@@ -1409,10 +1279,17 @@ Result<Ring> People::ring(const PersonId& person, std::string room) {
         room.size() > kMostRoomLink)
         return fail(Errc::InvalidArgument);
     s.end_ringing(Why::HungUp);  // one before
+    // To a group's room: its name, for them to know what they join.
+    std::string group;
+    if (const std::optional<GroupLink> link = parse_group_link(room)) {
+        if (const auto kept = s.book.groups.find(link->group); kept != s.book.groups.end())
+            group = told_name(kept->second.log.name());
+    }
     const Ring ring{.id = random_bytes<16>(),
                     .person = person,
                     .name = it->second.name,
-                    .room = std::move(room)};
+                    .room = std::move(room),
+                    .group = std::move(group)};
     s.ringing = State::Outgoing{.ring = ring, .until = Steady::now() + s.config.ring_for};
     s.update_keys();  // registered where their devices are rung
     for (const PeerId& peer : s.met_of(person)) s.send_ring(peer, ring);
@@ -1461,7 +1338,7 @@ std::vector<Friend> People::friends() const {
         if (entry.removed) continue;
         const State& s = *state_;
         const bool in_room = s.rendezvous && !is_zero(entry.presence) &&
-                             s.rendezvous->registered(room_key(person, entry.presence)) > 0;
+                             s.rendezvous->registered(in_room_key(person, entry.presence)) > 0;
         out.push_back(Friend{.person = person,
                              .name = entry.name,
                              .shared = entry.shared,
@@ -1523,7 +1400,7 @@ void People::allow_device(bool allowed) {
     if (allowed) {
         Out out(Kind::Grant);
         out.bytes(s.key.seed());
-        out.text32(to_json(s.book).dump());
+        out.text32(to_json(s.book));
         s.send(device, out);
         LOG_INFO("people", "device " << device.short_hex() << " given the person");
     } else {
@@ -1552,7 +1429,7 @@ Result<void> People::join_as_device(std::string_view link) {
 
 std::string People::backup() const {
     std::lock_guard lock(state_->mutex);
-    return state_->key.to_text() + to_json(state_->book).dump(2) + "\n";
+    return state_->key.to_text() + to_json(state_->book, true) + "\n";
 }
 
 Result<void> People::restore(std::string_view backup) {

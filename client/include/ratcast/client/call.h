@@ -46,7 +46,8 @@
  * turn.
  *
  * A call may be a room (CallConfig::mesh): everyone with everyone, whoever
- * joins by whichever member's link. Each peer connected is asked whom it has,
+ * joins by whichever member's link — a room's secret (RoomSecret), nobody's
+ * node, or a member's address. Each peer connected is asked whom it has,
  * and they are dialed (librats' PeerExchange, a hole punched through a peer
  * both have where a dial fails); each that asks is introduced to the rest, so
  * that two joining at once meet too. A member listens, for those who come
@@ -167,8 +168,11 @@ struct CallConfig {
     /// while not connected, which gets through two NATs that keep a port to
     /// every peer alike.
     bool discoverable = false;
-    /// Who to call: an address, dialed at once, or a discoverable node's peer
-    /// id, looked for through the DHT. None: wait to be called.
+    /// Who to call: a room, by its secret — its members met under its key
+    /// (room_key()) at the servers and in the DHT, whoever came first, the
+    /// one that makes it as well (RoomSecret::random()) — an address, dialed
+    /// at once, or a discoverable node's peer id, looked for through the DHT.
+    /// None: wait to be called.
     std::optional<RatsUrl> dial = std::nullopt;
     /// Servers a call met by peer id (this discoverable, or dialing one) meets
     /// at too, and a room's member at all, dialed and kept while the call
@@ -278,12 +282,12 @@ public:
     const PeerId& id() const noexcept;
     /// The port it listens on; 0 if it does not.
     uint16_t port() const noexcept;
-    /// rats:// links the other side can call this one by: a peer id the DHT
-    /// finds the call under — this call's, if it is discoverable, or, in a
-    /// room, the one it dialed — with the servers of CallConfig::servers
-    /// named after it (RatsLink's via), then each of the host's addresses (or
-    /// the one it listens on) with the port. None for a call that does not
-    /// listen.
+    /// rats:// links the other side can call this one by: the room's secret,
+    /// or a peer id the DHT finds the call under — this call's, if it is
+    /// discoverable, or, in a room, the one it dialed — with the servers of
+    /// CallConfig::servers named after it (RatsLink's via); then each of the
+    /// host's addresses (or the one it listens on) with the port, unless the
+    /// call does not listen.
     std::vector<std::string> invites() const;
     std::vector<PeerId> peers() const;
     /// The peers lost and dialed again (CallConfig::redial_for): none of

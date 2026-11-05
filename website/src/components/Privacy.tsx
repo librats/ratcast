@@ -5,7 +5,7 @@ import { Footer } from "./Footer";
 import { Logo } from "./Nav";
 
 /** When the policy last changed: change it with the text. */
-export const PRIVACY_UPDATED = "November 4, 2026";
+export const PRIVACY_UPDATED = "November 5, 2026";
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
@@ -105,12 +105,12 @@ export function Privacy() {
           </p>
         </Section>
 
-        <Section title="Friends and your devices">
+        <Section title="Friends, groups and your devices">
           <p>
             ratcast has no accounts. Who you are is a <strong>key made on your device</strong>, which nobody else has
             unless you give it: to another device of yours, by a link you make that you approve, or in a backup file
-            you save. Your name, your friends and the requests between you are kept on your devices and passed only
-            between them, encrypted, when they meet.
+            you save. Your name, your friends, your groups and the requests between you are kept on your devices and
+            passed only between them, encrypted, when they meet.
           </p>
           <ul>
             <li>
@@ -130,6 +130,11 @@ export function Privacy() {
               listed at the server under a code only your friends can work out, and watch your friends' codes there,
               which tells the server how many devices are listed under each, never who they are.
             </li>
+            <li>
+              A group is joined by its link, which anyone you send it to can open. Its members' devices keep its name
+              and tell it to each other, encrypted, as they meet in its room. Who is in a group's room is seen the same
+              way: the server counts the devices listed under a code only those with the group's link can work out.
+            </li>
           </ul>
         </Section>
 
@@ -143,7 +148,7 @@ export function Privacy() {
             <li>the other members of a room, whose apps connect to yours;</li>
             <li>
               the public distributed hash table (DHT), a network of other people's devices, through which rooms are
-              found by their peer id, and your devices by those who have your links; the app joins it through well-known entry points such as{" "}
+              found by a code worked out from their link, and your devices by those who have your links; the app joins it through well-known entry points such as{" "}
               <code className="font-mono text-sm">router.bittorrent.com</code>;
             </li>
             <li>
@@ -163,6 +168,7 @@ export function Privacy() {
           <ul>
             <li>the app's identity keys, from which its peer ids come, and your personal key;</li>
             <li>your name, your friends and the friend requests between you;</li>
+            <li>your groups: their names, their links and, for a group you made, the key that renames it;</li>
             <li>the ratcast servers it has heard of;</li>
             <li>
               your settings: the language, the microphone, speaker and camera you chose, the volume you set for each

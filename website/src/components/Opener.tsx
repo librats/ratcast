@@ -3,16 +3,20 @@ import { useEffect, useState } from "react";
 import { DownloadButton } from "./DownloadButton";
 import { Logo } from "./Nav";
 
-/** The links the site opens in the app: a room's (/r/), a person's (/u/), a device's (/d/). */
-export type LinkKind = "room" | "friend" | "device";
+/**
+ * The links the site opens in the app: a room's (/r/), a group's (/g/), a person's (/u/), a
+ * device's (/d/).
+ */
+export type LinkKind = "room" | "group" | "friend" | "device";
 
 /**
  * Each kind's rats:// link: what follows '#' after this. Keep them in step with the app's:
- * to_web_link() in client/include/ratcast/client/rats_url.h (a room's) and people.h (a person's,
- * a device's).
+ * to_web_link() in client/include/ratcast/client/rats_url.h (a room's), group.h (a group's) and
+ * people.h (a person's, a device's).
  */
 const SCHEMES: Record<LinkKind, string> = {
   room: "rats://",
+  group: "rats://g/",
   friend: "rats://u/",
   device: "rats://d/",
 };
@@ -23,6 +27,12 @@ const TEXT: Record<LinkKind, { eyebrow: string; title: string; body: string; mis
     title: "You're invited to a room.",
     body: "ratcast should be opening. If it does not, open it here.",
     missing: "Everything after the # is the room. Ask for the link again, and send it as it is.",
+  },
+  group: {
+    eyebrow: "Invitation",
+    title: "You're invited to a group.",
+    body: "ratcast should be opening, to join it and its room. If it does not, open it here.",
+    missing: "Everything after the # is the group. Ask for the link again, and send it as it is.",
   },
   friend: {
     eyebrow: "Friend request",

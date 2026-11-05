@@ -117,6 +117,65 @@
     </message>
 </context>
 <context>
+    <name>GroupsPanel</name>
+    <message>
+        <source>A group %1</source>
+        <translation>Un groupe %1</translation>
+    </message>
+    <message>
+        <source>Groups</source>
+        <translation>Groupes</translation>
+    </message>
+    <message>
+        <source>a new group&apos;s name</source>
+        <translation>nom d’un nouveau groupe</translation>
+    </message>
+    <message>
+        <source>Make</source>
+        <translation>Créer</translation>
+    </message>
+    <message>
+        <source>None yet. Make one for those you meet often, or open a group&apos;s link.</source>
+        <translation>Aucun pour l’instant. Créez-en un pour ceux que vous retrouvez souvent, ou ouvrez le lien d’un groupe.</translation>
+    </message>
+    <message>
+        <source>in the room: %1</source>
+        <translation>dans le salon : %1</translation>
+    </message>
+    <message>
+        <source>nobody in the room</source>
+        <translation>personne dans le salon</translation>
+    </message>
+    <message>
+        <source>Join</source>
+        <translation>Rejoindre</translation>
+    </message>
+    <message>
+        <source>Copy the link</source>
+        <translation>Copier le lien</translation>
+    </message>
+    <message>
+        <source>Show it as a QR code</source>
+        <translation>L’afficher en QR code</translation>
+    </message>
+    <message>
+        <source>Rename</source>
+        <translation>Renommer</translation>
+    </message>
+    <message>
+        <source>Leave the group</source>
+        <translation>Quitter le groupe</translation>
+    </message>
+    <message>
+        <source>Point a phone&apos;s camera at it to join the group there.</source>
+        <translation>Pointez l’appareil photo d’un téléphone dessus pour y rejoindre le groupe.</translation>
+    </message>
+    <message>
+        <source>Rename the group</source>
+        <translation>Renommer le groupe</translation>
+    </message>
+</context>
+<context>
     <name>Main</name>
     <message>
         <source>%1 stopped sharing</source>
@@ -255,6 +314,14 @@
         <translation>Quelqu’un</translation>
     </message>
     <message>
+        <source>Answer to join the group %1 and its room.</source>
+        <translation>Répondez pour rejoindre le groupe %1 et son salon.</translation>
+    </message>
+    <message>
+        <source>Answer to leave this room and join the group %1 in its room.</source>
+        <translation>Répondez pour quitter ce salon et rejoindre le groupe %1 dans son salon.</translation>
+    </message>
+    <message>
         <source>Answer to join their room.</source>
         <translation>Répondez pour rejoindre son salon.</translation>
     </message>
@@ -283,16 +350,20 @@
         <translation>Demander</translation>
     </message>
     <message>
-        <source>Friends (%1 asking)</source>
-        <translation>Amis (%1 demandes)</translation>
-    </message>
-    <message>
-        <source>Friends</source>
-        <translation>Amis</translation>
-    </message>
-    <message>
         <source>Room</source>
         <translation>Salon</translation>
+    </message>
+    <message>
+        <source>A group %1</source>
+        <translation>Un groupe %1</translation>
+    </message>
+    <message>
+        <source>Groups and friends (%1 asking)</source>
+        <translation>Groupes et amis (%1 demandes)</translation>
+    </message>
+    <message>
+        <source>Groups and friends</source>
+        <translation>Groupes et amis</translation>
     </message>
     <message>
         <source>Send a link to whoever is to join:</source>
@@ -764,8 +835,16 @@
         <translation>«&#xa0;%1&#xa0;» n’est pas un serveur&#xa0;: indiquez HOST ou HOST:PORT.</translation>
     </message>
     <message>
+        <source>Groups are not reachable: the network did not start.</source>
+        <translation>Les groupes sont injoignables : le réseau n’a pas démarré.</translation>
+    </message>
+    <message>
         <source>That is not a link to a room.</source>
         <translation>Ce n’est pas un lien vers un salon.</translation>
+    </message>
+    <message>
+        <source>That group is not one of yours.</source>
+        <translation>Ce groupe ne fait pas partie des vôtres.</translation>
     </message>
     <message>
         <source>The call cannot start (%1).</source>
@@ -877,6 +956,10 @@
     <message>
         <source>Friends are not reachable: the network did not start.</source>
         <translation>Les amis sont injoignables : le réseau n’a pas démarré.</translation>
+    </message>
+    <message>
+        <source>A group needs a name.</source>
+        <translation>Un groupe a besoin d’un nom.</translation>
     </message>
     <message>
         <source>That is not a link to a person.</source>

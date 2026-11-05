@@ -14,6 +14,7 @@ const PAGES = {
     </MotionConfig>
   ),
   "r/index.html": () => <Opener kind="room" />,
+  "g/index.html": () => <Opener kind="group" />,
   "u/index.html": () => <Opener kind="friend" />,
   "d/index.html": () => <Opener kind="device" />,
 } as const;

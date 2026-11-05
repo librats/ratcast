@@ -308,6 +308,10 @@ void CallController::create() {
     if (state_ != State::Idle) return;
     CallConfig config = environment_.call;
     config.data_dir = environment_.data_dir;
+    // Made once: a secret of its own, met under by whoever is given it — the
+    // next room another, this one's link no way into it.
+    config.discoverable = false;
+    config.dial = RoomSecret::random();
     if (!meet_at_server(config)) return;
     LOG_INFO("app", "making a room");
     start(std::move(config), State::InRoom);
@@ -315,7 +319,17 @@ void CallController::create() {
 
 void CallController::join(const QString& link) {
     if (state_ != State::Idle) return;
-    const std::optional<RatsLink> url = parse_rats_link(link.trimmed().toStdString());
+    const std::string text = link.trimmed().toStdString();
+    if (parse_group_link(text)) {
+        if (!people_ || !people_->people()) {
+            set_notice(tr("Groups are not reachable: the network did not start."));
+            return;
+        }
+        const Result<Group> joined = people_->people()->join_group(text);
+        if (joined) enter(QString::fromStdString(joined->id.to_hex()));
+        return;
+    }
+    const std::optional<RatsLink> url = parse_rats_link(text);
     if (!url) {
         set_notice(tr("That is not a link to a room."));
         return;
@@ -332,6 +346,29 @@ void CallController::join(const QString& link) {
     config.servers = url->via;
     if (!meet_at_server(config)) return;
     start(std::move(config), State::Joining);
+}
+
+void CallController::enter(const QString& group) {
+    if (state_ != State::Idle || !people_ || !people_->people()) return;
+    const std::optional<GroupId> id = GroupId::from_hex(group.toStdString());
+    const std::optional<Group> found = id ? people_->people()->group(*id) : std::nullopt;
+    if (!found) {
+        set_notice(tr("That group is not one of yours."));
+        return;
+    }
+    LOG_INFO("app", "into the room of group " << id->tag());
+    CallConfig config = environment_.call;
+    // A room like any other, its secret the group's.
+    if (!environment_.data_dir.empty()) {
+        config.data_dir = (std::filesystem::path(environment_.data_dir) / "guest").string();
+    }
+    config.discoverable = false;
+    config.dial = found->room;
+    if (!meet_at_server(config)) return;
+    group_ = group;
+    group_link_ = QString::fromStdString(found->link);
+    Q_EMIT groupChanged();
+    start(std::move(config), State::InRoom);
 }
 
 void CallController::start(CallConfig config, State state) {
@@ -379,9 +416,13 @@ void CallController::start(CallConfig config, State state) {
     for (auto it = hearing_.cbegin(); it != hearing_.cend(); ++it)
         tell_hearing(it.key(), it.value());
     call_->set_share_volume(float(share_volume_));
-    // As web links: clickable wherever they are sent (rats_url.h).
+    // As web links: clickable wherever they are sent (rats_url.h). A
+    // group's room is given as the group: its link in place of the room's.
+    if (!group_link_.isEmpty()) invites_.push_back(group_link_);
     for (const std::string& invite : call_->invites()) {
         const std::optional<RatsLink> link = parse_rats_link(invite);
+        if (!group_link_.isEmpty() && link && std::holds_alternative<RoomSecret>(link->url))
+            continue;
         invites_.push_back(QString::fromStdString(link ? to_web_link(*link) : invite));
     }
     Q_EMIT invitesChanged();
@@ -439,6 +480,11 @@ void CallController::end(QString notice) {
     if (!invites_.isEmpty()) {
         invites_.clear();
         Q_EMIT invitesChanged();
+    }
+    group_link_.clear();
+    if (!group_.isEmpty()) {
+        group_.clear();
+        Q_EMIT groupChanged();
     }
     set_notice(std::move(notice));
     set_state(State::Idle);
@@ -1184,8 +1230,11 @@ void CallController::set_state(State state) {
 }
 
 void CallController::tell_in_room() {
-    // Friends see it (People::set_in_room()), while it is.
-    if (people_ && people_->people()) people_->people()->set_in_room(state_ == State::InRoom);
+    // Friends see it (People::set_in_room()), while it is, and a group's
+    // members met there catch each other up.
+    if (!people_ || !people_->people()) return;
+    const std::optional<GroupId> group = GroupId::from_hex(group_.toStdString());
+    people_->people()->set_in_room(state_ == State::InRoom, group);
 }
 
 void CallController::set_notice(QString notice) {

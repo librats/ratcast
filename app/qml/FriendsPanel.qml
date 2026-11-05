@@ -18,49 +18,6 @@ ColumnLayout {
 
     spacing: 8
 
-    /// A person's first letter on a colour of their tag: the same everywhere.
-    component Avatar: Rectangle {
-        id: avatar
-        property string name
-        property string tag
-        /// A friend's: a dot, green when online, the accent's when in a room.
-        property bool shows: false
-        property bool online: false
-        property bool inRoom: false
-
-        readonly property var colors: ["#5865f2", "#3ba55c", "#faa61a", "#ed4245", "#eb459e",
-                                       "#00a8fc", "#9b59b6", "#1abc9c"]
-
-        implicitWidth: 32
-        implicitHeight: 32
-        radius: width / 2
-        color: {
-            let sum = 0
-            for (let i = 0; i < tag.length; ++i)
-                sum += tag.charCodeAt(i)
-            return colors[sum % colors.length]
-        }
-
-        Label {
-            anchors.centerIn: parent
-            text: name.length > 0 ? name.charAt(0).toUpperCase() : "?"
-            font.bold: true
-            textFormat: Text.PlainText
-        }
-        Rectangle {
-            visible: avatar.shows && avatar.online
-            anchors.right: parent.right
-            anchors.bottom: parent.bottom
-            anchors.margins: -1
-            width: 11
-            height: 11
-            radius: width / 2
-            color: avatar.inRoom ? Material.accent : "#3ba55c"
-            border.width: 2
-            border.color: Material.background
-        }
-    }
-
     component Plain: Label {
         textFormat: Text.PlainText
         elide: Text.ElideRight

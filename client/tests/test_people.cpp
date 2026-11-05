@@ -253,6 +253,8 @@ protected:
         return device;
     }
 
+    librats::HostEndpoint server_address() const { return server_.address(); }
+
     Folder folder_;
     Server server_;
 };
@@ -611,3 +613,148 @@ TEST_F(PeopleOverTheDhtTest, ADeviceBecomesItsPersonWithNoServer) {
 }
 
 }  // namespace
+
+// ── Groups ──────────────────────────────────────────────────────────────────
+
+namespace {
+
+/// A call in a group's room, as far as the servers see: a node registered
+/// under the room's key.
+class InTheRoom {
+public:
+    InTheRoom(const librats::HostEndpoint& server, const std::string& key) : node_(node_config()) {
+        librats::Rendezvous::Config meeting;
+        meeting.servers = {server};
+        meeting.keys = {key};
+        node_.add_subsystem(std::make_unique<librats::Rendezvous>(meeting));
+        EXPECT_TRUE(node_.start());
+    }
+    ~InTheRoom() { node_.stop(); }
+
+private:
+    static librats::NodeConfig node_config() {
+        librats::NodeConfig node;
+        node.bind_address = "127.0.0.1";
+        node.protocol = protocol();
+        return node;
+    }
+    librats::Node node_;
+};
+
+std::optional<Group> group_of(const Device& device, const GroupId& id) {
+    return device.people->group(id);
+}
+
+}  // namespace
+
+TEST_F(PeopleTest, AGroupIsJoinedByItsLinkAndCaughtUpByAMemberInItsRoom) {
+    auto ann = device("Ann");
+    auto bob = device("Bob");
+    EXPECT_FALSE(ann->people->make_group("  ")) << "a group has a name";
+    const Result<Group> made = ann->people->make_group("Films");
+    ASSERT_TRUE(made);
+    EXPECT_EQ(made->name, "Films");
+    EXPECT_TRUE(made->made);
+    EXPECT_EQ(made->room, channel(*parse_group_link(made->link)));
+    ASSERT_EQ(ann->people->groups().size(), 1u);
+
+    const Result<Group> joined = bob->people->join_group(made->link);
+    ASSERT_TRUE(joined);
+    EXPECT_EQ(joined->id, made->id);
+    EXPECT_EQ(joined->name, "") << "nobody met yet";
+    EXPECT_FALSE(joined->made);
+    EXPECT_EQ(joined->room, made->room) << "one room";
+    EXPECT_FALSE(bob->people->join_group(ann->people->link())) << "a person's link";
+
+    // Ann in its room: her home node met there by Bob's, who knows nothing yet.
+    ann->people->set_in_room(true, made->id);
+    ASSERT_TRUE(wait_for([&] { return group_of(*bob, made->id)->name == "Films"; }));
+
+    // Renamed by its maker alone, told to the member met.
+    EXPECT_FALSE(bob->people->rename_group(made->id, "Bob's"));
+    ASSERT_TRUE(ann->people->rename_group(made->id, "Friday films"));
+    EXPECT_TRUE(wait_for([&] { return group_of(*bob, made->id)->name == "Friday films"; }));
+    EXPECT_EQ(group_of(*ann, made->id)->name, "Friday films");
+
+    // Kept for the next run.
+    bob->stop();
+    bob->start();
+    ASSERT_TRUE(group_of(*bob, made->id));
+    EXPECT_EQ(group_of(*bob, made->id)->name, "Friday films");
+}
+
+TEST_F(PeopleTest, AGroupsSecretIsWhatLetsOneIn) {
+    auto ann = device("Ann");
+    auto eve = device("Eve");
+    const Group made = *ann->people->make_group("Films");
+    ann->people->set_in_room(true, made.id);
+    // Its id, with a secret of her own.
+    GroupLink guessed = *parse_group_link(made.link);
+    guessed.secret = random_bytes<16>();
+    const Result<Group> joined = eve->people->join_group(to_web_link(guessed));
+    ASSERT_TRUE(joined);
+    EXPECT_NE(joined->room, made.room) << "another room";
+    std::this_thread::sleep_for(1500ms);
+    EXPECT_EQ(group_of(*eve, made.id)->name, "") << "told nothing";
+}
+
+TEST_F(PeopleTest, WhoIsInAGroupsRoomIsSeenFromTheList) {
+    auto ann = device("Ann");
+    auto bob = device("Bob");
+    const Group made = *ann->people->make_group("Films");
+    ASSERT_TRUE(bob->people->join_group(made.link));
+    EXPECT_EQ(group_of(*ann, made.id)->present, 0u);
+
+    {
+        InTheRoom carl(server_address(), room_key(made.room));
+        InTheRoom dan(server_address(), room_key(made.room));
+        EXPECT_TRUE(wait_for([&] {
+            return group_of(*ann, made.id)->present == 2 && group_of(*bob, made.id)->present == 2;
+        }));
+    }
+    EXPECT_TRUE(wait_for([&] { return group_of(*bob, made.id)->present == 0; }));
+
+    // Left: neither listed nor watched.
+    bob->people->leave_group(made.id);
+    EXPECT_FALSE(group_of(*bob, made.id));
+    EXPECT_TRUE(bob->people->groups().empty());
+}
+
+TEST_F(PeopleTest, AGroupIsKeptOnEachDeviceOfThePersonChangedOnAnyAndLeftOnAll) {
+    auto ann = device("Ann");
+    auto phone = second_device(*ann, "Ann's phone");
+    const Group made = *ann->people->make_group("Films");
+    ASSERT_TRUE(wait_for([&] { return group_of(*phone, made.id).has_value(); }));
+    EXPECT_TRUE(group_of(*phone, made.id)->made) << "its key there too";
+    EXPECT_EQ(group_of(*phone, made.id)->link, made.link);
+
+    ASSERT_TRUE(phone->people->rename_group(made.id, "Our films"));
+    EXPECT_TRUE(wait_for([&] { return group_of(*ann, made.id)->name == "Our films"; }));
+
+    ann->people->leave_group(made.id);
+    EXPECT_TRUE(wait_for([&] { return !group_of(*phone, made.id); }));
+    // Joined again by its link: a member again, its log as it was.
+    ASSERT_TRUE(phone->people->join_group(made.link));
+    EXPECT_EQ(group_of(*phone, made.id)->name, "Our films");
+    EXPECT_TRUE(wait_for([&] { return group_of(*ann, made.id).has_value(); }));
+}
+
+TEST_F(PeopleTest, AFriendRungToAGroupsRoomIsToldWhichGroup) {
+    auto ann = device("Ann");
+    auto bob = device("Bob");
+    befriend(*ann, *bob);
+    const Group made = *ann->people->make_group("Films");
+    ASSERT_TRUE(ann->people->ring(bob->people->person(), made.link));
+    ASSERT_TRUE(wait_for([&] { return bob->people->rings().size() == 1; }));
+    EXPECT_EQ(bob->people->rings().front().group, "Films");
+    EXPECT_EQ(bob->people->rings().front().room, made.link);
+
+    // A room of nobody's: no group.
+    ASSERT_TRUE(
+        ann->people->ring(bob->people->person(), to_web_link(RatsLink{RoomSecret::random()})));
+    ASSERT_TRUE(wait_for([&] {
+        const std::vector<Ring> rings = bob->people->rings();
+        return rings.size() == 1 && rings.front().room != made.link;
+    }));
+    EXPECT_EQ(bob->people->rings().front().group, "");
+}

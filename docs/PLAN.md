@@ -1977,10 +1977,48 @@ had the old.
     given to all but one;
   - a member is a person (14.1's key), not a device: what is kept of members, and roles later,
     is by person.
+
+  Done so far (the link's reset is next): `group.h` — `GroupId` (the public key of a key pair
+  of a person's kind, kept by the maker with what they know, so that each of their devices may
+  change the group), `GroupLink` (`/g/#GROUP.SECRET`, `rats://g/…`; the website's page, the
+  App Links, the system's links), `channel()` (a room's secret, of the group's secret and a channel's
+  name: never worked out from the id alone), `GroupLog` (changes `{seq, type, version, data}`
+  signed by the group's key, in one order everywhere — by seq, then signature, so that two of
+  the maker's devices renaming at once agree — those of a type not known kept and passed on;
+  Named the one type now). A group's room is a room like any other (`rats_url.h`'s
+  `RoomSecret`, of the group's secret and the channel's name: `channel()`), its members met
+  under its key: nobody's, whoever comes first, with no peer dialed. So, too, is every room
+  the app makes: once, a secret of its own (`RoomSecret::random()`, the link
+  `https://ratcast.app/r/#SECRET?via=…`) — the next room another, whoever had this one's link
+  kept out of that — where it was the maker's node, its peer id the same from one room to the
+  next. Rooms by peer id are the tools' (a sender found through the DHT); links by address
+  stay, for a network with no server nor the internet; a link by peer id still opens. A
+  friend rung to a group's room is told its name: answering is joining the group. People keeps
+  each group with what the person knows (`people.json`, merged across their devices: its
+  membership by when it last changed, its log whatever), and its log goes between members as
+  their home nodes meet: while a device is in the group's room, or knows nothing of it yet, it
+  is registered under the group's key too (of the secret), and those met there prove the
+  secret and tell each other their logs, once each, and again as the maker renames — no home
+  node kept in touch with every member for nothing. `People::make_group()`, `join_group()`,
+  `rename_group()`, `leave_group()`, `groups()`, `set_in_room(in, group)`. Tested: a group's
+  link both ways, its keys per channel and secret; a log signed and forged, merged in one
+  order, a change of a type not known passed on as it came; a group joined by link caught up
+  by its maker in its room, renamed by its maker alone and told, kept across runs; its id with
+  a secret guessed told nothing; who is in its room seen from the list and gone; kept, changed
+  and left on each of the person's devices; three calls under one key meeting, one under
+  another meeting none; on the controllers, a group made and entered, joined by its link into
+  the same room, named there, seen from the list.
 - **15.2 Who is there**: who is in the group's room now and who shares there, seen from the
   list without being in it; a click joins; a notice as someone starts sharing. Inside, the room
   is stage 10's and 7's as they are.
+  So far: how many are there (each device watching the room's key at the servers, L26:
+  `Group::present`), and a click joins; who they are and who shares, not yet.
 - **15.3 The app**: groups listed beside friends (14) on the start page.
+  So far: the groups above the friends (`GroupsPanel.qml`), each with how many are in its room
+  and a button to join it; a group made by name and entered at once, its link the room's
+  invite (copied, or as a QR code), renamed by its maker, left; a group's link opened anywhere
+  joins it and its room; the room named after its group; a friend rung from a group's room
+  rung into the group.
 
 Later, when a community is wanted, each a new type of change in the same log: text and voice
 channels, roles and what they allow, kick and ban (7.5, stage 8), a chat whose history stays

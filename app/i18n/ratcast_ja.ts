@@ -117,6 +117,65 @@
     </message>
 </context>
 <context>
+    <name>GroupsPanel</name>
+    <message>
+        <source>A group %1</source>
+        <translation>グループ %1</translation>
+    </message>
+    <message>
+        <source>Groups</source>
+        <translation>グループ</translation>
+    </message>
+    <message>
+        <source>a new group&apos;s name</source>
+        <translation>新しいグループの名前</translation>
+    </message>
+    <message>
+        <source>Make</source>
+        <translation>作成</translation>
+    </message>
+    <message>
+        <source>None yet. Make one for those you meet often, or open a group&apos;s link.</source>
+        <translation>まだありません。よく会う人たちのために作るか、グループのリンクを開きましょう。</translation>
+    </message>
+    <message>
+        <source>in the room: %1</source>
+        <translation>ルームに %1 人</translation>
+    </message>
+    <message>
+        <source>nobody in the room</source>
+        <translation>ルームには誰もいません</translation>
+    </message>
+    <message>
+        <source>Join</source>
+        <translation>参加</translation>
+    </message>
+    <message>
+        <source>Copy the link</source>
+        <translation>リンクをコピー</translation>
+    </message>
+    <message>
+        <source>Show it as a QR code</source>
+        <translation>QRコードで表示</translation>
+    </message>
+    <message>
+        <source>Rename</source>
+        <translation>名前を変更</translation>
+    </message>
+    <message>
+        <source>Leave the group</source>
+        <translation>グループを退出</translation>
+    </message>
+    <message>
+        <source>Point a phone&apos;s camera at it to join the group there.</source>
+        <translation>スマートフォンのカメラを向けると、そこでグループに参加できます。</translation>
+    </message>
+    <message>
+        <source>Rename the group</source>
+        <translation>グループ名を変更</translation>
+    </message>
+</context>
+<context>
     <name>Main</name>
     <message>
         <source>%1 stopped sharing</source>
@@ -255,6 +314,14 @@
         <translation>誰か</translation>
     </message>
     <message>
+        <source>Answer to join the group %1 and its room.</source>
+        <translation>応答するとグループ %1 とそのルームに参加します。</translation>
+    </message>
+    <message>
+        <source>Answer to leave this room and join the group %1 in its room.</source>
+        <translation>応答するとこのルームを出て、グループ %1 のルームに参加します。</translation>
+    </message>
+    <message>
         <source>Answer to join their room.</source>
         <translation>応答すると相手のルームに参加します。</translation>
     </message>
@@ -283,16 +350,20 @@
         <translation>確認する</translation>
     </message>
     <message>
-        <source>Friends (%1 asking)</source>
-        <translation>フレンド（リクエスト %1）</translation>
-    </message>
-    <message>
-        <source>Friends</source>
-        <translation>フレンド</translation>
-    </message>
-    <message>
         <source>Room</source>
         <translation>ルーム</translation>
+    </message>
+    <message>
+        <source>A group %1</source>
+        <translation>グループ %1</translation>
+    </message>
+    <message>
+        <source>Groups and friends (%1 asking)</source>
+        <translation>グループと友達（%1 件のリクエスト）</translation>
+    </message>
+    <message>
+        <source>Groups and friends</source>
+        <translation>グループと友達</translation>
     </message>
     <message>
         <source>Send a link to whoever is to join:</source>
@@ -763,8 +834,16 @@
         <translation>「%1」はサーバーではありません。HOST または HOST:PORT を入力してください。</translation>
     </message>
     <message>
+        <source>Groups are not reachable: the network did not start.</source>
+        <translation>グループに接続できません：ネットワークが起動しませんでした。</translation>
+    </message>
+    <message>
         <source>That is not a link to a room.</source>
         <translation>ルームへのリンクではありません。</translation>
+    </message>
+    <message>
+        <source>That group is not one of yours.</source>
+        <translation>そのグループはあなたのグループではありません。</translation>
     </message>
     <message>
         <source>The call cannot start (%1).</source>
@@ -876,6 +955,10 @@
     <message>
         <source>Friends are not reachable: the network did not start.</source>
         <translation>フレンドに接続できません：ネットワークが起動しませんでした。</translation>
+    </message>
+    <message>
+        <source>A group needs a name.</source>
+        <translation>グループには名前が必要です。</translation>
     </message>
     <message>
         <source>That is not a link to a person.</source>

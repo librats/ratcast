@@ -6,6 +6,7 @@
 add_library(ratcast_client STATIC
     src/audio_player.cpp
     src/audio_publisher.cpp
+    src/book.cpp
     src/call.cpp
     src/call_monitor.cpp
     src/camera.cpp
@@ -13,7 +14,9 @@ add_library(ratcast_client STATIC
     src/cpu_meter.cpp
     src/data_player.cpp
     src/data_publisher.cpp
+    src/group.cpp
     src/identity.cpp
+    src/key_link.cpp
     src/known_servers.cpp
     src/people.cpp
     src/log_file.cpp

@@ -2,14 +2,21 @@
 
 /**
  * @file rats_url.h
- * @brief rats:// links: where a ratcast node is reached.
+ * @brief rats:// links: where a room, or a ratcast node, is reached.
  *
- * Two kinds: "rats://HOST:PORT" (or "rats://[IPV6]:PORT"), an address to
- * dial, and "rats://PEER-ID", the peer id in hex of a node that is
- * discoverable, looked for through the DHT. A trailing slash is allowed.
- * A link (RatsLink) may name servers too: "rats://PEER-ID?via=HOST:PORT",
- * where the room is met that its members may not know of. And a server, as a
- * user writes one (parse_server()).
+ * Three kinds:
+ * - "rats://ROOM", a room's secret (RoomSecret: 22 characters, base64url):
+ *   whoever has it meets the others in the room under a key of it
+ *   (room_key()), at the servers and in the DHT — nobody's node, whoever
+ *   comes first. A room made once has a secret of its own, a group's channel
+ *   one of the group's (group.h);
+ * - "rats://PEER-ID", the peer id in hex of a node that is discoverable,
+ *   looked for through the DHT (a sender of the tools');
+ * - "rats://HOST:PORT" (or "rats://[IPV6]:PORT"), an address to dial: a
+ *   member on the same network, with no server nor the internet.
+ * A trailing slash is allowed. A link (RatsLink) may name servers too:
+ * "rats://ROOM?via=HOST:PORT", where the room is met that its members may not
+ * know of. And a server, as a user writes one (parse_server()).
  *
  * A link goes about as a web link too (to_web_link()): the website's page
  * that opens it in the app, "https://ratcast.app/r/#" and the link without
@@ -18,6 +25,7 @@
  * never reaches the website's server.
  */
 
+#include <array>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -31,9 +39,24 @@
 
 namespace ratcast {
 
-using RatsUrl = std::variant<librats::HostEndpoint, PeerId>;
+/// A room that is nobody's node: what lets one in, and the key it is met
+/// under (room_key()).
+struct RoomSecret {
+    std::array<uint8_t, 16> bytes{};
 
-/// Nullopt for anything that is neither kind.
+    /// A new one: a room made once.
+    static RoomSecret random();
+
+    friend bool operator==(const RoomSecret&, const RoomSecret&) = default;
+};
+
+/// The key a room is met under, at the servers and in the DHT: of its
+/// secret, which it does not tell.
+std::string room_key(const RoomSecret& room);
+
+using RatsUrl = std::variant<librats::HostEndpoint, PeerId, RoomSecret>;
+
+/// Nullopt for anything that is no kind of them.
 std::optional<RatsUrl> parse_rats_url(std::string_view url);
 
 std::string to_string(const RatsUrl& url);
@@ -58,7 +81,7 @@ std::string to_string(const RatsLink& link);
 /// rats:// link without its scheme.
 inline constexpr std::string_view kWebLinkPrefix = "https://ratcast.app/r/#";
 
-/// The link as a web link: "https://ratcast.app/r/#PEER-ID?via=…".
+/// The link as a web link: "https://ratcast.app/r/#ROOM?via=…".
 std::string to_web_link(const RatsLink& link);
 
 /// The port a ratcast-server listens on unless told otherwise.

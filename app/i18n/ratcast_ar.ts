@@ -117,6 +117,65 @@
     </message>
 </context>
 <context>
+    <name>GroupsPanel</name>
+    <message>
+        <source>A group %1</source>
+        <translation>مجموعة %1</translation>
+    </message>
+    <message>
+        <source>Groups</source>
+        <translation>المجموعات</translation>
+    </message>
+    <message>
+        <source>a new group&apos;s name</source>
+        <translation>اسم مجموعة جديدة</translation>
+    </message>
+    <message>
+        <source>Make</source>
+        <translation>إنشاء</translation>
+    </message>
+    <message>
+        <source>None yet. Make one for those you meet often, or open a group&apos;s link.</source>
+        <translation>لا شيء بعد. أنشئ مجموعة لمن تلتقي بهم كثيرًا، أو افتح رابط مجموعة.</translation>
+    </message>
+    <message>
+        <source>in the room: %1</source>
+        <translation>في الغرفة: %1</translation>
+    </message>
+    <message>
+        <source>nobody in the room</source>
+        <translation>لا أحد في الغرفة</translation>
+    </message>
+    <message>
+        <source>Join</source>
+        <translation>انضمام</translation>
+    </message>
+    <message>
+        <source>Copy the link</source>
+        <translation>نسخ الرابط</translation>
+    </message>
+    <message>
+        <source>Show it as a QR code</source>
+        <translation>اعرضه كرمز QR</translation>
+    </message>
+    <message>
+        <source>Rename</source>
+        <translation>إعادة التسمية</translation>
+    </message>
+    <message>
+        <source>Leave the group</source>
+        <translation>مغادرة المجموعة</translation>
+    </message>
+    <message>
+        <source>Point a phone&apos;s camera at it to join the group there.</source>
+        <translation>وجّه كاميرا الهاتف إليه للانضمام إلى المجموعة من هناك.</translation>
+    </message>
+    <message>
+        <source>Rename the group</source>
+        <translation>إعادة تسمية المجموعة</translation>
+    </message>
+</context>
+<context>
     <name>Main</name>
     <message>
         <source>%1 stopped sharing</source>
@@ -255,6 +314,14 @@
         <translation>شخص ما</translation>
     </message>
     <message>
+        <source>Answer to join the group %1 and its room.</source>
+        <translation>أجب للانضمام إلى المجموعة %1 وغرفتها.</translation>
+    </message>
+    <message>
+        <source>Answer to leave this room and join the group %1 in its room.</source>
+        <translation>أجب لمغادرة هذه الغرفة والانضمام إلى المجموعة %1 في غرفتها.</translation>
+    </message>
+    <message>
         <source>Answer to join their room.</source>
         <translation>أجب للانضمام إلى غرفته.</translation>
     </message>
@@ -283,16 +350,20 @@
         <translation>اطلب</translation>
     </message>
     <message>
-        <source>Friends (%1 asking)</source>
-        <translation>الأصدقاء (%1 طلبات)</translation>
-    </message>
-    <message>
-        <source>Friends</source>
-        <translation>الأصدقاء</translation>
-    </message>
-    <message>
         <source>Room</source>
         <translation>الغرفة</translation>
+    </message>
+    <message>
+        <source>A group %1</source>
+        <translation>مجموعة %1</translation>
+    </message>
+    <message>
+        <source>Groups and friends (%1 asking)</source>
+        <translation>المجموعات والأصدقاء (%1 يطلبون)</translation>
+    </message>
+    <message>
+        <source>Groups and friends</source>
+        <translation>المجموعات والأصدقاء</translation>
     </message>
     <message>
         <source>Send a link to whoever is to join:</source>
@@ -768,8 +839,16 @@
         <translation>«%1» ليس خادمًا: اكتب HOST أو HOST:PORT من فضلك.</translation>
     </message>
     <message>
+        <source>Groups are not reachable: the network did not start.</source>
+        <translation>لا يمكن الوصول إلى المجموعات: لم تبدأ الشبكة.</translation>
+    </message>
+    <message>
         <source>That is not a link to a room.</source>
         <translation>هذا ليس رابطًا إلى غرفة.</translation>
+    </message>
+    <message>
+        <source>That group is not one of yours.</source>
+        <translation>هذه المجموعة ليست من مجموعاتك.</translation>
     </message>
     <message>
         <source>The call cannot start (%1).</source>
@@ -881,6 +960,10 @@
     <message>
         <source>Friends are not reachable: the network did not start.</source>
         <translation>لا يمكن الوصول إلى الأصدقاء: لم تبدأ الشبكة.</translation>
+    </message>
+    <message>
+        <source>A group needs a name.</source>
+        <translation>تحتاج المجموعة إلى اسم.</translation>
     </message>
     <message>
         <source>That is not a link to a person.</source>

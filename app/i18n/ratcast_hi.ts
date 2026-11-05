@@ -117,6 +117,65 @@
     </message>
 </context>
 <context>
+    <name>GroupsPanel</name>
+    <message>
+        <source>A group %1</source>
+        <translation>एक समूह %1</translation>
+    </message>
+    <message>
+        <source>Groups</source>
+        <translation>समूह</translation>
+    </message>
+    <message>
+        <source>a new group&apos;s name</source>
+        <translation>नए समूह का नाम</translation>
+    </message>
+    <message>
+        <source>Make</source>
+        <translation>बनाएँ</translation>
+    </message>
+    <message>
+        <source>None yet. Make one for those you meet often, or open a group&apos;s link.</source>
+        <translation>अभी कोई नहीं। जिनसे अक्सर मिलते हैं उनके लिए एक बनाएँ, या किसी समूह का लिंक खोलें।</translation>
+    </message>
+    <message>
+        <source>in the room: %1</source>
+        <translation>रूम में: %1</translation>
+    </message>
+    <message>
+        <source>nobody in the room</source>
+        <translation>रूम में कोई नहीं</translation>
+    </message>
+    <message>
+        <source>Join</source>
+        <translation>जुड़ें</translation>
+    </message>
+    <message>
+        <source>Copy the link</source>
+        <translation>लिंक कॉपी करें</translation>
+    </message>
+    <message>
+        <source>Show it as a QR code</source>
+        <translation>QR कोड के रूप में दिखाएँ</translation>
+    </message>
+    <message>
+        <source>Rename</source>
+        <translation>नाम बदलें</translation>
+    </message>
+    <message>
+        <source>Leave the group</source>
+        <translation>समूह छोड़ें</translation>
+    </message>
+    <message>
+        <source>Point a phone&apos;s camera at it to join the group there.</source>
+        <translation>वहाँ समूह में शामिल होने के लिए फ़ोन का कैमरा इस पर रखें।</translation>
+    </message>
+    <message>
+        <source>Rename the group</source>
+        <translation>समूह का नाम बदलें</translation>
+    </message>
+</context>
+<context>
     <name>Main</name>
     <message>
         <source>%1 stopped sharing</source>
@@ -255,6 +314,14 @@
         <translation>कोई</translation>
     </message>
     <message>
+        <source>Answer to join the group %1 and its room.</source>
+        <translation>समूह %1 और उसके रूम में शामिल होने के लिए जवाब दें।</translation>
+    </message>
+    <message>
+        <source>Answer to leave this room and join the group %1 in its room.</source>
+        <translation>इस रूम को छोड़कर समूह %1 के रूम में शामिल होने के लिए जवाब दें।</translation>
+    </message>
+    <message>
         <source>Answer to join their room.</source>
         <translation>उनके रूम में शामिल होने के लिए जवाब दें।</translation>
     </message>
@@ -283,16 +350,20 @@
         <translation>पूछें</translation>
     </message>
     <message>
-        <source>Friends (%1 asking)</source>
-        <translation>दोस्त (%1 अनुरोध)</translation>
-    </message>
-    <message>
-        <source>Friends</source>
-        <translation>दोस्त</translation>
-    </message>
-    <message>
         <source>Room</source>
         <translation>रूम</translation>
+    </message>
+    <message>
+        <source>A group %1</source>
+        <translation>एक समूह %1</translation>
+    </message>
+    <message>
+        <source>Groups and friends (%1 asking)</source>
+        <translation>समूह और दोस्त (%1 अनुरोध)</translation>
+    </message>
+    <message>
+        <source>Groups and friends</source>
+        <translation>समूह और दोस्त</translation>
     </message>
     <message>
         <source>Send a link to whoever is to join:</source>
@@ -764,8 +835,16 @@
         <translation>&apos;%1&apos; सर्वर नहीं है: कृपया HOST या HOST:PORT लिखें।</translation>
     </message>
     <message>
+        <source>Groups are not reachable: the network did not start.</source>
+        <translation>समूह उपलब्ध नहीं हैं: नेटवर्क शुरू नहीं हुआ।</translation>
+    </message>
+    <message>
         <source>That is not a link to a room.</source>
         <translation>यह किसी रूम का लिंक नहीं है।</translation>
+    </message>
+    <message>
+        <source>That group is not one of yours.</source>
+        <translation>यह समूह आपका नहीं है।</translation>
     </message>
     <message>
         <source>The call cannot start (%1).</source>
@@ -877,6 +956,10 @@
     <message>
         <source>Friends are not reachable: the network did not start.</source>
         <translation>दोस्तों तक नहीं पहुँच सकते: नेटवर्क शुरू नहीं हुआ।</translation>
+    </message>
+    <message>
+        <source>A group needs a name.</source>
+        <translation>समूह का नाम होना चाहिए।</translation>
     </message>
     <message>
         <source>That is not a link to a person.</source>
