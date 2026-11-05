@@ -89,6 +89,23 @@ void PeopleController::start() {
                     Q_EMIT this->joined(joined);
                 });
             },
+        .rung = [this,
+                 generation](const Ring&) { post(generation, [this] { Q_EMIT ringsChanged(); }); },
+        .ring_ended =
+            [this, generation](const Ring& ring, RingEnd end) {
+                post(generation, [this, end, incoming = ring.incoming,
+                                  name = QString::fromStdString(ring.name)] {
+                    Q_EMIT ringsChanged();
+                    const QString who = name.isEmpty() ? tr("Someone") : name;
+                    if (!incoming && end == RingEnd::Declined) {
+                        Q_EMIT ringNotice(tr("%1 declined the call.").arg(who));
+                    } else if (!incoming && end == RingEnd::Missed) {
+                        Q_EMIT ringNotice(tr("%1 did not answer.").arg(who));
+                    } else if (incoming && (end == RingEnd::Missed || end == RingEnd::Cancelled)) {
+                        Q_EMIT ringNotice(tr("You missed a call from %1.").arg(who));
+                    }
+                });
+            },
     };
     Result<std::unique_ptr<People>> started = People::start(std::move(config), std::move(handlers));
     if (!started) {
@@ -101,6 +118,7 @@ void PeopleController::start() {
     }
     Q_EMIT changed();
     Q_EMIT deviceChanged();
+    Q_EMIT ringsChanged();
 }
 
 void PeopleController::post(uint64_t generation, std::function<void()> task) {
@@ -174,6 +192,72 @@ QVariantList PeopleController::requests() const {
         });
     }
     return list;
+}
+
+namespace {
+
+QString ring_id(const Ring& ring) {
+    return QString::fromLatin1(
+        QByteArray(reinterpret_cast<const char*>(ring.id.data()), qsizetype(ring.id.size()))
+            .toHex());
+}
+
+std::optional<std::array<uint8_t, 16>> ring_id_of(const QString& hex) {
+    const QByteArray bytes = QByteArray::fromHex(hex.toLatin1());
+    std::array<uint8_t, 16> id{};
+    if (bytes.size() != qsizetype(id.size())) return std::nullopt;
+    std::copy(bytes.begin(), bytes.end(), id.begin());
+    return id;
+}
+
+QVariantMap ring_map(const Ring& ring) {
+    return QVariantMap{
+        {QStringLiteral("id"), ring_id(ring)},
+        {QStringLiteral("person"), hex_of(ring.person)},
+        {QStringLiteral("name"), QString::fromStdString(ring.name)},
+        {QStringLiteral("tag"), QString::fromStdString(ring.person.tag())},
+        {QStringLiteral("room"), QString::fromStdString(ring.room)},
+    };
+}
+
+}  // namespace
+
+QVariantList PeopleController::rings() const {
+    QVariantList list;
+    if (!people_) return list;
+    for (const Ring& ring : people_->rings()) list.push_back(ring_map(ring));
+    return list;
+}
+
+QVariantMap PeopleController::ringing() const {
+    if (!people_) return {};
+    const std::optional<Ring> ring = people_->ringing();
+    return ring ? ring_map(*ring) : QVariantMap{};
+}
+
+bool PeopleController::ring(const QString& person, const QString& room) {
+    const std::optional<PersonId> id = person_of(person);
+    if (!people_ || !id) return false;
+    const bool rung = bool(people_->ring(*id, room.toStdString()));
+    Q_EMIT ringsChanged();
+    return rung;
+}
+
+void PeopleController::hangUp() {
+    if (!people_) return;
+    people_->hang_up();
+    Q_EMIT ringsChanged();
+}
+
+QString PeopleController::answerRing(const QString& id, bool accept) {
+    const std::optional<std::array<uint8_t, 16>> ring = ring_id_of(id);
+    if (!people_ || !ring) return {};
+    QString room;
+    for (const Ring& r : people_->rings())
+        if (r.id == *ring) room = QString::fromStdString(r.room);
+    people_->answer(*ring, accept);
+    Q_EMIT ringsChanged();
+    return accept ? room : QString();
 }
 
 int PeopleController::asking() const {

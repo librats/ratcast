@@ -37,6 +37,16 @@
  * Rendezvous::set_watched()), told how many are there, meeting none of them.
  * With no server, a friend is online only while met.
  *
+ * A friend is rung (ring()) to a room the caller is in, by its link: each
+ * device of theirs is registered under their ring key too (of the same
+ * secret), which the caller registers under while it rings, so that the
+ * server introduces it to every device of theirs online, each told of the
+ * ring (PeopleHandlers::rung). One answers (answer()): the caller is told
+ * (ring_ended: Accepted, Declined) and the rest stop ringing (their own
+ * devices tell each other; the caller tells them too). Unanswered for
+ * ring_for, it is Missed on both sides; taken back (hang_up()), Cancelled.
+ * With no server, only a friend's device met already is rung.
+ *
  * Threads: every method may be called from any thread. Handlers run on the
  * network's threads, never under People's lock, and must not block or
  * destroy it.
@@ -105,6 +115,27 @@ struct FriendRequest {
     uint64_t made = 0;
 };
 
+/// A call to a friend: a room of the caller's, its link given to their
+/// devices.
+struct Ring {
+    std::array<uint8_t, 16> id{};
+    /// Who rings (an incoming one), or who is rung (an outgoing one).
+    PersonId person;
+    std::string name;
+    /// The room's link, to join() (rats:// or the website's).
+    std::string room;
+    /// A friend's to this person, or this person's to a friend.
+    bool incoming = false;
+};
+
+enum class RingEnd : uint8_t {
+    Accepted,           ///< outgoing: they answered, and join the room
+    Declined,           ///< outgoing: they would not
+    Missed,             ///< unanswered for ring_for
+    Cancelled,          ///< incoming: the caller hung up
+    AnsweredElsewhere,  ///< incoming: answered on another device of this person
+};
+
 struct PeopleConfig {
     /// Where the person's key, what they know and the home node's identity
     /// are kept; "": nowhere, a new person each run (tests).
@@ -133,6 +164,8 @@ struct PeopleConfig {
     std::chrono::milliseconds dht_search_interval = std::chrono::seconds(30);
     /// How long a device link lasts.
     std::chrono::seconds device_link_for = std::chrono::minutes(10);
+    /// How long a friend is rung before it is Missed.
+    std::chrono::milliseconds ring_for = std::chrono::seconds(45);
 };
 
 struct PeopleHandlers {
@@ -145,6 +178,11 @@ struct PeopleHandlers {
     /// A device link opened here (join_as_device()) was answered: this device
     /// is the person now, or was refused.
     std::function<void(bool joined)> joined = {};
+    /// A friend rings: answer with answer().
+    std::function<void(const Ring& ring)> rung = {};
+    /// A ring ended, this one's (ring()) or a friend's to it, but not by
+    /// this device's own answer() or hang_up().
+    std::function<void(const Ring& ring, RingEnd end)> ring_ended = {};
 };
 
 class People {
@@ -194,6 +232,21 @@ public:
 
     /// This device is in a room, or no longer: friends see so while it is.
     void set_in_room(bool in_room);
+
+    // ── Ringing ─────────────────────────────────────────────────────────────
+
+    /// Ring `person`, a friend, to the room at `room` (its link), in place
+    /// of a ring before. InvalidArgument for one who is no friend, neither
+    /// met nor ever seen online (their presence secret unknown), or no link.
+    Result<Ring> ring(const PersonId& person, std::string room);
+    /// The ring taken back: their devices stop.
+    void hang_up();
+    /// The ring this device makes, while it rings.
+    std::optional<Ring> ringing() const;
+    /// Answer a friend's ring: accepted, its room is to be joined.
+    void answer(const std::array<uint8_t, 16>& id, bool accept);
+    /// Friends' rings, unanswered.
+    std::vector<Ring> rings() const;
 
     // ── Devices ─────────────────────────────────────────────────────────────
 

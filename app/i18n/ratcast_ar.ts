@@ -108,6 +108,10 @@
         <translation>غير متصل</translation>
     </message>
     <message>
+        <source>Call</source>
+        <translation>اتصال</translation>
+    </message>
+    <message>
         <source>Remove from friends</source>
         <translation>إزالة من الأصدقاء</translation>
     </message>
@@ -243,6 +247,30 @@
         <translation>رفض</translation>
     </message>
     <message>
+        <source>%1 is calling</source>
+        <translation>%1 يتصل بك</translation>
+    </message>
+    <message>
+        <source>Someone</source>
+        <translation>شخص ما</translation>
+    </message>
+    <message>
+        <source>Answer to join their room.</source>
+        <translation>أجب للانضمام إلى غرفته.</translation>
+    </message>
+    <message>
+        <source>Answer to leave this room and join theirs.</source>
+        <translation>أجب لمغادرة هذه الغرفة والانضمام إلى غرفته.</translation>
+    </message>
+    <message>
+        <source>Answer</source>
+        <translation>رد</translation>
+    </message>
+    <message>
+        <source>Decline</source>
+        <translation>رفض</translation>
+    </message>
+    <message>
         <source>Become this person on this device?</source>
         <translation>هل تريد أن تصبح هذا الشخص على هذا الجهاز؟</translation>
     </message>
@@ -344,6 +372,14 @@
     <message>
         <source>Reset</source>
         <translation>إعادة تعيين</translation>
+    </message>
+    <message>
+        <source>Calling %1…</source>
+        <translation>جارٍ الاتصال بـ %1…</translation>
+    </message>
+    <message>
+        <source>Stop calling</source>
+        <translation>إيقاف الاتصال</translation>
     </message>
     <message>
         <source>Stop watching</source>
@@ -740,6 +776,10 @@
         <translation>تعذّر بدء المكالمة (%1).</translation>
     </message>
     <message>
+        <source>That friend cannot be rung yet.</source>
+        <translation>لا يمكن الاتصال بهذا الصديق بعد.</translation>
+    </message>
+    <message>
         <source>The microphone is not allowed: the others will not hear you.</source>
         <translation>لا يوجد إذن باستخدام الميكروفون: لن يسمعك الآخرون.</translation>
     </message>
@@ -817,6 +857,22 @@
     <message>
         <source>The other device said no.</source>
         <translation>رفض الجهاز الآخر.</translation>
+    </message>
+    <message>
+        <source>Someone</source>
+        <translation>شخص ما</translation>
+    </message>
+    <message>
+        <source>%1 declined the call.</source>
+        <translation>رفض %1 المكالمة.</translation>
+    </message>
+    <message>
+        <source>%1 did not answer.</source>
+        <translation>لم يرد %1.</translation>
+    </message>
+    <message>
+        <source>You missed a call from %1.</source>
+        <translation>فاتتك مكالمة من %1.</translation>
     </message>
     <message>
         <source>Your key in the data folder could not be read.</source>

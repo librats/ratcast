@@ -19,6 +19,7 @@
 #include <QString>
 #include <QUrl>
 #include <QVariantList>
+#include <QVariantMap>
 
 #include <cstdint>
 #include <memory>
@@ -56,6 +57,10 @@ class PeopleController : public QObject, public QQmlParserStatus {
     Q_PROPERTY(bool joining READ joining NOTIFY deviceChanged)
     /// What went wrong, or what came of what was asked; "" for nothing.
     Q_PROPERTY(QString notice READ notice NOTIFY noticeChanged)
+    /// Friends ringing, unanswered: each a map of id, person, name, tag, room.
+    Q_PROPERTY(QVariantList rings READ rings NOTIFY ringsChanged)
+    /// The friend this device rings, as one of those; empty for none.
+    Q_PROPERTY(QVariantMap ringing READ ringing NOTIFY ringsChanged)
 
 public:
     struct Environment {
@@ -92,6 +97,15 @@ public:
     QString deviceAsking() const { return device_asking_; }
     bool joining() const { return joining_; }
     QString notice() const { return notice_; }
+    QVariantList rings() const;
+    QVariantMap ringing() const;
+
+    /// Ring `person` (the key in hex), a friend, to the room at `room`;
+    /// whether it rings (CallController::ring() makes the room).
+    Q_INVOKABLE bool ring(const QString& person, const QString& room);
+    Q_INVOKABLE void hangUp();
+    /// Answer a friend's ring: accepted, the room's link to join (else "").
+    Q_INVOKABLE QString answerRing(const QString& id, bool accept);
 
     /// A link the system or the user gave: whether it is a person's (a
     /// friend's or a device's) rather than a room's.
@@ -127,6 +141,10 @@ Q_SIGNALS:
     void noticeChanged();
     /// This device became another's person's (true), or was refused.
     void joined(bool joined);
+    void ringsChanged();
+    /// What came of a ring, for the user to be told: declined, unanswered,
+    /// missed here (CallController shows it).
+    void ringNotice(const QString& notice);
 
 private:
     void set_notice(const QString& notice);

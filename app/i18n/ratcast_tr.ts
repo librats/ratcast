@@ -108,6 +108,10 @@
         <translation>çevrimdışı</translation>
     </message>
     <message>
+        <source>Call</source>
+        <translation>Ara</translation>
+    </message>
+    <message>
         <source>Remove from friends</source>
         <translation>Arkadaşlardan çıkar</translation>
     </message>
@@ -243,6 +247,30 @@
         <translation>Reddet</translation>
     </message>
     <message>
+        <source>%1 is calling</source>
+        <translation>%1 arıyor</translation>
+    </message>
+    <message>
+        <source>Someone</source>
+        <translation>Biri</translation>
+    </message>
+    <message>
+        <source>Answer to join their room.</source>
+        <translation>Odasına katılmak için yanıtlayın.</translation>
+    </message>
+    <message>
+        <source>Answer to leave this room and join theirs.</source>
+        <translation>Bu odadan çıkıp onunkine katılmak için yanıtlayın.</translation>
+    </message>
+    <message>
+        <source>Answer</source>
+        <translation>Yanıtla</translation>
+    </message>
+    <message>
+        <source>Decline</source>
+        <translation>Reddet</translation>
+    </message>
+    <message>
         <source>Become this person on this device?</source>
         <translation>Bu cihazda bu kişi olunsun mu?</translation>
     </message>
@@ -339,6 +367,14 @@
     <message>
         <source>Reset</source>
         <translation>Sıfırla</translation>
+    </message>
+    <message>
+        <source>Calling %1…</source>
+        <translation>%1 aranıyor…</translation>
+    </message>
+    <message>
+        <source>Stop calling</source>
+        <translation>Aramayı durdur</translation>
     </message>
     <message>
         <source>Stop watching</source>
@@ -735,6 +771,10 @@
         <translation>Görüşme başlatılamıyor (%1).</translation>
     </message>
     <message>
+        <source>That friend cannot be rung yet.</source>
+        <translation>Bu arkadaş henüz aranamıyor.</translation>
+    </message>
+    <message>
         <source>The microphone is not allowed: the others will not hear you.</source>
         <translation>Mikrofon izni yok: diğerleri sizi duymayacak.</translation>
     </message>
@@ -812,6 +852,22 @@
     <message>
         <source>The other device said no.</source>
         <translation>Diğer cihaz reddetti.</translation>
+    </message>
+    <message>
+        <source>Someone</source>
+        <translation>Biri</translation>
+    </message>
+    <message>
+        <source>%1 declined the call.</source>
+        <translation>%1 aramayı reddetti.</translation>
+    </message>
+    <message>
+        <source>%1 did not answer.</source>
+        <translation>%1 yanıt vermedi.</translation>
+    </message>
+    <message>
+        <source>You missed a call from %1.</source>
+        <translation>%1 kişisinden cevapsız arama.</translation>
     </message>
     <message>
         <source>Your key in the data folder could not be read.</source>

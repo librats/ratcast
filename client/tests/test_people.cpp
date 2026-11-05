@@ -109,8 +109,12 @@ struct Meeting {
 /// A person's device: its People, its data directory, what it was told.
 class Device {
 public:
-    Device(Meeting meeting, std::string name, std::filesystem::path dir)
-        : meeting_(std::move(meeting)), name_(std::move(name)), dir_(std::move(dir)) {
+    Device(Meeting meeting, std::string name, std::filesystem::path dir,
+           std::chrono::milliseconds ring_for = 45s)
+        : meeting_(std::move(meeting)),
+          name_(std::move(name)),
+          dir_(std::move(dir)),
+          ring_for_(ring_for) {
         start();
     }
 
@@ -125,7 +129,8 @@ public:
                             .watch_network = false,
                             .dht = !meeting_.dht.empty(),
                             .dht_bootstrap = meeting_.dht,
-                            .dht_search_interval = 500ms};
+                            .dht_search_interval = 500ms,
+                            .ring_for = ring_for_};
         PeopleHandlers handlers{
             .changed = [this] { ++changes; },
             .device_asks =
@@ -134,6 +139,16 @@ public:
                     asking_ = device;
                 },
             .joined = [this](bool joined) { joined_ = joined ? 1 : 0; },
+            .rung =
+                [this](const Ring& ring) {
+                    std::lock_guard lock(mutex_);
+                    rung_.push_back(ring);
+                },
+            .ring_ended =
+                [this](const Ring& ring, RingEnd end) {
+                    std::lock_guard lock(mutex_);
+                    ended_.emplace_back(ring, end);
+                },
         };
         Result<std::unique_ptr<People>> started = People::start(config, handlers);
         ASSERT_TRUE(started);
@@ -144,6 +159,17 @@ public:
     std::optional<std::string> asking() const {
         std::lock_guard lock(mutex_);
         return asking_;
+    }
+    /// The rings it was told of, and how each that ended did.
+    std::vector<Ring> rung() const {
+        std::lock_guard lock(mutex_);
+        return rung_;
+    }
+    std::optional<RingEnd> ended(const Ring& ring) const {
+        std::lock_guard lock(mutex_);
+        for (const auto& [r, end] : ended_)
+            if (r.id == ring.id) return end;
+        return std::nullopt;
     }
 
     bool has_friend(const People& other) const {
@@ -173,8 +199,11 @@ private:
     Meeting meeting_;
     std::string name_;
     std::filesystem::path dir_;
+    std::chrono::milliseconds ring_for_;
     mutable std::mutex mutex_;
     std::optional<std::string> asking_;
+    std::vector<Ring> rung_;
+    std::vector<std::pair<Ring, RingEnd>> ended_;
 };
 
 /// Each test's devices in a folder of their own.
@@ -197,9 +226,31 @@ private:
 
 class PeopleTest : public ::testing::Test {
 protected:
-    std::unique_ptr<Device> device(const std::string& name, const std::string& dir = {}) {
+    std::unique_ptr<Device> device(const std::string& name, const std::string& dir = {},
+                                   std::chrono::milliseconds ring_for = 45s) {
         return std::make_unique<Device>(Meeting{.servers = {server_.address()}}, name,
-                                        folder_.of(name, dir));
+                                        folder_.of(name, dir), ring_for);
+    }
+
+    /// Ann and Bob friends, each seen online by the other.
+    void befriend(Device& ann, Device& bob) {
+        ASSERT_TRUE(bob.people->add(ann.people->link()));
+        ASSERT_TRUE(wait_for([&] { return ann.request_of(*bob.people).has_value(); }));
+        ann.people->accept(bob.people->person());
+        ASSERT_TRUE(wait_for([&] {
+            const auto a = ann.friend_of(*bob.people);
+            const auto b = bob.friend_of(*ann.people);
+            return a && b && a->online && b->online;
+        }));
+    }
+    /// A second device of `person`'s, by a device link.
+    std::unique_ptr<Device> second_device(Device& person, const std::string& name) {
+        auto device = this->device(name, name);
+        EXPECT_TRUE(device->people->join_as_device(person.people->device_link()));
+        EXPECT_TRUE(wait_for([&] { return person.asking().has_value(); }));
+        person.people->allow_device(true);
+        EXPECT_TRUE(wait_for([&] { return device->joined_.load() == 1; }));
+        return device;
     }
 
     Folder folder_;
@@ -414,6 +465,71 @@ TEST_F(PeopleTest, FriendsSeeEachOtherOnlineAndInARoom) {
         const auto bob_seen = phone->friend_of(*bob->people);
         return bob_seen && bob_seen->online;
     }));
+}
+
+// A friend is rung on each device of theirs online, met at the server for it;
+// one answers, the caller is told, and the other stops ringing.
+TEST_F(PeopleTest, AFriendIsRungOnEachDeviceAndAnsweredOnOne) {
+    auto ann = device("Ann");
+    auto bob = device("Bob");
+    befriend(*ann, *bob);
+    auto phone = second_device(*ann, "Ann's phone");
+    // Not met: the ring finds them.
+    bob->stop();
+    bob->start();
+    ASSERT_TRUE(wait_for([&] { return bob->friend_of(*ann->people)->online; }));
+
+    const Result<Ring> ring = bob->people->ring(ann->people->person(), "rats://room");
+    ASSERT_TRUE(ring);
+    EXPECT_EQ(bob->people->ringing()->id, ring->id);
+    ASSERT_TRUE(wait_for([&] { return ann->rung().size() == 1 && phone->rung().size() == 1; }));
+    const Ring heard = ann->rung()[0];
+    EXPECT_EQ(heard.id, ring->id);
+    EXPECT_EQ(heard.person, bob->people->person());
+    EXPECT_EQ(heard.name, "Bob");
+    EXPECT_EQ(heard.room, "rats://room");
+    EXPECT_EQ(ann->people->rings().size(), 1u);
+
+    ann->people->answer(heard.id, true);
+    EXPECT_TRUE(wait_for([&] { return bob->ended(*ring) == RingEnd::Accepted; }));
+    EXPECT_TRUE(wait_for([&] { return phone->ended(*ring) == RingEnd::AnsweredElsewhere; }));
+    EXPECT_FALSE(bob->people->ringing());
+    EXPECT_TRUE(ann->people->rings().empty());
+    EXPECT_TRUE(wait_for([&] { return phone->people->rings().empty(); }));
+    EXPECT_FALSE(ann->ended(*ring)) << "told of its own answer";
+}
+
+// A ring declined, unanswered or taken back is told so on both sides; only a
+// friend is rung.
+TEST_F(PeopleTest, ARingDeclinedMissedOrTakenBackIsToldSo) {
+    auto ann = device("Ann", {}, 1s);
+    auto bob = device("Bob", {}, 1s);
+    befriend(*ann, *bob);
+    const PersonId ann_id = ann->people->person();
+
+    const Result<Ring> declined = bob->people->ring(ann_id, "rats://room");
+    ASSERT_TRUE(declined);
+    ASSERT_TRUE(wait_for([&] { return ann->rung().size() == 1; }));
+    ann->people->answer(declined->id, false);
+    EXPECT_TRUE(wait_for([&] { return bob->ended(*declined) == RingEnd::Declined; }));
+
+    const Result<Ring> missed = bob->people->ring(ann_id, "rats://room");
+    ASSERT_TRUE(missed);
+    ASSERT_TRUE(wait_for([&] { return ann->rung().size() == 2; }));
+    EXPECT_TRUE(wait_for([&] { return bob->ended(*missed) == RingEnd::Missed; }, 5s));
+    EXPECT_TRUE(wait_for([&] { return ann->ended(*missed) == RingEnd::Missed; }, 5s));
+    EXPECT_FALSE(bob->people->ringing());
+
+    const Result<Ring> taken_back = bob->people->ring(ann_id, "rats://room");
+    ASSERT_TRUE(taken_back);
+    ASSERT_TRUE(wait_for([&] { return ann->rung().size() == 3; }));
+    bob->people->hang_up();
+    EXPECT_TRUE(wait_for([&] { return ann->ended(*taken_back) == RingEnd::Cancelled; }));
+    EXPECT_FALSE(bob->ended(*taken_back)) << "told of its own hanging up";
+
+    auto carl = device("Carl");
+    EXPECT_FALSE(carl->people->ring(ann_id, "rats://room")) << "rang one who is no friend";
+    EXPECT_FALSE(bob->people->ring(ann_id, "")) << "rang to no room";
 }
 
 TEST_F(PeopleTest, ADeviceRefusedOrWithoutTheLinkBecomesNobody) {

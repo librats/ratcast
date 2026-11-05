@@ -6,12 +6,15 @@ import Ratcast.Call
 
 // The people one knows, on the start (people.h): this person — their name and
 // tag, their link to send, copied or as a QR code, and a new one in its place
-// — a friend's link to ask by, the requests both ways, and the friends.
-// Beside the start when wide; narrow, in a drawer of its own.
+// — a friend's link to ask by, the requests both ways, and the friends, each
+// online rung to a room. Beside the start when wide; narrow, in a drawer of
+// its own.
 ColumnLayout {
     id: panel
 
     required property PeopleController people
+    /// Where a friend is rung to: its room, made for it.
+    required property CallController call
 
     spacing: 8
 
@@ -359,6 +362,15 @@ ColumnLayout {
                     opacity: modelData.online ? 0.8 : 0.5
                     color: modelData.inRoom ? Material.accent : Material.foreground
                 }
+            }
+            ToolButton {
+                // Rung on each device of theirs online, to a room made for it.
+                display: AbstractButton.IconOnly
+                icon.source: "icons/phone.svg"
+                visible: modelData.online
+                onClicked: panel.call.ring(modelData.person)
+                ToolTip.visible: hovered
+                ToolTip.text: qsTr("Call")
             }
             ToolButton {
                 display: AbstractButton.IconOnly

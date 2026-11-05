@@ -326,6 +326,47 @@ ApplicationWindow {
         onRejected: people.allowDevice(false)
     }
 
+    // A friend rings: answered, their room joined (this one left); the first
+    // of several, the others after.
+    Dialog {
+        id: ringDialog
+
+        readonly property var ring: people.rings.length > 0 ? people.rings[0] : null
+
+        title: qsTr("%1 is calling").arg(ring && ring.name.length > 0 ? ring.name : qsTr("Someone"))
+        modal: true
+        anchors.centerIn: Overlay.overlay
+        width: Math.min(root.width - 48, 420)
+        visible: ring !== null
+        closePolicy: Popup.NoAutoClose
+        onVisibleChanged: if (visible) root.alert(0)
+
+        Label {
+            width: parent.width
+            text: ringDialog.ring === null ? ""
+                : call.state === CallController.Idle
+                    ? qsTr("Answer to join their room.")
+                    : qsTr("Answer to leave this room and join theirs.")
+            wrapMode: Text.Wrap
+        }
+        footer: DialogButtonBox {
+            Button {
+                text: qsTr("Answer")
+                icon.source: "icons/phone.svg"
+                highlighted: true
+                DialogButtonBox.buttonRole: DialogButtonBox.AcceptRole
+            }
+            Button {
+                text: qsTr("Decline")
+                icon.source: "icons/phone-off.svg"
+                flat: true
+                DialogButtonBox.buttonRole: DialogButtonBox.RejectRole
+            }
+        }
+        onAccepted: if (ring) call.acceptRing(ring.id)
+        onRejected: if (ring) people.answerRing(ring.id, false)
+    }
+
     // A device link opened here: this device becomes its person, if they say yes.
     Dialog {
         id: joinAsDevice
@@ -375,6 +416,7 @@ ApplicationWindow {
             FriendsPanel {
                 width: parent.width
                 people: people
+                call: call
             }
         }
         ToolButton {
@@ -552,6 +594,7 @@ ApplicationWindow {
             FriendsPanel {
                 width: parent.width
                 people: people
+                call: call
             }
         }
     }
@@ -1009,6 +1052,27 @@ ApplicationWindow {
                             }
                         }
                     }
+                }
+            }
+
+            // A friend rung to this room, until they answer.
+            RowLayout {
+                Layout.fillWidth: true
+                visible: people.ringing.name !== undefined
+                spacing: 8
+
+                Label {
+                    Layout.fillWidth: true
+                    text: qsTr("Calling %1…").arg(people.ringing.name ? people.ringing.name : qsTr("Someone"))
+                    elide: Text.ElideRight
+                    textFormat: Text.PlainText
+                }
+                ToolButton {
+                    display: AbstractButton.IconOnly
+                    icon.source: "icons/phone-off.svg"
+                    onClicked: people.hangUp()
+                    ToolTip.visible: hovered
+                    ToolTip.text: qsTr("Stop calling")
                 }
             }
 

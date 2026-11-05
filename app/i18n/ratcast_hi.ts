@@ -108,6 +108,10 @@
         <translation>ऑफ़लाइन</translation>
     </message>
     <message>
+        <source>Call</source>
+        <translation>कॉल करें</translation>
+    </message>
+    <message>
         <source>Remove from friends</source>
         <translation>दोस्तों से हटाएँ</translation>
     </message>
@@ -243,6 +247,30 @@
         <translation>मना करें</translation>
     </message>
     <message>
+        <source>%1 is calling</source>
+        <translation>%1 कॉल कर रहे हैं</translation>
+    </message>
+    <message>
+        <source>Someone</source>
+        <translation>कोई</translation>
+    </message>
+    <message>
+        <source>Answer to join their room.</source>
+        <translation>उनके रूम में शामिल होने के लिए जवाब दें।</translation>
+    </message>
+    <message>
+        <source>Answer to leave this room and join theirs.</source>
+        <translation>इस रूम को छोड़कर उनके रूम में जाने के लिए जवाब दें।</translation>
+    </message>
+    <message>
+        <source>Answer</source>
+        <translation>जवाब दें</translation>
+    </message>
+    <message>
+        <source>Decline</source>
+        <translation>अस्वीकार करें</translation>
+    </message>
+    <message>
         <source>Become this person on this device?</source>
         <translation>इस डिवाइस पर यह व्यक्ति बनें?</translation>
     </message>
@@ -340,6 +368,14 @@
     <message>
         <source>Reset</source>
         <translation>रीसेट करें</translation>
+    </message>
+    <message>
+        <source>Calling %1…</source>
+        <translation>%1 को कॉल किया जा रहा है…</translation>
+    </message>
+    <message>
+        <source>Stop calling</source>
+        <translation>कॉल रोकें</translation>
     </message>
     <message>
         <source>Stop watching</source>
@@ -736,6 +772,10 @@
         <translation>कॉल शुरू नहीं हो सकती (%1)।</translation>
     </message>
     <message>
+        <source>That friend cannot be rung yet.</source>
+        <translation>इस दोस्त को अभी कॉल नहीं किया जा सकता।</translation>
+    </message>
+    <message>
         <source>The microphone is not allowed: the others will not hear you.</source>
         <translation>माइक्रोफ़ोन की अनुमति नहीं है: दूसरे आपको नहीं सुन पाएँगे।</translation>
     </message>
@@ -813,6 +853,22 @@
     <message>
         <source>The other device said no.</source>
         <translation>दूसरे डिवाइस ने मना कर दिया।</translation>
+    </message>
+    <message>
+        <source>Someone</source>
+        <translation>कोई</translation>
+    </message>
+    <message>
+        <source>%1 declined the call.</source>
+        <translation>%1 ने कॉल अस्वीकार कर दी।</translation>
+    </message>
+    <message>
+        <source>%1 did not answer.</source>
+        <translation>%1 ने जवाब नहीं दिया।</translation>
+    </message>
+    <message>
+        <source>You missed a call from %1.</source>
+        <translation>%1 की कॉल छूट गई।</translation>
     </message>
     <message>
         <source>Your key in the data folder could not be read.</source>

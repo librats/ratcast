@@ -178,6 +178,7 @@ qt_add_qml_module(ratcast_app
         qml/icons/minimize.svg
         qml/icons/monitor.svg
         qml/icons/phone-off.svg
+        qml/icons/phone.svg
         qml/icons/plus.svg
         qml/icons/qr-code.svg
         qml/icons/refresh-cw.svg

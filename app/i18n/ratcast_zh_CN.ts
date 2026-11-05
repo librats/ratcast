@@ -108,6 +108,10 @@
         <translation>离线</translation>
     </message>
     <message>
+        <source>Call</source>
+        <translation>呼叫</translation>
+    </message>
+    <message>
         <source>Remove from friends</source>
         <translation>从好友中移除</translation>
     </message>
@@ -243,6 +247,30 @@
         <translation>拒绝</translation>
     </message>
     <message>
+        <source>%1 is calling</source>
+        <translation>%1 来电</translation>
+    </message>
+    <message>
+        <source>Someone</source>
+        <translation>某人</translation>
+    </message>
+    <message>
+        <source>Answer to join their room.</source>
+        <translation>接听即可加入对方的房间。</translation>
+    </message>
+    <message>
+        <source>Answer to leave this room and join theirs.</source>
+        <translation>接听即可离开此房间并加入对方的房间。</translation>
+    </message>
+    <message>
+        <source>Answer</source>
+        <translation>接听</translation>
+    </message>
+    <message>
+        <source>Decline</source>
+        <translation>拒绝</translation>
+    </message>
+    <message>
         <source>Become this person on this device?</source>
         <translation>要在此设备上成为此人吗？</translation>
     </message>
@@ -339,6 +367,14 @@
     <message>
         <source>Reset</source>
         <translation>重置</translation>
+    </message>
+    <message>
+        <source>Calling %1…</source>
+        <translation>正在呼叫 %1…</translation>
+    </message>
+    <message>
+        <source>Stop calling</source>
+        <translation>停止呼叫</translation>
     </message>
     <message>
         <source>Stop watching</source>
@@ -735,6 +771,10 @@
         <translation>无法开始通话（%1）。</translation>
     </message>
     <message>
+        <source>That friend cannot be rung yet.</source>
+        <translation>暂时无法呼叫这位好友。</translation>
+    </message>
+    <message>
         <source>The microphone is not allowed: the others will not hear you.</source>
         <translation>麦克风未获授权：其他人将听不到你。</translation>
     </message>
@@ -812,6 +852,22 @@
     <message>
         <source>The other device said no.</source>
         <translation>另一台设备拒绝了。</translation>
+    </message>
+    <message>
+        <source>Someone</source>
+        <translation>某人</translation>
+    </message>
+    <message>
+        <source>%1 declined the call.</source>
+        <translation>%1 拒绝了通话。</translation>
+    </message>
+    <message>
+        <source>%1 did not answer.</source>
+        <translation>%1 未接听。</translation>
+    </message>
+    <message>
+        <source>You missed a call from %1.</source>
+        <translation>%1 的未接来电。</translation>
     </message>
     <message>
         <source>Your key in the data folder could not be read.</source>

@@ -108,6 +108,10 @@
         <translation>오프라인</translation>
     </message>
     <message>
+        <source>Call</source>
+        <translation>통화</translation>
+    </message>
+    <message>
         <source>Remove from friends</source>
         <translation>친구에서 삭제</translation>
     </message>
@@ -243,6 +247,30 @@
         <translation>거부</translation>
     </message>
     <message>
+        <source>%1 is calling</source>
+        <translation>%1 님의 전화</translation>
+    </message>
+    <message>
+        <source>Someone</source>
+        <translation>누군가</translation>
+    </message>
+    <message>
+        <source>Answer to join their room.</source>
+        <translation>받으면 상대의 방에 들어갑니다.</translation>
+    </message>
+    <message>
+        <source>Answer to leave this room and join theirs.</source>
+        <translation>받으면 이 방을 나가 상대의 방에 들어갑니다.</translation>
+    </message>
+    <message>
+        <source>Answer</source>
+        <translation>받기</translation>
+    </message>
+    <message>
+        <source>Decline</source>
+        <translation>거절</translation>
+    </message>
+    <message>
         <source>Become this person on this device?</source>
         <translation>이 기기에서 이 사람이 될까요?</translation>
     </message>
@@ -339,6 +367,14 @@
     <message>
         <source>Reset</source>
         <translation>초기화</translation>
+    </message>
+    <message>
+        <source>Calling %1…</source>
+        <translation>%1 님에게 거는 중…</translation>
+    </message>
+    <message>
+        <source>Stop calling</source>
+        <translation>전화 끊기</translation>
     </message>
     <message>
         <source>Stop watching</source>
@@ -735,6 +771,10 @@
         <translation>통화를 시작할 수 없어요 (%1).</translation>
     </message>
     <message>
+        <source>That friend cannot be rung yet.</source>
+        <translation>아직 이 친구에게 전화할 수 없습니다.</translation>
+    </message>
+    <message>
         <source>The microphone is not allowed: the others will not hear you.</source>
         <translation>마이크 권한이 없어요. 다른 사람이 내 목소리를 들을 수 없어요.</translation>
     </message>
@@ -812,6 +852,22 @@
     <message>
         <source>The other device said no.</source>
         <translation>다른 기기가 거부했습니다.</translation>
+    </message>
+    <message>
+        <source>Someone</source>
+        <translation>누군가</translation>
+    </message>
+    <message>
+        <source>%1 declined the call.</source>
+        <translation>%1 님이 전화를 거절했습니다.</translation>
+    </message>
+    <message>
+        <source>%1 did not answer.</source>
+        <translation>%1 님이 받지 않았습니다.</translation>
+    </message>
+    <message>
+        <source>You missed a call from %1.</source>
+        <translation>%1 님의 부재중 전화가 있습니다.</translation>
     </message>
     <message>
         <source>Your key in the data folder could not be read.</source>

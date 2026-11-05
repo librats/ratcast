@@ -108,6 +108,10 @@
         <translation>не в сети</translation>
     </message>
     <message>
+        <source>Call</source>
+        <translation>Позвонить</translation>
+    </message>
+    <message>
         <source>Remove from friends</source>
         <translation>Удалить из друзей</translation>
     </message>
@@ -243,6 +247,30 @@
         <translation>Отказать</translation>
     </message>
     <message>
+        <source>%1 is calling</source>
+        <translation>%1 звонит</translation>
+    </message>
+    <message>
+        <source>Someone</source>
+        <translation>Кто-то</translation>
+    </message>
+    <message>
+        <source>Answer to join their room.</source>
+        <translation>Ответьте, чтобы войти в комнату.</translation>
+    </message>
+    <message>
+        <source>Answer to leave this room and join theirs.</source>
+        <translation>Ответьте, чтобы выйти из этой комнаты и войти в его.</translation>
+    </message>
+    <message>
+        <source>Answer</source>
+        <translation>Ответить</translation>
+    </message>
+    <message>
+        <source>Decline</source>
+        <translation>Отклонить</translation>
+    </message>
+    <message>
         <source>Become this person on this device?</source>
         <translation>Стать этим человеком на этом устройстве?</translation>
     </message>
@@ -341,6 +369,14 @@
     <message>
         <source>Reset</source>
         <translation>Сбросить</translation>
+    </message>
+    <message>
+        <source>Calling %1…</source>
+        <translation>Звоним: %1…</translation>
+    </message>
+    <message>
+        <source>Stop calling</source>
+        <translation>Перестать звонить</translation>
     </message>
     <message>
         <source>Stop watching</source>
@@ -737,6 +773,10 @@
         <translation>Не удаётся начать звонок (%1).</translation>
     </message>
     <message>
+        <source>That friend cannot be rung yet.</source>
+        <translation>Этому другу пока нельзя позвонить.</translation>
+    </message>
+    <message>
         <source>The microphone is not allowed: the others will not hear you.</source>
         <translation>Нет доступа к микрофону: другие вас не услышат.</translation>
     </message>
@@ -814,6 +854,22 @@
     <message>
         <source>The other device said no.</source>
         <translation>Другое устройство отказало.</translation>
+    </message>
+    <message>
+        <source>Someone</source>
+        <translation>Кто-то</translation>
+    </message>
+    <message>
+        <source>%1 declined the call.</source>
+        <translation>%1 отклонил(а) звонок.</translation>
+    </message>
+    <message>
+        <source>%1 did not answer.</source>
+        <translation>%1 не ответил(а).</translation>
+    </message>
+    <message>
+        <source>You missed a call from %1.</source>
+        <translation>Пропущенный звонок от %1.</translation>
     </message>
     <message>
         <source>Your key in the data folder could not be read.</source>

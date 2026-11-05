@@ -38,8 +38,9 @@ ratcast is built on [librats](https://github.com/librats/librats). It comes in t
 - **Friends, no account.** You are a key made on your device: send your link
   (`https://ratcast.app/u/#…`) or click someone's name in a room to ask to be friends, and
   your phone or another computer becomes you by a QR code — through a server, or the DHT
-  when none is reached. See which friends are online or in a room. Your friends and your key
-  stay on your devices; save a backup if you like.
+  when none is reached. See which friends are online or in a room, and call one: each of
+  their devices rings. Your friends and your key stay on your devices; save a backup if you
+  like.
 - **Share a screen or a window with its sound.** Viewers hear what your applications play, but
   never the call's own voices.
 - **Voice that is easy to listen to.** Echo cancellation, noise suppression and automatic gain

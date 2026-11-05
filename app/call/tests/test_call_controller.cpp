@@ -1119,6 +1119,27 @@ TEST_F(CallControllerTest, AMemberIsKnownByWhoseItIsAndAskedToBeAFriend) {
     EXPECT_EQ(member(bob_, "Ann").value("volume").toDouble(), 0.5);
     bob_.leave();
     ann_.leave();
+
+    // Friends seen online and in a room; one rung joins the other's room.
+    const auto friend_of = [](PeopleController& people) {
+        const QVariantList friends = people.friends();
+        return friends.isEmpty() ? QVariantMap{} : friends.front().toMap();
+    };
+    ASSERT_TRUE(wait_for([&] { return friend_of(ann_people).value("online").toBool(); }));
+    bob_.ring(ann_people.person());
+    ASSERT_EQ(bob_.state(), State::InRoom) << "a room made to ring to";
+    EXPECT_EQ(bob_people.ringing().value("name"), "Ann");
+    EXPECT_TRUE(wait_for([&] { return friend_of(ann_people).value("inRoom").toBool(); }));
+    ASSERT_TRUE(wait_for([&] { return ann_people.rings().size() == 1; }));
+    const QVariantMap ring = ann_people.rings().front().toMap();
+    EXPECT_EQ(ring.value("name"), "Bob");
+    ann_.acceptRing(ring.value("id").toString());
+    EXPECT_NE(ann_.state(), State::Idle);
+    EXPECT_TRUE(wait_for([&] { return member(bob_, "Ann").value("tag") == ann_people.tag(); }));
+    EXPECT_TRUE(wait_for([&] { return bob_people.ringing().isEmpty(); })) << "still ringing";
+    EXPECT_TRUE(ann_people.rings().isEmpty());
+    bob_.leave();
+    ann_.leave();
     ann_.setPeople(nullptr);
     bob_.setPeople(nullptr);
     server.stop();

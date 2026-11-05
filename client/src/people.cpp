@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <cctype>
 #include <chrono>
+#include <condition_variable>
 #include <filesystem>
 #include <fstream>
 #include <map>
@@ -11,6 +12,7 @@
 #include <span>
 #include <sstream>
 #include <system_error>
+#include <thread>
 
 #include "ratcast/client/known_servers.h"
 
@@ -29,6 +31,7 @@ namespace {
 using Steady = std::chrono::steady_clock;
 using Secret = std::array<uint8_t, 16>;
 using Shared = std::array<uint8_t, 32>;
+using RingId = std::array<uint8_t, 16>;
 
 constexpr std::string_view kChannel = "ratcast/people";
 constexpr std::string_view kKeyFile = "person.key";
@@ -51,11 +54,34 @@ constexpr std::string_view kDeviceScheme = "rats://d/";
 //   Refuse
 //   Sync     u32 length + the book (JSON)
 //   Presence 16-byte secret: the sender's person's presence secret, to a friend
+//   Ring     16-byte id, u16 length + the room's link: a friend rings
+//   Rung     16-byte id, u8 accepted: a ring answered — to the caller, and to
+//            the answering person's other devices
+//   Unring   16-byte id, u8 why (0 hung up, 1 missed, 2 answered elsewhere)
 // A proof is the MAC of what it proves under the secret: "ratcast request" or
 // "ratcast pair", the sender's peer id, the receiver's.
 
 constexpr uint8_t kVersion = 1;
-enum class Kind : uint8_t { Hello = 1, Request, Answer, Pair, Grant, Refuse, Sync, Presence };
+enum class Kind : uint8_t {
+    Hello = 1,
+    Request,
+    Answer,
+    Pair,
+    Grant,
+    Refuse,
+    Sync,
+    Presence,
+    Ring,
+    Rung,
+    Unring
+};
+enum class Why : uint8_t { HungUp = 0, Missed = 1, AnsweredElsewhere = 2 };
+
+/// The longest room link a ring carries.
+constexpr size_t kMostRoomLink = 4096;
+/// How much longer a ring rings where it is rung than where it is made: the
+/// caller's word that it was missed comes first.
+constexpr auto kRingGrace = std::chrono::seconds(5);
 enum class Via : uint8_t { Link = 0, Room = 1 };
 
 constexpr size_t kMostBook = 1 << 20;
@@ -174,6 +200,11 @@ std::string presence_key(const PersonId& person, const Secret& secret) {
 }
 std::string room_key(const PersonId& person, const Secret& secret) {
     return "ratcast/0/in-room/" + to_hex(mac(secret, person.key));
+}
+/// The key a person's devices are rung under: a caller registered there
+/// while it rings is introduced to them, and nobody watching is misled.
+std::string ring_key(const PersonId& person, const Secret& secret) {
+    return "ratcast/0/ring/" + to_hex(mac(secret, person.key));
 }
 
 uint64_t seconds_now() {
@@ -551,7 +582,14 @@ struct People::State {
         std::vector<std::string> all = keys();
         const Secret own = presence_secret(key);
         all.push_back(presence_key(key.id(), own));
+        all.push_back(ring_key(key.id(), own));
         if (in_room) all.push_back(room_key(key.id(), own));
+        // While ringing a friend: where their devices are.
+        if (ringing) {
+            const auto it = book.friends.find(ringing->ring.person);
+            if (it != book.friends.end() && !is_zero(it->second.presence))
+                all.push_back(ring_key(ringing->ring.person, it->second.presence));
+        }
         return all;
     }
 
@@ -579,6 +617,31 @@ struct People::State {
         Out out(Kind::Presence);
         out.bytes(presence_secret(key));
         send(peer, out);
+    }
+
+    void send_ring(const PeerId& peer, const Ring& ring) {
+        Out out(Kind::Ring);
+        out.bytes(ring.id);
+        out.u16(ring.room.size());
+        out.bytes(std::span(reinterpret_cast<const uint8_t*>(ring.room.data()), ring.room.size()));
+        send(peer, out);
+    }
+
+    void send_unring(const PeerId& peer, const RingId& id, Why why) {
+        Out out(Kind::Unring);
+        out.bytes(id);
+        out.u8(uint8_t(why));
+        send(peer, out);
+    }
+
+    /// The ring made here ended: its friend's devices met told to stop (but
+    /// `except`), the key it rang under no longer registered.
+    void end_ringing(Why why, const std::optional<PeerId>& except = std::nullopt) {
+        if (!ringing) return;
+        for (const PeerId& peer : met_of(ringing->ring.person))
+            if (peer != except) send_unring(peer, ringing->ring.id, why);
+        ringing.reset();
+        update_keys();
     }
 
     /// Whether `person`, a friend, is online: seen at a server, or met.
@@ -675,7 +738,55 @@ struct People::State {
         bool changed = false;
         std::optional<std::string> device_asks;
         std::optional<bool> joined;
+        std::vector<Ring> rung;
+        std::vector<std::pair<Ring, RingEnd>> ended;
     };
+
+    /// Rings past their time: missed. Under the lock.
+    void expire(Steady::time_point now, After& after) {
+        if (ringing && ringing->until <= now) {
+            after.ended.emplace_back(ringing->ring, RingEnd::Missed);
+            LOG_INFO("people", ringing->ring.person.tag() << " did not answer");
+            end_ringing(Why::Missed);
+        }
+        for (auto it = incoming.begin(); it != incoming.end();) {
+            if (it->second.until > now) {
+                ++it;
+                continue;
+            }
+            after.ended.emplace_back(it->second.ring, RingEnd::Missed);
+            it = incoming.erase(it);
+        }
+    }
+
+    /// When the next ring is past its time; none if none rings.
+    std::optional<Steady::time_point> next_expiry() const {
+        std::optional<Steady::time_point> next;
+        if (ringing) next = ringing->until;
+        for (const auto& [id, ring] : incoming)
+            if (!next || ring.until < *next) next = ring.until;
+        return next;
+    }
+
+    /// The timer's thread: rings missed as their time comes.
+    void keep_time() {
+        std::unique_lock lock(mutex);
+        while (!stopping) {
+            After after;
+            expire(Steady::now(), after);
+            if (!after.ended.empty()) {
+                lock.unlock();
+                run(after);
+                lock.lock();
+                continue;
+            }
+            if (const auto next = next_expiry()) {
+                wake.wait_until(lock, *next);
+            } else {
+                wake.wait(lock);
+            }
+        }
+    }
 
     /// An outgoing request told to a device of theirs (on a link, which
     /// carries it or is lost: then it is told again at the next Hello).
@@ -734,6 +845,59 @@ struct People::State {
                 update_keys();
                 tell_own();
                 after.changed = true;
+                return;
+            }
+            case Kind::Ring: {
+                const RingId id = in.array<16>();
+                const size_t size = in.u16();
+                if (!in.ok() || size == 0 || size > kMostRoomLink) return;
+                const std::string room = in.text(size);
+                if (!in.ok() || person == key.id() || !friends_with(person) ||
+                    incoming.contains(id))
+                    return;
+                const Ring ring{.id = id,
+                                .person = person,
+                                .name = book.friends[person].name,
+                                .room = room,
+                                .incoming = true};
+                incoming[id] = Incoming{.ring = ring,
+                                        .from = peer,
+                                        .until = Steady::now() + config.ring_for + kRingGrace};
+                wake.notify_all();
+                LOG_INFO("people", person.tag() << " rings");
+                after.rung.push_back(ring);
+                return;
+            }
+            case Kind::Rung: {
+                const RingId id = in.array<16>();
+                const bool accepted = in.u8() == 1;
+                if (!in.ok()) return;
+                if (person == key.id()) {
+                    // Answered on another device of this person's.
+                    const auto it = incoming.find(id);
+                    if (it == incoming.end()) return;
+                    after.ended.emplace_back(it->second.ring, RingEnd::AnsweredElsewhere);
+                    incoming.erase(it);
+                    return;
+                }
+                if (!ringing || ringing->ring.id != id || ringing->ring.person != person) return;
+                after.ended.emplace_back(ringing->ring,
+                                         accepted ? RingEnd::Accepted : RingEnd::Declined);
+                LOG_INFO("people", person.tag() << (accepted ? " answered" : " declined"));
+                end_ringing(Why::AnsweredElsewhere, peer);
+                return;
+            }
+            case Kind::Unring: {
+                const RingId id = in.array<16>();
+                const auto why = Why(in.u8());
+                if (!in.ok()) return;
+                const auto it = incoming.find(id);
+                if (it == incoming.end() || it->second.ring.person != person) return;
+                after.ended.emplace_back(it->second.ring, why == Why::Missed ? RingEnd::Missed
+                                                          : why == Why::AnsweredElsewhere
+                                                              ? RingEnd::AnsweredElsewhere
+                                                              : RingEnd::Cancelled);
+                incoming.erase(it);
                 return;
             }
             case Kind::Pair: {
@@ -805,6 +969,8 @@ struct People::State {
             // A friend's device met: theirs, and ours, to be seen online by.
             send_presence(peer);
             if (first) after.changed = true;
+            // Met as it is rung (registered under its ring key, as this is).
+            if (ringing && ringing->ring.person == person) send_ring(peer, ringing->ring);
         }
         // Names follow what friends and those asked say now.
         bool renamed = false;
@@ -938,6 +1104,10 @@ struct People::State {
         if (after.changed && handlers.changed) handlers.changed();
         if (after.device_asks && handlers.device_asks) handlers.device_asks(*after.device_asks);
         if (after.joined && handlers.joined) handlers.joined(*after.joined);
+        if (handlers.rung)
+            for (const Ring& ring : after.rung) handlers.rung(ring);
+        if (handlers.ring_ended)
+            for (const auto& [ring, end] : after.ended) handlers.ring_ended(ring, end);
     }
 
     PeopleConfig config;
@@ -949,6 +1119,22 @@ struct People::State {
     std::optional<Pairing> pairing;
     std::optional<PersonLink> joining;
     bool in_room = false;  ///< this device, as set_in_room() says
+    /// The ring this device makes, until it is answered or missed.
+    struct Outgoing {
+        Ring ring;
+        Steady::time_point until;
+    };
+    std::optional<Outgoing> ringing;
+    /// Friends' rings, unanswered: each from the device that rang.
+    struct Incoming {
+        Ring ring;
+        PeerId from;
+        Steady::time_point until;
+    };
+    std::map<RingId, Incoming> incoming;
+    std::condition_variable wake;  ///< the timer's: a ring's time changed
+    bool stopping = false;
+    std::thread timer;
     librats::Node node;
     librats::Rendezvous* rendezvous = nullptr;
     librats::DhtDiscovery* dht = nullptr;
@@ -959,6 +1145,7 @@ Result<std::unique_ptr<People>> People::start(PeopleConfig config, PeopleHandler
     if (!people->state_) return fail(Errc::Malformed);
     State& s = *people->state_;
     if (!s.node.start()) return fail(Errc::Unavailable);
+    s.timer = std::thread([&s] { s.keep_time(); });
     LOG_INFO("people", "home node " << s.node.local_id().short_hex() << " up, " << s.key.id().tag()
                                     << ", " << s.book.friends.size() << " friend(s) known");
     return people;
@@ -1066,7 +1253,15 @@ People::People(PeopleConfig config, PeopleHandlers handlers) {
 }
 
 People::~People() {
-    if (state_) state_->node.stop();
+    if (!state_) return;
+    State& s = *state_;
+    {
+        std::lock_guard lock(s.mutex);
+        s.stopping = true;
+    }
+    s.wake.notify_all();
+    if (s.timer.joinable()) s.timer.join();
+    s.node.stop();
 }
 
 PersonId People::person() const {
@@ -1202,6 +1397,61 @@ void People::set_in_room(bool in_room) {
     if (s.in_room == in_room) return;
     s.in_room = in_room;
     s.update_keys();
+}
+
+Result<Ring> People::ring(const PersonId& person, std::string room) {
+    State& s = *state_;
+    std::lock_guard lock(s.mutex);
+    const auto it = s.book.friends.find(person);
+    // Found at the servers by their ring key, or met already (rung at once).
+    if (it == s.book.friends.end() || it->second.removed ||
+        (is_zero(it->second.presence) && s.met_of(person).empty()) || room.empty() ||
+        room.size() > kMostRoomLink)
+        return fail(Errc::InvalidArgument);
+    s.end_ringing(Why::HungUp);  // one before
+    const Ring ring{.id = random_bytes<16>(),
+                    .person = person,
+                    .name = it->second.name,
+                    .room = std::move(room)};
+    s.ringing = State::Outgoing{.ring = ring, .until = Steady::now() + s.config.ring_for};
+    s.update_keys();  // registered where their devices are rung
+    for (const PeerId& peer : s.met_of(person)) s.send_ring(peer, ring);
+    s.wake.notify_all();
+    LOG_INFO("people", "ringing " << person.tag());
+    return ring;
+}
+
+void People::hang_up() {
+    State& s = *state_;
+    std::lock_guard lock(s.mutex);
+    s.end_ringing(Why::HungUp);
+}
+
+std::optional<Ring> People::ringing() const {
+    std::lock_guard lock(state_->mutex);
+    if (!state_->ringing) return std::nullopt;
+    return state_->ringing->ring;
+}
+
+void People::answer(const std::array<uint8_t, 16>& id, bool accept) {
+    State& s = *state_;
+    std::lock_guard lock(s.mutex);
+    const auto it = s.incoming.find(id);
+    if (it == s.incoming.end()) return;
+    Out out(Kind::Rung);
+    out.bytes(id);
+    out.u8(accept ? 1 : 0);
+    // The caller, and this person's other devices, which stop ringing.
+    s.send(it->second.from, out);
+    for (const PeerId& peer : s.met_of(s.key.id())) s.send(peer, out);
+    s.incoming.erase(it);
+}
+
+std::vector<Ring> People::rings() const {
+    std::lock_guard lock(state_->mutex);
+    std::vector<Ring> out;
+    for (const auto& [id, ring] : state_->incoming) out.push_back(ring.ring);
+    return out;
 }
 
 std::vector<Friend> People::friends() const {

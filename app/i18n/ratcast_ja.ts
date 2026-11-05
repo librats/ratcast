@@ -108,6 +108,10 @@
         <translation>オフライン</translation>
     </message>
     <message>
+        <source>Call</source>
+        <translation>通話</translation>
+    </message>
+    <message>
         <source>Remove from friends</source>
         <translation>フレンドから削除</translation>
     </message>
@@ -243,6 +247,30 @@
         <translation>拒否</translation>
     </message>
     <message>
+        <source>%1 is calling</source>
+        <translation>%1 から着信</translation>
+    </message>
+    <message>
+        <source>Someone</source>
+        <translation>誰か</translation>
+    </message>
+    <message>
+        <source>Answer to join their room.</source>
+        <translation>応答すると相手のルームに参加します。</translation>
+    </message>
+    <message>
+        <source>Answer to leave this room and join theirs.</source>
+        <translation>応答するとこのルームを出て相手のルームに参加します。</translation>
+    </message>
+    <message>
+        <source>Answer</source>
+        <translation>応答</translation>
+    </message>
+    <message>
+        <source>Decline</source>
+        <translation>拒否</translation>
+    </message>
+    <message>
         <source>Become this person on this device?</source>
         <translation>このデバイスでこの人になりますか？</translation>
     </message>
@@ -339,6 +367,14 @@
     <message>
         <source>Reset</source>
         <translation>リセット</translation>
+    </message>
+    <message>
+        <source>Calling %1…</source>
+        <translation>%1 に発信中…</translation>
+    </message>
+    <message>
+        <source>Stop calling</source>
+        <translation>発信をやめる</translation>
     </message>
     <message>
         <source>Stop watching</source>
@@ -735,6 +771,10 @@
         <translation>通話を開始できません（%1）。</translation>
     </message>
     <message>
+        <source>That friend cannot be rung yet.</source>
+        <translation>この友達にはまだ発信できません。</translation>
+    </message>
+    <message>
         <source>The microphone is not allowed: the others will not hear you.</source>
         <translation>マイクの使用が許可されていません。ほかの参加者に声が届きません。</translation>
     </message>
@@ -812,6 +852,22 @@
     <message>
         <source>The other device said no.</source>
         <translation>相手のデバイスが拒否しました。</translation>
+    </message>
+    <message>
+        <source>Someone</source>
+        <translation>誰か</translation>
+    </message>
+    <message>
+        <source>%1 declined the call.</source>
+        <translation>%1 が通話を拒否しました。</translation>
+    </message>
+    <message>
+        <source>%1 did not answer.</source>
+        <translation>%1 は応答しませんでした。</translation>
+    </message>
+    <message>
+        <source>You missed a call from %1.</source>
+        <translation>%1 からの不在着信があります。</translation>
     </message>
     <message>
         <source>Your key in the data folder could not be read.</source>

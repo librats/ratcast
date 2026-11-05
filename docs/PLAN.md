@@ -169,7 +169,7 @@ final place and shape: stage 0 is a walking skeleton, not a throwaway prototype.
 | **12. Getting through** — in part | a call that holds as a member's address changes (a VPN, another network); servers found without being typed in, the room's met at by all its members alike; joining fast and seen to be | L23 ✅, L24 ✅, L25 ✅ |
 | **11. Full screen** ✅ | a share watched on the whole screen with nothing else on it, the controls and the cursor there while the mouse moves; the picture pixel-exact; the screen kept awake while watching | — |
 | **13. Android** | the app on phones: a share watched first, then talking, the camera and the screen shared; the call held in the background | — |
-| **14. People** | one person on all their devices; friends added once by a link, seen online, called with a ring — no server but stage 12's, no account | L26 ✅ |
+| **14. People** ✅ | one person on all their devices; friends added once by a link, seen online, called with a ring — no server but stage 12's, no account | L26 ✅ |
 | **15. Groups** | a room that lasts: joined once by its link, who is in it now seen from the list, a click to join; laid out to grow into a community as Discord's when one is wanted | — |
 | **16. Accounts** (optional) | a service beside the P2P: a name to be found by, a phone that rings with the app closed, everything back with every device lost | — |
 
@@ -1816,7 +1816,7 @@ a desktop, the call held while the app is in the background.
   Android installs a newer APK over the old. Left: a link handed to Android's share sheet,
   edge to edge on Android 15 (Qt's safe areas).
 
-### Stage 14 — People
+### Stage 14 — People ✅
 
 People who know each other found again without a link each time: one person on all their
 devices, friends added once, seen online and called with a ring. No server beyond stage 12's,
@@ -1928,9 +1928,26 @@ devices, and Ann's phone, added by a QR code from her PC, is Ann to Bob.
   device that became the person seeing the friends at once. Left: a friend removed still holds
   the secret and may watch (a new one given to the rest: with revocation, below); friends from
   before this see each other once their home nodes meet.
-- **14.5 Ringing**: a call to a friend a room of two, rung on each of their devices online,
+- **14.5 Ringing** ✅: a call to a friend a room of two, rung on each of their devices online,
   stopped on the others once answered on one; declined or missed told back. On Android only
   while the app runs (pushes are 16's).
+  Done so: each device registered under its person's ring key as well (of the presence
+  secret, apart from the online key, so that a caller is not counted there), which the caller
+  registers under while it rings: the server introduces its home node to every device of
+  theirs online, each told of the ring on the people channel (Ring: an id and the room's
+  link, inside Noise). One answers (Rung, to the caller and to the person's other devices,
+  which stop); the caller tells the rest to stop as well (Unring: hung up, missed, answered
+  elsewhere), and a timer on the home node makes an unanswered ring Missed on both sides
+  (`PeopleConfig::ring_for`, 45 s; where it is rung, 5 s more). `People::ring()`,
+  `hang_up()`, `answer()`, `rings()`, `PeopleHandlers::rung` / `ring_ended`. The app: a call
+  button beside a friend online, which makes a room if there is none and rings to its first
+  invite; "Calling Ann…" in the room, with a button to stop; a friend's ring a dialog (the
+  window flashed), answered by leaving the room one is in and joining theirs; declined, not
+  answered, missed told as the room's notice; leaving the room stops the ring. Tested: a
+  friend rung on two devices, met only for it, answered on one — the caller told, the other
+  stopped; declined, missed and taken back told on both sides; no friend and no room not
+  rung; on the controllers, a ring that makes the room and is answered into it. Left: a ring's
+  sound; with no server, only a device met already is rung.
 
 Later: direct messages kept between calls, statuses (idle, do not disturb), blocking, device
 revocation.

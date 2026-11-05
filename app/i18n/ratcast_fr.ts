@@ -108,6 +108,10 @@
         <translation>hors ligne</translation>
     </message>
     <message>
+        <source>Call</source>
+        <translation>Appeler</translation>
+    </message>
+    <message>
         <source>Remove from friends</source>
         <translation>Retirer des amis</translation>
     </message>
@@ -243,6 +247,30 @@
         <translation>Refuser</translation>
     </message>
     <message>
+        <source>%1 is calling</source>
+        <translation>%1 vous appelle</translation>
+    </message>
+    <message>
+        <source>Someone</source>
+        <translation>Quelqu’un</translation>
+    </message>
+    <message>
+        <source>Answer to join their room.</source>
+        <translation>Répondez pour rejoindre son salon.</translation>
+    </message>
+    <message>
+        <source>Answer to leave this room and join theirs.</source>
+        <translation>Répondez pour quitter ce salon et rejoindre le sien.</translation>
+    </message>
+    <message>
+        <source>Answer</source>
+        <translation>Répondre</translation>
+    </message>
+    <message>
+        <source>Decline</source>
+        <translation>Refuser</translation>
+    </message>
+    <message>
         <source>Become this person on this device?</source>
         <translation>Devenir cette personne sur cet appareil ?</translation>
     </message>
@@ -340,6 +368,14 @@
     <message>
         <source>Reset</source>
         <translation>Réinitialiser</translation>
+    </message>
+    <message>
+        <source>Calling %1…</source>
+        <translation>Appel de %1…</translation>
+    </message>
+    <message>
+        <source>Stop calling</source>
+        <translation>Arrêter l’appel</translation>
     </message>
     <message>
         <source>Stop watching</source>
@@ -736,6 +772,10 @@
         <translation>Impossible de démarrer l’appel (%1).</translation>
     </message>
     <message>
+        <source>That friend cannot be rung yet.</source>
+        <translation>Impossible d’appeler cet ami pour l’instant.</translation>
+    </message>
+    <message>
         <source>The microphone is not allowed: the others will not hear you.</source>
         <translation>L’accès au micro n’est pas autorisé&#xa0;: les autres ne vous entendront pas.</translation>
     </message>
@@ -813,6 +853,22 @@
     <message>
         <source>The other device said no.</source>
         <translation>L’autre appareil a refusé.</translation>
+    </message>
+    <message>
+        <source>Someone</source>
+        <translation>Quelqu’un</translation>
+    </message>
+    <message>
+        <source>%1 declined the call.</source>
+        <translation>%1 a refusé l’appel.</translation>
+    </message>
+    <message>
+        <source>%1 did not answer.</source>
+        <translation>%1 n’a pas répondu.</translation>
+    </message>
+    <message>
+        <source>You missed a call from %1.</source>
+        <translation>Appel manqué de %1.</translation>
     </message>
     <message>
         <source>Your key in the data folder could not be read.</source>

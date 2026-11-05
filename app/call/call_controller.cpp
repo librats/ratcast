@@ -393,8 +393,26 @@ void CallController::start(CallConfig config, State state) {
 
 void CallController::leave() { end(); }
 
+void CallController::ring(const QString& person) {
+    if (!people_ || !people_->ready()) return;
+    if (state_ == State::Idle) create();
+    if (state_ != State::InRoom || invites_.isEmpty()) return;
+    // The first invite: by peer id, for the internet.
+    if (!people_->ring(person, invites_.front())) set_notice(tr("That friend cannot be rung yet."));
+}
+
+void CallController::acceptRing(const QString& id) {
+    if (!people_) return;
+    const QString room = people_->answerRing(id, true);
+    if (room.isEmpty()) return;
+    if (state_ != State::Idle) end();
+    join(room);
+}
+
 void CallController::end(QString notice) {
     if (call_) LOG_INFO("app", "leaving the room");
+    // A friend rung to the room it leaves stops ringing.
+    if (people_ && people_->ringing().size() > 0) people_->hangUp();
     ++generation_;
     dialog_.request_stop();
     if (dialog_.joinable()) dialog_.join();
@@ -752,6 +770,8 @@ void CallController::setPeople(PeopleController* people) {
             update_members();
         };
         connect(people_, &PeopleController::changed, this, follow);
+        connect(people_, &PeopleController::ringNotice, this,
+                [this](const QString& notice) { set_notice(notice); });
         follow();
     }
     Q_EMIT peopleChanged();

@@ -289,6 +289,11 @@ public:
     /// Ask the member of `id` to be a friend, by the card its presence
     /// carries (Member::befriendable).
     Q_INVOKABLE void addFriend(const QString& id);
+    /// Ring a friend (the key in hex) to this room, made first when there
+    /// is none (People::ring()).
+    Q_INVOKABLE void ring(const QString& person);
+    /// Answer a friend's ring by joining its room, leaving this one first.
+    Q_INVOKABLE void acceptRing(const QString& id);
     /// Draw the camera of the member of `id` into `view`; null: nowhere.
     Q_INVOKABLE void setCameraView(const QString& id, ratcast::app::VideoView* view);
     /// Say `text` to the room, its ends trimmed, its line breaks kept and
