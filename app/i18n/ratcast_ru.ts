@@ -143,8 +143,17 @@
         <translation>в комнате: %1</translation>
     </message>
     <message>
+        <source>in the room: %1</source>
+        <comment>who, by name</comment>
+        <translation>в комнате: %1</translation>
+    </message>
+    <message>
         <source>nobody in the room</source>
         <translation>в комнате никого</translation>
+    </message>
+    <message>
+        <source>sharing: %1</source>
+        <translation>показывает: %1</translation>
     </message>
     <message>
         <source>Join</source>
@@ -336,6 +345,14 @@
     <message>
         <source>Decline</source>
         <translation>Отклонить</translation>
+    </message>
+    <message>
+        <source>%1 is sharing in %2</source>
+        <translation>%1 показывает экран: %2</translation>
+    </message>
+    <message>
+        <source>a group</source>
+        <translation>группа</translation>
     </message>
     <message>
         <source>Become this person on this device?</source>

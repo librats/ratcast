@@ -48,7 +48,8 @@ class PeopleController : public QObject, public QQmlParserStatus {
     Q_PROPERTY(QVariantList friends READ friends NOTIFY changed)
     /// Groups, by name: a map of id (hex), name ("" until a member met
     /// says), tag, link, made (here: renamed here), present (how many are in
-    /// its room now).
+    /// its room now), here (who of them told so, by name: a map of person,
+    /// name, tag, sharing each).
     Q_PROPERTY(QVariantList groups READ groups NOTIFY changed)
     /// Requests, the newest first: person, name, tag, incoming, declined.
     Q_PROPERTY(QVariantList requests READ requests NOTIFY changed)
@@ -159,6 +160,9 @@ Q_SIGNALS:
     /// What came of a ring, for the user to be told: declined, unanswered,
     /// missed here (CallController shows it).
     void ringNotice(const QString& notice);
+    /// Someone is sharing in a group's room this device is not in: `group`
+    /// its id, to enter it by.
+    void shares(const QString& group, const QString& groupName, const QString& name);
 
 private:
     void set_notice(const QString& notice);

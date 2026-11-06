@@ -143,8 +143,17 @@
         <translation>ルームに %1 人</translation>
     </message>
     <message>
+        <source>in the room: %1</source>
+        <comment>who, by name</comment>
+        <translation>ルームに: %1</translation>
+    </message>
+    <message>
         <source>nobody in the room</source>
         <translation>ルームには誰もいません</translation>
+    </message>
+    <message>
+        <source>sharing: %1</source>
+        <translation>共有中: %1</translation>
     </message>
     <message>
         <source>Join</source>
@@ -336,6 +345,14 @@
     <message>
         <source>Decline</source>
         <translation>拒否</translation>
+    </message>
+    <message>
+        <source>%1 is sharing in %2</source>
+        <translation>%1 さんが %2 で共有しています</translation>
+    </message>
+    <message>
+        <source>a group</source>
+        <translation>グループ</translation>
     </message>
     <message>
         <source>Become this person on this device?</source>

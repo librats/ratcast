@@ -1,5 +1,7 @@
 import QtQuick
 import QtQuick.Controls.Material
+// IconImage: the sharing icon, in the colour of its text.
+import QtQuick.Controls.impl
 import QtQuick.Layouts
 import Ratcast.Call
 
@@ -20,6 +22,20 @@ ColumnLayout {
     /// A group's name, or, until a member met says it, its tag.
     function nameOf(group) {
         return group.name.length > 0 ? group.name : qsTr("A group %1").arg(group.tag)
+    }
+
+    /// Who is in its room, by name as they told; until they have, how many.
+    function hereOf(group) {
+        if (group.here.length === 0)
+            return qsTr("in the room: %1").arg(group.present)
+        return qsTr("in the room: %1", "who, by name").arg(group.here.map(who => who.name.length > 0
+                                                           ? who.name : who.tag).join(", "))
+    }
+
+    /// Those sharing there, by name; "" for none.
+    function sharersOf(group) {
+        return group.here.filter(who => who.sharing)
+                         .map(who => who.name.length > 0 ? who.name : who.tag).join(", ")
     }
 
     function make() {
@@ -70,6 +86,7 @@ ColumnLayout {
             id: row
             required property var modelData
             readonly property bool someone: modelData.present > 0
+            readonly property string sharers: panel.sharersOf(modelData)
             Layout.fillWidth: true
             spacing: 8
 
@@ -92,12 +109,33 @@ ColumnLayout {
                     elide: Text.ElideRight
                 }
                 Label {
-                    // As the servers see it: whose calls are in its room.
-                    text: row.someone ? qsTr("in the room: %1").arg(row.modelData.present)
-                                      : qsTr("nobody in the room")
+                    // As the servers see it, and those there tell.
+                    Layout.fillWidth: true
+                    text: row.someone ? panel.hereOf(row.modelData) : qsTr("nobody in the room")
+                    textFormat: Text.PlainText
+                    elide: Text.ElideRight
                     font.pixelSize: 11
                     opacity: row.someone ? 0.8 : 0.5
                     color: row.someone ? Material.accent : Material.foreground
+                }
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 4
+                    visible: row.someone && row.sharers.length > 0
+
+                    IconImage {
+                        source: "icons/screen-share.svg"
+                        sourceSize: Qt.size(12, 12)
+                        color: Material.accent
+                    }
+                    Label {
+                        Layout.fillWidth: true
+                        text: qsTr("sharing: %1").arg(row.sharers)
+                        textFormat: Text.PlainText
+                        elide: Text.ElideRight
+                        font.pixelSize: 11
+                        color: Material.accent
+                    }
                 }
             }
             ToolButton {

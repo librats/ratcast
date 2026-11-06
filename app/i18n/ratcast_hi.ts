@@ -143,8 +143,17 @@
         <translation>रूम में: %1</translation>
     </message>
     <message>
+        <source>in the room: %1</source>
+        <comment>who, by name</comment>
+        <translation>रूम में: %1</translation>
+    </message>
+    <message>
         <source>nobody in the room</source>
         <translation>रूम में कोई नहीं</translation>
+    </message>
+    <message>
+        <source>sharing: %1</source>
+        <translation>साझा कर रहे हैं: %1</translation>
     </message>
     <message>
         <source>Join</source>
@@ -336,6 +345,14 @@
     <message>
         <source>Decline</source>
         <translation>अस्वीकार करें</translation>
+    </message>
+    <message>
+        <source>%1 is sharing in %2</source>
+        <translation>%1, %2 में साझा कर रहे हैं</translation>
+    </message>
+    <message>
+        <source>a group</source>
+        <translation>एक समूह</translation>
     </message>
     <message>
         <source>Become this person on this device?</source>

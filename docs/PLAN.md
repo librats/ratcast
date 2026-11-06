@@ -2011,8 +2011,18 @@ had the old.
 - **15.2 Who is there**: who is in the group's room now and who shares there, seen from the
   list without being in it; a click joins; a notice as someone starts sharing. Inside, the room
   is stage 10's and 7's as they are.
-  So far: how many are there (each device watching the room's key at the servers, L26:
-  `Group::present`), and a click joins; who they are and who shares, not yet.
+  Done: how many are there (each device watching the room's key at the servers, L26:
+  `Group::present`); who they are and who shares (`Group::here`), each device there telling
+  the members met that it is — in, sharing, out again (the `Here` message, to a member that
+  proved the secret) — and the members outside meeting them for it while the count is not
+  nought (their home nodes registered under the group's key then too: a group with nobody in
+  its room keeps nobody in touch); a notice as one starts sharing, or is found sharing as met,
+  while this device is not there (`PeopleHandlers::shares`: a banner with Join, the window's
+  icon flashing, the tray's message when the window is in it); a click joins. Not told: this
+  person's own devices in the room (counted, not named), an app of a version before. Tested:
+  three members, one in the room and sharing, another coming in, one more joining as she
+  shares, all leaving; on the controllers, a member outside told who is in and of her
+  share.
 - **15.3 The app**: groups listed beside friends (14) on the start page.
   So far: the groups above the friends (`GroupsPanel.qml`), each with how many are in its room
   and a button to join it; a group made by name and entered at once, its link the room's

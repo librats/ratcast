@@ -143,8 +143,17 @@
         <translation>房间内：%1</translation>
     </message>
     <message>
+        <source>in the room: %1</source>
+        <comment>who, by name</comment>
+        <translation>房间内：%1</translation>
+    </message>
+    <message>
         <source>nobody in the room</source>
         <translation>房间内没有人</translation>
+    </message>
+    <message>
+        <source>sharing: %1</source>
+        <translation>正在共享：%1</translation>
     </message>
     <message>
         <source>Join</source>
@@ -336,6 +345,14 @@
     <message>
         <source>Decline</source>
         <translation>拒绝</translation>
+    </message>
+    <message>
+        <source>%1 is sharing in %2</source>
+        <translation>%1 正在 %2 中共享</translation>
+    </message>
+    <message>
+        <source>a group</source>
+        <translation>一个群组</translation>
     </message>
     <message>
         <source>Become this person on this device?</source>

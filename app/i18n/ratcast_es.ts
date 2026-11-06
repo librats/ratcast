@@ -143,8 +143,17 @@
         <translation>en la sala: %1</translation>
     </message>
     <message>
+        <source>in the room: %1</source>
+        <comment>who, by name</comment>
+        <translation>en la sala: %1</translation>
+    </message>
+    <message>
         <source>nobody in the room</source>
         <translation>nadie en la sala</translation>
+    </message>
+    <message>
+        <source>sharing: %1</source>
+        <translation>comparte: %1</translation>
     </message>
     <message>
         <source>Join</source>
@@ -336,6 +345,14 @@
     <message>
         <source>Decline</source>
         <translation>Rechazar</translation>
+    </message>
+    <message>
+        <source>%1 is sharing in %2</source>
+        <translation>%1 está compartiendo en %2</translation>
+    </message>
+    <message>
+        <source>a group</source>
+        <translation>un grupo</translation>
     </message>
     <message>
         <source>Become this person on this device?</source>

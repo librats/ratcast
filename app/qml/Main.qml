@@ -373,6 +373,77 @@ ApplicationWindow {
         onRejected: if (ring) people.answerRing(ring.id, false)
     }
 
+    // Someone sharing in a group's room this device is not in: told for a
+    // while at the top, the window's icon flashing, and from the tray when
+    // the window is in it; joined from here when in no room.
+    Popup {
+        id: shareNotice
+
+        property string group
+        property string text
+
+        parent: Overlay.overlay
+        x: (parent.width - width) / 2
+        y: 12
+        width: Math.min(root.width - 32, 420)
+        padding: 12
+        closePolicy: Popup.CloseOnEscape
+
+        Timer {
+            id: shareNoticeFor
+            interval: 15000
+            onTriggered: shareNotice.close()
+        }
+
+        RowLayout {
+            width: parent.width
+            spacing: 8
+
+            Glyph {
+                glyph: "screen-share"
+                color: Material.accent
+            }
+            Label {
+                Layout.fillWidth: true
+                text: shareNotice.text
+                textFormat: Text.PlainText
+                wrapMode: Text.Wrap
+            }
+            Button {
+                text: qsTr("Join")
+                icon.source: "icons/log-in.svg"
+                highlighted: true
+                visible: call.state === CallController.Idle
+                onClicked: {
+                    shareNotice.close()
+                    if (!root.visible)
+                        root.fromTray()
+                    call.enter(shareNotice.group)
+                }
+            }
+            ToolButton {
+                display: AbstractButton.IconOnly
+                icon.source: "icons/x.svg"
+                onClicked: shareNotice.close()
+            }
+        }
+    }
+
+    Connections {
+        target: people
+        function onShares(group, groupName, name) {
+            shareNotice.group = group
+            shareNotice.text = qsTr("%1 is sharing in %2")
+                .arg(name.length > 0 ? name : qsTr("Someone"))
+                .arg(groupName.length > 0 ? groupName : qsTr("a group"))
+            shareNotice.open()
+            shareNoticeFor.restart()
+            root.alert(0)
+            if (tray.visible && !root.visible)
+                tray.showMessage("ratcast", shareNotice.text)
+        }
+    }
+
     // A device link opened here: this device becomes its person, if they say yes.
     Dialog {
         id: joinAsDevice

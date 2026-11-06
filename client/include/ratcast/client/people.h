@@ -51,13 +51,16 @@
  * person knows, so that each of their devices may change it) or joined by
  * its link (join_group()), and kept so on every device of the person's until
  * they leave it. Its room is a room like any other (Group::room, its main
- * channel's secret); who is there is seen without being there, each device
- * watching the room's key at the servers (Group::present). Its
- * log goes between members as their home nodes meet: while a device is in
- * the group's room (set_in_room()), or knows nothing of it yet, it is
- * registered under the group's key too (of the secret), and those met there
- * prove the secret and tell each other what they know — the maker's
- * renaming (rename_group()) as well, to members met.
+ * channel's secret); how many are there is seen without being there, each
+ * device watching the room's key at the servers (Group::present). Its log
+ * goes between members as their home nodes meet: while a device is in the
+ * group's room (set_in_room()), knows nothing of it yet, or sees someone
+ * there, it is registered under the group's key too (of the secret), and
+ * those met there prove the secret and tell each other what they know — the
+ * maker's renaming (rename_group()) as well, to members met — and whether
+ * they are in its room, sharing there or not (set_sharing()): who is there
+ * (Group::here), told by each of them, and a notice as one starts sharing
+ * (PeopleHandlers::shares).
  *
  * Threads: every method may be called from any thread. Handlers run on the
  * network's threads, never under People's lock, and must not block or
@@ -159,6 +162,16 @@ struct Group {
     /// How many are in its room now, as seen at the servers: this device
     /// too, while it is there.
     size_t present = 0;
+    /// A member in its room, as their device there tells: each person once.
+    struct Here {
+        PersonId person;
+        std::string name;
+        /// Sharing a screen there, on any device of theirs.
+        bool sharing = false;
+    };
+    /// Who of `present` is there, as far as they told this device, by name;
+    /// neither this person nor a device whose app tells nothing.
+    std::vector<Here> here;
 };
 
 enum class RingEnd : uint8_t {
@@ -216,6 +229,9 @@ struct PeopleHandlers {
     /// A ring ended, this one's (ring()) or a friend's to it, but not by
     /// this device's own answer() or hang_up().
     std::function<void(const Ring& ring, RingEnd end)> ring_ended = {};
+    /// A member is sharing in a group's room, seen so now — started, or
+    /// found sharing as they were met — while this device is not there.
+    std::function<void(const Group& group, const Group::Here& who)> shares = {};
 };
 
 class People {
@@ -266,6 +282,9 @@ public:
     /// This device is in a room — `group`'s, if it is a group's — or no
     /// longer: friends see so while it is, and the group's members met.
     void set_in_room(bool in_room, std::optional<GroupId> group = std::nullopt);
+    /// This device shares a screen in its room, or no longer: a group's
+    /// members met told so (Group::here).
+    void set_sharing(bool sharing);
 
     // ── Groups ──────────────────────────────────────────────────────────────
 

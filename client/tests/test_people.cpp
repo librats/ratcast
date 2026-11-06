@@ -149,6 +149,11 @@ public:
                     std::lock_guard lock(mutex_);
                     ended_.emplace_back(ring, end);
                 },
+            .shares =
+                [this](const Group& group, const Group::Here& who) {
+                    std::lock_guard lock(mutex_);
+                    shares_.emplace_back(group.name, who.name);
+                },
         };
         Result<std::unique_ptr<People>> started = People::start(config, handlers);
         ASSERT_TRUE(started);
@@ -170,6 +175,11 @@ public:
         for (const auto& [r, end] : ended_)
             if (r.id == ring.id) return end;
         return std::nullopt;
+    }
+    /// Who it was told shares, in which group: by name.
+    std::vector<std::pair<std::string, std::string>> shares() const {
+        std::lock_guard lock(mutex_);
+        return shares_;
     }
 
     bool has_friend(const People& other) const {
@@ -204,6 +214,7 @@ private:
     std::optional<std::string> asking_;
     std::vector<Ring> rung_;
     std::vector<std::pair<Ring, RingEnd>> ended_;
+    std::vector<std::pair<std::string, std::string>> shares_;
 };
 
 /// Each test's devices in a folder of their own.
@@ -645,6 +656,16 @@ std::optional<Group> group_of(const Device& device, const GroupId& id) {
     return device.people->group(id);
 }
 
+/// Who `device` sees in the group's room, by name, "*" after one sharing.
+std::string here(const Device& device, const GroupId& id) {
+    std::string out;
+    const std::optional<Group> group = group_of(device, id);
+    if (!group) return "(none)";
+    for (const Group::Here& who : group->here)
+        out += (out.empty() ? "" : " ") + who.name + (who.sharing ? "*" : "");
+    return out;
+}
+
 }  // namespace
 
 TEST_F(PeopleTest, AGroupIsJoinedByItsLinkAndCaughtUpByAMemberInItsRoom) {
@@ -718,6 +739,58 @@ TEST_F(PeopleTest, WhoIsInAGroupsRoomIsSeenFromTheList) {
     bob->people->leave_group(made.id);
     EXPECT_FALSE(group_of(*bob, made.id));
     EXPECT_TRUE(bob->people->groups().empty());
+}
+
+TEST_F(PeopleTest, WhoIsInAGroupsRoomAndWhoSharesIsToldToTheMembersOutside) {
+    auto ann = device("Ann");
+    auto bob = device("Bob");
+    auto carl = device("Carl");
+    const Group made = *ann->people->make_group("Films");
+    ASSERT_TRUE(bob->people->join_group(made.link));
+    ASSERT_TRUE(carl->people->join_group(made.link));
+    const std::string key = room_key(made.room);
+
+    // Ann in its room: her call there, her home node telling the members met.
+    auto ann_call = std::make_unique<InTheRoom>(server_address(), key);
+    ann->people->set_in_room(true, made.id);
+    EXPECT_TRUE(wait_for([&] {
+        return here(*bob, made.id) == "Ann" && here(*carl, made.id) == "Ann";
+    })) << here(*bob, made.id)
+        << " / " << here(*carl, made.id);
+    EXPECT_EQ(group_of(*bob, made.id)->name, "Films");
+    EXPECT_EQ(here(*ann, made.id), "") << "nobody but her";
+
+    // Sharing: seen, and a notice to each outside.
+    ann->people->set_sharing(true);
+    EXPECT_TRUE(wait_for([&] { return bob->shares().size() == 1 && carl->shares().size() == 1; }));
+    EXPECT_EQ(bob->shares().front(), (std::pair<std::string, std::string>{"Films", "Ann"}));
+    EXPECT_EQ(here(*bob, made.id), "Ann*");
+
+    // Bob comes in: Carl sees him there, and Bob, there, is told of no share.
+    auto bob_call = std::make_unique<InTheRoom>(server_address(), key);
+    bob->people->set_in_room(true, made.id);
+    EXPECT_TRUE(wait_for([&] { return here(*carl, made.id) == "Ann* Bob"; }))
+        << here(*carl, made.id);
+    ann->people->set_sharing(false);
+    EXPECT_TRUE(wait_for([&] { return here(*carl, made.id) == "Ann Bob"; }));
+    ann->people->set_sharing(true);
+    EXPECT_TRUE(wait_for([&] { return carl->shares().size() == 2; }));
+    EXPECT_EQ(bob->shares().size(), 1u);
+
+    // Dan, joining as Ann shares, finds her so: a notice too.
+    auto dan = device("Dan");
+    ASSERT_TRUE(dan->people->join_group(made.link));
+    EXPECT_TRUE(wait_for([&] { return here(*dan, made.id) == "Ann* Bob"; })) << here(*dan, made.id);
+    EXPECT_EQ(dan->shares().size(), 1u);
+
+    // Ann leaves; then Bob, and nobody is there.
+    ann->people->set_in_room(false);
+    ann_call.reset();
+    EXPECT_TRUE(wait_for([&] { return here(*carl, made.id) == "Bob"; })) << here(*carl, made.id);
+    bob->people->set_in_room(false);
+    bob_call.reset();
+    EXPECT_TRUE(wait_for(
+        [&] { return here(*carl, made.id).empty() && group_of(*carl, made.id)->present == 0; }));
 }
 
 TEST_F(PeopleTest, AGroupIsKeptOnEachDeviceOfThePersonChangedOnAnyAndLeftOnAll) {

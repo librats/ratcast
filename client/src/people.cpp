@@ -4,11 +4,13 @@
 #include <chrono>
 #include <condition_variable>
 #include <filesystem>
+#include <iterator>
 #include <map>
 #include <mutex>
 #include <set>
 #include <span>
 #include <thread>
+#include <tuple>
 
 #include "book.h"
 #include "bytes.h"
@@ -56,6 +58,9 @@ constexpr std::string_view kDeviceKind = "d";
 //   Unring   16-byte id, u8 why (0 hung up, 1 missed, 2 answered elsewhere)
 //   Group    32-byte proof, u32 length + the group's log (group.h; none: the
 //            sender asks for the receiver's)
+//   Here     32-byte group id, u8 where (0 not in its room, 1 in it, 2 sharing
+//            there): to a member met that proved the group's secret, once it
+//            did, and again as it changes
 // A proof is the MAC of what it proves under the secret: "ratcast request",
 // "ratcast pair" or "ratcast group", the sender's peer id, the receiver's —
 // a group's under its secret, the group found by it.
@@ -73,9 +78,11 @@ enum class Kind : uint8_t {
     Ring,
     Rung,
     Unring,
-    Group
+    Group,
+    Here
 };
 enum class Why : uint8_t { HungUp = 0, Missed = 1, AnsweredElsewhere = 2 };
+enum class Where : uint8_t { Out = 0, In = 1, Sharing = 2 };
 
 /// The longest room link a ring carries.
 constexpr size_t kMostRoomLink = 4096;
@@ -279,23 +286,51 @@ struct People::State {
 
     // ── Groups ───────────────────────────────────────────────────────────────
 
+    /// How many are in `group`'s room, as the servers tell.
+    size_t present(const GroupId& group, const GroupEntry& entry) const {
+        return rendezvous ? rendezvous->registered(room_key(channel(entry.link(group)))) : 0;
+    }
+
     /// Whether this device meets `group`'s members now: while in its room,
-    /// or knowing nothing of it yet (joined by its link, nobody met).
+    /// knowing nothing of it yet (joined by its link, nobody met), or while
+    /// someone is there, to be told who.
     bool meets(const GroupId& group, const GroupEntry& entry) const {
-        return !entry.left && (room_group == group || entry.log.empty());
+        return !entry.left &&
+               (room_group == group || entry.log.empty() || present(group, entry) > 0);
+    }
+
+    /// Who is in `group`'s room as told here: each person once, by name.
+    std::vector<Group::Here> here_in(const GroupId& group) const {
+        std::vector<Group::Here> out;
+        const auto told = here.find(group);
+        if (told == here.end()) return out;
+        for (const auto& [peer, shares] : told->second) {
+            const auto who = met.find(peer);
+            if (who == met.end()) continue;
+            const auto it = std::ranges::find(out, who->second.person, &Group::Here::person);
+            if (it != out.end()) {
+                it->sharing = it->sharing || shares;
+                continue;
+            }
+            out.push_back(Group::Here{
+                .person = who->second.person, .name = who->second.name, .sharing = shares});
+        }
+        std::ranges::sort(out, [](const Group::Here& a, const Group::Here& b) {
+            return std::tie(a.name, a.person) < std::tie(b.name, b.person);
+        });
+        return out;
     }
 
     Group group_of(const GroupId& id, const GroupEntry& entry) const {
         const GroupLink link = entry.link(id);
-        const RoomSecret room = channel(link);
-        const size_t present = rendezvous ? rendezvous->registered(room_key(room)) : 0;
         return Group{.id = id,
                      .name = told_name(entry.log.name()),
                      .link = to_web_link(link),
-                     .room = room,
+                     .room = channel(link),
                      .made = entry.key.has_value(),
                      .since = entry.since,
-                     .present = present};
+                     .present = present(id, entry),
+                     .here = here_in(id)};
     }
 
     /// The proof of the group's secret to `peer`, and the log if `with_log`
@@ -318,6 +353,21 @@ struct People::State {
     void tell_members(const GroupId& group) {
         for (const auto& [peer, groups] : members_met)
             if (groups.contains(group)) send_group(peer, group, true);
+    }
+
+    /// Whether this device is in `group`'s room, and sharing there, to `peer`.
+    void send_here(const PeerId& peer, const GroupId& group) {
+        const Where where = room_group != group ? Where::Out : sharing ? Where::Sharing : Where::In;
+        Out out(Kind::Here);
+        out.bytes(group.key);
+        out.u8(uint8_t(where));
+        send(peer, out);
+    }
+
+    /// The same to each of the group's members met: it changed.
+    void tell_here(const GroupId& group) {
+        for (const auto& [peer, groups] : members_met)
+            if (groups.contains(group)) send_here(peer, group);
     }
 
     void update_keys() {
@@ -458,6 +508,7 @@ struct People::State {
         std::optional<bool> joined;
         std::vector<Ring> rung;
         std::vector<std::pair<Ring, RingEnd>> ended;
+        std::vector<std::pair<Group, Group::Here>> shares;
     };
 
     /// Rings past their time: missed. Under the lock.
@@ -630,6 +681,13 @@ struct People::State {
                 on_group(peer, person, got, log, after);
                 return;
             }
+            case Kind::Here: {
+                const GroupId group{in.array<32>()};
+                const auto where = Where(in.u8());
+                if (!in.ok()) return;
+                on_here(peer, person, group, where, after);
+                return;
+            }
             case Kind::Pair: {
                 const auto got = in.array<32>();
                 const std::string name = told_name(in.text(in.u8()));
@@ -704,13 +762,50 @@ struct People::State {
                     after.changed = true;
                 }
             }
-            // What is known here, once to each member met.
+            // What is known here, once to each member met, and whether this
+            // device is in its room.
             bool& told = members_met[peer][group];
             if (!told) {
                 told = true;
                 send_group(peer, group, true);
+                send_here(peer, group);
             }
             return;
+        }
+    }
+
+    /// A member met is in a group's room, or sharing there, or not.
+    void on_here(const PeerId& peer, const PersonId& person, const GroupId& group, Where where,
+                 After& after) {
+        // Only from one that proved the group's secret.
+        const auto proven = members_met.find(peer);
+        if (proven == members_met.end() || !proven->second.contains(group)) return;
+        const auto sharing_now = [&] {
+            for (const Group::Here& who : here_in(group))
+                if (who.person == person) return who.sharing;
+            return false;
+        };
+        const bool was_sharing = sharing_now();
+        std::map<PeerId, bool>& told = here[group];
+        const auto it = told.find(peer);
+        if (where == Where::Out) {
+            if (it == told.end()) {
+                if (told.empty()) here.erase(group);
+                return;
+            }
+            told.erase(it);
+            if (told.empty()) here.erase(group);
+        } else {
+            const bool shares = where == Where::Sharing;
+            if (it != told.end() && it->second == shares) return;
+            told[peer] = shares;
+        }
+        after.changed = true;
+        if (!was_sharing && sharing_now() && room_group != group) {
+            const Group now = group_of(group, book.groups.at(group));
+            for (const Group::Here& who : now.here)
+                if (who.person == person) after.shares.emplace_back(now, who);
+            LOG_INFO("people", person.tag() << " shares in group " << group.tag());
         }
     }
 
@@ -869,6 +964,8 @@ struct People::State {
             for (const Ring& ring : after.rung) handlers.rung(ring);
         if (handlers.ring_ended)
             for (const auto& [ring, end] : after.ended) handlers.ring_ended(ring, end);
+        if (handlers.shares)
+            for (const auto& [group, who] : after.shares) handlers.shares(group, who);
     }
 
     PeopleConfig config;
@@ -881,9 +978,13 @@ struct People::State {
     std::optional<PersonLink> joining;
     bool in_room = false;               ///< this device, as set_in_room() says
     std::optional<GroupId> room_group;  ///< the group whose room it is in
+    bool sharing = false;               ///< there, as set_sharing() says
     /// Peers met that proved a group's secret, and whether this side told
     /// them its log since they said Hello.
     std::map<PeerId, std::map<GroupId, bool>> members_met;
+    /// Of those, the ones that said they are in a group's room: sharing there
+    /// or not.
+    std::map<GroupId, std::map<PeerId, bool>> here;
     /// The ring this device makes, until it is answered or missed.
     struct Outgoing {
         Ring ring;
@@ -957,8 +1058,13 @@ People::People(PeopleConfig config, PeopleHandlers handlers) {
     meeting.watched = s.watched();
     s.rendezvous = s.node.add_subsystem(std::make_unique<librats::Rendezvous>(meeting));
     // A friend came online or went, or into a room or out (friends() reads
-    // the counts as they are).
+    // the counts as they are); a group's room no longer empty, or empty: its
+    // members there met for, to be told who they are, or no longer.
     s.rendezvous->on_watched([&s](const std::string&, size_t) {
+        {
+            std::lock_guard lock(s.mutex);
+            s.update_keys();
+        }
         if (s.handlers.changed) s.handlers.changed();
     });
     s.node.add_subsystem(std::make_unique<librats::HolePunch>());
@@ -1003,6 +1109,11 @@ People::People(PeopleConfig config, PeopleHandlers handlers) {
             }
             if (s.pairing && s.pairing->asking == peer) s.pairing->asking.reset();
             s.members_met.erase(peer);
+            // Out of the rooms it was in, as far as is known here.
+            for (auto it = s.here.begin(); it != s.here.end();) {
+                gone = it->second.erase(peer) > 0 || gone;
+                it = it->second.empty() ? s.here.erase(it) : std::next(it);
+            }
         }
         if (gone && s.handlers.changed) s.handlers.changed();
     });
@@ -1160,9 +1271,21 @@ void People::set_in_room(bool in_room, std::optional<GroupId> group) {
     std::lock_guard lock(s.mutex);
     if (!in_room) group.reset();
     if (s.in_room == in_room && s.room_group == group) return;
+    const std::optional<GroupId> before = s.room_group;
     s.in_room = in_room;
     s.room_group = group;
+    // The members met of the group's room left, and of the one entered.
+    if (before && before != group) s.tell_here(*before);
+    if (group && before != group) s.tell_here(*group);
     s.update_keys();  // met there by the group's members in it too
+}
+
+void People::set_sharing(bool sharing) {
+    State& s = *state_;
+    std::lock_guard lock(s.mutex);
+    if (s.sharing == sharing) return;
+    s.sharing = sharing;
+    if (s.room_group) s.tell_here(*s.room_group);
 }
 
 // ── Groups ──────────────────────────────────────────────────────────────────
@@ -1245,6 +1368,7 @@ void People::leave_group(const GroupId& group) {
         it->second.left = true;
         it->second.at = std::max(seconds_now(), it->second.at + 1);
         for (auto& [peer, groups] : s.members_met) groups.erase(group);
+        s.here.erase(group);
         s.save();
         s.update_keys();  // neither met for nor watched
         s.tell_own();

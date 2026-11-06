@@ -108,6 +108,13 @@ void PeopleController::start() {
                     }
                 });
             },
+        .shares =
+            [this, generation](const Group& group, const Group::Here& who) {
+                post(generation,
+                     [this, id = QString::fromStdString(group.id.to_hex()),
+                      group = QString::fromStdString(group.name),
+                      name = QString::fromStdString(who.name)] { Q_EMIT shares(id, group, name); });
+            },
     };
     Result<std::unique_ptr<People>> started = People::start(std::move(config), std::move(handlers));
     if (!started) {
@@ -267,6 +274,15 @@ QVariantList PeopleController::groups() const {
     QVariantList list;
     if (!people_) return list;
     for (const Group& g : people_->groups()) {
+        QVariantList here;
+        for (const Group::Here& who : g.here) {
+            here.push_back(QVariantMap{
+                {QStringLiteral("person"), hex_of(who.person)},
+                {QStringLiteral("name"), QString::fromStdString(who.name)},
+                {QStringLiteral("tag"), QString::fromStdString(who.person.tag())},
+                {QStringLiteral("sharing"), who.sharing},
+            });
+        }
         list.push_back(QVariantMap{
             {QStringLiteral("id"), QString::fromStdString(g.id.to_hex())},
             {QStringLiteral("name"), QString::fromStdString(g.name)},
@@ -274,6 +290,7 @@ QVariantList PeopleController::groups() const {
             {QStringLiteral("link"), QString::fromStdString(g.link)},
             {QStringLiteral("made"), g.made},
             {QStringLiteral("present"), int(g.present)},
+            {QStringLiteral("here"), here},
         });
     }
     return list;

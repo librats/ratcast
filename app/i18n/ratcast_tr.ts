@@ -143,8 +143,17 @@
         <translation>odada: %1</translation>
     </message>
     <message>
+        <source>in the room: %1</source>
+        <comment>who, by name</comment>
+        <translation>odada: %1</translation>
+    </message>
+    <message>
         <source>nobody in the room</source>
         <translation>odada kimse yok</translation>
+    </message>
+    <message>
+        <source>sharing: %1</source>
+        <translation>paylaşıyor: %1</translation>
     </message>
     <message>
         <source>Join</source>
@@ -336,6 +345,14 @@
     <message>
         <source>Decline</source>
         <translation>Reddet</translation>
+    </message>
+    <message>
+        <source>%1 is sharing in %2</source>
+        <translation>%1, %2 içinde paylaşıyor</translation>
+    </message>
+    <message>
+        <source>a group</source>
+        <translation>bir grup</translation>
     </message>
     <message>
         <source>Become this person on this device?</source>

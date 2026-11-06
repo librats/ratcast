@@ -143,8 +143,17 @@
         <translation>방에 %1명</translation>
     </message>
     <message>
+        <source>in the room: %1</source>
+        <comment>who, by name</comment>
+        <translation>방에: %1</translation>
+    </message>
+    <message>
         <source>nobody in the room</source>
         <translation>방에 아무도 없음</translation>
+    </message>
+    <message>
+        <source>sharing: %1</source>
+        <translation>공유 중: %1</translation>
     </message>
     <message>
         <source>Join</source>
@@ -336,6 +345,14 @@
     <message>
         <source>Decline</source>
         <translation>거절</translation>
+    </message>
+    <message>
+        <source>%1 is sharing in %2</source>
+        <translation>%1 님이 %2에서 공유하고 있습니다</translation>
+    </message>
+    <message>
+        <source>a group</source>
+        <translation>그룹</translation>
     </message>
     <message>
         <source>Become this person on this device?</source>

@@ -5,7 +5,7 @@ import { Footer } from "./Footer";
 import { Logo } from "./Nav";
 
 /** When the policy last changed: change it with the text. */
-export const PRIVACY_UPDATED = "November 5, 2026";
+export const PRIVACY_UPDATED = "November 6, 2026";
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
@@ -132,8 +132,10 @@ export function Privacy() {
             </li>
             <li>
               A group is joined by its link, which anyone you send it to can open. Its members' devices keep its name
-              and tell it to each other, encrypted, as they meet in its room. Who is in a group's room is seen the same
-              way: the server counts the devices listed under a code only those with the group's link can work out.
+              and tell it to each other, encrypted, as they meet in its room. How many are in a group's room is seen
+              the same way: the server counts the devices listed under a code only those with the group's link can
+              work out. While someone is there, the members' devices meet theirs, and each device in the room tells
+              them, encrypted, that it is there, by the name you gave, and whether it shares its screen.
             </li>
           </ul>
         </Section>

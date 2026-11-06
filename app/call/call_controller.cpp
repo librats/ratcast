@@ -1231,10 +1231,12 @@ void CallController::set_state(State state) {
 
 void CallController::tell_in_room() {
     // Friends see it (People::set_in_room()), while it is, and a group's
-    // members met there catch each other up.
+    // members met there catch each other up; those outside see who is there,
+    // and who shares.
     if (!people_ || !people_->people()) return;
     const std::optional<GroupId> group = GroupId::from_hex(group_.toStdString());
     people_->people()->set_in_room(state_ == State::InRoom, group);
+    people_->people()->set_sharing(sharing_);
 }
 
 void CallController::set_notice(QString notice) {
@@ -1248,6 +1250,7 @@ void CallController::set_notice(QString notice) {
 void CallController::set_sharing(bool sharing) {
     if (sharing == sharing_) return;
     sharing_ = sharing;
+    tell_in_room();
     Q_EMIT sharingChanged();
 }
 

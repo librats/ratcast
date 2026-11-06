@@ -143,8 +143,17 @@
         <translation>في الغرفة: %1</translation>
     </message>
     <message>
+        <source>in the room: %1</source>
+        <comment>who, by name</comment>
+        <translation>في الغرفة: %1</translation>
+    </message>
+    <message>
         <source>nobody in the room</source>
         <translation>لا أحد في الغرفة</translation>
+    </message>
+    <message>
+        <source>sharing: %1</source>
+        <translation>يشارك: %1</translation>
     </message>
     <message>
         <source>Join</source>
@@ -336,6 +345,14 @@
     <message>
         <source>Decline</source>
         <translation>رفض</translation>
+    </message>
+    <message>
+        <source>%1 is sharing in %2</source>
+        <translation>%1 يشارك الشاشة في %2</translation>
+    </message>
+    <message>
+        <source>a group</source>
+        <translation>مجموعة</translation>
     </message>
     <message>
         <source>Become this person on this device?</source>

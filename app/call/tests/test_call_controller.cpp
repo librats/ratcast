@@ -15,6 +15,7 @@
 #include <QCoreApplication>
 #include <QDir>
 #include <QGuiApplication>
+#include <QStringList>
 #include <QTemporaryDir>
 
 #include <algorithm>
@@ -1221,6 +1222,21 @@ TEST_F(CallControllerTest, AGroupsRoomIsEnteredFromTheListAndByItsLink) {
     bob_.leave();
     EXPECT_EQ(bob_.group(), "");
     EXPECT_TRUE(wait_for([&] { return bobs().value("present").toInt() == 1; }));
+    // Who it is, told by her home node; and, as she shares, a notice.
+    const auto here = [&] { return bobs().value("here").toList(); };
+    EXPECT_TRUE(wait_for([&] { return here().size() == 1; }));
+    EXPECT_EQ(here().value(0).toMap().value("name"), "Ann");
+    EXPECT_FALSE(here().value(0).toMap().value("sharing").toBool());
+    QStringList told;
+    QObject::connect(&bob_people, &PeopleController::shares,
+                     [&](const QString& group, const QString& name, const QString& who) {
+                         told << group + " " + name + " " + who;
+                     });
+    ann_.share(false, false);
+    ASSERT_TRUE(wait_for([&] { return ann_.sharing(); })) << ann_.notice().toStdString();
+    EXPECT_TRUE(wait_for([&] { return here().value(0).toMap().value("sharing").toBool(); }));
+    EXPECT_TRUE(wait_for([&] { return told.size() == 1; }));
+    EXPECT_EQ(told.value(0), id + " Films Ann");
     bob_.enter(id);
     EXPECT_EQ(bob_.state(), State::InRoom);
     EXPECT_TRUE(wait_for([&] { return !member(bob_, "Ann").isEmpty(); }));
