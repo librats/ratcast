@@ -172,12 +172,24 @@
         <translation>Переименовать</translation>
     </message>
     <message>
+        <source>Reset the link</source>
+        <translation>Сбросить ссылку</translation>
+    </message>
+    <message>
         <source>Leave the group</source>
         <translation>Выйти из группы</translation>
     </message>
     <message>
         <source>Point a phone&apos;s camera at it to join the group there.</source>
         <translation>Наведите на него камеру телефона, чтобы вступить в группу там.</translation>
+    </message>
+    <message>
+        <source>Reset the link of %1?</source>
+        <translation>Сбросить ссылку группы %1?</translation>
+    </message>
+    <message>
+        <source>The old link stops letting anyone in. The group&apos;s members stay, and their devices are given the new link as they meet; someone who had only the old link and never met a member is left out. Send the new link to whoever is still to join.</source>
+        <translation>По старой ссылке больше никто не войдёт. Участники группы остаются, их устройства получают новую ссылку при встрече; кто знал только старую ссылку и ни разу не встречался с участником, останется за дверью. Отправьте новую ссылку тем, кто ещё должен вступить.</translation>
     </message>
     <message>
         <source>Rename the group</source>
@@ -978,6 +990,10 @@
     <message>
         <source>A group needs a name.</source>
         <translation>У группы должно быть название.</translation>
+    </message>
+    <message>
+        <source>The group has a new link: the old one lets nobody in, and its members are given the new one.</source>
+        <translation>У группы новая ссылка: по старой никто не войдёт, а участники получат новую.</translation>
     </message>
     <message>
         <source>That is not a link to a person.</source>

@@ -1978,7 +1978,7 @@ had the old.
   - a member is a person (14.1's key), not a device: what is kept of members, and roles later,
     is by person.
 
-  Done so far (the link's reset is next): `group.h` — `GroupId` (the public key of a key pair
+  Done: `group.h` — `GroupId` (the public key of a key pair
   of a person's kind, kept by the maker with what they know, so that each of their devices may
   change the group), `GroupLink` (`/g/#GROUP.SECRET`, `rats://g/…`; the website's page, the
   App Links, the system's links), `channel()` (a room's secret, of the group's secret and a channel's
@@ -2008,6 +2008,27 @@ had the old.
   and left on each of the person's devices; three calls under one key meeting, one under
   another meeting none; on the controllers, a group made and entered, joined by its link into
   the same room, named there, seen from the list.
+
+  The link's reset (`People::reset_group_link()`): a change of its own in the log (Reset: the
+  new secret's mark, `secret_mark()`, never the secret, and the members it keeps, by person —
+  126 at most), the new secret given to the kept as they meet one who has it (Rekey: a proof
+  of the old secret, the new one, the log; taken only if the log's last reset marks it,
+  `GroupLog::current()`). Members are known as they meet: each device keeps those that proved
+  the secret to it and those they told of (a Group message carries the members its sender
+  knows), so the maker keeps whom any member met. Those met as it is reset are given it at
+  once; the rest later — each device with the new secret is registered under the group's key
+  of the old one and under a key that says it was reset (`reset_key()`, at the servers), which
+  every member watches: one with only the old secret, seeing someone there, meets them under
+  it and is given the new one if it is kept, told nothing if not. Its room moves with it: those
+  in the old one are taken into the new (`CallController`). A member's devices settle on the
+  secret the log marks whatever they merged (`GroupEntry::settle()`), so a link of before the
+  reset, opened again, changes nothing. Not covered: one who missed two resets (the secret
+  before the last alone is met under), one never met by a member before the reset, and with no
+  server a member away at the reset (nothing to watch: the DHT has no counts). Tested: the
+  reset's change, its mark and the last one standing; a member met given it at once, one away
+  given it as they come back, one with the old link alone told nothing, the new link letting
+  in, the old one opened again by a member changing nothing; on each of the person's devices;
+  on the controllers, two in the room both moved into the new one.
 - **15.2 Who is there**: who is in the group's room now and who shares there, seen from the
   list without being in it; a click joins; a notice as someone starts sharing. Inside, the room
   is stage 10's and 7's as they are.

@@ -43,7 +43,8 @@ ratcast is built on [librats](https://github.com/librats/librats). It comes in t
   like.
 - **Groups.** A room that lasts, for those who meet often: make one, send its link
   (`https://ratcast.app/g/#…`) once, and see from the start who is in it now — a click and
-  you are there. Its members' devices keep it; no server holds it.
+  you are there, and who shares. Its members' devices keep it; no server holds it. A link
+  that got out is reset: the old one lets nobody in, the members are given the new one.
 - **Share a screen or a window with its sound.** Viewers hear what your applications play, but
   never the call's own voices.
 - **Voice that is easy to listen to.** Echo cancellation, noise suppression and automatic gain

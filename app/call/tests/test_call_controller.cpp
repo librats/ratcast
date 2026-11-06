@@ -1247,6 +1247,44 @@ TEST_F(CallControllerTest, AGroupsRoomIsEnteredFromTheListAndByItsLink) {
     bob_.setPeople(nullptr);
 }
 
+// A group's link reset while its members are in its room: the room moves
+// with it, each of them there again.
+TEST_F(CallControllerTest, AGroupsRoomMovesWithItsLinkReset) {
+    PeopleAtAServer at;
+    PeopleController ann_people;
+    PeopleController bob_people;
+    at.start(ann_people, "Ann");
+    at.start(bob_people, "Bob");
+    at.meet(ann_);
+    at.meet(bob_);
+    ann_.setPeople(&ann_people);
+    bob_.setPeople(&bob_people);
+
+    const QString id = ann_people.makeGroup("Films");
+    ann_.enter(id);
+    ASSERT_EQ(ann_.state(), State::InRoom);
+    const QString old = ann_.invites().value(0);
+    bob_.join(old);
+    ASSERT_TRUE(
+        wait_for([&] { return !member(bob_, "Ann").isEmpty() && !member(ann_, "Bob").isEmpty(); }));
+
+    ann_people.resetGroupLink(id);
+    EXPECT_TRUE(wait_for([&] {
+        return ann_.state() == State::InRoom && !ann_.invites().isEmpty() &&
+               ann_.invites().front() != old;
+    }));
+    EXPECT_EQ(ann_.group(), id);
+    EXPECT_TRUE(wait_for([&] {
+        return bob_.state() == State::InRoom && bob_.invites().value(0) == ann_.invites().value(0);
+    })) << bob_.invites().value(0).toStdString();
+    EXPECT_TRUE(
+        wait_for([&] { return !member(bob_, "Ann").isEmpty() && !member(ann_, "Bob").isEmpty(); }));
+    bob_.leave();
+    ann_.leave();
+    ann_.setPeople(nullptr);
+    bob_.setPeople(nullptr);
+}
+
 // A room is made once: its link is its secret, and the next room's another —
 // whoever had this one's is not let into that.
 TEST_F(CallControllerTest, EachRoomMadeHasALinkOfItsOwn) {

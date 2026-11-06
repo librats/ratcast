@@ -172,12 +172,24 @@
         <translation>名前を変更</translation>
     </message>
     <message>
+        <source>Reset the link</source>
+        <translation>リンクをリセット</translation>
+    </message>
+    <message>
         <source>Leave the group</source>
         <translation>グループを退出</translation>
     </message>
     <message>
         <source>Point a phone&apos;s camera at it to join the group there.</source>
         <translation>スマートフォンのカメラを向けると、そこでグループに参加できます。</translation>
+    </message>
+    <message>
+        <source>Reset the link of %1?</source>
+        <translation>%1 のリンクをリセットしますか?</translation>
+    </message>
+    <message>
+        <source>The old link stops letting anyone in. The group&apos;s members stay, and their devices are given the new link as they meet; someone who had only the old link and never met a member is left out. Send the new link to whoever is still to join.</source>
+        <translation>古いリンクでは誰も入れなくなります。グループのメンバーはそのまま残り、出会ったときに各デバイスへ新しいリンクが渡されます。古いリンクしか持たず、メンバーと一度も出会っていない人は外れます。これから参加する人には新しいリンクを送ってください。</translation>
     </message>
     <message>
         <source>Rename the group</source>
@@ -976,6 +988,10 @@
     <message>
         <source>A group needs a name.</source>
         <translation>グループには名前が必要です。</translation>
+    </message>
+    <message>
+        <source>The group has a new link: the old one lets nobody in, and its members are given the new one.</source>
+        <translation>グループに新しいリンクができました。古いリンクでは誰も入れず、メンバーには新しいリンクが渡されます。</translation>
     </message>
     <message>
         <source>That is not a link to a person.</source>

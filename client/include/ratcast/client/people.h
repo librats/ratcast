@@ -62,6 +62,16 @@
  * (Group::here), told by each of them, and a notice as one starts sharing
  * (PeopleHandlers::shares).
  *
+ * Its maker resets its link (reset_group_link()): a new secret, the old one
+ * letting nobody in from then on, its members kept — those known on this
+ * device, each member's telling the others whom it knows. Those met are given
+ * the new secret at once; each device that has it is registered under the
+ * group's key of the old secret too, and under a key that says so, which
+ * every member watches, so that one with only the old secret, seeing it,
+ * meets them and is given the new one if the reset keeps them. One who had
+ * the old link and was no member met by then is told nothing; nor is one who
+ * missed two resets (the secret before the last alone is met under).
+ *
  * Threads: every method may be called from any thread. Handlers run on the
  * network's threads, never under People's lock, and must not block or
  * destroy it.
@@ -298,6 +308,10 @@ public:
     /// A new name, told to the members met and to each as they meet.
     /// InvalidArgument for a group not made by this person, or no name.
     Result<void> rename_group(const GroupId& group, std::string name);
+    /// A new secret in the group's link: the old one lets nobody in from
+    /// now on, the members known kept, given it as they meet. The group as
+    /// it is now; InvalidArgument for one not made by this person.
+    Result<Group> reset_group_link(const GroupId& group);
     /// No longer a member, on every device of the person's.
     void leave_group(const GroupId& group);
     /// The groups, by name.

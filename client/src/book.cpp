@@ -90,8 +90,12 @@ librats::Json json_of(const Book& book) {
         librats::Json g = librats::Json::object();
         g["group"] = group.to_hex();
         g["secret"] = to_base64url(entry.secret);
+        if (entry.previous) g["previous"] = to_base64url(*entry.previous);
         if (entry.key) g["key"] = to_base64url(*entry.key);
         g["log"] = to_base64url(encode(entry.log));
+        librats::Json members = librats::Json::array();
+        for (const PersonId& member : entry.members) members.push_back(member.to_hex());
+        g["members"] = std::move(members);
         g["since"] = entry.since;
         g["at"] = entry.at;
         g["left"] = entry.left;
@@ -205,6 +209,7 @@ std::optional<Book> book_from(std::string_view text) {
             const std::optional<GroupId> group = GroupId::from_hex(g["group"].get<std::string>());
             GroupEntry entry;
             if (!group || !read_secret(g, "secret", entry.secret)) continue;
+            if (Secret previous{}; read_secret(g, "previous", previous)) entry.previous = previous;
             if (std::array<uint8_t, 32> seed{}; read_secret(g, "key", seed)) {
                 // Only the group's own.
                 if (GroupId::of(PersonKey::from_seed(seed)) == *group) entry.key = seed;
@@ -218,6 +223,14 @@ std::optional<Book> book_from(std::string_view text) {
                         entry.log = std::move(*log);
                 }
             }
+            if (g.contains("members") && g["members"].is_array()) {
+                for (const librats::Json& member : g["members"]) {
+                    if (!member.is_string()) continue;
+                    if (const std::optional<PersonId> person =
+                            PersonId::from_hex(member.get<std::string>()))
+                        entry.members.insert(*person);
+                }
+            }
             entry.since = read_u64(g, "since");
             entry.at = read_u64(g, "at");
             entry.left = read_bool(g, "left");
@@ -225,6 +238,13 @@ std::optional<Book> book_from(std::string_view text) {
         }
     }
     return book;
+}
+
+bool GroupEntry::settle(const GroupId& group) {
+    if (!previous || log.current(link(group)) || !log.current(GroupLink{group, *previous}))
+        return false;
+    std::swap(secret, *previous);
+    return true;
 }
 
 bool merge(Book& mine, const Book& theirs) {
@@ -266,8 +286,11 @@ bool merge(Book& mine, const Book& theirs) {
             continue;
         }
         GroupEntry& kept = it->second;
+        // The secret the other had, should the log say it is the group's.
+        const Secret mine_before = kept.secret;
         if (entry.at > kept.at) {
             kept.secret = entry.secret;
+            kept.previous = entry.previous;
             kept.since = entry.since;
             kept.at = entry.at;
             kept.left = entry.left;
@@ -277,8 +300,22 @@ bool merge(Book& mine, const Book& theirs) {
             kept.key = entry.key;
             changed = true;
         }
-        // The log whatever: what one device was told, the others know.
+        // The log and the members whatever: what one device was told, the
+        // others know.
         changed = kept.log.merge(group, entry.log) || changed;
+        for (const PersonId& member : entry.members)
+            changed = kept.members.insert(member).second || changed;
+        // Of the secrets the two had, the group's: a reset made or told on
+        // one device stands on all, whichever changed last.
+        for (const Secret& other : {mine_before, entry.secret}) {
+            if (other == kept.secret || kept.log.current(GroupLink{group, kept.secret}) ||
+                !kept.log.current(GroupLink{group, other}))
+                continue;
+            kept.previous = kept.secret;
+            kept.secret = other;
+            changed = true;
+        }
+        changed = kept.settle(group) || changed;
     }
     return changed;
 }

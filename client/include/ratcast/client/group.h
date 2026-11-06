@@ -18,7 +18,14 @@
  * meet; the state is what they make in order. A change of a type not known
  * here is kept and passed on, not read: what a later app adds — channels,
  * roles, bans — comes as types of its own, and apps of both kinds share a
- * group. Named (the group's name) is the one type there is now.
+ * group. Named (the group's name) and Reset (its link's secret another) are
+ * the types there are now.
+ *
+ * A reset names the new secret by its mark (secret_mark()), never itself, and
+ * the members it keeps, by person: those who had the old secret are told the
+ * new one as they meet a member who has it (people.h) if they are kept — one
+ * who had the old link alone is not. Whatever secret a member is handed is
+ * the group's only if the last reset's mark is its own (GroupLog::current()).
  */
 
 #include <array>
@@ -75,7 +82,29 @@ RoomSecret channel(const GroupLink& link, std::string_view name = kMainChannel);
 /// What a change is, of those known here.
 enum class ChangeType : uint16_t {
     Named = 1,  ///< data: the group's name, UTF-8
+    Reset = 2,  ///< data: a GroupReset (encode()) — its link's secret another
 };
+
+/// The group's link reset: the secret another from then on, given to the
+/// members it keeps.
+struct GroupReset {
+    /// The most members one reset keeps: what fits a change's data.
+    static constexpr size_t kMostKept = 126;
+
+    /// The new secret's mark (secret_mark()).
+    std::array<uint8_t, 32> mark{};
+    /// The members told the new secret, by person.
+    std::vector<PersonId> kept;
+
+    friend bool operator==(const GroupReset&, const GroupReset&) = default;
+};
+
+/// What a reset names a link's secret by: of the secret and the id, never
+/// telling the secret.
+std::array<uint8_t, 32> secret_mark(const GroupLink& link);
+/// A reset as a change's data, and back: nullopt for data that is none.
+std::vector<uint8_t> encode(const GroupReset& reset);
+std::optional<GroupReset> decode_group_reset(std::span<const uint8_t> data);
 
 /// A change to a group, signed by its key.
 struct GroupChange {
@@ -113,6 +142,11 @@ public:
     uint64_t last() const noexcept { return changes_.empty() ? 0 : changes_.back().seq; }
     /// The name the last Named change gives; "" for none.
     std::string name() const;
+    /// The last reset; nullopt if the link never was reset.
+    std::optional<GroupReset> reset() const;
+    /// Whether `link`'s secret is the group's now: the last reset's — never
+    /// reset, any is.
+    bool current(const GroupLink& link) const;
 
     friend bool operator==(const GroupLog&, const GroupLog&) = default;
 

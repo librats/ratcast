@@ -10,8 +10,9 @@ namespace ratcast {
 namespace {
 
 constexpr std::string_view kKind = "g";
-/// The form a log is written in.
+/// The form a log is written in, and a reset's data.
 constexpr uint8_t kLogForm = 1;
+constexpr uint8_t kResetForm = 1;
 
 /// What a change's signature is of: the group's, and each of its parts.
 std::vector<uint8_t> signed_part(const GroupId& group, const GroupChange& change) {
@@ -67,6 +68,36 @@ RoomSecret channel(const GroupLink& link, std::string_view name) {
     return room;
 }
 
+std::array<uint8_t, 32> secret_mark(const GroupLink& link) {
+    ByteWriter message;
+    message.bytes(bytes_of("ratcast group secret"));
+    message.bytes(link.group.key);
+    return mac(link.secret, message.bytes());
+}
+
+// A reset's data: u8 form, the 32-byte mark, u16 count, the kept persons'
+// 32-byte keys.
+std::vector<uint8_t> encode(const GroupReset& reset) {
+    ByteWriter out;
+    out.u8(kResetForm);
+    out.bytes(reset.mark);
+    const size_t count = std::min(reset.kept.size(), GroupReset::kMostKept);
+    out.u16(count);
+    for (size_t i = 0; i < count; ++i) out.bytes(reset.kept[i].key);
+    return out.take();
+}
+
+std::optional<GroupReset> decode_group_reset(std::span<const uint8_t> data) {
+    ByteReader in(data);
+    if (in.u8() != kResetForm) return std::nullopt;
+    GroupReset reset{.mark = in.array<32>()};
+    const size_t count = in.u16();
+    if (!in.ok() || count > GroupReset::kMostKept) return std::nullopt;
+    for (size_t i = 0; i < count; ++i) reset.kept.push_back(PersonId{in.array<32>()});
+    if (!in.ok() || !in.done()) return std::nullopt;
+    return reset;
+}
+
 // ── The log ─────────────────────────────────────────────────────────────────
 
 GroupChange GroupLog::append(const PersonKey& group_key, ChangeType type,
@@ -103,6 +134,20 @@ std::string GroupLog::name() const {
             return std::string(it->data.begin(), it->data.end());
     }
     return {};
+}
+
+std::optional<GroupReset> GroupLog::reset() const {
+    for (auto it = changes_.rbegin(); it != changes_.rend(); ++it) {
+        if (it->type != uint16_t(ChangeType::Reset)) continue;
+        // One of a later form, or broken: the one before stands.
+        if (std::optional<GroupReset> reset = decode_group_reset(it->data)) return reset;
+    }
+    return std::nullopt;
+}
+
+bool GroupLog::current(const GroupLink& link) const {
+    const std::optional<GroupReset> last = reset();
+    return !last || last->mark == secret_mark(link);
 }
 
 std::vector<uint8_t> encode(const GroupLog& log) {

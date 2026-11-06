@@ -172,12 +172,24 @@
         <translation>이름 바꾸기</translation>
     </message>
     <message>
+        <source>Reset the link</source>
+        <translation>링크 재설정</translation>
+    </message>
+    <message>
         <source>Leave the group</source>
         <translation>그룹 나가기</translation>
     </message>
     <message>
         <source>Point a phone&apos;s camera at it to join the group there.</source>
         <translation>휴대폰 카메라를 대면 그 기기에서 그룹에 들어갑니다.</translation>
+    </message>
+    <message>
+        <source>Reset the link of %1?</source>
+        <translation>%1의 링크를 재설정할까요?</translation>
+    </message>
+    <message>
+        <source>The old link stops letting anyone in. The group&apos;s members stay, and their devices are given the new link as they meet; someone who had only the old link and never met a member is left out. Send the new link to whoever is still to join.</source>
+        <translation>이전 링크로는 더 이상 아무도 들어올 수 없습니다. 그룹 멤버는 그대로 남고, 서로 만날 때 기기에 새 링크가 전달됩니다. 이전 링크만 있고 멤버를 한 번도 만나지 않은 사람은 제외됩니다. 아직 참여할 사람에게는 새 링크를 보내세요.</translation>
     </message>
     <message>
         <source>Rename the group</source>
@@ -976,6 +988,10 @@
     <message>
         <source>A group needs a name.</source>
         <translation>그룹에는 이름이 필요합니다.</translation>
+    </message>
+    <message>
+        <source>The group has a new link: the old one lets nobody in, and its members are given the new one.</source>
+        <translation>그룹에 새 링크가 생겼습니다. 이전 링크로는 아무도 들어올 수 없고, 멤버에게는 새 링크가 전달됩니다.</translation>
     </message>
     <message>
         <source>That is not a link to a person.</source>

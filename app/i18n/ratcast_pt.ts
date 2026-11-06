@@ -172,12 +172,24 @@
         <translation>Renomear</translation>
     </message>
     <message>
+        <source>Reset the link</source>
+        <translation>Redefinir o link</translation>
+    </message>
+    <message>
         <source>Leave the group</source>
         <translation>Sair do grupo</translation>
     </message>
     <message>
         <source>Point a phone&apos;s camera at it to join the group there.</source>
         <translation>Aponte a câmera de um celular para entrar no grupo nele.</translation>
+    </message>
+    <message>
+        <source>Reset the link of %1?</source>
+        <translation>Redefinir o link de %1?</translation>
+    </message>
+    <message>
+        <source>The old link stops letting anyone in. The group&apos;s members stay, and their devices are given the new link as they meet; someone who had only the old link and never met a member is left out. Send the new link to whoever is still to join.</source>
+        <translation>O link antigo deixa de permitir a entrada de qualquer pessoa. Os membros do grupo continuam, e os dispositivos deles recebem o novo link ao se encontrarem; quem tinha apenas o link antigo e nunca encontrou um membro fica de fora. Envie o novo link a quem ainda vai entrar.</translation>
     </message>
     <message>
         <source>Rename the group</source>
@@ -977,6 +989,10 @@
     <message>
         <source>A group needs a name.</source>
         <translation>Um grupo precisa de um nome.</translation>
+    </message>
+    <message>
+        <source>The group has a new link: the old one lets nobody in, and its members are given the new one.</source>
+        <translation>O grupo tem um novo link: o antigo não deixa ninguém entrar, e os membros recebem o novo.</translation>
     </message>
     <message>
         <source>That is not a link to a person.</source>

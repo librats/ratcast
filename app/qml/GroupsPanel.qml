@@ -179,6 +179,17 @@ ColumnLayout {
                         }
                     }
                     MenuItem {
+                        text: qsTr("Reset the link")
+                        icon.source: "icons/refresh-cw.svg"
+                        visible: row.modelData.made
+                        height: visible ? implicitHeight : 0
+                        onTriggered: {
+                            resetLink.group = row.modelData.id
+                            resetLink.name = panel.nameOf(row.modelData)
+                            resetLink.open()
+                        }
+                    }
+                    MenuItem {
                         text: qsTr("Leave the group")
                         icon.source: "icons/x.svg"
                         onTriggered: panel.people.leaveGroup(row.modelData.id)
@@ -214,6 +225,28 @@ ColumnLayout {
                 horizontalAlignment: Text.AlignHCenter
                 opacity: 0.7
             }
+        }
+    }
+
+    // A new link, the old one letting nobody in: asked first.
+    Dialog {
+        id: resetLink
+
+        property string group
+        property string name
+
+        parent: Overlay.overlay
+        anchors.centerIn: parent
+        width: Math.min(panel.Window.width - 48, 420)
+        modal: true
+        title: qsTr("Reset the link of %1?").arg(name)
+        standardButtons: Dialog.Ok | Dialog.Cancel
+        onAccepted: panel.people.resetGroupLink(group)
+
+        Label {
+            width: parent.width
+            text: qsTr("The old link stops letting anyone in. The group's members stay, and their devices are given the new link as they meet; someone who had only the old link and never met a member is left out. Send the new link to whoever is still to join.")
+            wrapMode: Text.Wrap
         }
     }
 

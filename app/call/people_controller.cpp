@@ -322,6 +322,16 @@ void PeopleController::leaveGroup(const QString& id) {
         people_->leave_group(*group);
 }
 
+void PeopleController::resetGroupLink(const QString& id) {
+    if (const std::optional<GroupId> group = group_of(id); group && people_) {
+        if (people_->reset_group_link(*group)) {
+            set_notice(
+                tr("The group has a new link: the old one lets nobody in, and its members are "
+                   "given the new one."));
+        }
+    }
+}
+
 int PeopleController::asking() const {
     if (!people_) return 0;
     int count = 0;

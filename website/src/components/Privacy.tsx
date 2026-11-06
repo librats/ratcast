@@ -135,7 +135,9 @@ export function Privacy() {
               and tell it to each other, encrypted, as they meet in its room. How many are in a group's room is seen
               the same way: the server counts the devices listed under a code only those with the group's link can
               work out. While someone is there, the members' devices meet theirs, and each device in the room tells
-              them, encrypted, that it is there, by the name you gave, and whether it shares its screen.
+              them, encrypted, that it is there, by the name you gave, and whether it shares its screen. Members'
+              devices tell each other which members they know, by the public part of their keys, so that when the
+              group's maker resets its link the members are given the new one; whoever has only the old link is not.
             </li>
           </ul>
         </Section>
@@ -170,7 +172,10 @@ export function Privacy() {
           <ul>
             <li>the app's identity keys, from which its peer ids come, and your personal key;</li>
             <li>your name, your friends and the friend requests between you;</li>
-            <li>your groups: their names, their links and, for a group you made, the key that renames it;</li>
+            <li>
+              your groups: their names, their links (and the one before a reset), the public keys of the members
+              known and, for a group you made, the key that renames it;
+            </li>
             <li>the ratcast servers it has heard of;</li>
             <li>
               your settings: the language, the microphone, speaker and camera you chose, the volume you set for each

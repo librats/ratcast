@@ -172,12 +172,24 @@
         <translation>إعادة التسمية</translation>
     </message>
     <message>
+        <source>Reset the link</source>
+        <translation>إعادة تعيين الرابط</translation>
+    </message>
+    <message>
         <source>Leave the group</source>
         <translation>مغادرة المجموعة</translation>
     </message>
     <message>
         <source>Point a phone&apos;s camera at it to join the group there.</source>
         <translation>وجّه كاميرا الهاتف إليه للانضمام إلى المجموعة من هناك.</translation>
+    </message>
+    <message>
+        <source>Reset the link of %1?</source>
+        <translation>إعادة تعيين رابط %1؟</translation>
+    </message>
+    <message>
+        <source>The old link stops letting anyone in. The group&apos;s members stay, and their devices are given the new link as they meet; someone who had only the old link and never met a member is left out. Send the new link to whoever is still to join.</source>
+        <translation>يتوقف الرابط القديم عن السماح لأي أحد بالدخول. يبقى أعضاء المجموعة، وتحصل أجهزتهم على الرابط الجديد عند التقائها؛ ومن كان لديه الرابط القديم فقط ولم يلتقِ بأي عضو يبقى خارجها. أرسل الرابط الجديد لمن لم ينضم بعد.</translation>
     </message>
     <message>
         <source>Rename the group</source>
@@ -981,6 +993,10 @@
     <message>
         <source>A group needs a name.</source>
         <translation>تحتاج المجموعة إلى اسم.</translation>
+    </message>
+    <message>
+        <source>The group has a new link: the old one lets nobody in, and its members are given the new one.</source>
+        <translation>للمجموعة رابط جديد: الرابط القديم لا يُدخل أحدًا، ويحصل أعضاؤها على الجديد.</translation>
     </message>
     <message>
         <source>That is not a link to a person.</source>

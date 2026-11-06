@@ -172,12 +172,24 @@
         <translation>नाम बदलें</translation>
     </message>
     <message>
+        <source>Reset the link</source>
+        <translation>लिंक रीसेट करें</translation>
+    </message>
+    <message>
         <source>Leave the group</source>
         <translation>समूह छोड़ें</translation>
     </message>
     <message>
         <source>Point a phone&apos;s camera at it to join the group there.</source>
         <translation>वहाँ समूह में शामिल होने के लिए फ़ोन का कैमरा इस पर रखें।</translation>
+    </message>
+    <message>
+        <source>Reset the link of %1?</source>
+        <translation>%1 का लिंक रीसेट करें?</translation>
+    </message>
+    <message>
+        <source>The old link stops letting anyone in. The group&apos;s members stay, and their devices are given the new link as they meet; someone who had only the old link and never met a member is left out. Send the new link to whoever is still to join.</source>
+        <translation>पुराना लिंक अब किसी को अंदर नहीं आने देता। समूह के सदस्य बने रहते हैं, और मिलने पर उनके डिवाइस को नया लिंक मिल जाता है; जिसके पास केवल पुराना लिंक था और जो कभी किसी सदस्य से नहीं मिला, वह बाहर रह जाता है। जिन्हें अभी जुड़ना है, उन्हें नया लिंक भेजें।</translation>
     </message>
     <message>
         <source>Rename the group</source>
@@ -977,6 +989,10 @@
     <message>
         <source>A group needs a name.</source>
         <translation>समूह का नाम होना चाहिए।</translation>
+    </message>
+    <message>
+        <source>The group has a new link: the old one lets nobody in, and its members are given the new one.</source>
+        <translation>समूह का नया लिंक है: पुराना किसी को अंदर नहीं आने देता, और इसके सदस्यों को नया मिल जाता है।</translation>
     </message>
     <message>
         <source>That is not a link to a person.</source>

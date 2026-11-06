@@ -810,6 +810,68 @@ TEST_F(PeopleTest, AGroupIsKeptOnEachDeviceOfThePersonChangedOnAnyAndLeftOnAll) 
     ASSERT_TRUE(phone->people->join_group(made.link));
     EXPECT_EQ(group_of(*phone, made.id)->name, "Our films");
     EXPECT_TRUE(wait_for([&] { return group_of(*ann, made.id).has_value(); }));
+
+    // Its link reset on one, the new link on both; the old opened again
+    // there changes nothing.
+    const Result<Group> reset = phone->people->reset_group_link(made.id);
+    ASSERT_TRUE(reset);
+    EXPECT_TRUE(wait_for([&] { return group_of(*ann, made.id)->link == reset->link; }));
+    ASSERT_TRUE(ann->people->join_group(made.link));
+    EXPECT_EQ(group_of(*ann, made.id)->link, reset->link);
+}
+
+TEST_F(PeopleTest, AGroupsLinkResetKeepsItsMembersAndShutsOutTheOldLink) {
+    auto ann = device("Ann");
+    auto bob = device("Bob");
+    auto carl = device("Carl");
+    const Group made = *ann->people->make_group("Films");
+    ASSERT_TRUE(bob->people->join_group(made.link));
+    ASSERT_TRUE(carl->people->join_group(made.link));
+    // Ann in its room: both met there, members from then on.
+    auto ann_call = std::make_unique<InTheRoom>(server_address(), room_key(made.room));
+    ann->people->set_in_room(true, made.id);
+    ASSERT_TRUE(wait_for([&] {
+        return group_of(*bob, made.id)->name == "Films" &&
+               group_of(*carl, made.id)->name == "Films";
+    }));
+    ann->people->set_in_room(false);
+    ann_call.reset();
+    bob->stop();  // off as the link is reset
+
+    EXPECT_FALSE(carl->people->reset_group_link(made.id)) << "its maker's alone";
+    const Result<Group> reset = ann->people->reset_group_link(made.id);
+    ASSERT_TRUE(reset);
+    EXPECT_NE(reset->link, made.link);
+    EXPECT_NE(reset->room, made.room) << "its room another";
+    EXPECT_EQ(reset->name, "Films");
+
+    // Carl, met, given the new link; Bob as he comes back, by whoever has it.
+    EXPECT_TRUE(wait_for([&] { return group_of(*carl, made.id)->link == reset->link; }));
+    auto eve = device("Eve");
+    ASSERT_TRUE(eve->people->join_group(made.link));  // the old link, after
+    bob->start();
+    EXPECT_TRUE(wait_for([&] { return group_of(*bob, made.id)->link == reset->link; }));
+    EXPECT_EQ(group_of(*bob, made.id)->room, reset->room);
+
+    // Eve, with the old link alone, is not given the new one (what the old
+    // secret was told, the name, she may be).
+    std::this_thread::sleep_for(1500ms);
+    EXPECT_EQ(group_of(*eve, made.id)->link, made.link);
+    EXPECT_NE(group_of(*eve, made.id)->room, reset->room);
+
+    // The new link lets in: Dan, met in its room.
+    auto dan = device("Dan");
+    ASSERT_TRUE(dan->people->join_group(reset->link));
+    ann_call = std::make_unique<InTheRoom>(server_address(), room_key(reset->room));
+    ann->people->set_in_room(true, made.id);
+    EXPECT_TRUE(wait_for([&] { return group_of(*dan, made.id)->name == "Films"; }));
+
+    // The old link opened by a member changes nothing; the new one is kept.
+    ASSERT_TRUE(bob->people->join_group(made.link));
+    EXPECT_EQ(group_of(*bob, made.id)->link, reset->link);
+    bob->stop();
+    bob->start();
+    EXPECT_EQ(group_of(*bob, made.id)->link, reset->link);
 }
 
 TEST_F(PeopleTest, AFriendRungToAGroupsRoomIsToldWhichGroup) {

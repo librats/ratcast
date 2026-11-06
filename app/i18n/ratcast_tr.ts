@@ -172,12 +172,24 @@
         <translation>Yeniden adlandır</translation>
     </message>
     <message>
+        <source>Reset the link</source>
+        <translation>Bağlantıyı sıfırla</translation>
+    </message>
+    <message>
         <source>Leave the group</source>
         <translation>Gruptan ayrıl</translation>
     </message>
     <message>
         <source>Point a phone&apos;s camera at it to join the group there.</source>
         <translation>Orada gruba katılmak için bir telefonun kamerasını ona tut.</translation>
+    </message>
+    <message>
+        <source>Reset the link of %1?</source>
+        <translation>%1 bağlantısı sıfırlansın mı?</translation>
+    </message>
+    <message>
+        <source>The old link stops letting anyone in. The group&apos;s members stay, and their devices are given the new link as they meet; someone who had only the old link and never met a member is left out. Send the new link to whoever is still to join.</source>
+        <translation>Eski bağlantı artık kimseyi içeri almaz. Grubun üyeleri kalır ve cihazları karşılaştıklarında yeni bağlantıyı alır; yalnızca eski bağlantıya sahip olup hiçbir üyeyle karşılaşmamış olan dışarıda kalır. Yeni bağlantıyı henüz katılacak olanlara gönderin.</translation>
     </message>
     <message>
         <source>Rename the group</source>
@@ -976,6 +988,10 @@
     <message>
         <source>A group needs a name.</source>
         <translation>Grubun bir adı olmalı.</translation>
+    </message>
+    <message>
+        <source>The group has a new link: the old one lets nobody in, and its members are given the new one.</source>
+        <translation>Grubun yeni bir bağlantısı var: eskisi kimseyi içeri almaz, üyeleri yenisini alır.</translation>
     </message>
     <message>
         <source>That is not a link to a person.</source>

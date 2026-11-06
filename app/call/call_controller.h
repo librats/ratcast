@@ -400,6 +400,8 @@ private:
     void set_state(State state);
     /// The people's home node told whether this side is in a room.
     void tell_in_room();
+    /// In a group's room whose link was reset meanwhile: into its new one.
+    void follow_group();
     void set_notice(QString notice);
     void set_sharing(bool sharing);
     void set_choosing(bool choosing);

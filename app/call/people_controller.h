@@ -126,6 +126,9 @@ public:
     Q_INVOKABLE QString makeGroup(const QString& name);
     Q_INVOKABLE void renameGroup(const QString& id, const QString& name);
     Q_INVOKABLE void leaveGroup(const QString& id);
+    /// A new link for a group made here: the old one lets nobody in, its
+    /// members are given the new one.
+    Q_INVOKABLE void resetGroupLink(const QString& id);
 
     /// Ask to be a friend by `link`; whether it was taken (else a notice).
     Q_INVOKABLE bool add(const QString& link);

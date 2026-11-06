@@ -115,6 +115,47 @@ TEST(GroupLogTest, ChangesComeInOneOrderWhereverTheyCameFrom) {
     EXPECT_FALSE(a.merge(group, b)) << "nothing new";
 }
 
+TEST(GroupLogTest, AResetNamesTheNewSecretByItsMarkAndTheMembersItKeeps) {
+    const PersonKey key = PersonKey::generate();
+    const GroupId group = GroupId::of(key);
+    const GroupLink old{group, random_bytes<16>()};
+    GroupLog log;
+    log.append(key, ChangeType::Named, text("Club"));
+    EXPECT_FALSE(log.reset());
+    EXPECT_TRUE(log.current(old)) << "never reset: any secret";
+
+    const GroupLink next{group, random_bytes<16>()};
+    const GroupReset reset{.mark = secret_mark(next),
+                           .kept = {PersonKey::generate().id(), key.id()}};
+    log.append(key, ChangeType::Reset, encode(reset));
+    EXPECT_EQ(log.reset(), reset);
+    EXPECT_TRUE(log.current(next));
+    EXPECT_FALSE(log.current(old));
+    EXPECT_EQ(log.name(), "Club") << "named as it was";
+    // The mark is the secret's and the group's, and tells neither.
+    EXPECT_NE(secret_mark(next), secret_mark(old));
+    EXPECT_NE(secret_mark(next),
+              secret_mark(GroupLink{GroupId::of(PersonKey::generate()), next.secret}));
+    const std::string mark = to_hex(secret_mark(next));
+    EXPECT_EQ(mark.find(to_hex(next.secret)), std::string::npos);
+
+    // The last reset stands, and goes about with the log.
+    const GroupLink last{group, random_bytes<16>()};
+    log.append(key, ChangeType::Reset, encode(GroupReset{.mark = secret_mark(last)}));
+    EXPECT_TRUE(log.current(last));
+    EXPECT_FALSE(log.current(next));
+    const std::optional<GroupLog> passed = decode_group_log(group, encode(log));
+    ASSERT_TRUE(passed);
+    EXPECT_TRUE(passed->current(last));
+
+    // Data that is no reset.
+    std::vector<uint8_t> bytes = encode(reset);
+    EXPECT_EQ(decode_group_reset(bytes), reset);
+    bytes.push_back(0);
+    EXPECT_FALSE(decode_group_reset(bytes));
+    EXPECT_FALSE(decode_group_reset(text("Club")));
+}
+
 TEST(GroupLogTest, AChangeOfATypeNotKnownIsKeptAndPassedOn) {
     const PersonKey key = PersonKey::generate();
     const GroupId group = GroupId::of(key);

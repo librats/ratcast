@@ -57,13 +57,16 @@ constexpr std::string_view kDeviceKind = "d";
 //            the answering person's other devices
 //   Unring   16-byte id, u8 why (0 hung up, 1 missed, 2 answered elsewhere)
 //   Group    32-byte proof, u32 length + the group's log (group.h; none: the
-//            sender asks for the receiver's)
+//            sender asks for the receiver's); and u16 count + the members
+//            known, a 32-byte person key each (none from a version before)
 //   Here     32-byte group id, u8 where (0 not in its room, 1 in it, 2 sharing
 //            there): to a member met that proved the group's secret, once it
 //            did, and again as it changes
+//   Rekey    32-byte proof of the secret the receiver has, 16-byte secret, u32
+//            length + the log: the link was reset, the receiver one it keeps
 // A proof is the MAC of what it proves under the secret: "ratcast request",
-// "ratcast pair" or "ratcast group", the sender's peer id, the receiver's —
-// a group's under its secret, the group found by it.
+// "ratcast pair", "ratcast group" or "ratcast rekey", the sender's peer id,
+// the receiver's — a group's under its secret, the group found by it.
 
 constexpr uint8_t kVersion = 1;
 enum class Kind : uint8_t {
@@ -79,7 +82,8 @@ enum class Kind : uint8_t {
     Rung,
     Unring,
     Group,
-    Here
+    Here,
+    Rekey
 };
 enum class Why : uint8_t { HungUp = 0, Missed = 1, AnsweredElsewhere = 2 };
 enum class Where : uint8_t { Out = 0, In = 1, Sharing = 2 };
@@ -91,6 +95,8 @@ constexpr size_t kMostRoomLink = 4096;
 constexpr auto kRingGrace = std::chrono::seconds(5);
 
 constexpr size_t kMostBook = 1 << 20;
+/// The most members one Group message tells of.
+constexpr size_t kMostMembersTold = 1024;
 
 /// A message: its version and kind, then what the kind says.
 class Out : public ByteWriter {
@@ -149,6 +155,15 @@ std::string ring_key(const PersonId& person, const Secret& secret) {
 /// of its secret, as its rooms' are.
 std::string group_key(const GroupId& group, const Secret& secret) {
     return "ratcast/0/group/" + to_hex(mac(secret, group.key));
+}
+/// The key those who have a group's new secret are registered under, at the
+/// servers, of the one before its reset: whoever has only that one, watching
+/// it, sees that someone is there to meet under it.
+std::string reset_key(const GroupId& group, const Secret& secret) {
+    ByteWriter message;
+    message.bytes(bytes_of("ratcast group reset"));
+    message.bytes(group.key);
+    return "ratcast/0/group-reset/" + to_hex(mac(secret, message.bytes()));
 }
 
 }  // namespace
@@ -246,8 +261,11 @@ struct People::State {
             if (!request.incoming && !request.declined && !request.gone)
                 keys.push_back(meeting_key(person, request.secret));
         }
-        for (const auto& [group, entry] : book.groups)
+        for (const auto& [group, entry] : book.groups) {
             if (meets(group, entry)) keys.push_back(group_key(group, entry.secret));
+            // Met by those who have only the secret before its reset.
+            if (!entry.left && entry.previous) keys.push_back(group_key(group, *entry.previous));
+        }
         return keys;
     }
 
@@ -257,6 +275,8 @@ struct People::State {
     /// nothing to watch with (L26), and a friend not met there is not seen.
     std::vector<std::string> server_keys() const {
         std::vector<std::string> all = keys();
+        for (const auto& [group, entry] : book.groups)
+            if (!entry.left && entry.previous) all.push_back(reset_key(group, *entry.previous));
         const Secret own = presence_secret(key);
         all.push_back(presence_key(key.id(), own));
         all.push_back(ring_key(key.id(), own));
@@ -271,7 +291,7 @@ struct People::State {
     }
 
     /// What is watched at servers: each friend's presence and room keys,
-    /// each group's room.
+    /// each group's room, and whether its link was reset (reset_key()).
     std::vector<std::string> watched() const {
         std::vector<std::string> out;
         for (const auto& [person, entry] : book.friends) {
@@ -279,8 +299,11 @@ struct People::State {
             out.push_back(presence_key(person, entry.presence));
             out.push_back(in_room_key(person, entry.presence));
         }
-        for (const auto& [group, entry] : book.groups)
-            if (!entry.left) out.push_back(room_key(channel(entry.link(group))));
+        for (const auto& [group, entry] : book.groups) {
+            if (entry.left) continue;
+            out.push_back(room_key(channel(entry.link(group))));
+            out.push_back(reset_key(group, entry.secret));
+        }
         return out;
     }
 
@@ -291,12 +314,19 @@ struct People::State {
         return rendezvous ? rendezvous->registered(room_key(channel(entry.link(group)))) : 0;
     }
 
+    /// Whether someone with the group's next secret is registered under
+    /// this one's reset key: its link was reset.
+    bool was_reset(const GroupId& group, const GroupEntry& entry) const {
+        return rendezvous && rendezvous->registered(reset_key(group, entry.secret)) > 0;
+    }
+
     /// Whether this device meets `group`'s members now: while in its room,
-    /// knowing nothing of it yet (joined by its link, nobody met), or while
-    /// someone is there, to be told who.
+    /// knowing nothing of it yet (joined by its link, nobody met), while
+    /// someone is there, to be told who, or while its link is seen reset, to
+    /// be given the new one.
     bool meets(const GroupId& group, const GroupEntry& entry) const {
-        return !entry.left &&
-               (room_group == group || entry.log.empty() || present(group, entry) > 0);
+        return !entry.left && (room_group == group || entry.log.empty() ||
+                               present(group, entry) > 0 || was_reset(group, entry));
     }
 
     /// Who is in `group`'s room as told here: each person once, by name.
@@ -346,7 +376,36 @@ struct People::State {
         } else {
             out.u32(0);
         }
+        // Who else is a member, for a reset to keep them wherever it is made.
+        const size_t count = std::min(entry.members.size(), kMostMembersTold);
+        out.u16(count);
+        size_t written = 0;
+        for (const PersonId& member : entry.members) {
+            if (written++ == count) break;
+            out.bytes(member.key);
+        }
         send(peer, out);
+    }
+
+    /// The group's secret now and its log, to `peer`, one with the secret
+    /// before its reset that the reset keeps.
+    void send_rekey(const PeerId& peer, const GroupId& group) {
+        const GroupEntry& entry = book.groups.at(group);
+        if (!entry.previous) return;
+        Out out(Kind::Rekey);
+        out.bytes(proof(*entry.previous, "ratcast rekey", node.local_id(), peer));
+        out.bytes(entry.secret);
+        const std::vector<uint8_t> log = encode(entry.log);
+        out.u32(log.size());
+        out.bytes(log);
+        send(peer, out);
+    }
+
+    /// Who proved `group`'s secret, and who is in its room, forgotten: the
+    /// secret is another.
+    void forget_proofs(const GroupId& group) {
+        for (auto& [peer, groups] : members_met) groups.erase(group);
+        here.erase(group);
     }
 
     /// The group's log told to each of its members met: what changed here.
@@ -677,8 +736,26 @@ struct People::State {
                 const size_t size = in.u32();
                 if (!in.ok() || size > kMostBook) return;
                 const std::span<const uint8_t> log = in.bytes(size);
+                // The members it knows, after (none from a version before).
+                std::vector<PersonId> members;
+                if (in.ok() && !in.done()) {
+                    const size_t count = in.u16();
+                    if (count > kMostMembersTold) return;
+                    for (size_t i = 0; i < count && in.ok(); ++i)
+                        members.push_back(PersonId{in.array<32>()});
+                }
                 if (!in.ok()) return;
-                on_group(peer, person, got, log, after);
+                on_group(peer, person, got, log, members, after);
+                return;
+            }
+            case Kind::Rekey: {
+                const auto got = in.array<32>();
+                const Secret secret = in.array<16>();
+                const size_t size = in.u32();
+                if (!in.ok() || size > kMostBook) return;
+                const std::span<const uint8_t> log = in.bytes(size);
+                if (!in.ok()) return;
+                on_rekey(peer, person, got, secret, log, after);
                 return;
             }
             case Kind::Here: {
@@ -746,21 +823,42 @@ struct People::State {
     }
 
     void on_group(const PeerId& peer, const PersonId& person, const std::array<uint8_t, 32>& got,
-                  std::span<const uint8_t> bytes, After& after) {
+                  std::span<const uint8_t> bytes, const std::vector<PersonId>& members,
+                  After& after) {
         if (person == key.id()) return;  // the person's own devices are told the book
         for (auto& [group, entry] : book.groups) {
-            if (entry.left ||
-                !same_secret(got, proof(entry.secret, "ratcast group", peer, node.local_id())))
+            if (entry.left) continue;
+            // One with the secret before the link's reset: given this one if
+            // the reset keeps them, told nothing if not (the old link alone).
+            if (entry.previous &&
+                same_secret(got, proof(*entry.previous, "ratcast group", peer, node.local_id()))) {
+                const std::optional<GroupReset> reset = entry.log.reset();
+                if (reset && std::ranges::find(reset->kept, person) != reset->kept.end()) {
+                    LOG_INFO("people",
+                             "group " << group.tag() << "'s new link given to " << person.tag());
+                    send_rekey(peer, group);
+                }
+                return;
+            }
+            if (!same_secret(got, proof(entry.secret, "ratcast group", peer, node.local_id())))
                 continue;
+            bool known = false;  // anything new kept
             if (!bytes.empty()) {
                 const std::optional<GroupLog> theirs = decode_group_log(group, bytes);
                 if (theirs && entry.log.merge(group, *theirs)) {
                     LOG_INFO("people", "group " << group.tag() << " caught up by " << person.tag());
-                    save();
-                    update_keys();  // known now: met for it only in its room
-                    tell_own();
-                    after.changed = true;
+                    known = true;
                 }
+            }
+            // A member, as are those they know of.
+            known = entry.members.insert(person).second || known;
+            for (const PersonId& member : members)
+                known = entry.members.insert(member).second || known;
+            if (known) {
+                save();
+                update_keys();  // known now: met for it only in its room
+                tell_own();
+                after.changed = true;
             }
             // What is known here, once to each member met, and whether this
             // device is in its room.
@@ -770,6 +868,42 @@ struct People::State {
                 send_group(peer, group, true);
                 send_here(peer, group);
             }
+            return;
+        }
+    }
+
+    /// A member with the group's secret now gives it, this device having the
+    /// one before the reset: kept if the log says it is the group's.
+    void on_rekey(const PeerId& peer, const PersonId& person, const std::array<uint8_t, 32>& got,
+                  const Secret& secret, std::span<const uint8_t> bytes, After& after) {
+        if (person == key.id()) return;
+        for (auto& [group, entry] : book.groups) {
+            if (entry.left ||
+                !same_secret(got, proof(entry.secret, "ratcast rekey", peer, node.local_id())))
+                continue;
+            const std::optional<GroupLog> theirs = decode_group_log(group, bytes);
+            if (!theirs || secret == entry.secret) return;
+            GroupLog log = entry.log;
+            log.merge(group, *theirs);
+            // Only one the maker's last reset marks.
+            const std::optional<GroupReset> reset = log.reset();
+            if (!reset || reset->mark != secret_mark(GroupLink{group, secret})) return;
+            entry.log = std::move(log);
+            entry.previous = entry.secret;
+            entry.secret = secret;
+            // Its members those the reset kept: whoever proved the old secret
+            // here since (the old link alone) none.
+            entry.members = {reset->kept.begin(), reset->kept.end()};
+            entry.at = std::max(seconds_now(), entry.at + 1);
+            forget_proofs(group);
+            LOG_INFO("people", "group " << group.tag() << "'s link was reset; given the new one by "
+                                        << person.tag());
+            save();
+            update_keys();
+            tell_own();
+            after.changed = true;
+            // A member to them now, by the new secret.
+            send_group(peer, group, false);
             return;
         }
     }
@@ -1305,6 +1439,7 @@ Result<Group> People::make_group(std::string name) {
         entry.key.emplace();
         std::copy(key.seed().begin(), key.seed().end(), entry.key->begin());
         entry.log.append(key, ChangeType::Named, bytes_of(name));
+        entry.members.insert(s.key.id());
         s.save();
         s.update_keys();  // its room watched
         s.tell_own();
@@ -1327,8 +1462,13 @@ Result<Group> People::join_group(std::string_view link) {
             return s.group_of(parsed->group, entry);
         const uint64_t now = seconds_now();
         if (entry.at == 0 || entry.left) entry.since = now;
+        // Another secret than the one known: kept as the one before, should
+        // the log say this is older (a link of before a reset), or not.
+        if (entry.at != 0 && entry.secret != parsed->secret) entry.previous = entry.secret;
         entry.secret = parsed->secret;
         entry.left = false;
+        entry.settle(parsed->group);
+        entry.members.insert(s.key.id());
         entry.at = std::max(now, entry.at + 1);
         s.save();
         s.update_keys();  // its members looked for, its room watched
@@ -1357,6 +1497,53 @@ Result<void> People::rename_group(const GroupId& group, std::string name) {
     }
     if (s.handlers.changed) s.handlers.changed();
     return {};
+}
+
+Result<Group> People::reset_group_link(const GroupId& group) {
+    State& s = *state_;
+    Group reset_now;
+    {
+        std::lock_guard lock(s.mutex);
+        const auto it = s.book.groups.find(group);
+        if (it == s.book.groups.end() || it->second.left || !it->second.key)
+            return fail(Errc::InvalidArgument);
+        GroupEntry& entry = it->second;
+        // The members known kept, this person first.
+        GroupReset reset;
+        reset.kept.push_back(s.key.id());
+        for (const PersonId& member : entry.members) {
+            if (reset.kept.size() >= GroupReset::kMostKept) break;
+            if (member != s.key.id()) reset.kept.push_back(member);
+        }
+        if (entry.members.size() > reset.kept.size())
+            LOG_WARN("people", "group " << group.tag() << " reset keeps " << reset.kept.size()
+                                        << " of " << entry.members.size() << " members");
+        const Secret secret = random_bytes<16>();
+        reset.mark = secret_mark(GroupLink{group, secret});
+        entry.log.append(PersonKey::from_seed(*entry.key), ChangeType::Reset, encode(reset));
+        // Its members met now, given it at once.
+        std::vector<PeerId> told;
+        for (const auto& [peer, groups] : s.members_met) {
+            const auto who = s.met.find(peer);
+            if (groups.contains(group) && who != s.met.end() &&
+                std::ranges::find(reset.kept, who->second.person) != reset.kept.end())
+                told.push_back(peer);
+        }
+        entry.previous = entry.secret;
+        entry.secret = secret;
+        entry.members = {reset.kept.begin(), reset.kept.end()};
+        entry.at = std::max(seconds_now(), entry.at + 1);
+        s.forget_proofs(group);
+        for (const PeerId& peer : told) s.send_rekey(peer, group);
+        s.save();
+        s.update_keys();
+        s.tell_own();
+        reset_now = s.group_of(group, entry);
+        LOG_INFO("people", "group " << group.tag() << "'s link reset, " << reset.kept.size()
+                                    << " member(s) kept");
+    }
+    if (s.handlers.changed) s.handlers.changed();
+    return reset_now;
 }
 
 void People::leave_group(const GroupId& group) {

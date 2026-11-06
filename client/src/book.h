@@ -7,9 +7,10 @@
  * (people.h).
  *
  * Kept as JSON ("people.json" in the data directory), told whole to the
- * person's other devices as they meet, and merged there (merge()): of each
- * entry, the one changed last wins — a group's log, whatever, is the union
- * of both.
+ * merged there (merge()): of each
+ * entry, the one changed last wins — a group's log and members, whatever,
+ * are the union of both, and of its secrets the one its log says is the
+ * group's (GroupEntry::settle()).
  */
 
 #include <array>
@@ -17,6 +18,7 @@
 #include <filesystem>
 #include <map>
 #include <optional>
+#include <set>
 #include <span>
 #include <string>
 #include <string_view>
@@ -65,14 +67,24 @@ struct RequestEntry {
 
 struct GroupEntry {
     Secret secret{};
+    /// The secret before the link was last reset, as known here: those who
+    /// have only it met under it, to be given this one if they are kept.
+    std::optional<Secret> previous;
     /// The seed of the group's key, if this person made it.
     std::optional<std::array<uint8_t, 32>> key;
     GroupLog log;
+    /// Its members as far as is known here, by person: this one, those met
+    /// that proved the secret, those they told of — the kept of a reset.
+    std::set<PersonId> members;
     uint64_t since = 0;
     uint64_t at = 0;  ///< when its membership last changed: the latest wins
     bool left = false;
 
     GroupLink link(const GroupId& group) const { return GroupLink{group, secret}; }
+    /// The secret the log says is the group's, if `previous` is and
+    /// `secret` is not (a link of before a reset opened, say): the two
+    /// swapped. Whether they were.
+    bool settle(const GroupId& group);
 };
 
 struct Book {

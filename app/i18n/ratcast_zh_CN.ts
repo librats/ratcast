@@ -172,12 +172,24 @@
         <translation>重命名</translation>
     </message>
     <message>
+        <source>Reset the link</source>
+        <translation>重置链接</translation>
+    </message>
+    <message>
         <source>Leave the group</source>
         <translation>退出群组</translation>
     </message>
     <message>
         <source>Point a phone&apos;s camera at it to join the group there.</source>
         <translation>用手机摄像头扫描，即可在手机上加入群组。</translation>
+    </message>
+    <message>
+        <source>Reset the link of %1?</source>
+        <translation>重置 %1 的链接?</translation>
+    </message>
+    <message>
+        <source>The old link stops letting anyone in. The group&apos;s members stay, and their devices are given the new link as they meet; someone who had only the old link and never met a member is left out. Send the new link to whoever is still to join.</source>
+        <translation>旧链接将不再允许任何人进入。群组成员保留,他们的设备在相遇时会获得新链接;只有旧链接且从未遇到过成员的人将被排除在外。请把新链接发给还要加入的人。</translation>
     </message>
     <message>
         <source>Rename the group</source>
@@ -976,6 +988,10 @@
     <message>
         <source>A group needs a name.</source>
         <translation>群组需要一个名称。</translation>
+    </message>
+    <message>
+        <source>The group has a new link: the old one lets nobody in, and its members are given the new one.</source>
+        <translation>群组有了新链接:旧链接不再允许任何人进入,成员会获得新链接。</translation>
     </message>
     <message>
         <source>That is not a link to a person.</source>

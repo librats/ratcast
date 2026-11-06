@@ -814,6 +814,7 @@ void CallController::setPeople(PeopleController* people) {
             if (people_ && people_->ready()) setName(people_->name());
             tell_in_room();  // a home node started since
             update_members();
+            follow_group();
         };
         connect(people_, &PeopleController::changed, this, follow);
         connect(people_, &PeopleController::ringNotice, this,
@@ -1237,6 +1238,17 @@ void CallController::tell_in_room() {
     const std::optional<GroupId> group = GroupId::from_hex(group_.toStdString());
     people_->people()->set_in_room(state_ == State::InRoom, group);
     people_->people()->set_sharing(sharing_);
+}
+
+void CallController::follow_group() {
+    if (state_ != State::InRoom || group_.isEmpty() || !people_ || !people_->people()) return;
+    const std::optional<GroupId> id = GroupId::from_hex(group_.toStdString());
+    const std::optional<Group> found = id ? people_->people()->group(*id) : std::nullopt;
+    if (!found || QString::fromStdString(found->link) == group_link_) return;
+    LOG_INFO("app", "group " << id->tag() << "'s link was reset: into its new room");
+    const QString group = group_;
+    end();
+    enter(group);
 }
 
 void CallController::set_notice(QString notice) {
