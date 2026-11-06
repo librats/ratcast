@@ -117,6 +117,8 @@ public:
           ring_for_(ring_for) {
         start();
     }
+    // People first: its handlers write into what is below, from its threads.
+    ~Device() { stop(); }
 
     void start() {
         PeopleConfig config{.data_dir = dir_.string(),
