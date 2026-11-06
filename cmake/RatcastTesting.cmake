@@ -52,11 +52,15 @@ function(ratcast_add_test name)
         target_link_libraries(${name} PRIVATE ${ARG_LIBS} GTest::gtest_main)
     endif()
     ratcast_target_defaults(${name})
+    # Listing the tests starts the executable: on a CI runner its first start
+    # (a scan of the new file, a cold disk) has taken longer than the 5 s
+    # CMake gives it.
+    set(discovery DISCOVERY_MODE PRE_TEST DISCOVERY_TIMEOUT 60)
     if(ARG_EXCLUSIVE)
-        gtest_discover_tests(${name} DISCOVERY_MODE PRE_TEST TEST_FILTER "-${ARG_EXCLUSIVE}")
-        gtest_discover_tests(${name} DISCOVERY_MODE PRE_TEST TEST_FILTER "${ARG_EXCLUSIVE}"
+        gtest_discover_tests(${name} ${discovery} TEST_FILTER "-${ARG_EXCLUSIVE}")
+        gtest_discover_tests(${name} ${discovery} TEST_FILTER "${ARG_EXCLUSIVE}"
             PROPERTIES RESOURCE_LOCK ratcast_machine)
     else()
-        gtest_discover_tests(${name} DISCOVERY_MODE PRE_TEST)
+        gtest_discover_tests(${name} ${discovery})
     endif()
 endfunction()

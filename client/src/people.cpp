@@ -202,6 +202,10 @@ struct People::State {
         Secret secret{};
         Steady::time_point until{};
         std::optional<PeerId> asking;  ///< the device that proved it, waiting for an answer
+        /// The device given the person, until it is met as the person: asked
+        /// again (the Grant lost with a link that lost a race), it is given
+        /// again; nobody else is.
+        std::optional<PeerId> granted;
     };
     /// What is known of a peer met: whose node it is, by its Hello.
     struct Met {
@@ -431,6 +435,14 @@ struct People::State {
     void tell_here(const GroupId& group) {
         for (const auto& [peer, groups] : members_met)
             if (groups.contains(group)) send_here(peer, group);
+    }
+
+    /// The person handed to a device allowed: their key and all they know.
+    Out grant() const {
+        Out out(Kind::Grant);
+        out.bytes(key.seed());
+        out.text32(to_json(book));
+        return out;
     }
 
     void update_keys() {
@@ -777,6 +789,10 @@ struct People::State {
                 if (!same_secret(got,
                                  proof(pairing->secret, "ratcast pair", peer, node.local_id())))
                     return;
+                if (pairing->granted) {
+                    if (pairing->granted == peer) send(peer, grant());
+                    return;
+                }
                 pairing->asking = peer;
                 LOG_INFO("people", "device " << peer.short_hex() << " asks to be this person");
                 after.device_asks = name.empty() ? who->second.name : name;
@@ -953,6 +969,11 @@ struct People::State {
         met[peer] = Met{person, name};
         members_met.erase(peer);  // each says its part again
         if (person == key.id()) {
+            // The device given the person has it: the link's work is done.
+            if (pairing && pairing->granted == peer) {
+                pairing.reset();
+                update_keys();
+            }
             send(peer, sync());
             return;
         }
@@ -1715,14 +1736,14 @@ void People::allow_device(bool allowed) {
     if (!s.pairing || !s.pairing->asking) return;
     const PeerId device = *s.pairing->asking;
     if (allowed) {
-        Out out(Kind::Grant);
-        out.bytes(s.key.seed());
-        out.text32(to_json(s.book));
-        s.send(device, out);
+        s.send(device, s.grant());
         LOG_INFO("people", "device " << device.short_hex() << " given the person");
-    } else {
-        s.send(device, Out(Kind::Refuse));
+        // Kept until it is met as the person, to be given again if it asks.
+        s.pairing->asking.reset();
+        s.pairing->granted = device;
+        return;
     }
+    s.send(device, Out(Kind::Refuse));
     s.pairing.reset();
     s.update_keys();
 }
