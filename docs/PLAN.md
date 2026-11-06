@@ -1836,7 +1836,12 @@ devices, and Ann's phone, added by a QR code from her PC, is Ann to Bob.
   told in a call's presence: `Presence::identity`, bytes libratcast passes on unread, appended
   to its wire message as a later field), `PersonId::tag()` (four characters of Crockford's
   base32 of the key's hash). Every node of a device — a room's maker, a guest, the home node —
-  is the person's by its card (`CallConfig::identity`, `Call::identity()`). The home node
+  is the person's by its card (`CallConfig::identity`, `Call::identity()`). Later a room's node
+  became one of a moment: a peer id of its own each room and nothing kept, so that no room is
+  tied to another by it (the data folder holds the person's and the home node's alone;
+  `forget_rooms_nodes()` takes away what rooms' nodes kept before), its DHT started from the
+  home node's contacts (`CallConfig::dht_seed_dir`, `People::home_dir()`; librats'
+  `DhtDiscovery::Config::seed_dir`: another node's table read for its contacts, never its id). The home node
   (`people.h`, `People`): a librats node of its own in the data directory's `home`, up while the
   app runs, met at servers under keys only the right peers work out — the person's link's and
   room secret's (a MAC of the person under each), their devices' (of the key's secret), a

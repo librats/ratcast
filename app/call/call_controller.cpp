@@ -137,6 +137,14 @@ QString data_folder() {
 #endif
 }
 
+void forget_rooms_nodes(const QString& data) {
+    const std::filesystem::path folder(data.toStdString());
+    std::error_code ignored;
+    for (const char* file : {"identity.key", "dht_routing.json", "dht_routing_v6.json"})
+        std::filesystem::remove(folder / file, ignored);
+    std::filesystem::remove_all(folder / "guest", ignored);
+}
+
 CallController::Environment CallController::Environment::system() {
     Environment environment;
     environment.name = user_name();
@@ -147,10 +155,10 @@ CallController::Environment CallController::Environment::system() {
     environment.call.playback.video.gpu = true;
     environment.call.lost_after = kLostAfter;
     environment.call.chosen_servers = kChosenServers;
-    environment.data_dir = data_folder().toStdString();
-    // One list for the room made here and the one joined as a guest.
+    // One list for every room, the home node's too: each room's node keeps
+    // nothing else (start()).
     environment.call.known_servers_file =
-        (std::filesystem::path(environment.data_dir) / KnownServers::kFile).string();
+        (std::filesystem::path(data_folder().toStdString()) / KnownServers::kFile).string();
     environment.open_share = [](const ScreenShareConfig& config, std::stop_token cancel) {
         return open_screen_share(config, std::move(cancel));
     };
@@ -307,7 +315,6 @@ bool CallController::meet_at_server(CallConfig& config) {
 void CallController::create() {
     if (state_ != State::Idle) return;
     CallConfig config = environment_.call;
-    config.data_dir = environment_.data_dir;
     // Made once: a secret of its own, met under by whoever is given it — the
     // next room another, this one's link no way into it.
     config.discoverable = false;
@@ -336,10 +343,6 @@ void CallController::join(const QString& link) {
     }
     LOG_INFO("app", "joining " << to_string(*url));
     CallConfig config = environment_.call;
-    // An identity of its own, so that one host can be in a room twice.
-    if (!environment_.data_dir.empty()) {
-        config.data_dir = (std::filesystem::path(environment_.data_dir) / "guest").string();
-    }
     config.discoverable = false;
     config.dial = url->url;
     // The room's servers first: they are what its invites name on.
@@ -357,11 +360,8 @@ void CallController::enter(const QString& group) {
         return;
     }
     LOG_INFO("app", "into the room of group " << id->tag());
-    CallConfig config = environment_.call;
     // A room like any other, its secret the group's.
-    if (!environment_.data_dir.empty()) {
-        config.data_dir = (std::filesystem::path(environment_.data_dir) / "guest").string();
-    }
+    CallConfig config = environment_.call;
     config.discoverable = false;
     config.dial = found->room;
     if (!meet_at_server(config)) return;
@@ -375,8 +375,13 @@ void CallController::start(CallConfig config, State state) {
     set_notice({});
     chat_.clear();
     told_hearing_.clear();
-    // The room's node certified as the person's: those in it know whose it is.
+    // The room's node is one of a moment: a new peer id each room and nothing
+    // kept, so that no room is tied to another by it. Its DHT starts from the
+    // contacts of the home node's, which runs all along. Certified as the
+    // person's: those in it know whose it is by its card.
+    config.data_dir.clear();
     if (people_ && people_->people()) {
+        config.dht_seed_dir = people_->people()->home_dir();
         config.identity = [people = people_->people()](const PeerId& node) {
             return people->card(node);
         };

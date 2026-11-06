@@ -145,8 +145,9 @@ export function Privacy() {
         <Section title="What the network sees">
           <p>
             ratcast connects devices directly to each other. Like any internet connection, that means some parties see
-            your device's <strong>IP address</strong> and a random identifier the app makes for itself (its peer id),
-            though never the content of a call:
+            your device's <strong>IP address</strong> and a random identifier the app makes for itself (its peer id;
+            a new one for each room, so that one room is not tied to another by it), though never the content of a
+            call:
           </p>
           <ul>
             <li>the other members of a room, whose apps connect to yours;</li>
@@ -170,7 +171,10 @@ export function Privacy() {
 
         <Section title="What is kept on your device">
           <ul>
-            <li>the app's identity keys, from which its peer ids come, and your personal key;</li>
+            <li>
+              your personal key, and the identity key of the part of the app that stays in touch with your friends and
+              devices, from which its peer id comes (a room's is made for that room and kept nowhere);
+            </li>
             <li>your name, your friends and the friend requests between you;</li>
             <li>
               your groups: their names, their links (and the one before a reset), the public keys of the members

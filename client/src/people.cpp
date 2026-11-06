@@ -216,13 +216,17 @@ struct People::State {
           book(std::move(book_)),
           node(node_config(config)) {}
 
+    static std::string home_dir(const PeopleConfig& config) {
+        return config.data_dir.empty()
+                   ? std::string()
+                   : (std::filesystem::path(config.data_dir) / kHomeDir).string();
+    }
+
     static librats::NodeConfig node_config(const PeopleConfig& config) {
         librats::NodeConfig node;
         node.listen_port = config.port;
         node.bind_address = config.bind_address;
-        node.data_dir = config.data_dir.empty()
-                            ? std::string()
-                            : (std::filesystem::path(config.data_dir) / kHomeDir).string();
+        node.data_dir = home_dir(config);
         node.protocol = config.protocol;
         node.enable_network_monitor = config.watch_network;
         return node;
@@ -1210,7 +1214,7 @@ People::People(PeopleConfig config, PeopleHandlers handlers) {
         const bool internet = s.config.dht_bootstrap.empty();
         if (internet) s.node.add_subsystem(std::make_unique<librats::PortMappingService>());
         librats::DhtDiscovery::Config discovery;
-        discovery.data_dir = State::node_config(s.config).data_dir;
+        discovery.data_dir = State::home_dir(s.config);
         discovery.bind_address = s.config.bind_address;
         discovery.bootstrap_nodes = s.config.dht_bootstrap;
         discovery.discover_external_ip = internet;
@@ -1306,6 +1310,8 @@ void People::set_name(std::string name) {
 }
 
 PeerId People::home() const { return state_->node.local_id(); }
+
+std::string People::home_dir() const { return State::home_dir(state_->config); }
 
 std::string People::link() const {
     std::lock_guard lock(state_->mutex);

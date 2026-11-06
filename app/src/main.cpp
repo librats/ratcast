@@ -128,6 +128,7 @@ int main(int argc, char* argv[]) {
     if (ratcast::app::update::start_updated()) return EXIT_SUCCESS;
 
     const QString data = ratcast::app::data_folder();
+    ratcast::app::forget_rooms_nodes(data);
     const ratcast::LogFile log(
         {.path = QDir(data).filePath(QStringLiteral("ratcast.log")).toStdString()});
     qInstallMessageHandler(log_qt_message);

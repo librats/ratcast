@@ -161,6 +161,11 @@ struct CallConfig {
     /// Where the node keeps its identity — its peer id — and the DHT its
     /// table, across runs; "": a new identity each run.
     std::string data_dir = {};
+    /// Another node's data directory, whose DHT tables this call's DHT starts
+    /// from: their contacts, never that node's id, nothing written there
+    /// (a call of no data directory of its own, so not cold; the app's rooms
+    /// start from the home node's, People::home_dir()). "": none.
+    std::string dht_seed_dir = {};
     /// Findable by peer id through the DHT (invites() lists rats://PEER-ID).
     /// It takes a minute or two to converge on the open internet. A call that
     /// meets through the DHT (this, or dialing a peer id) asks the router to

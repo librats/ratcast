@@ -87,11 +87,16 @@
 
 namespace ratcast::app {
 
-/// Where the app keeps what lasts from one run to the next — its identities,
-/// the DHT's contacts — and its log: "ratcast" in the user's local application
-/// data (%LOCALAPPDATA% on Windows, ~/.local/share on Linux,
-/// ~/Library/Application Support on macOS).
+/// Where the app keeps what lasts from one run to the next — the person's
+/// key and what they know, the servers known, the home node's identity and
+/// DHT contacts ("home": rooms' nodes keep nothing) — and its log: "ratcast"
+/// in the user's local application data (%LOCALAPPDATA% on Windows,
+/// ~/.local/share on Linux, ~/Library/Application Support on macOS).
 QString data_folder();
+/// What rooms' nodes kept in the data folder `data` before they were of a
+/// moment — the room made here its identity and DHT tables at the top, one
+/// joined in "guest" — taken away; the person's and the home node's stay.
+void forget_rooms_nodes(const QString& data);
 
 class CallController : public QObject {
     Q_OBJECT
@@ -213,8 +218,6 @@ public:
     struct Environment {
         /// What every room starts from: where it listens, its protocol.
         CallConfig call = {};
-        /// Where the identity is kept.
-        std::string data_dir = {};
         std::function<Result<ScreenShareSources>(const ScreenShareConfig&, std::stop_token)>
             open_share = {};
         /// Each opens the device of the id it is given — "" for the

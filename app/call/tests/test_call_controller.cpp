@@ -22,6 +22,8 @@
 #include <atomic>
 #include <chrono>
 #include <cmath>
+#include <filesystem>
+#include <fstream>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -197,6 +199,28 @@ protected:
     CallController bob_;
     CallController carl_;
 };
+
+TEST(DataFolderTest, WhatRoomsNodesKeptIsTakenAwayAndThePersonsStays) {
+    QTemporaryDir data;
+    ASSERT_TRUE(data.isValid());
+    const std::filesystem::path folder(data.path().toStdString());
+    std::filesystem::create_directories(folder / "guest");
+    std::filesystem::create_directories(folder / "home");
+    const std::vector<std::filesystem::path> rooms = {"identity.key", "dht_routing.json",
+                                                      "dht_routing_v6.json", "guest/identity.key",
+                                                      "guest/dht_routing.json"};
+    const std::vector<std::filesystem::path> kept = {"person.key",        "people.json",
+                                                     "servers",           "ratcast.log",
+                                                     "home/identity.key", "home/dht_routing.json"};
+    for (const auto& file : rooms) std::ofstream(folder / file) << "x";
+    for (const auto& file : kept) std::ofstream(folder / file) << "x";
+
+    forget_rooms_nodes(data.path());
+    for (const auto& file : rooms) EXPECT_FALSE(std::filesystem::exists(folder / file)) << file;
+    EXPECT_FALSE(std::filesystem::exists(folder / "guest"));
+    for (const auto& file : kept) EXPECT_TRUE(std::filesystem::exists(folder / file)) << file;
+    forget_rooms_nodes(data.path());  // nothing more to take: no harm
+}
 
 TEST_F(CallControllerTest, OneMakesARoomAndAnotherJoins) {
     const QString invite = make_room();
@@ -1009,12 +1033,9 @@ TEST_F(CallControllerTest, CallingOffTheDialogIsNoNews) {
 }
 
 TEST_F(CallControllerTest, EveryShareIsChosenInTheDialog) {
-    // The identity kept, but not the desktop's last choice: that would stand
-    // for the dialog from then on.
-    QTemporaryDir data;
-    ASSERT_TRUE(data.isValid());
+    // Not the desktop's last choice kept: that would stand for the dialog
+    // from then on.
     CallController::Environment kept = environment();
-    kept.data_dir = data.path().toStdString();
     std::string asked_with = "unasked";
     kept.open_share = [&asked_with, open = kept.open_share](const ScreenShareConfig& config,
                                                             std::stop_token cancel) {

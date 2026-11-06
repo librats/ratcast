@@ -239,6 +239,7 @@ Call::Call(CallConfig config, CallHandlers handlers)
             librats::DhtDiscovery::Config discovery;
             discovery.discovery_key = key;
             discovery.data_dir = config_.data_dir;
+            discovery.seed_dir = config_.dht_seed_dir;
             discovery.search_interval = std::chrono::seconds(10);
             node_.add_subsystem(std::make_unique<librats::DhtDiscovery>(std::move(discovery)));
         }

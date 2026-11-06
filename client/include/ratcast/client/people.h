@@ -266,6 +266,10 @@ public:
     void set_name(std::string name);
     /// The home node's peer id.
     PeerId home() const;
+    /// Where the home node keeps its identity and its DHT's tables ("" with
+    /// no data directory): what a call's DHT starts from
+    /// (CallConfig::dht_seed_dir), the home node's running all along.
+    std::string home_dir() const;
 
     // ── Friends ─────────────────────────────────────────────────────────────
 
