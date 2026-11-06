@@ -33,6 +33,12 @@ jobs:
           libavcodec-dev libavformat-dev libavutil-dev libswscale-dev libopus-dev
           libpipewire-0.3-dev libglib2.0-dev dbus libwebrtc-audio-processing-dev
 
+      # The sound tests tap other applications: without the leave given, each
+      # tap waits three minutes to be refused (the script says why).
+      - name: Let the tests hear other applications (macOS)
+        if: runner.os == 'macOS'
+        run: sh .github/scripts/allow-audio-capture.sh
+
       - name: Configure
         run: >
           cmake -S . -B build
@@ -128,21 +134,9 @@ jobs:
           echo "PKG_CONFIG_PATH=$GITHUB_WORKSPACE/vcpkg-installed/arm64-osx/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}" \
             >> "$GITHUB_ENV"
 
-      # The leave to hear other applications (a process tap, macOS 14.2) given
-      # where the image gives the microphone's: asked for instead, nobody
-      # answers, and each tap waits three minutes to be refused. The rows are
-      # copied whole, whatever columns this macOS's table has.
+      # Else each tap waits three minutes to be refused (the script says why).
       - name: Let the tests hear other applications
-        run: |
-          for db in "$HOME/Library/Application Support/com.apple.TCC/TCC.db" \
-                    "/Library/Application Support/com.apple.TCC/TCC.db"; do
-            sudo sqlite3 "$db" "
-              CREATE TEMP TABLE leave AS SELECT * FROM access WHERE service = 'kTCCServiceMicrophone';
-              UPDATE leave SET service = 'kTCCServiceAudioCapture';
-              INSERT OR REPLACE INTO access SELECT * FROM leave;" ||
-              echo "::warning::cannot change $db"
-          done
-          sudo killall tccd || true
+        run: sh .github/scripts/allow-audio-capture.sh
 
       # Core Audio loads a device's driver as it starts.
       - name: Install a loopback sound device
