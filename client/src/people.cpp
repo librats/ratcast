@@ -981,8 +981,10 @@ struct People::State {
         for (const auto& [group, entry] : book.groups)
             if (meets(group, entry)) send_group(peer, group, false);
         if (friends_with(person)) {
-            // A friend's device met: theirs, and ours, to be seen online by.
-            send_presence(peer);
+            // A friend's device met: theirs, and ours, to be seen online by —
+            // with the answer, which their side may still wait for: one lost
+            // with a link that lost a race, after they asked as this side did.
+            send_answer(peer, person);
             if (first) after.changed = true;
             // Met as it is rung (registered under its ring key, as this is).
             if (ringing && ringing->ring.person == person) send_ring(peer, ringing->ring);

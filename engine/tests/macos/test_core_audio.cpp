@@ -51,6 +51,15 @@ Duration length_of(const std::vector<AudioFrame>& blocks) {
     return total;
 }
 
+/// `blocks` but the last `back` of sound, in whole blocks.
+std::vector<AudioFrame> before(std::vector<AudioFrame> blocks, Duration back) {
+    while (!blocks.empty() && back > Duration::zero()) {
+        back -= blocks.back().duration();
+        blocks.pop_back();
+    }
+    return blocks;
+}
+
 /// A playback of the tone at `pitch`, to the default output or a device.
 class Tone {
 public:
@@ -136,10 +145,17 @@ TEST_F(CoreAudioTest, ACaptureOfSystemSoundHearsWhatIsPlayed) {
     Heard heard;
     if (!capture.start(heard.sink(), heard.ended())) GTEST_SKIP() << "no process taps here";
     // Measured once it plays on: a global tap may hear a moment of the tone
-    // and then nothing for a while as it starts.
+    // and then nothing for a while as it starts — so once it is loud in each
+    // 200 ms of the last 300.
     const auto loud = [&](const auto& blocks) { return amplitude(blocks, kTone.frequency) > 0.1; };
+    const auto on_end = [&](const std::vector<AudioFrame>& blocks) {
+        for (Duration back : {0ms, 50ms, 100ms}) {
+            if (!loud(before(blocks, back))) return false;
+        }
+        return true;
+    };
     if (!loud(heard.wait_until(loud))) GTEST_SKIP() << "no leave to hear the computer's sound";
-    const std::vector<AudioFrame> blocks = heard.wait_for_more(300ms);
+    const std::vector<AudioFrame> blocks = heard.wait_until(on_end);
     EXPECT_NEAR(amplitude(blocks, kTone.frequency), kTone.level, 0.03);
     expect_follow_on(blocks);
 }
