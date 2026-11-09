@@ -14,8 +14,8 @@ import Ratcast.Video
 
 // One window, three faces: the start (the rat, alive — RatLogo — a name, a
 // room to make or a link to join), joining, and the room. CallController says which. In the room, the
-// members down the side — who speaks, who is muted or deafened, whose camera
-// and share are on — the share watched in the middle with the cameras beside
+// members down the side, each by their avatar — glowing green while heard, who
+// is muted or deafened, whose camera and share are on — the share watched in the middle with the cameras beside
 // it, what is said in a pane on the right (on a button that counts what is
 // unread), and the controls along the bottom: microphone, sound, camera,
 // sharing (and, while sharing, another screen or window shown in its place),
@@ -1089,8 +1089,11 @@ ApplicationWindow {
                 Layout.fillWidth: true
                 spacing: 8
 
-                Dot {
-                    color: call.speaking ? Material.color(Material.Green) : "#4e5058"
+                Avatar {
+                    Layout.margins: 6
+                    name: call.name
+                    tag: people.tag
+                    speaking: call.speaking && !call.muted && !call.deafened
                 }
                 PlainLabel {
                     Layout.fillWidth: true
@@ -1110,10 +1113,9 @@ ApplicationWindow {
                 Layout.fillWidth: true
                 Layout.fillHeight: true
                 clip: true
-                spacing: 4
                 model: call.members
 
-                delegate: RowLayout {
+                delegate: Item {
                     id: member
                     required property string peerId
                     required property string peer
@@ -1125,61 +1127,91 @@ ApplicationWindow {
                     required property bool reconnecting
                     required property real volume
                     required property bool mutedHere
+                    required property string person
+                    required property string tag
+                    required property bool isFriend
+                    required property bool befriendable
                     width: ListView.view.width
-                    spacing: 8
+                    height: memberRow.implicitHeight
 
-                    Dot {
-                        color: member.reconnecting ? Material.color(Material.Orange)
-                             : member.speaking ? Material.color(Material.Green) : "#4e5058"
-                    }
-                    // A click on the name: how loud they are heard here.
-                    PlainLabel {
-                        Layout.fillWidth: true
-                        text: root.memberName(member.name, member.peer)
-
-                        HoverHandler {
-                            cursorShape: Qt.PointingHandCursor
-                        }
-                        TapHandler {
-                            acceptedButtons: Qt.LeftButton | Qt.RightButton
-                            onTapped: hearing.open()
+                    // A click anywhere along it: how loud they are heard here.
+                    Rectangle {
+                        anchors.fill: parent
+                        radius: 6
+                        color: Material.foreground
+                        opacity: memberHover.hovered ? 0.07 : 0
+                        Behavior on opacity {
+                            NumberAnimation {
+                                duration: 100
+                            }
                         }
                     }
-                    // Whose: four characters that tell two of a name apart.
-                    Badge {
-                        text: member.tag
-                        opacity: 0.45
-                        visible: text.length > 0
+                    HoverHandler {
+                        id: memberHover
+                        cursorShape: Qt.PointingHandCursor
                     }
-                    Glyph {
-                        glyph: "user"
-                        visible: member.isFriend
+                    TapHandler {
+                        acceptedButtons: Qt.LeftButton | Qt.RightButton
+                        onTapped: hearing.open()
                     }
-                    Badge {
-                        text: member.mutedHere ? qsTr("off for you")
-                                               : member.volume !== 1
-                                                 ? qsTr("%1%").arg(Math.round(member.volume * 100))
-                                                 : ""
-                    }
-                    Badge {
-                        text: member.reconnecting ? qsTr("reconnecting…") : ""
-                        color: Material.color(Material.Orange)
-                    }
-                    Glyph {
-                        glyph: member.deafened ? "headphone-off" : "mic-off"
-                        visible: !member.reconnecting && (member.deafened || member.muted)
-                    }
-                    Button {
-                        visible: member.sharing
-                        flat: true
-                        font.pixelSize: 11
-                        icon.source: call.watching === member.peerId ? "icons/eye.svg"
-                                                                     : "icons/tv-minimal-play.svg"
-                        icon.width: 16
-                        icon.height: 16
-                        text: call.watching === member.peerId ? qsTr("Watching") : qsTr("Watch")
-                        enabled: call.watching !== member.peerId
-                        onClicked: call.watch(member.peerId)
+
+                    RowLayout {
+                        id: memberRow
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        anchors.rightMargin: 4
+                        anchors.verticalCenter: parent.verticalCenter
+                        spacing: 8
+
+                        Avatar {
+                            Layout.margins: 6
+                            name: member.name
+                            // One with no card yet still a colour of their own.
+                            tag: member.tag.length > 0 ? member.tag : member.peer
+                            speaking: member.speaking
+                            reconnecting: member.reconnecting
+                        }
+                        PlainLabel {
+                            Layout.fillWidth: true
+                            text: root.memberName(member.name, member.peer)
+                            opacity: member.speaking ? 1 : 0.85
+                        }
+                        // Whose: four characters that tell two of a name apart.
+                        Badge {
+                            text: member.tag
+                            opacity: 0.45
+                            visible: text.length > 0
+                        }
+                        Glyph {
+                            glyph: "user"
+                            visible: member.isFriend
+                        }
+                        Badge {
+                            text: member.mutedHere ? qsTr("off for you")
+                                                   : member.volume !== 1
+                                                     ? qsTr("%1%").arg(Math.round(member.volume * 100))
+                                                     : ""
+                        }
+                        Badge {
+                            text: member.reconnecting ? qsTr("reconnecting…") : ""
+                            color: Material.color(Material.Orange)
+                        }
+                        Glyph {
+                            glyph: member.deafened ? "headphone-off" : "mic-off"
+                            visible: !member.reconnecting && (member.deafened || member.muted)
+                        }
+                        Button {
+                            visible: member.sharing
+                            flat: true
+                            font.pixelSize: 11
+                            icon.source: call.watching === member.peerId ? "icons/eye.svg"
+                                                                         : "icons/tv-minimal-play.svg"
+                            icon.width: 16
+                            icon.height: 16
+                            text: call.watching === member.peerId ? qsTr("Watching") : qsTr("Watch")
+                            enabled: call.watching !== member.peerId
+                            onClicked: call.watch(member.peerId)
+                        }
                     }
 
                     Popup {
