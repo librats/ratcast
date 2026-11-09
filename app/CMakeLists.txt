@@ -137,7 +137,7 @@ if(ANDROID)
         QT_ANDROID_APP_NAME           ratcast
         QT_ANDROID_APP_ICON           "@drawable/ratcast"
         QT_ANDROID_MIN_SDK_VERSION    29
-        QT_ANDROID_TARGET_SDK_VERSION 35
+        QT_ANDROID_TARGET_SDK_VERSION 36
         QT_ANDROID_VERSION_NAME       "${PROJECT_VERSION}"
         QT_ANDROID_VERSION_CODE       ${version_code}
         QT_ANDROID_EXTRA_LIBS         "${android_libs}"
