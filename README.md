@@ -80,7 +80,7 @@ Get the latest build from [Releases](https://github.com/librats/ratcast/releases
 
 | Platform | Package | Notes |
 |---|---|---|
-| Windows 10/11 x64 | `ratcast-<version>-windows-x64.zip` | Unzip and run `ratcast.exe` |
+| Windows 10/11 x64 | `ratcast-<version>-windows-x64-setup.exe` | Installs for your user, no administrator rights needed. It is not signed: Windows may warn before the first start. Or take `ratcast-<version>-windows-x64.zip`, unzip it and run `ratcast.exe` |
 | Linux x86_64 | `ratcast-<version>-linux-x86_64.AppImage` | glibc 2.39+ and PipeWire 1.0+ (Ubuntu 24.04, Debian 13, Fedora 40 or newer) |
 | macOS 14+ Apple Silicon (preview) | `ratcast-<version>-macos-arm64.dmg` | Drag `ratcast` into Applications. It is not notarized: open it the first time with right-click → **Open** |
 | Android 10+ arm64 (preview) | `ratcast-<version>-android-arm64.apk` | Open it on the phone and allow installing from that app. Watch, talk, show a camera and share the screen; a newer APK installs over it. A room's link opens the app |
@@ -259,7 +259,8 @@ which needs the Screen Recording permission for the terminal they run in.
 <details>
 <summary><b>Releases</b></summary>
 
-[`release.yml`](.github/workflows/release.yml) builds the Windows zip, the Linux AppImage,
+[`release.yml`](.github/workflows/release.yml) builds the Windows zip and installer (Inno Setup,
+`app/installer/windows.iss`), the Linux AppImage,
 the macOS DMG (with the same bundle zipped for the updater) and the Android APK on every push
 to `main` and publishes them as a GitHub release for each `v*` tag. The APK is signed with the
 key in the repository's secrets (`ANDROID_KEYSTORE`, the keystore in base64, with

@@ -1,7 +1,7 @@
 name: Release
 
 # The app as people get it: on Windows a folder that runs on a bare system,
-# zipped; on Linux an AppImage; on macOS (Apple Silicon) the bundle in a DMG,
+# zipped, and an installer of it; on Linux an AppImage; on macOS (Apple Silicon) the bundle in a DMG,
 # and zipped for the updater; on Android (arm64) an APK. Every push to main leaves them as artifacts (and
 # keeps vcpkg's caches warm for the tags, which may read only main's); a v* tag
 # makes them a GitHub release.
@@ -58,6 +58,7 @@ jobs:
           } else {
             $version = "dev-$("${{ github.sha }}".Substring(0, 8))"
           }
+          "label=$version" >> $env:GITHUB_OUTPUT
           # The updater finds the package by this name (app/update/release.h).
           "name=ratcast-$version-windows-x64" >> $env:GITHUB_OUTPUT
 
@@ -164,13 +165,53 @@ jobs:
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           7z a -tzip "$name-symbols.zip" ./build/bin/RelWithDebInfo/ratcast*.pdb
 
+      # The same folder for those who would rather install it (the updater
+      # stays with the zip): app/installer/windows.iss.
+      - name: Installer
+        run: |
+          $find = { Get-ChildItem "${env:ProgramFiles(x86)}\Inno Setup *\ISCC.exe", "$env:ProgramFiles\Inno Setup *\ISCC.exe" -ErrorAction SilentlyContinue | Select-Object -First 1 }
+          $iscc = & $find
+          if (-not $iscc) {
+            choco install innosetup -y --no-progress
+            if ($LASTEXITCODE) { exit $LASTEXITCODE }
+            $iscc = & $find
+          }
+          if (-not $iscc) { throw "Inno Setup is not on the runner" }
+          $dir = (Resolve-Path "package/${{ steps.version.outputs.name }}").Path
+          & $iscc.FullName /Qp "/DPackageVersion=${{ steps.version.outputs.label }}" "/DPackageDir=$dir" "/O${{ github.workspace }}" app/installer/windows.iss
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+
+      # What it must do on a machine: put the app where it can update itself,
+      # with its links, and take all of it away again, what an update added too.
+      - name: Check the installer
+        run: |
+          $setup = "${{ steps.version.outputs.name }}-setup.exe"
+          $app = "$env:LOCALAPPDATA\Programs\ratcast"
+          $process = Start-Process ".\$setup" -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART' -PassThru -Wait
+          if ($process.ExitCode) { throw "$setup`: exit code $($process.ExitCode)" }
+          if (-not (Test-Path "$app\ratcast.exe")) { throw "ratcast.exe is not in $app" }
+          $expected = "`"$app\ratcast.exe`" `"%1`""
+          $command = (Get-Item 'HKCU:\Software\Classes\rats\shell\open\command').GetValue('')
+          if ($command -ne $expected) { throw "rats:// opens $command, not $expected" }
+
+          Set-Content "$app\from-an-update.dll" 'added by the updater'
+          Start-Process "$app\unins000.exe" -ArgumentList '/VERYSILENT', '/SUPPRESSMSGBOXES', '/NORESTART' -Wait
+          # The uninstaller goes on in a copy of itself after this one ends.
+          foreach ($second in 1..60) {
+            if (-not (Test-Path $app)) { break }
+            Start-Sleep -Seconds 1
+          }
+          if (Test-Path $app) { throw "$app is still there after uninstalling" }
+          if (Test-Path 'HKCU:\Software\Classes\rats') { throw "rats:// is still registered after uninstalling" }
+
       - uses: actions/upload-artifact@v4
         with:
           name: ${{ steps.version.outputs.name }}
           path: |
             ${{ steps.version.outputs.name }}.zip
+            ${{ steps.version.outputs.name }}-setup.exe
             ${{ steps.version.outputs.name }}-symbols.zip
-          compression-level: 0  # zips already
+          compression-level: 0  # compressed already
           retention-days: 30
 
   linux:

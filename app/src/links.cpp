@@ -161,6 +161,12 @@ bool SingleInstance::handed_over(const QString& link) {
 void SingleInstance::listen(LinkOpener* opener) {
     if (!kHandsOver) return;
     opener_ = opener;
+#ifdef Q_OS_WIN
+    // The installer's and uninstaller's sign that the app is running
+    // (AppMutex in app/installer/windows.iss), whatever its data folder: held
+    // until the process ends.
+    CreateMutexW(nullptr, FALSE, L"ratcast-app");
+#endif
     // A process that answers keeps the name (one started at the same moment);
     // one that does not left it behind (a socket's file on Linux).
     QLocalSocket probe;
