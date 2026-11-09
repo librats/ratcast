@@ -379,6 +379,22 @@
         <translation>एक समूह</translation>
     </message>
     <message>
+        <source>Leave this room?</source>
+        <translation>यह रूम छोड़ें?</translation>
+    </message>
+    <message>
+        <source>The link leads to another room. Leave this one and join it?</source>
+        <translation>यह लिंक किसी दूसरे रूम का है। यह रूम छोड़कर उसमें जुड़ें?</translation>
+    </message>
+    <message>
+        <source>Leave and join</source>
+        <translation>छोड़ें और जुड़ें</translation>
+    </message>
+    <message>
+        <source>Stay</source>
+        <translation>यहीं रहें</translation>
+    </message>
+    <message>
         <source>Become this person on this device?</source>
         <translation>इस डिवाइस पर यह व्यक्ति बनें?</translation>
     </message>

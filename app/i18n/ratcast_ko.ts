@@ -379,6 +379,22 @@
         <translation>그룹</translation>
     </message>
     <message>
+        <source>Leave this room?</source>
+        <translation>이 방을 나갈까요?</translation>
+    </message>
+    <message>
+        <source>The link leads to another room. Leave this one and join it?</source>
+        <translation>링크는 다른 방으로 연결됩니다. 이 방을 나가고 그 방에 참여할까요?</translation>
+    </message>
+    <message>
+        <source>Leave and join</source>
+        <translation>나가고 참여</translation>
+    </message>
+    <message>
+        <source>Stay</source>
+        <translation>머무르기</translation>
+    </message>
+    <message>
         <source>Become this person on this device?</source>
         <translation>이 기기에서 이 사람이 될까요?</translation>
     </message>

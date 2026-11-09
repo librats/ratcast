@@ -134,9 +134,8 @@ SingleInstance::SingleInstance(const QString& data_folder)
                 }
                 const QString link = QString::fromUtf8(socket->readLine(kMostLink)).trimmed();
                 const bool taken = opener_ && opener_->hand_on(link);
-                LOG_INFO("app",
-                         "a link handed over, " << (taken ? "taken" : "left to its process"));
-                socket->write(taken ? "1" : "0");
+                LOG_INFO("app", "another start handed over, " << (taken ? "taken" : "not taken"));
+                socket->write("1");
                 socket->disconnectFromServer();
             });
         }
@@ -155,22 +154,24 @@ bool SingleInstance::handed_over(const QString& link) {
 #endif
     socket.write(link.toUtf8() + '\n');
     if (!socket.waitForBytesWritten(1000)) return false;
-    if (!socket.waitForReadyRead(3000)) return false;
-    return socket.read(1) == "1";
+    // One that does not answer is stuck: no reason not to start.
+    return socket.waitForReadyRead(3000);
 }
 
 void SingleInstance::listen(LinkOpener* opener) {
     if (!kHandsOver) return;
     opener_ = opener;
-    // A process that answers keeps the name (one in a room, this one joining
-    // too); one that does not left it behind (a socket's file on Linux).
+    // A process that answers keeps the name (one started at the same moment);
+    // one that does not left it behind (a socket's file on Linux).
     QLocalSocket probe;
     probe.connectToServer(name_);
     if (probe.waitForConnected(200)) return;
     QLocalServer::removeServer(name_);
     if (!server_.listen(name_))
-        LOG_WARN("app", "links not handed over: " << server_.errorString().toStdString());
+        LOG_WARN("app", "other starts not handed over: " << server_.errorString().toStdString());
 }
+
+void SingleInstance::stop() { server_.close(); }
 
 // ── The scheme ──────────────────────────────────────────────────────────────
 

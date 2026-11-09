@@ -373,7 +373,34 @@ void CallController::enter(const QString& group) {
     start(std::move(config), State::InRoom);
 }
 
+bool CallController::isRoomLink(const QString& link) const {
+    const std::string text = link.trimmed().toStdString();
+    return parse_group_link(text).has_value() || parse_rats_link(text).has_value();
+}
+
+bool CallController::isThisRoom(const QString& link) const {
+    if (state_ == State::Idle) return false;
+    const std::string text = link.trimmed().toStdString();
+    if (const std::optional<GroupLink> group = parse_group_link(text))
+        return QString::fromStdString(group->group.to_hex()) == group_;
+    const std::optional<RatsLink> url = parse_rats_link(text);
+    if (!url) return false;
+    if (room_ && *room_ == url->url) return true;
+    // Its other ways in: by address, on a network with no server.
+    return std::ranges::any_of(invites_, [&](const QString& invite) {
+        const std::optional<RatsLink> ours = parse_rats_link(invite.toStdString());
+        return ours && ours->url == url->url;
+    });
+}
+
+void CallController::joinInstead(const QString& link) {
+    if (!isRoomLink(link)) return;
+    if (state_ != State::Idle) end();
+    join(link);
+}
+
 void CallController::start(CallConfig config, State state) {
+    room_ = config.dial;
     set_notice({});
     chat_.clear();
     told_hearing_.clear();
@@ -452,9 +479,7 @@ void CallController::ring(const QString& person) {
 void CallController::acceptRing(const QString& id) {
     if (!people_) return;
     const QString room = people_->answerRing(id, true);
-    if (room.isEmpty()) return;
-    if (state_ != State::Idle) end();
-    join(room);
+    if (!room.isEmpty()) joinInstead(room);
 }
 
 void CallController::end(QString notice) {
@@ -489,6 +514,7 @@ void CallController::end(QString notice) {
         Q_EMIT invitesChanged();
     }
     group_link_.clear();
+    room_.reset();
     if (!group_.isEmpty()) {
         group_.clear();
         Q_EMIT groupChanged();

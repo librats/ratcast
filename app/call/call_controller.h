@@ -277,6 +277,12 @@ public:
     /// Join the room at `link`; a group's link (https://ratcast.app/g/#…),
     /// the group joined (People::join_group()) and its room entered.
     Q_INVOKABLE void join(const QString& link);
+    /// Whether `link` is a room's or a group's.
+    Q_INVOKABLE bool isRoomLink(const QString& link) const;
+    /// Whether `link` leads to the room this side is in (or is joining).
+    Q_INVOKABLE bool isThisRoom(const QString& link) const;
+    /// join(`link`), the room this side is in left first.
+    Q_INVOKABLE void joinInstead(const QString& link);
     /// Be in the room of `group` (its id in hex), one of the person's — its
     /// main channel, a RoomSecret of the group's — with whoever is there:
     /// nobody, maybe, until others come. Its invite is the group's link. In
@@ -495,8 +501,9 @@ private:
     Environment environment_;
     State state_ = State::Idle;
     QStringList invites_;
-    QString group_;       ///< the group whose room this is, in hex
-    QString group_link_;  ///< its link, the room's first invite
+    QString group_;                ///< the group whose room this is, in hex
+    QString group_link_;           ///< its link, the room's first invite
+    std::optional<RatsUrl> room_;  ///< where this room is met
     QString notice_;
     QString name_;
     QString server_;

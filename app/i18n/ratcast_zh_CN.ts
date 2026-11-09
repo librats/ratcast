@@ -379,6 +379,22 @@
         <translation>一个群组</translation>
     </message>
     <message>
+        <source>Leave this room?</source>
+        <translation>离开此房间？</translation>
+    </message>
+    <message>
+        <source>The link leads to another room. Leave this one and join it?</source>
+        <translation>此链接指向另一个房间。要离开当前房间并加入吗？</translation>
+    </message>
+    <message>
+        <source>Leave and join</source>
+        <translation>离开并加入</translation>
+    </message>
+    <message>
+        <source>Stay</source>
+        <translation>留下</translation>
+    </message>
+    <message>
         <source>Become this person on this device?</source>
         <translation>要在此设备上成为此人吗？</translation>
     </message>

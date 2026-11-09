@@ -379,6 +379,22 @@
         <translation>bir grup</translation>
     </message>
     <message>
+        <source>Leave this room?</source>
+        <translation>Bu odadan çıkılsın mı?</translation>
+    </message>
+    <message>
+        <source>The link leads to another room. Leave this one and join it?</source>
+        <translation>Bağlantı başka bir odaya götürüyor. Bu odadan çıkıp ona katılmak ister misin?</translation>
+    </message>
+    <message>
+        <source>Leave and join</source>
+        <translation>Çık ve katıl</translation>
+    </message>
+    <message>
+        <source>Stay</source>
+        <translation>Kal</translation>
+    </message>
+    <message>
         <source>Become this person on this device?</source>
         <translation>Bu cihazda bu kişi olunsun mu?</translation>
     </message>

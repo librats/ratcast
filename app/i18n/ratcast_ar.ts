@@ -379,6 +379,22 @@
         <translation>مجموعة</translation>
     </message>
     <message>
+        <source>Leave this room?</source>
+        <translation>مغادرة هذه الغرفة؟</translation>
+    </message>
+    <message>
+        <source>The link leads to another room. Leave this one and join it?</source>
+        <translation>يؤدي الرابط إلى غرفة أخرى. هل تريد مغادرة هذه الغرفة والانضمام إليها؟</translation>
+    </message>
+    <message>
+        <source>Leave and join</source>
+        <translation>مغادرة وانضمام</translation>
+    </message>
+    <message>
+        <source>Stay</source>
+        <translation>البقاء</translation>
+    </message>
+    <message>
         <source>Become this person on this device?</source>
         <translation>هل تريد أن تصبح هذا الشخص على هذا الجهاز؟</translation>
     </message>

@@ -379,6 +379,22 @@
         <translation>un groupe</translation>
     </message>
     <message>
+        <source>Leave this room?</source>
+        <translation>Quitter ce salon ?</translation>
+    </message>
+    <message>
+        <source>The link leads to another room. Leave this one and join it?</source>
+        <translation>Le lien mène à un autre salon. Quitter celui-ci et le rejoindre ?</translation>
+    </message>
+    <message>
+        <source>Leave and join</source>
+        <translation>Quitter et rejoindre</translation>
+    </message>
+    <message>
+        <source>Stay</source>
+        <translation>Rester</translation>
+    </message>
+    <message>
         <source>Become this person on this device?</source>
         <translation>Devenir cette personne sur cet appareil ?</translation>
     </message>

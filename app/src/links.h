@@ -6,8 +6,8 @@
  * devices'.
  *
  * However a link comes, it goes to the window's openLink(), which joins a
- * room's or a group's (group.h) unless a room is already on, and takes a
- * person's or a device's (people.h):
+ * room's or a group's (group.h) — in a room already, on asking; this room's,
+ * nothing to do — and takes a person's or a device's (people.h):
  * - Android: rats:// links and the website's (https://ratcast.app/r/#…,
  *   /g/#…, /u/#…, /d/#…: its App Links) by the manifest's intent filters, handed on
  *   by Qt to QDesktopServices' handlers;
@@ -56,21 +56,26 @@ private:
     QString pending_;
 };
 
-/// One app on the desktop for the links: a process given a link hands it to
-/// the one already running with the same data folder, which joins it unless
-/// in a room already — then the new process goes on and joins it itself, as
-/// a host may be in a room twice. A process with no link always goes on.
+/// One app to a data folder, on the desktop: the same person's key, friends
+/// and home node, and never that person twice in a room. A process started
+/// beside one already running hands it its link, or "" for none, and ends; the
+/// one running comes to the front and does what the link asks.
 class SingleInstance final : public QObject {
     Q_OBJECT
 
 public:
     explicit SingleInstance(const QString& data_folder);
 
-    /// Whether the process running took `link`: true, and this one ends.
+    /// Whether a process is running to take `link` ("" for none): true, and
+    /// this one ends.
     bool handed_over(const QString& link);
 
-    /// Links handed over from now on go to `opener`.
+    /// What is handed over from now on goes to `opener`.
     void listen(LinkOpener* opener);
+
+    /// Nothing more handed over: as this process goes, for one started in
+    /// its place (an update's restart) to start.
+    void stop();
 
 private:
     QString name_;

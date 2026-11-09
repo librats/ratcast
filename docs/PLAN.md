@@ -1877,8 +1877,9 @@ devices, and Ann's phone, added by a QR code from her PC, is Ann to Bob.
   entry's `MimeType` and, for an AppImage, an entry of its own made the default by `xdg-mime`.
   A link the system starts a second process with on Windows and Linux is handed to the one
   running with the same data folder (`SingleInstance`, a local socket), which joins it and
-  comes to the front — or, in a room already, leaves it to the new process, as a host may be
-  in a room twice. Tested: the web links both ways, as messengers hand them on, and what is
+  comes to the front; started with no link, or in a room already, the new process ends all
+  the same — one app to a person, never them twice in a room — a link to that room bringing
+  the window up, one to another asking whether to leave for it. Tested: the web links both ways, as messengers hand them on, and what is
   none; the controller's invites; on Windows by hand — the scheme registered, a link opened by
   the system joined, one given to a second process taken by the first. Left: the site's
   `/.well-known/assetlinks.json` (the release key's SHA-256): until it is there, Android opens

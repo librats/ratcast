@@ -379,6 +379,22 @@
         <translation>группа</translation>
     </message>
     <message>
+        <source>Leave this room?</source>
+        <translation>Выйти из этой комнаты?</translation>
+    </message>
+    <message>
+        <source>The link leads to another room. Leave this one and join it?</source>
+        <translation>Ссылка ведёт в другую комнату. Выйти из этой и перейти туда?</translation>
+    </message>
+    <message>
+        <source>Leave and join</source>
+        <translation>Выйти и перейти</translation>
+    </message>
+    <message>
+        <source>Stay</source>
+        <translation>Остаться</translation>
+    </message>
+    <message>
         <source>Become this person on this device?</source>
         <translation>Стать этим человеком на этом устройстве?</translation>
     </message>

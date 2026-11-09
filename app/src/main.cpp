@@ -123,26 +123,6 @@ int main(int argc, char* argv[]) {
     // each deploy tool — windeployqt, macdeployqt, androiddeployqt, linuxdeploy
     // — brings it and its plugin along.
     static_cast<void>(QSvgRenderer::staticMetaObject.className());
-    // An update an earlier run downloaded, put in place before anything else
-    // is loaded: the new version then starts in this one's place.
-    if (ratcast::app::update::start_updated()) return EXIT_SUCCESS;
-
-    const QString data = ratcast::app::data_folder();
-    ratcast::app::forget_rooms_nodes(data);
-    const ratcast::LogFile log(
-        {.path = QDir(data).filePath(QStringLiteral("ratcast.log")).toStdString()});
-    qInstallMessageHandler(log_qt_message);
-    LOG_INFO("app", "ratcast " << ratcast::version() << ", librats " << ratcast::librats_version()
-                               << ", Qt " << qVersion() << ", "
-                               << QSysInfo::prettyProductName().toStdString() << " "
-                               << QSysInfo::currentCpuArchitecture().toStdString());
-    // The times logged are this computer's own: told against UTC, so that two
-    // members' logs line up.
-    const int offset = QDateTime::currentDateTime().offsetFromUtc() / 60;
-    LOG_INFO("app",
-             "times are UTC" << QString::asprintf("%c%02d:%02d", offset < 0 ? '-' : '+',
-                                                  std::abs(offset) / 60, std::abs(offset) % 60)
-                                    .toStdString());
 
     QCommandLineParser options;
     options.setApplicationDescription(
@@ -162,13 +142,40 @@ int main(int argc, char* argv[]) {
                                   QStringLiteral("[link]"));
     options.process(app);
     const QString link = options.positionalArguments().value(0);
-    // A link the system opened a second app with joined by the first, unless
-    // it is in a room already.
+
+    // One app to a data folder: started beside it, this process hands it the
+    // link and ends, before touching what that one is using — the update, the
+    // log, the files of the folder.
+    const QString data = ratcast::app::data_folder();
     ratcast::app::SingleInstance instance(data);
-    if (!link.isEmpty() && instance.handed_over(link)) {
-        LOG_INFO("app", "the link handed to the app running");
-        return EXIT_SUCCESS;
-    }
+    if (instance.handed_over(link)) return EXIT_SUCCESS;
+
+    // An update an earlier run downloaded, put in place before anything else
+    // is loaded: the new version then starts in this one's place.
+    if (ratcast::app::update::start_updated()) return EXIT_SUCCESS;
+
+    // From here this is the app; a start while the window is made waits for
+    // it. As it quits the name is let go, for an update's restart.
+    instance.listen(&links);
+    QObject::connect(&app, &QCoreApplication::aboutToQuit, &instance,
+                     &ratcast::app::SingleInstance::stop);
+
+    ratcast::app::forget_rooms_nodes(data);
+    const ratcast::LogFile log(
+        {.path = QDir(data).filePath(QStringLiteral("ratcast.log")).toStdString()});
+    qInstallMessageHandler(log_qt_message);
+    LOG_INFO("app", "ratcast " << ratcast::version() << ", librats " << ratcast::librats_version()
+                               << ", Qt " << qVersion() << ", "
+                               << QSysInfo::prettyProductName().toStdString() << " "
+                               << QSysInfo::currentCpuArchitecture().toStdString());
+    // The times logged are this computer's own: told against UTC, so that two
+    // members' logs line up.
+    const int offset = QDateTime::currentDateTime().offsetFromUtc() / 60;
+    LOG_INFO("app",
+             "times are UTC" << QString::asprintf("%c%02d:%02d", offset < 0 ? '-' : '+',
+                                                  std::abs(offset) / 60, std::abs(offset) % 60)
+                                    .toStdString());
+
     ratcast::app::register_link_scheme();
     int every = options.isSet(stats) ? 2 : 0;
     if (options.isSet(stats_every)) {
@@ -200,7 +207,6 @@ int main(int argc, char* argv[]) {
     if (engine.rootObjects().isEmpty()) return QGuiApplication::exec();
     QObject* window = engine.rootObjects().constFirst();
     links.show_to(window);
-    instance.listen(&links);
     Activity activity(window);
     QObject::connect(window, SIGNAL(toBackground()), &activity, SLOT(to_background()));
     QObject::connect(window, SIGNAL(fullScreenChanged()), &activity, SLOT(full_screen_changed()));

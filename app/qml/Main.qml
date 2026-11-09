@@ -114,11 +114,16 @@ ApplicationWindow {
 
     Component.onCompleted: if (root.link.length > 0) call.join(root.link)
 
-    /// A link the system opened the app with (links.h), or one given: a
-    /// person's asked to be a friend, a device's asked to become them first,
-    /// a room's joined as one given at the start is, unless a room is already
-    /// on; whether it was taken.
+    /// A link the system opened the app with (links.h), or one given; "" when
+    /// the app was only started again: a person's asked to be a friend, a
+    /// device's asked to become them first, a room's joined as one given at
+    /// the start is — with a room on, its own nothing to do, another's on
+    /// asking; whether it was taken.
     function openLink(link) {
+        if (!root.visible)
+            root.fromTray()
+        if (link.length === 0)
+            return true
         if (people.isDeviceLink(link)) {
             joinAsDevice.link = link
             joinAsDevice.open()
@@ -129,8 +134,15 @@ ApplicationWindow {
             root.showFriends()
             return true
         }
-        if (call.state !== CallController.Idle)
-            return false
+        if (call.state !== CallController.Idle) {
+            if (!call.isRoomLink(link))
+                return false
+            if (!call.isThisRoom(link)) {
+                leaveForLink.link = link
+                leaveForLink.open()
+            }
+            return true
+        }
         call.join(link)
         return true
     }
@@ -517,6 +529,39 @@ ApplicationWindow {
             if (tray.visible && !root.visible)
                 tray.showMessage("ratcast", shareNotice.text)
         }
+    }
+
+    // A link to another room opened while in one: only on asking is this one
+    // left for it, a share going on here perhaps.
+    Dialog {
+        id: leaveForLink
+
+        property string link
+
+        title: qsTr("Leave this room?")
+        modal: true
+        anchors.centerIn: Overlay.overlay
+        width: Math.min(root.width - 48, 420)
+
+        Label {
+            width: parent.width
+            text: qsTr("The link leads to another room. Leave this one and join it?")
+            wrapMode: Text.Wrap
+        }
+        footer: DialogButtonBox {
+            Button {
+                text: qsTr("Leave and join")
+                icon.source: "icons/log-in.svg"
+                highlighted: true
+                DialogButtonBox.buttonRole: DialogButtonBox.AcceptRole
+            }
+            Button {
+                text: qsTr("Stay")
+                flat: true
+                DialogButtonBox.buttonRole: DialogButtonBox.RejectRole
+            }
+        }
+        onAccepted: call.joinInstead(link)
     }
 
     // A device link opened here: this device becomes its person, if they say yes.

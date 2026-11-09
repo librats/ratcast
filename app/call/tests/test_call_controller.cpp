@@ -1215,6 +1215,48 @@ TEST_F(CallControllerTest, AMemberIsKnownByWhoseItIsAndAskedToBeAFriend) {
     bob_.setPeople(nullptr);
 }
 
+// A link opened while in a room: its own is told apart from another's, which
+// takes this side there only when asked to.
+TEST_F(CallControllerTest, ALinkIsToldApartFromTheRoomThisSideIsIn) {
+    PeopleAtAServer at;
+    PeopleController people;
+    at.start(people, "Ann");
+    at.meet(ann_);
+    ann_.setPeople(&people);
+
+    const QString films = people.makeGroup("Films");
+    const QString games = people.makeGroup("Games");
+    const auto link_of = [&](const QString& id) {
+        for (const QVariant& group : people.groups())
+            if (group.toMap().value("id") == id) return group.toMap().value("link").toString();
+        return QString{};
+    };
+    EXPECT_TRUE(ann_.isRoomLink(link_of(films)));
+    EXPECT_FALSE(ann_.isRoomLink("no link at all"));
+    EXPECT_FALSE(ann_.isThisRoom(link_of(films))) << "in no room";
+
+    ann_.enter(films);
+    ASSERT_EQ(ann_.state(), State::InRoom);
+    EXPECT_TRUE(ann_.isThisRoom(link_of(films)));
+    EXPECT_FALSE(ann_.isThisRoom(link_of(games)));
+
+    ann_.joinInstead("no link at all");
+    EXPECT_EQ(ann_.group(), films) << "not left for nowhere";
+    ann_.joinInstead(link_of(games));
+    ASSERT_EQ(ann_.state(), State::InRoom);
+    EXPECT_EQ(ann_.group(), games);
+    ann_.leave();
+
+    // A room of nobody's, by each of its links.
+    ann_.create();
+    ASSERT_EQ(ann_.state(), State::InRoom);
+    ASSERT_FALSE(ann_.invites().isEmpty());
+    for (const QString& invite : ann_.invites())
+        EXPECT_TRUE(ann_.isThisRoom(invite)) << invite.toStdString();
+    EXPECT_FALSE(ann_.isThisRoom(link_of(films)));
+    ann_.leave();
+}
+
 // From the list while in a room: another group's entered in place of it, its
 // own a click that changes nothing.
 TEST_F(CallControllerTest, AnotherGroupsRoomIsEnteredFromARoom) {
