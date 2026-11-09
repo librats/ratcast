@@ -529,12 +529,24 @@
         <translation>나</translation>
     </message>
     <message>
+        <source>Still sharing</source>
+        <translation>공유 중입니다</translation>
+    </message>
+    <message>
+        <source>Only this preview is paused. The others still see your share.</source>
+        <translation>이 미리 보기만 일시 중지되었습니다. 다른 사람들은 계속 공유 화면을 보고 있습니다.</translation>
+    </message>
+    <message>
         <source>Your share</source>
         <translation>내 공유 화면</translation>
     </message>
     <message>
-        <source>Your share · paused</source>
-        <translation>내 공유 화면 · 일시 중지됨</translation>
+        <source>What the others see. Drag it to another corner.</source>
+        <translation>다른 사람들이 보는 화면입니다. 다른 모서리로 끌어 옮기세요.</translation>
+    </message>
+    <message>
+        <source>What the others see. It pauses here while you are in another window; your share goes on. Drag it to another corner.</source>
+        <translation>다른 사람들이 보는 화면입니다. 다른 창을 사용하는 동안 여기서는 일시 중지되지만 공유는 계속됩니다. 다른 모서리로 끌어 옮기세요.</translation>
     </message>
     <message>
         <source>Hide your share</source>
@@ -543,10 +555,6 @@
     <message>
         <source>See what the others see</source>
         <translation>다른 사람에게 보이는 화면 보기</translation>
-    </message>
-    <message>
-        <source>What the others see, paused while you are elsewhere. Drag it to another corner.</source>
-        <translation>다른 사람에게 보이는 화면이에요. 다른 곳을 보는 동안에는 일시 중지돼요. 다른 모서리로 끌어 옮길 수 있어요.</translation>
     </message>
     <message>
         <source>Measuring…</source>
@@ -882,6 +890,14 @@
     <message>
         <source>Minimized, it stays where it is: Wayland does not tell applications.</source>
         <translation>최소화해도 트레이로 가지 않아요. Wayland는 앱에 최소화를 알려 주지 않아요.</translation>
+    </message>
+    <message>
+        <source>Keep your share&apos;s preview playing in the background</source>
+        <translation>공유 미리 보기를 백그라운드에서 계속 재생</translation>
+    </message>
+    <message>
+        <source>The small picture of your share goes on while another window is in use. It takes a little of the processor and graphics card, which a game may miss.</source>
+        <translation>다른 창을 사용하는 동안에도 공유의 작은 화면이 계속 재생됩니다. 프로세서와 그래픽 카드를 약간 사용하므로 게임에 영향을 줄 수 있습니다.</translation>
     </message>
 </context>
 <context>

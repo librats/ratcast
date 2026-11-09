@@ -530,12 +530,24 @@
         <translation>आप</translation>
     </message>
     <message>
+        <source>Still sharing</source>
+        <translation>शेयर जारी है</translation>
+    </message>
+    <message>
+        <source>Only this preview is paused. The others still see your share.</source>
+        <translation>सिर्फ़ यह प्रीव्यू रुका है। बाकी लोग अब भी आपका शेयर देख रहे हैं।</translation>
+    </message>
+    <message>
         <source>Your share</source>
         <translation>आपका शेयर</translation>
     </message>
     <message>
-        <source>Your share · paused</source>
-        <translation>आपका शेयर · रुका हुआ</translation>
+        <source>What the others see. Drag it to another corner.</source>
+        <translation>जो बाकी लोग देखते हैं। इसे दूसरे कोने में खींचें।</translation>
+    </message>
+    <message>
+        <source>What the others see. It pauses here while you are in another window; your share goes on. Drag it to another corner.</source>
+        <translation>जो बाकी लोग देखते हैं। जब आप दूसरी विंडो में होते हैं तो यह यहाँ रुक जाता है; आपका शेयर चलता रहता है। इसे दूसरे कोने में खींचें।</translation>
     </message>
     <message>
         <source>Hide your share</source>
@@ -544,10 +556,6 @@
     <message>
         <source>See what the others see</source>
         <translation>देखें कि दूसरों को क्या दिख रहा है</translation>
-    </message>
-    <message>
-        <source>What the others see, paused while you are elsewhere. Drag it to another corner.</source>
-        <translation>दूसरों को जो दिख रहा है; जब आप कहीं और हों तब यह रुका रहता है। इसे किसी दूसरे कोने में खींचें।</translation>
     </message>
     <message>
         <source>Measuring…</source>
@@ -883,6 +891,14 @@
     <message>
         <source>Minimized, it stays where it is: Wayland does not tell applications.</source>
         <translation>छोटा करने पर भी यह वहीं रहती है: Wayland ऐप्लिकेशन को यह नहीं बताता।</translation>
+    </message>
+    <message>
+        <source>Keep your share&apos;s preview playing in the background</source>
+        <translation>अपने शेयर का प्रीव्यू बैकग्राउंड में चलता रखें</translation>
+    </message>
+    <message>
+        <source>The small picture of your share goes on while another window is in use. It takes a little of the processor and graphics card, which a game may miss.</source>
+        <translation>दूसरी विंडो इस्तेमाल करते समय भी आपके शेयर की छोटी तस्वीर चलती रहती है। इसमें प्रोसेसर और ग्राफ़िक्स कार्ड का थोड़ा हिस्सा लगता है, जिसकी कमी किसी गेम को खल सकती है।</translation>
     </message>
 </context>
 <context>

@@ -534,12 +534,24 @@
         <translation>أنت</translation>
     </message>
     <message>
+        <source>Still sharing</source>
+        <translation>المشاركة مستمرة</translation>
+    </message>
+    <message>
+        <source>Only this preview is paused. The others still see your share.</source>
+        <translation>هذه المعاينة فقط متوقفة مؤقتًا. لا يزال الآخرون يرون مشاركتك.</translation>
+    </message>
+    <message>
         <source>Your share</source>
         <translation>مشاركتك</translation>
     </message>
     <message>
-        <source>Your share · paused</source>
-        <translation>مشاركتك · متوقفة مؤقتًا</translation>
+        <source>What the others see. Drag it to another corner.</source>
+        <translation>ما يراه الآخرون. اسحبه إلى زاوية أخرى.</translation>
+    </message>
+    <message>
+        <source>What the others see. It pauses here while you are in another window; your share goes on. Drag it to another corner.</source>
+        <translation>ما يراه الآخرون. تتوقف هنا مؤقتًا أثناء وجودك في نافذة أخرى، وتستمر مشاركتك. اسحبه إلى زاوية أخرى.</translation>
     </message>
     <message>
         <source>Hide your share</source>
@@ -548,10 +560,6 @@
     <message>
         <source>See what the others see</source>
         <translation>عرض ما يراه الآخرون</translation>
-    </message>
-    <message>
-        <source>What the others see, paused while you are elsewhere. Drag it to another corner.</source>
-        <translation>ما يراه الآخرون، ويتوقف مؤقتًا وأنت في مكان آخر. اسحبه إلى زاوية أخرى.</translation>
     </message>
     <message>
         <source>Measuring…</source>
@@ -887,6 +895,14 @@
     <message>
         <source>Minimized, it stays where it is: Wayland does not tell applications.</source>
         <translation>عند التصغير تبقى النافذة في مكانها: لا يُبلغ Wayland التطبيقات بذلك.</translation>
+    </message>
+    <message>
+        <source>Keep your share&apos;s preview playing in the background</source>
+        <translation>إبقاء معاينة مشاركتك قيد التشغيل في الخلفية</translation>
+    </message>
+    <message>
+        <source>The small picture of your share goes on while another window is in use. It takes a little of the processor and graphics card, which a game may miss.</source>
+        <translation>تستمر الصورة الصغيرة لمشاركتك أثناء استخدام نافذة أخرى. تستهلك قليلًا من المعالج وبطاقة الرسوميات، وقد تحتاج اللعبة إليهما.</translation>
     </message>
 </context>
 <context>

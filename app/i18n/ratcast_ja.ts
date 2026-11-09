@@ -529,12 +529,24 @@
         <translation>あなた</translation>
     </message>
     <message>
+        <source>Still sharing</source>
+        <translation>共有は続いています</translation>
+    </message>
+    <message>
+        <source>Only this preview is paused. The others still see your share.</source>
+        <translation>一時停止しているのはこのプレビューだけです。他の人には共有が見え続けています。</translation>
+    </message>
+    <message>
         <source>Your share</source>
         <translation>あなたの共有画面</translation>
     </message>
     <message>
-        <source>Your share · paused</source>
-        <translation>あなたの共有画面 · 一時停止中</translation>
+        <source>What the others see. Drag it to another corner.</source>
+        <translation>他の人に見えている内容です。ドラッグして別の隅へ移動できます。</translation>
+    </message>
+    <message>
+        <source>What the others see. It pauses here while you are in another window; your share goes on. Drag it to another corner.</source>
+        <translation>他の人に見えている内容です。別のウィンドウを使っている間はここで一時停止しますが、共有は続きます。ドラッグして別の隅へ移動できます。</translation>
     </message>
     <message>
         <source>Hide your share</source>
@@ -543,10 +555,6 @@
     <message>
         <source>See what the others see</source>
         <translation>ほかの参加者に見えている画面を表示</translation>
-    </message>
-    <message>
-        <source>What the others see, paused while you are elsewhere. Drag it to another corner.</source>
-        <translation>ほかの参加者に見えている画面です。ほかのウィンドウを使っている間は一時停止します。別の隅にドラッグできます。</translation>
     </message>
     <message>
         <source>Measuring…</source>
@@ -882,6 +890,14 @@
     <message>
         <source>Minimized, it stays where it is: Wayland does not tell applications.</source>
         <translation>最小化してもトレイには格納されません。Wayland はアプリケーションに最小化を通知しないためです。</translation>
+    </message>
+    <message>
+        <source>Keep your share&apos;s preview playing in the background</source>
+        <translation>共有のプレビューをバックグラウンドでも再生し続ける</translation>
+    </message>
+    <message>
+        <source>The small picture of your share goes on while another window is in use. It takes a little of the processor and graphics card, which a game may miss.</source>
+        <translation>別のウィンドウを使っている間も、共有の小さな映像を再生し続けます。プロセッサとグラフィックカードを少し使うため、ゲームに影響することがあります。</translation>
     </message>
 </context>
 <context>

@@ -529,12 +529,24 @@
         <translation>你</translation>
     </message>
     <message>
+        <source>Still sharing</source>
+        <translation>仍在共享</translation>
+    </message>
+    <message>
+        <source>Only this preview is paused. The others still see your share.</source>
+        <translation>只有此预览已暂停。其他人仍能看到你的共享内容。</translation>
+    </message>
+    <message>
         <source>Your share</source>
         <translation>你的共享画面</translation>
     </message>
     <message>
-        <source>Your share · paused</source>
-        <translation>你的共享画面 · 已暂停</translation>
+        <source>What the others see. Drag it to another corner.</source>
+        <translation>其他人看到的画面。可拖动到其他角落。</translation>
+    </message>
+    <message>
+        <source>What the others see. It pauses here while you are in another window; your share goes on. Drag it to another corner.</source>
+        <translation>其他人看到的画面。你在其他窗口时，这里会暂停，但共享仍在继续。可拖动到其他角落。</translation>
     </message>
     <message>
         <source>Hide your share</source>
@@ -543,10 +555,6 @@
     <message>
         <source>See what the others see</source>
         <translation>查看其他人看到的画面</translation>
-    </message>
-    <message>
-        <source>What the others see, paused while you are elsewhere. Drag it to another corner.</source>
-        <translation>其他人看到的画面，你切到别处时暂停。可拖到其他角落。</translation>
     </message>
     <message>
         <source>Measuring…</source>
@@ -882,6 +890,14 @@
     <message>
         <source>Minimized, it stays where it is: Wayland does not tell applications.</source>
         <translation>最小化后窗口不会进入托盘：Wayland 不会将最小化告知应用程序。</translation>
+    </message>
+    <message>
+        <source>Keep your share&apos;s preview playing in the background</source>
+        <translation>在后台继续播放共享预览</translation>
+    </message>
+    <message>
+        <source>The small picture of your share goes on while another window is in use. It takes a little of the processor and graphics card, which a game may miss.</source>
+        <translation>使用其他窗口时，共享的小画面会继续播放。这会占用少量处理器和显卡资源，可能影响游戏。</translation>
     </message>
 </context>
 <context>

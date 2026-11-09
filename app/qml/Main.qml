@@ -22,7 +22,8 @@ import Ratcast.Video
 // chat, how the call goes (a panel on a button or Ctrl+I, its quality a dot),
 // the groups and friends (a drawer over the room, who asks counted), leave — round buttons of icons (icons/: Lucide's), named on hovering, red
 // while they keep this side unheard or unhearing. What this side shares it sees small in a corner of the stage, which
-// it drags to another or hides; paused while the window is not the one in use.
+// it drags to another or hides; while another window is in use only that small
+// picture rests, saying the share goes on, unless the settings keep it playing.
 // A share watched may go full screen (F, a double click): only the share, on
 // black, its controls and the cursor there while the mouse moves.
 // The start also says what the updater does: a new version on its way, or in
@@ -60,6 +61,11 @@ ApplicationWindow {
     /// (left 0, right 1; top 0, bottom 2), and whether it is shown or hidden.
     property int ownShareCorner: 2
     property bool ownShareShown: true
+    /// That picture is kept going: the window in use, or, if the settings say
+    /// so, at least in sight (minimized or in the tray nothing draws it).
+    readonly property bool ownShareLive: root.active
+        || (settingsDialog.keepSharePreview
+            && root.visibility !== Window.Minimized && root.visibility !== Window.Hidden)
 
     /// The share watched on the whole screen, nothing else drawn.
     property bool fullScreen: false
@@ -102,7 +108,7 @@ ApplicationWindow {
         preview: ownCamera
         // Hidden, or the window not the one in use — a game played over it —
         // nothing is made for it, nor drawn: the last picture stays.
-        sharePreview: ownShare.visible && root.ownShareShown && root.active ? ownShareView : null
+        sharePreview: ownShare.visible && root.ownShareShown && root.ownShareLive ? ownShareView : null
         statsEvery: root.statsEvery
     }
 
@@ -662,6 +668,7 @@ ApplicationWindow {
         category: "window"
         property alias minimizeToTray: settingsDialog.minimizeToTray
         property alias closeToTray: settingsDialog.closeToTray
+        property alias keepSharePreview: settingsDialog.keepSharePreview
     }
 
     /// What a member is called: its own name, or, until it says one, a
@@ -1625,7 +1632,8 @@ ApplicationWindow {
                   : fit > 0 ? shownSize.height * fit + 2 : across * 9 / 16
             color: root.ownShareShown ? "#111214" : "transparent"
             radius: 6
-            border.color: root.ownShareShown ? "#4e5058" : "transparent"
+            border.color: !root.ownShareShown ? "transparent"
+                        : root.ownShareLive ? "#4e5058" : "#2fd573"
             clip: true
 
             VideoView {
@@ -1642,12 +1650,75 @@ ApplicationWindow {
                         ownShareView.clear()
                 }
             }
+            // Only this picture rests: the share goes on, and it says so, so
+            // that nobody takes it for over. Still, on purpose: anything
+            // moving here would have the window drawn over a game.
+            Rectangle {
+                anchors.fill: parent
+                anchors.margins: 1
+                radius: 5
+                color: "#b4111214"
+                opacity: root.ownShareShown && !root.ownShareLive ? 1 : 0
+                visible: opacity > 0
+                Behavior on opacity {
+                    NumberAnimation {
+                        duration: 180
+                    }
+                }
+
+                ColumnLayout {
+                    id: ownShareResting
+                    anchors.centerIn: parent
+                    width: parent.width - 24
+                    spacing: 4
+
+                    RowLayout {
+                        Layout.alignment: Qt.AlignHCenter
+                        spacing: 8
+
+                        Rectangle {
+                            implicitWidth: 10
+                            implicitHeight: 10
+                            radius: width / 2
+                            color: "#2fd573"
+
+                            Rectangle {
+                                anchors.fill: parent
+                                anchors.margins: -4
+                                radius: width / 2
+                                color: "transparent"
+                                border.width: 2
+                                border.color: "#2fd573"
+                                opacity: 0.35
+                            }
+                        }
+                        Label {
+                            // The dot and its gap beside it.
+                            Layout.maximumWidth: ownShareResting.width - 18
+                            text: qsTr("Still sharing")
+                            font.bold: true
+                            font.pixelSize: 14
+                            wrapMode: Text.Wrap
+                        }
+                    }
+                    Label {
+                        Layout.fillWidth: true
+                        // No room for it under a picture this low.
+                        visible: ownShare.height >= 90
+                        text: qsTr("Only this preview is paused. The others still see your share.")
+                        font.pixelSize: 11
+                        opacity: 0.9
+                        wrapMode: Text.Wrap
+                        horizontalAlignment: Text.AlignHCenter
+                    }
+                }
+            }
             Label {
                 anchors.left: parent.left
                 anchors.bottom: parent.bottom
                 anchors.margins: 6
-                text: root.active ? qsTr("Your share") : qsTr("Your share · paused")
-                visible: root.ownShareShown
+                text: qsTr("Your share")
+                visible: root.ownShareShown && root.ownShareLive
                 font.pixelSize: 11
                 style: Text.Outline
                 styleColor: "#000000"
@@ -1702,8 +1773,10 @@ ApplicationWindow {
             }
             ToolTip.visible: ownShareHover.hovered && root.ownShareShown
             ToolTip.delay: 800
-            ToolTip.text: qsTr("What the others see, paused while you are elsewhere. " +
-                               "Drag it to another corner.")
+            ToolTip.text: settingsDialog.keepSharePreview
+                          ? qsTr("What the others see. Drag it to another corner.")
+                          : qsTr("What the others see. It pauses here while you are in another " +
+                                 "window; your share goes on. Drag it to another corner.")
         }
     }
 

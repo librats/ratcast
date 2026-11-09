@@ -529,12 +529,24 @@
         <translation>Siz</translation>
     </message>
     <message>
+        <source>Still sharing</source>
+        <translation>Paylaşım sürüyor</translation>
+    </message>
+    <message>
+        <source>Only this preview is paused. The others still see your share.</source>
+        <translation>Yalnızca bu önizleme duraklatıldı. Diğerleri paylaşımını görmeye devam ediyor.</translation>
+    </message>
+    <message>
         <source>Your share</source>
         <translation>Paylaşımınız</translation>
     </message>
     <message>
-        <source>Your share · paused</source>
-        <translation>Paylaşımınız · duraklatıldı</translation>
+        <source>What the others see. Drag it to another corner.</source>
+        <translation>Diğerlerinin gördüğü. Başka bir köşeye sürükle.</translation>
+    </message>
+    <message>
+        <source>What the others see. It pauses here while you are in another window; your share goes on. Drag it to another corner.</source>
+        <translation>Diğerlerinin gördüğü. Başka bir penceredeyken burada duraklar; paylaşımın devam eder. Başka bir köşeye sürükle.</translation>
     </message>
     <message>
         <source>Hide your share</source>
@@ -543,10 +555,6 @@
     <message>
         <source>See what the others see</source>
         <translation>Diğerlerinin gördüğünü göster</translation>
-    </message>
-    <message>
-        <source>What the others see, paused while you are elsewhere. Drag it to another corner.</source>
-        <translation>Diğerlerinin gördüğü bu; siz başka yerdeyken duraklatılır. Başka bir köşeye sürükleyebilirsiniz.</translation>
     </message>
     <message>
         <source>Measuring…</source>
@@ -882,6 +890,14 @@
     <message>
         <source>Minimized, it stays where it is: Wayland does not tell applications.</source>
         <translation>Küçültülünce olduğu yerde kalır: Wayland bunu uygulamalara bildirmez.</translation>
+    </message>
+    <message>
+        <source>Keep your share&apos;s preview playing in the background</source>
+        <translation>Paylaşım önizlemesini arka planda oynatmaya devam et</translation>
+    </message>
+    <message>
+        <source>The small picture of your share goes on while another window is in use. It takes a little of the processor and graphics card, which a game may miss.</source>
+        <translation>Başka bir pencere kullanılırken paylaşımının küçük görüntüsü devam eder. İşlemciden ve grafik kartından biraz kullanır; bu bir oyunu etkileyebilir.</translation>
     </message>
 </context>
 <context>

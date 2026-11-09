@@ -530,12 +530,24 @@
         <translation>Tú</translation>
     </message>
     <message>
+        <source>Still sharing</source>
+        <translation>Sigues compartiendo</translation>
+    </message>
+    <message>
+        <source>Only this preview is paused. The others still see your share.</source>
+        <translation>Solo esta vista previa está en pausa. Los demás siguen viendo lo que compartes.</translation>
+    </message>
+    <message>
         <source>Your share</source>
         <translation>Tu transmisión</translation>
     </message>
     <message>
-        <source>Your share · paused</source>
-        <translation>Tu transmisión · en pausa</translation>
+        <source>What the others see. Drag it to another corner.</source>
+        <translation>Lo que ven los demás. Arrástralo a otra esquina.</translation>
+    </message>
+    <message>
+        <source>What the others see. It pauses here while you are in another window; your share goes on. Drag it to another corner.</source>
+        <translation>Lo que ven los demás. Aquí se pausa mientras estás en otra ventana; lo que compartes continúa. Arrástralo a otra esquina.</translation>
     </message>
     <message>
         <source>Hide your share</source>
@@ -544,10 +556,6 @@
     <message>
         <source>See what the others see</source>
         <translation>Ver lo que ven los demás</translation>
-    </message>
-    <message>
-        <source>What the others see, paused while you are elsewhere. Drag it to another corner.</source>
-        <translation>Lo que ven los demás, en pausa mientras estás en otra parte. Arrástralo a otra esquina.</translation>
     </message>
     <message>
         <source>Measuring…</source>
@@ -883,6 +891,14 @@
     <message>
         <source>Minimized, it stays where it is: Wayland does not tell applications.</source>
         <translation>Al minimizarla, se queda donde está: Wayland no se lo indica a las aplicaciones.</translation>
+    </message>
+    <message>
+        <source>Keep your share&apos;s preview playing in the background</source>
+        <translation>Mantener la vista previa de lo que compartes en segundo plano</translation>
+    </message>
+    <message>
+        <source>The small picture of your share goes on while another window is in use. It takes a little of the processor and graphics card, which a game may miss.</source>
+        <translation>La imagen pequeña de lo que compartes sigue activa mientras usas otra ventana. Consume un poco de procesador y tarjeta gráfica, que un juego puede echar en falta.</translation>
     </message>
 </context>
 <context>

@@ -32,10 +32,11 @@ Rectangle {
             easing.type: Easing.OutQuad
         }
     }
-    // How strongly the glow breathes around the ring.
+    // How strongly the glow breathes around the ring; only in the window in
+    // use, or it would have the window drawn over a game.
     property real glowing: 0.55
     SequentialAnimation on glowing {
-        running: avatar.speaking && !avatar.reconnecting && avatar.visible
+        running: avatar.speaking && !avatar.reconnecting && avatar.visible && avatar.Window.active
         loops: Animation.Infinite
         NumberAnimation {
             from: 0.55

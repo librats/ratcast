@@ -23,6 +23,8 @@ Dialog {
     /// The window goes to the tray as it is minimized, or closed.
     property bool minimizeToTray: false
     property bool closeToTray: false
+    /// The small picture of one's share keeps playing with another window in use.
+    property bool keepSharePreview: false
 
     // The window's last: Android has no tray, and no section for it.
     readonly property var sections: Qt.platform.os === "android"
@@ -453,6 +455,21 @@ Dialog {
                                      "it back, or quits.") + (dialog.minimizedKnown ? "" : " " +
                                 qsTr("Minimized, it stays where it is: Wayland does not tell " +
                                      "applications."))
+                    }
+                    CheckBox {
+                        Layout.topMargin: 12
+                        text: qsTr("Keep your share's preview playing in the background")
+                        checked: dialog.keepSharePreview
+                        onToggled: dialog.keepSharePreview = checked
+                    }
+                    Label {
+                        Layout.fillWidth: true
+                        wrapMode: Text.Wrap
+                        opacity: 0.6
+                        font.pixelSize: 12
+                        text: qsTr("The small picture of your share goes on while another window is " +
+                                   "in use. It takes a little of the processor and graphics card, " +
+                                   "which a game may miss.")
                     }
                     Item {
                         Layout.fillHeight: true
