@@ -43,7 +43,9 @@ ColumnLayout {
         if (id.length === 0)
             return
         nameField.text = ""
-        panel.call.enter(id)
+        // Made from a room, it is listed: that room is not left for it.
+        if (panel.call.state === CallController.Idle)
+            panel.call.enter(id)
     }
 
     Label {
@@ -87,6 +89,9 @@ ColumnLayout {
             required property var modelData
             readonly property bool someone: modelData.present > 0
             readonly property string sharers: panel.sharersOf(modelData)
+            /// This device is in its room.
+            readonly property bool inIt: panel.call.state !== CallController.Idle
+                                         && panel.call.group === modelData.id
             Layout.fillWidth: true
             spacing: 8
 
@@ -142,9 +147,11 @@ ColumnLayout {
                 display: AbstractButton.IconOnly
                 icon.source: "icons/log-in.svg"
                 highlighted: row.someone
+                visible: !row.inIt
                 onClicked: panel.call.enter(row.modelData.id)
                 ToolTip.visible: hovered
-                ToolTip.text: qsTr("Join")
+                ToolTip.text: panel.call.state === CallController.Idle ? qsTr("Join")
+                                                                       : qsTr("Leave this room and join")
             }
             ToolButton {
                 display: AbstractButton.IconOnly
@@ -189,9 +196,12 @@ ColumnLayout {
                             resetLink.open()
                         }
                     }
+                    // Not from inside its room: left first.
                     MenuItem {
                         text: qsTr("Leave the group")
                         icon.source: "icons/x.svg"
+                        visible: !row.inIt
+                        height: visible ? implicitHeight : 0
                         onTriggered: panel.people.leaveGroup(row.modelData.id)
                     }
                 }

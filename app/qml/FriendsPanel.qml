@@ -327,7 +327,8 @@ ColumnLayout {
                 visible: modelData.online
                 onClicked: panel.call.ring(modelData.person)
                 ToolTip.visible: hovered
-                ToolTip.text: qsTr("Call")
+                ToolTip.text: panel.call.state === CallController.Idle ? qsTr("Call")
+                                                                       : qsTr("Call to this room")
             }
             ToolButton {
                 display: AbstractButton.IconOnly

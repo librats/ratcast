@@ -20,7 +20,7 @@ import Ratcast.Video
 // unread), and the controls along the bottom: microphone, sound, camera,
 // sharing (and, while sharing, another screen or window shown in its place),
 // chat, how the call goes (a panel on a button or Ctrl+I, its quality a dot),
-// leave — round buttons of icons (icons/: Lucide's), named on hovering, red
+// the groups and friends (a drawer over the room, who asks counted), leave — round buttons of icons (icons/: Lucide's), named on hovering, red
 // while they keep this side unheard or unhearing. What this side shares it sees small in a corner of the stage, which
 // it drags to another or hides; paused while the window is not the one in use.
 // A share watched may go full screen (F, a double click): only the share, on
@@ -207,11 +207,13 @@ ApplicationWindow {
     /// The app sent to the background (main.cpp: Android's activity behind).
     signal toBackground()
 
-    /// Android's Back: out of full screen, the chat or the stats, if open;
-    /// in a room, the app to the background, the room going on. False when
-    /// there is nothing to step out of: the app goes.
+    /// Android's Back: out of the groups and friends, full screen, the chat
+    /// or the stats, if open; in a room, the app to the background, the room
+    /// going on. False when there is nothing to step out of: the app goes.
     function stepBack() {
-        if (root.fullScreen)
+        if (friendsDrawer.opened)
+            friendsDrawer.close()
+        else if (root.fullScreen)
             root.setFullScreen(false)
         else if (chatPane.shown)
             chatPane.shown = false
@@ -429,8 +431,81 @@ ApplicationWindow {
         }
     }
 
+    // What came of being friends, told at the top over anything, a room or
+    // full screen; one who asks answered from here too.
+    Popup {
+        id: friendNotice
+
+        /// Who asks, their key in hex; "" when only told.
+        property string asking
+        property string text
+
+        parent: Overlay.overlay
+        x: (parent.width - width) / 2
+        y: 12 + (shareNotice.visible ? shareNotice.height + 8 : 0)
+        width: Math.min(root.width - 32, 420)
+        padding: 12
+        closePolicy: Popup.CloseOnEscape
+
+        Timer {
+            id: friendNoticeFor
+            interval: friendNotice.asking.length > 0 ? 20000 : 6000
+            onTriggered: friendNotice.close()
+        }
+
+        RowLayout {
+            width: parent.width
+            spacing: 8
+
+            Glyph {
+                glyph: "user-plus"
+                color: Material.accent
+            }
+            Label {
+                Layout.fillWidth: true
+                text: friendNotice.text
+                textFormat: Text.PlainText
+                wrapMode: Text.Wrap
+            }
+            ToolButton {
+                display: AbstractButton.IconOnly
+                icon.source: "icons/check.svg"
+                icon.color: Material.color(Material.Green)
+                visible: friendNotice.asking.length > 0
+                onClicked: {
+                    people.accept(friendNotice.asking)
+                    friendNotice.close()
+                }
+                ToolTip.visible: hovered
+                ToolTip.text: qsTr("Accept")
+            }
+            // One who asks: declined. Only told: closed. An answer put off
+            // is the timer's or Escape's, the request still in the list.
+            ToolButton {
+                display: AbstractButton.IconOnly
+                icon.source: "icons/x.svg"
+                onClicked: {
+                    if (friendNotice.asking.length > 0)
+                        people.decline(friendNotice.asking)
+                    friendNotice.close()
+                }
+                ToolTip.visible: hovered && friendNotice.asking.length > 0
+                ToolTip.text: qsTr("Decline")
+            }
+        }
+    }
+
     Connections {
         target: people
+        function onFriendNews(notice, asking) {
+            friendNotice.asking = asking
+            friendNotice.text = notice
+            friendNotice.open()
+            friendNoticeFor.restart()
+            root.alert(0)
+            if (tray.visible && !root.visible)
+                tray.showMessage("ratcast", notice)
+        }
         function onShares(group, groupName, name) {
             shareNotice.group = group
             shareNotice.text = qsTr("%1 is sharing in %2")
@@ -484,15 +559,24 @@ ApplicationWindow {
         return group.name.length > 0 ? group.name : qsTr("A group %1").arg(group.tag)
     }
 
-    // Narrow, the groups and the friends in a drawer of their own, over the
-    // start.
+    // The groups and the friends in a drawer of their own: narrow, over the
+    // start; in a room, over its side, what is watched going on undimmed.
+    // Whichever room is entered or left, it is out of the way.
     Drawer {
         id: friendsDrawer
 
         edge: Qt.RightEdge
-        width: root.width
+        width: root.compact ? root.width : 360
         height: root.height
         interactive: root.compact && call.state === CallController.Idle
+        dim: !root.inRoom
+
+        Connections {
+            target: call
+            function onStateChanged() {
+                friendsDrawer.close()
+            }
+        }
 
         ScrollView {
             anchors.fill: parent
@@ -1966,6 +2050,14 @@ ApplicationWindow {
                 highlighted: chatPane.shown
                 count: call.chat.unread
                 onClicked: chatPane.shown = !chatPane.shown
+            }
+            // Those known, within reach in a room; who asks counted.
+            CallButton {
+                text: qsTr("Groups and friends")
+                iconName: "users"
+                highlighted: friendsDrawer.visible
+                count: people.asking
+                onClicked: friendsDrawer.open()
             }
             CallButton {
                 text: qsTr("Settings")

@@ -112,6 +112,10 @@
         <translation>कॉल करें</translation>
     </message>
     <message>
+        <source>Call to this room</source>
+        <translation>इस रूम में बुलाएँ</translation>
+    </message>
+    <message>
         <source>Remove from friends</source>
         <translation>दोस्तों से हटाएँ</translation>
     </message>
@@ -158,6 +162,10 @@
     <message>
         <source>Join</source>
         <translation>जुड़ें</translation>
+    </message>
+    <message>
+        <source>Leave this room and join</source>
+        <translation>यह रूम छोड़कर जुड़ें</translation>
     </message>
     <message>
         <source>Copy the link</source>
@@ -357,6 +365,10 @@
     <message>
         <source>Decline</source>
         <translation>अस्वीकार करें</translation>
+    </message>
+    <message>
+        <source>Accept</source>
+        <translation>स्वीकार करें</translation>
     </message>
     <message>
         <source>%1 is sharing in %2</source>
@@ -977,6 +989,18 @@
     <message>
         <source>You missed a call from %1.</source>
         <translation>%1 की कॉल छूट गई।</translation>
+    </message>
+    <message>
+        <source>%1 asks to be your friend.</source>
+        <translation>%1 आपका दोस्त बनना चाहते हैं।</translation>
+    </message>
+    <message>
+        <source>%1 is your friend now.</source>
+        <translation>%1 अब आपके दोस्त हैं।</translation>
+    </message>
+    <message>
+        <source>%1 declined your friend request.</source>
+        <translation>%1 ने आपका दोस्ती अनुरोध अस्वीकार कर दिया।</translation>
     </message>
     <message>
         <source>Your key in the data folder could not be read.</source>

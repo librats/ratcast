@@ -115,6 +115,24 @@ void PeopleController::start() {
                       group = QString::fromStdString(group.name),
                       name = QString::fromStdString(who.name)] { Q_EMIT shares(id, group, name); });
             },
+        .friend_news =
+            [this, generation](const PersonId& person, const std::string& name, FriendNews news) {
+                post(generation, [this, news, id = QString::fromStdString(person.to_hex()),
+                                  name = QString::fromStdString(name)] {
+                    const QString who = name.isEmpty() ? tr("Someone") : name;
+                    switch (news) {
+                        case FriendNews::Asks:
+                            Q_EMIT friendNews(tr("%1 asks to be your friend.").arg(who), id);
+                            break;
+                        case FriendNews::Accepted:
+                            Q_EMIT friendNews(tr("%1 is your friend now.").arg(who), {});
+                            break;
+                        case FriendNews::Declined:
+                            Q_EMIT friendNews(tr("%1 declined your friend request.").arg(who), {});
+                            break;
+                    }
+                });
+            },
     };
     Result<std::unique_ptr<People>> started = People::start(std::move(config), std::move(handlers));
     if (!started) {
@@ -365,8 +383,23 @@ bool PeopleController::add(const QString& link) {
         return false;
     }
     if (!people_->add(text)) return false;
-    set_notice(tr("Asked. They become your friend once they accept."));
+    tell_asked(parsed->person);
     return true;
+}
+
+void PeopleController::add(const IdentityCard& card, const std::string& name) {
+    if (people_ && people_->add(card, name)) tell_asked(card.certificate.person);
+}
+
+void PeopleController::tell_asked(const PersonId& person) {
+    QString notice = tr("Asked. They become your friend once they accept.");
+    for (const Friend& known : people_->friends()) {
+        if (known.person != person) continue;
+        notice = tr("%1 is your friend now.")
+                     .arg(known.name.empty() ? tr("Someone") : QString::fromStdString(known.name));
+    }
+    set_notice(notice);
+    Q_EMIT friendNews(notice, {});
 }
 
 void PeopleController::accept(const QString& person) {

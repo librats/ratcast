@@ -112,6 +112,10 @@
         <translation>통화</translation>
     </message>
     <message>
+        <source>Call to this room</source>
+        <translation>이 방으로 부르기</translation>
+    </message>
+    <message>
         <source>Remove from friends</source>
         <translation>친구에서 삭제</translation>
     </message>
@@ -158,6 +162,10 @@
     <message>
         <source>Join</source>
         <translation>참여</translation>
+    </message>
+    <message>
+        <source>Leave this room and join</source>
+        <translation>이 방을 나가고 참여</translation>
     </message>
     <message>
         <source>Copy the link</source>
@@ -357,6 +365,10 @@
     <message>
         <source>Decline</source>
         <translation>거절</translation>
+    </message>
+    <message>
+        <source>Accept</source>
+        <translation>수락</translation>
     </message>
     <message>
         <source>%1 is sharing in %2</source>
@@ -976,6 +988,18 @@
     <message>
         <source>You missed a call from %1.</source>
         <translation>%1 님의 부재중 전화가 있습니다.</translation>
+    </message>
+    <message>
+        <source>%1 asks to be your friend.</source>
+        <translation>%1 님이 친구 요청을 보냈습니다.</translation>
+    </message>
+    <message>
+        <source>%1 is your friend now.</source>
+        <translation>%1 님과 친구가 되었습니다.</translation>
+    </message>
+    <message>
+        <source>%1 declined your friend request.</source>
+        <translation>%1 님이 친구 요청을 거절했습니다.</translation>
     </message>
     <message>
         <source>Your key in the data folder could not be read.</source>

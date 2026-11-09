@@ -352,13 +352,15 @@ void CallController::join(const QString& link) {
 }
 
 void CallController::enter(const QString& group) {
-    if (state_ != State::Idle || !people_ || !people_->people()) return;
+    if (!people_ || !people_->people()) return;
+    if (state_ != State::Idle && group == group_) return;  // there already
     const std::optional<GroupId> id = GroupId::from_hex(group.toStdString());
     const std::optional<Group> found = id ? people_->people()->group(*id) : std::nullopt;
     if (!found) {
         set_notice(tr("That group is not one of yours."));
         return;
     }
+    if (state_ != State::Idle) end();
     LOG_INFO("app", "into the room of group " << id->tag());
     // A room like any other, its secret the group's.
     CallConfig config = environment_.call;
@@ -803,9 +805,8 @@ void CallController::addFriend(const QString& id) {
     const std::optional<IdentityCard> card = call_->identity(*peer);
     if (!card) return;
     const Presence presence = call_->presence(*peer).value_or(Presence{});
-    if (people_->people()->add(*card, presence.name)) {
-        LOG_INFO("app", "asked " << card->certificate.person.tag() << " to be a friend");
-    }
+    LOG_INFO("app", "asking " << card->certificate.person.tag() << " to be a friend");
+    people_->add(*card, presence.name);
     update_members();
 }
 

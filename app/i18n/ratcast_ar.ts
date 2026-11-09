@@ -112,6 +112,10 @@
         <translation>اتصال</translation>
     </message>
     <message>
+        <source>Call to this room</source>
+        <translation>استدعاء إلى هذه الغرفة</translation>
+    </message>
+    <message>
         <source>Remove from friends</source>
         <translation>إزالة من الأصدقاء</translation>
     </message>
@@ -158,6 +162,10 @@
     <message>
         <source>Join</source>
         <translation>انضمام</translation>
+    </message>
+    <message>
+        <source>Leave this room and join</source>
+        <translation>مغادرة هذه الغرفة والانضمام</translation>
     </message>
     <message>
         <source>Copy the link</source>
@@ -357,6 +365,10 @@
     <message>
         <source>Decline</source>
         <translation>رفض</translation>
+    </message>
+    <message>
+        <source>Accept</source>
+        <translation>قبول</translation>
     </message>
     <message>
         <source>%1 is sharing in %2</source>
@@ -981,6 +993,18 @@
     <message>
         <source>You missed a call from %1.</source>
         <translation>فاتتك مكالمة من %1.</translation>
+    </message>
+    <message>
+        <source>%1 asks to be your friend.</source>
+        <translation>%1 يطلب أن يكون صديقك.</translation>
+    </message>
+    <message>
+        <source>%1 is your friend now.</source>
+        <translation>%1 صديقك الآن.</translation>
+    </message>
+    <message>
+        <source>%1 declined your friend request.</source>
+        <translation>رفض %1 طلب صداقتك.</translation>
     </message>
     <message>
         <source>Your key in the data folder could not be read.</source>

@@ -224,6 +224,13 @@ struct PeopleConfig {
     std::chrono::milliseconds ring_for = std::chrono::seconds(45);
 };
 
+/// What someone said of being friends with this person.
+enum class FriendNews : uint8_t {
+    Asks,      ///< asks to be a friend: answer with accept() or decline()
+    Accepted,  ///< said yes to what this person asked, or asked too: friends now
+    Declined,  ///< said no to it
+};
+
 struct PeopleHandlers {
     /// Friends or requests changed — a friend came online or went, too —
     /// or the name, or the person (a device joined as another's).
@@ -242,6 +249,10 @@ struct PeopleHandlers {
     /// A member is sharing in a group's room, seen so now — started, or
     /// found sharing as they were met — while this device is not there.
     std::function<void(const Group& group, const Group::Here& who)> shares = {};
+    /// Someone asked this person to be friends or answered their asking, as
+    /// they said it: not what this person did, here or on another device.
+    std::function<void(const PersonId& person, const std::string& name, FriendNews news)>
+        friend_news = {};
 };
 
 class People {

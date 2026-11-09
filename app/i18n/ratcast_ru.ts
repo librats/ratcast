@@ -112,6 +112,10 @@
         <translation>Позвонить</translation>
     </message>
     <message>
+        <source>Call to this room</source>
+        <translation>Позвать в эту комнату</translation>
+    </message>
+    <message>
         <source>Remove from friends</source>
         <translation>Удалить из друзей</translation>
     </message>
@@ -158,6 +162,10 @@
     <message>
         <source>Join</source>
         <translation>Войти</translation>
+    </message>
+    <message>
+        <source>Leave this room and join</source>
+        <translation>Выйти из этой комнаты и войти</translation>
     </message>
     <message>
         <source>Copy the link</source>
@@ -357,6 +365,10 @@
     <message>
         <source>Decline</source>
         <translation>Отклонить</translation>
+    </message>
+    <message>
+        <source>Accept</source>
+        <translation>Принять</translation>
     </message>
     <message>
         <source>%1 is sharing in %2</source>
@@ -978,6 +990,18 @@
     <message>
         <source>You missed a call from %1.</source>
         <translation>Пропущенный звонок от %1.</translation>
+    </message>
+    <message>
+        <source>%1 asks to be your friend.</source>
+        <translation>%1 просит добавить в друзья.</translation>
+    </message>
+    <message>
+        <source>%1 is your friend now.</source>
+        <translation>%1 теперь у вас в друзьях.</translation>
+    </message>
+    <message>
+        <source>%1 declined your friend request.</source>
+        <translation>%1: заявка в друзья отклонена.</translation>
     </message>
     <message>
         <source>Your key in the data folder could not be read.</source>

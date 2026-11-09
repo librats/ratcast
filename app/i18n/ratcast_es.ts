@@ -112,6 +112,10 @@
         <translation>Llamar</translation>
     </message>
     <message>
+        <source>Call to this room</source>
+        <translation>Llamar a esta sala</translation>
+    </message>
+    <message>
         <source>Remove from friends</source>
         <translation>Quitar de amigos</translation>
     </message>
@@ -158,6 +162,10 @@
     <message>
         <source>Join</source>
         <translation>Unirse</translation>
+    </message>
+    <message>
+        <source>Leave this room and join</source>
+        <translation>Salir de esta sala y unirte</translation>
     </message>
     <message>
         <source>Copy the link</source>
@@ -357,6 +365,10 @@
     <message>
         <source>Decline</source>
         <translation>Rechazar</translation>
+    </message>
+    <message>
+        <source>Accept</source>
+        <translation>Aceptar</translation>
     </message>
     <message>
         <source>%1 is sharing in %2</source>
@@ -977,6 +989,18 @@
     <message>
         <source>You missed a call from %1.</source>
         <translation>Llamada perdida de %1.</translation>
+    </message>
+    <message>
+        <source>%1 asks to be your friend.</source>
+        <translation>%1 te ha enviado una solicitud de amistad.</translation>
+    </message>
+    <message>
+        <source>%1 is your friend now.</source>
+        <translation>%1 ya está entre tus amigos.</translation>
+    </message>
+    <message>
+        <source>%1 declined your friend request.</source>
+        <translation>%1 ha rechazado tu solicitud de amistad.</translation>
     </message>
     <message>
         <source>Your key in the data folder could not be read.</source>

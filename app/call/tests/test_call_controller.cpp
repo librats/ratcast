@@ -1156,13 +1156,26 @@ TEST_F(CallControllerTest, AMemberIsKnownByWhoseItIsAndAskedToBeAFriend) {
     EXPECT_TRUE(ann.value("befriendable").toBool());
     EXPECT_FALSE(ann.value("isFriend").toBool());
 
+    // Each told as it goes, without looking at the list.
+    QStringList told_bob;
+    QStringList asking_ann;
+    QObject::connect(&bob_people, &PeopleController::friendNews, &bob_people,
+                     [&](const QString& notice, const QString&) { told_bob << notice; });
+    QObject::connect(&ann_people, &PeopleController::friendNews, &ann_people,
+                     [&](const QString&, const QString& asking) { asking_ann << asking; });
+
     bob_.addFriend(ann.value("peerId").toString());
     EXPECT_TRUE(wait_for([&] { return !member(bob_, "Ann").value("befriendable").toBool(); }))
         << "asked already";
+    EXPECT_EQ(told_bob.size(), 1) << "told it was asked, at once";
     ASSERT_TRUE(wait_for([&] { return ann_people.asking() == 1; }));
+    ASSERT_TRUE(wait_for([&] { return !asking_ann.isEmpty(); }));
+    EXPECT_EQ(asking_ann.front(), bob_people.person()) << "answered from the notice";
     ann_people.accept(bob_people.person());
     EXPECT_TRUE(wait_for([&] { return member(bob_, "Ann").value("isFriend").toBool(); }));
     EXPECT_TRUE(wait_for([&] { return member(ann_, "Bob").value("isFriend").toBool(); }));
+    EXPECT_TRUE(wait_for([&] { return told_bob.size() == 2; }));
+    EXPECT_TRUE(told_bob.back().contains("Ann")) << told_bob.back().toStdString();
 
     // How loud Ann is heard is kept for her person, not this node of hers.
     bob_.setVolume(ann.value("peerId").toString(), 0.5);
@@ -1200,6 +1213,35 @@ TEST_F(CallControllerTest, AMemberIsKnownByWhoseItIsAndAskedToBeAFriend) {
     ann_.leave();
     ann_.setPeople(nullptr);
     bob_.setPeople(nullptr);
+}
+
+// From the list while in a room: another group's entered in place of it, its
+// own a click that changes nothing.
+TEST_F(CallControllerTest, AnotherGroupsRoomIsEnteredFromARoom) {
+    PeopleAtAServer at;
+    PeopleController people;
+    at.start(people, "Ann");
+    at.meet(ann_);
+    ann_.setPeople(&people);
+
+    const QString films = people.makeGroup("Films");
+    const QString games = people.makeGroup("Games");
+    ann_.create();
+    ASSERT_EQ(ann_.state(), State::InRoom);
+    ann_.enter(films);
+    ASSERT_EQ(ann_.state(), State::InRoom);
+    EXPECT_EQ(ann_.group(), films) << "a room of nobody's left for it";
+
+    const QStringList invites = ann_.invites();
+    ann_.enter(films);
+    EXPECT_EQ(ann_.invites(), invites) << "not left and made again";
+
+    ann_.enter("not a group");
+    EXPECT_EQ(ann_.group(), films) << "stayed: nowhere to go";
+    ann_.enter(games);
+    ASSERT_EQ(ann_.state(), State::InRoom);
+    EXPECT_EQ(ann_.group(), games);
+    ann_.leave();
 }
 
 // A group made is entered at once, its link the room's invite; whoever opens

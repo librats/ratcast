@@ -279,7 +279,8 @@ public:
     Q_INVOKABLE void join(const QString& link);
     /// Be in the room of `group` (its id in hex), one of the person's — its
     /// main channel, a RoomSecret of the group's — with whoever is there:
-    /// nobody, maybe, until others come. Its invite is the group's link.
+    /// nobody, maybe, until others come. Its invite is the group's link. In
+    /// another room, that one is left first.
     Q_INVOKABLE void enter(const QString& group);
     Q_INVOKABLE void leave();
     /// Ask the desktop for a screen (or a window) and share it, with the

@@ -112,6 +112,10 @@
         <translation>Ara</translation>
     </message>
     <message>
+        <source>Call to this room</source>
+        <translation>Bu odaya çağır</translation>
+    </message>
+    <message>
         <source>Remove from friends</source>
         <translation>Arkadaşlardan çıkar</translation>
     </message>
@@ -158,6 +162,10 @@
     <message>
         <source>Join</source>
         <translation>Katıl</translation>
+    </message>
+    <message>
+        <source>Leave this room and join</source>
+        <translation>Bu odadan çık ve katıl</translation>
     </message>
     <message>
         <source>Copy the link</source>
@@ -357,6 +365,10 @@
     <message>
         <source>Decline</source>
         <translation>Reddet</translation>
+    </message>
+    <message>
+        <source>Accept</source>
+        <translation>Kabul et</translation>
     </message>
     <message>
         <source>%1 is sharing in %2</source>
@@ -976,6 +988,18 @@
     <message>
         <source>You missed a call from %1.</source>
         <translation>%1 kişisinden cevapsız arama.</translation>
+    </message>
+    <message>
+        <source>%1 asks to be your friend.</source>
+        <translation>%1 arkadaşın olmak istiyor.</translation>
+    </message>
+    <message>
+        <source>%1 is your friend now.</source>
+        <translation>%1 artık arkadaşın.</translation>
+    </message>
+    <message>
+        <source>%1 declined your friend request.</source>
+        <translation>%1 arkadaşlık isteğini reddetti.</translation>
     </message>
     <message>
         <source>Your key in the data folder could not be read.</source>

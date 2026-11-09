@@ -8,6 +8,7 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <filesystem>
@@ -156,6 +157,11 @@ public:
                     std::lock_guard lock(mutex_);
                     shares_.emplace_back(group.name, who.name);
                 },
+            .friend_news =
+                [this](const PersonId&, const std::string& name, FriendNews news) {
+                    std::lock_guard lock(mutex_);
+                    friend_news_.emplace_back(name, news);
+                },
         };
         Result<std::unique_ptr<People>> started = People::start(config, handlers);
         ASSERT_TRUE(started);
@@ -182,6 +188,11 @@ public:
     std::vector<std::pair<std::string, std::string>> shares() const {
         std::lock_guard lock(mutex_);
         return shares_;
+    }
+    /// What it was told of being friends: by whom, in order.
+    std::vector<std::pair<std::string, FriendNews>> friend_news() const {
+        std::lock_guard lock(mutex_);
+        return friend_news_;
     }
 
     bool has_friend(const People& other) const {
@@ -217,6 +228,7 @@ private:
     std::vector<Ring> rung_;
     std::vector<std::pair<Ring, RingEnd>> ended_;
     std::vector<std::pair<std::string, std::string>> shares_;
+    std::vector<std::pair<std::string, FriendNews>> friend_news_;
 };
 
 /// Each test's devices in a folder of their own.
@@ -338,6 +350,12 @@ TEST_F(PeopleTest, OneAsksByLinkTheOtherAcceptsAndBothAreFriends) {
         << "a secret the two share";
     EXPECT_EQ(bob->friend_of(*ann->people)->name, "Ann");
 
+    // Told as it happens, and only of what the other said.
+    using News = std::vector<std::pair<std::string, FriendNews>>;
+    EXPECT_TRUE(wait_for([&] { return !bob->friend_news().empty(); }));
+    EXPECT_EQ(ann->friend_news(), (News{{"Bob", FriendNews::Asks}}));
+    EXPECT_EQ(bob->friend_news(), (News{{"Ann", FriendNews::Accepted}}));
+
     // Kept for the next run.
     bob->stop();
     bob->start();
@@ -371,6 +389,9 @@ TEST_F(PeopleTest, ADeclinedRequestIsToldAndAResetLinkRefused) {
     }));
     EXPECT_FALSE(ann->request_of(*bob->people)) << "declined, not listed";
     EXPECT_FALSE(bob->has_friend(*ann->people));
+    EXPECT_TRUE(wait_for([&] { return !bob->friend_news().empty(); }));
+    EXPECT_EQ(bob->friend_news(),
+              (std::vector<std::pair<std::string, FriendNews>>{{"Ann", FriendNews::Declined}}));
 
     ann->people->reset_link();
     EXPECT_NE(ann->people->link(), old_link);
@@ -407,6 +428,13 @@ TEST_F(PeopleTest, TwoWhoAskEachOtherAreFriendsWithOneSecret) {
         return ann->has_friend(*bob->people) && bob->has_friend(*ann->people) &&
                ann->friend_of(*bob->people)->shared == bob->friend_of(*ann->people)->shared;
     }));
+    // Whoever heard the other's asking while still asking is told so.
+    const auto told_friends = [](const Device& device) {
+        return std::ranges::any_of(device.friend_news(), [](const auto& told) {
+            return told.second == FriendNews::Accepted;
+        });
+    };
+    EXPECT_TRUE(wait_for([&] { return told_friends(*ann) || told_friends(*bob); }));
 }
 
 TEST_F(PeopleTest, ADeviceBecomesItsPersonAndTheirDevicesKeepAlike) {

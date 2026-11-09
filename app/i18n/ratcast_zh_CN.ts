@@ -112,6 +112,10 @@
         <translation>呼叫</translation>
     </message>
     <message>
+        <source>Call to this room</source>
+        <translation>呼叫到此房间</translation>
+    </message>
+    <message>
         <source>Remove from friends</source>
         <translation>从好友中移除</translation>
     </message>
@@ -158,6 +162,10 @@
     <message>
         <source>Join</source>
         <translation>加入</translation>
+    </message>
+    <message>
+        <source>Leave this room and join</source>
+        <translation>离开此房间并加入</translation>
     </message>
     <message>
         <source>Copy the link</source>
@@ -357,6 +365,10 @@
     <message>
         <source>Decline</source>
         <translation>拒绝</translation>
+    </message>
+    <message>
+        <source>Accept</source>
+        <translation>接受</translation>
     </message>
     <message>
         <source>%1 is sharing in %2</source>
@@ -976,6 +988,18 @@
     <message>
         <source>You missed a call from %1.</source>
         <translation>%1 的未接来电。</translation>
+    </message>
+    <message>
+        <source>%1 asks to be your friend.</source>
+        <translation>%1 请求添加你为好友。</translation>
+    </message>
+    <message>
+        <source>%1 is your friend now.</source>
+        <translation>%1 现在是你的好友了。</translation>
+    </message>
+    <message>
+        <source>%1 declined your friend request.</source>
+        <translation>%1 拒绝了你的好友请求。</translation>
     </message>
     <message>
         <source>Your key in the data folder could not be read.</source>

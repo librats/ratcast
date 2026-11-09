@@ -132,6 +132,8 @@ public:
 
     /// Ask to be a friend by `link`; whether it was taken (else a notice).
     Q_INVOKABLE bool add(const QString& link);
+    /// Ask whoever `card` is, met in a room and called `name` there.
+    void add(const IdentityCard& card, const std::string& name);
     Q_INVOKABLE void accept(const QString& person);
     Q_INVOKABLE void decline(const QString& person);
     Q_INVOKABLE void remove(const QString& person);
@@ -166,9 +168,16 @@ Q_SIGNALS:
     /// Someone is sharing in a group's room this device is not in: `group`
     /// its id, to enter it by.
     void shares(const QString& group, const QString& groupName, const QString& name);
+    /// Something about being friends the user is to see wherever they are, a
+    /// room or full screen: someone asks (`asking`, their key in hex, to
+    /// answer from the notice), answered, or this side's asking went.
+    void friendNews(const QString& notice, const QString& asking);
 
 private:
     void set_notice(const QString& notice);
+    /// Tell the user what came of this side's asking `person`: asked, or
+    /// friends at once, as they had asked first.
+    void tell_asked(const PersonId& person);
     /// Run `task` on the GUI thread, unless the home node it came from is gone.
     void post(uint64_t generation, std::function<void()> task);
 

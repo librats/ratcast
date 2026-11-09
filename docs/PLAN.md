@@ -2054,7 +2054,11 @@ had the old.
   and a button to join it; a group made by name and entered at once, its link the room's
   invite (copied, or as a QR code), renamed by its maker, left; a group's link opened anywhere
   joins it and its room; the room named after its group; a friend rung from a group's room
-  rung into the group.
+  rung into the group. In a room the same list is a button away (a drawer, those asking
+  counted on the button), what is watched going on: a friend rung into this room, another
+  group's room entered in its place. Being friends is told as it happens, over anything, a
+  share full screen too (`PeopleHandlers::friend_news`, `PeopleController::friendNews`): one
+  asking, answered from the notice; an answer; this side's own asking.
 
 Later, when a community is wanted, each a new type of change in the same log: text and voice
 channels, roles and what they allow, kick and ban (7.5, stage 8), a chat whose history stays

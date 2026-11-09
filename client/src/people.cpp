@@ -584,6 +584,7 @@ struct People::State {
         std::vector<Ring> rung;
         std::vector<std::pair<Ring, RingEnd>> ended;
         std::vector<std::pair<Group, Group::Here>> shares;
+        std::vector<std::tuple<PersonId, std::string, FriendNews>> friend_news;
     };
 
     /// Rings past their time: missed. Under the lock.
@@ -1044,6 +1045,7 @@ struct People::State {
                 send_answer(peer, person);
                 tell_own();
                 after.changed = true;
+                after.friend_news.emplace_back(person, met[peer].name, FriendNews::Accepted);
                 return;
             }
         }
@@ -1056,6 +1058,7 @@ struct People::State {
         save();
         tell_own();
         after.changed = true;
+        after.friend_news.emplace_back(person, entry.name, FriendNews::Asks);
     }
 
     void on_answer(const PeerId& peer, const PersonId& person, const std::string& name,
@@ -1074,11 +1077,16 @@ struct People::State {
             return;
         }
         if (!asked) return;
+        const std::string who = name.empty() ? it->second.name : name;
         if (accepted) {
-            befriend(person, name.empty() ? it->second.name : name, shared);
+            befriend(person, who, shared);
             send_presence(peer);  // a friend now: told what to watch
             LOG_INFO("people", person.tag() << " accepted");
+            after.friend_news.emplace_back(person, who, FriendNews::Accepted);
         } else {
+            // Each of their devices may say it: told once.
+            if (!it->second.declined)
+                after.friend_news.emplace_back(person, who, FriendNews::Declined);
             it->second.declined = true;
             it->second.at = std::max(seconds_now(), it->second.at + 1);
             LOG_INFO("people", person.tag() << " declined");
@@ -1127,6 +1135,9 @@ struct People::State {
             for (const auto& [ring, end] : after.ended) handlers.ring_ended(ring, end);
         if (handlers.shares)
             for (const auto& [group, who] : after.shares) handlers.shares(group, who);
+        if (handlers.friend_news)
+            for (const auto& [person, name, news] : after.friend_news)
+                handlers.friend_news(person, name, news);
     }
 
     PeopleConfig config;
