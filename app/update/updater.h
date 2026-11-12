@@ -67,6 +67,9 @@ class Updater : public QObject {
     Q_PROPERTY(QString notice READ notice NOTIFY noticeChanged)
     /// The newer release's page, to download it by hand; empty for none.
     Q_PROPERTY(QUrl page READ page NOTIFY versionChanged)
+    /// The repository's page on GitHub, whose releases are checked: where
+    /// the releases are, and the issues.
+    Q_PROPERTY(QUrl repository READ repository CONSTANT)
 
 public:
     enum class State { Idle, Checking, Downloading, Installing, Installed };
@@ -107,6 +110,7 @@ public:
     double progress() const { return progress_; }
     QString notice() const { return notice_; }
     QUrl page() const { return release_ ? release_->page : QUrl(); }
+    static QUrl repository();
 
 Q_SIGNALS:
     void stateChanged();

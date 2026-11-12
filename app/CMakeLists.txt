@@ -148,6 +148,7 @@ qt_add_qml_module(ratcast_app
     URI     Ratcast
     VERSION 1.0
     QML_FILES
+        qml/AboutDialog.qml
         qml/Avatar.qml
         qml/FriendsPanel.qml
         qml/GroupsPanel.qml
@@ -155,12 +156,14 @@ qt_add_qml_module(ratcast_app
         qml/PeoplePanel.qml
         qml/RatLogo.qml
         qml/SettingsDialog.qml
+        qml/UpdatePanel.qml
         qml/logo.js
     # The buttons' icons: Lucide's (ISC, qml/icons/LICENSE), drawn by Qt SVG's
     # image plugin.
     RESOURCES
         qml/icons/activity.svg
         qml/icons/app-window.svg
+        qml/icons/bug.svg
         qml/icons/check.svg
         qml/icons/copy.svg
         qml/icons/ellipsis.svg
@@ -171,10 +174,13 @@ qt_add_qml_module(ratcast_app
         qml/icons/globe.svg
         qml/icons/headphone-off.svg
         qml/icons/headphones.svg
+        qml/icons/info.svg
         qml/icons/languages.svg
+        qml/icons/lightbulb.svg
         qml/icons/loader-circle.svg
         qml/icons/log-in.svg
         qml/icons/maximize.svg
+        qml/icons/menu.svg
         qml/icons/message-square.svg
         qml/icons/mic-off.svg
         qml/icons/mic.svg

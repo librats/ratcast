@@ -43,6 +43,10 @@ Updater::Environment Updater::system() {
     return environment;
 }
 
+QUrl Updater::repository() {
+    return QUrl(QStringLiteral("https://github.com/" RATCAST_UPDATE_REPOSITORY));
+}
+
 Updater::Updater(QObject* parent) : Updater(system(), parent) {}
 
 Updater::Updater(Environment environment, QObject* parent)

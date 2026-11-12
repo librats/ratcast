@@ -2,6 +2,45 @@
 <!DOCTYPE TS>
 <TS version="2.1" language="hi" sourcelanguage="en">
 <context>
+    <name>AboutDialog</name>
+    <message>
+        <source>Close</source>
+        <translation>बंद करें</translation>
+    </message>
+    <message>
+        <source>Version %1</source>
+        <translation>वर्शन %1</translation>
+    </message>
+    <message>
+        <source>Peer-to-peer calls and screen sharing for watching things together. Free and open source, under the MIT license.</source>
+        <translation>साथ मिलकर कुछ देखने के लिए पीयर-टू-पीयर कॉल और स्क्रीन शेयरिंग। मुफ़्त और ओपन सोर्स, MIT लाइसेंस के तहत।</translation>
+    </message>
+    <message>
+        <source>Copy version</source>
+        <translation>वर्शन कॉपी करें</translation>
+    </message>
+    <message>
+        <source>Copied</source>
+        <translation>कॉपी हो गया</translation>
+    </message>
+    <message>
+        <source>Website</source>
+        <translation>वेबसाइट</translation>
+    </message>
+    <message>
+        <source>Source code</source>
+        <translation>सोर्स कोड</translation>
+    </message>
+    <message>
+        <source>This build does not update itself. The new versions are on the releases page.</source>
+        <translation>यह बिल्ड अपने-आप अपडेट नहीं होता। नए वर्शन रिलीज़ पेज पर हैं।</translation>
+    </message>
+    <message>
+        <source>Releases</source>
+        <translation>रिलीज़</translation>
+    </message>
+</context>
+<context>
     <name>FriendsPanel</name>
     <message>
         <source>Someone</source>
@@ -263,36 +302,8 @@
         <translation>सेटिंग</translation>
     </message>
     <message>
-        <source>Looking for a new version…</source>
-        <translation>नया वर्शन खोजा जा रहा है…</translation>
-    </message>
-    <message>
-        <source>Downloading version %1… %2%</source>
-        <translation>वर्शन %1 डाउनलोड हो रहा है… %2%</translation>
-    </message>
-    <message>
-        <source>Installing version %1…</source>
-        <translation>वर्शन %1 इंस्टॉल हो रहा है…</translation>
-    </message>
-    <message>
-        <source>Version %1 is installed: it starts next time.</source>
-        <translation>वर्शन %1 इंस्टॉल हो गया: अगली बार से चलेगा।</translation>
-    </message>
-    <message>
-        <source>Restart now</source>
-        <translation>अभी रीस्टार्ट करें</translation>
-    </message>
-    <message>
-        <source>Download page</source>
-        <translation>डाउनलोड पेज</translation>
-    </message>
-    <message>
         <source>Check for updates</source>
         <translation>अपडेट की जाँच करें</translation>
-    </message>
-    <message>
-        <source>Update automatically</source>
-        <translation>अपने-आप अपडेट करें</translation>
     </message>
     <message>
         <source>Your name, as the others see it</source>
@@ -317,6 +328,66 @@
     <message>
         <source>Cancel</source>
         <translation>रद्द करें</translation>
+    </message>
+    <message>
+        <source>**What would you like ratcast to do?**
+
+
+**What would it help you with?**
+
+</source>
+        <translation>**आप ratcast से क्या करवाना चाहेंगे?**
+
+
+**इससे आपको किसमें मदद मिलेगी?**
+
+</translation>
+    </message>
+    <message>
+        <source>**What happened?**
+
+
+**What did you expect to happen?**
+
+
+**How can it be made to happen again?**
+1. 
+
+</source>
+        <translation>**क्या हुआ?**
+
+
+**आपको क्या होने की उम्मीद थी?**
+
+
+**इसे दोबारा कैसे किया जा सकता है?**
+1. 
+
+</translation>
+    </message>
+    <message>
+        <source>**The log**, if you are willing to share it: drag ratcast.log here, from the folder the menu&apos;s &quot;Open log folder&quot; opens.
+
+</source>
+        <translation>**लॉग**, अगर आप इसे शेयर करना चाहें: मेन्यू के &quot;लॉग फ़ोल्डर खोलें&quot; से खुलने वाले फ़ोल्डर से ratcast.log यहाँ खींचकर डालें।
+
+</translation>
+    </message>
+    <message>
+        <source>Version %1 is ready</source>
+        <translation>वर्शन %1 तैयार है</translation>
+    </message>
+    <message>
+        <source>Report a problem</source>
+        <translation>समस्या बताएँ</translation>
+    </message>
+    <message>
+        <source>Suggest a feature</source>
+        <translation>फ़ीचर सुझाएँ</translation>
+    </message>
+    <message>
+        <source>About ratcast</source>
+        <translation>ratcast के बारे में</translation>
     </message>
     <message>
         <source>A device asks to become you</source>
@@ -413,6 +484,10 @@
     <message>
         <source>A group %1</source>
         <translation>एक समूह %1</translation>
+    </message>
+    <message>
+        <source>Menu</source>
+        <translation>मेन्यू</translation>
     </message>
     <message>
         <source>Groups and friends (%1 asking)</source>
@@ -682,6 +757,10 @@
         <translation>कॉल की स्थिति (Ctrl+I)</translation>
     </message>
     <message>
+        <source>Settings, updates, help</source>
+        <translation>सेटिंग, अपडेट, मदद</translation>
+    </message>
+    <message>
         <source>More</source>
         <translation>और</translation>
     </message>
@@ -899,6 +978,45 @@
     <message>
         <source>The small picture of your share goes on while another window is in use. It takes a little of the processor and graphics card, which a game may miss.</source>
         <translation>दूसरी विंडो इस्तेमाल करते समय भी आपके शेयर की छोटी तस्वीर चलती रहती है। इसमें प्रोसेसर और ग्राफ़िक्स कार्ड का थोड़ा हिस्सा लगता है, जिसकी कमी किसी गेम को खल सकती है।</translation>
+    </message>
+</context>
+<context>
+    <name>UpdatePanel</name>
+    <message>
+        <source>Looking for a new version…</source>
+        <translation>नया वर्शन खोजा जा रहा है…</translation>
+    </message>
+    <message>
+        <source>Downloading version %1… %2%</source>
+        <translation>वर्शन %1 डाउनलोड हो रहा है… %2%</translation>
+    </message>
+    <message>
+        <source>Installing version %1…</source>
+        <translation>वर्शन %1 इंस्टॉल हो रहा है…</translation>
+    </message>
+    <message>
+        <source>Version %1 is installed: it starts next time.</source>
+        <translation>वर्शन %1 इंस्टॉल हो गया: अगली बार से चलेगा।</translation>
+    </message>
+    <message>
+        <source>Version %1 is out: it downloads once the call is over.</source>
+        <translation>वर्शन %1 आ गया है: कॉल खत्म होते ही डाउनलोड होगा।</translation>
+    </message>
+    <message>
+        <source>Restart now</source>
+        <translation>अभी रीस्टार्ट करें</translation>
+    </message>
+    <message>
+        <source>Download page</source>
+        <translation>डाउनलोड पेज</translation>
+    </message>
+    <message>
+        <source>Check for updates</source>
+        <translation>अपडेट की जाँच करें</translation>
+    </message>
+    <message>
+        <source>Update automatically</source>
+        <translation>अपने-आप अपडेट करें</translation>
     </message>
 </context>
 <context>

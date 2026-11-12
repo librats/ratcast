@@ -2,6 +2,45 @@
 <!DOCTYPE TS>
 <TS version="2.1" language="pt" sourcelanguage="en">
 <context>
+    <name>AboutDialog</name>
+    <message>
+        <source>Close</source>
+        <translation>Fechar</translation>
+    </message>
+    <message>
+        <source>Version %1</source>
+        <translation>Versão %1</translation>
+    </message>
+    <message>
+        <source>Peer-to-peer calls and screen sharing for watching things together. Free and open source, under the MIT license.</source>
+        <translation>Chamadas e compartilhamento de tela ponto a ponto para assistir coisas juntos. Livre e de código aberto, sob a licença MIT.</translation>
+    </message>
+    <message>
+        <source>Copy version</source>
+        <translation>Copiar versão</translation>
+    </message>
+    <message>
+        <source>Copied</source>
+        <translation>Copiado</translation>
+    </message>
+    <message>
+        <source>Website</source>
+        <translation>Site</translation>
+    </message>
+    <message>
+        <source>Source code</source>
+        <translation>Código-fonte</translation>
+    </message>
+    <message>
+        <source>This build does not update itself. The new versions are on the releases page.</source>
+        <translation>Esta versão não se atualiza sozinha. As novas versões estão na página de lançamentos.</translation>
+    </message>
+    <message>
+        <source>Releases</source>
+        <translation>Lançamentos</translation>
+    </message>
+</context>
+<context>
     <name>FriendsPanel</name>
     <message>
         <source>Someone</source>
@@ -263,36 +302,8 @@
         <translation>Configurações</translation>
     </message>
     <message>
-        <source>Looking for a new version…</source>
-        <translation>Procurando uma nova versão…</translation>
-    </message>
-    <message>
-        <source>Downloading version %1… %2%</source>
-        <translation>Baixando a versão %1… %2%</translation>
-    </message>
-    <message>
-        <source>Installing version %1…</source>
-        <translation>Instalando a versão %1…</translation>
-    </message>
-    <message>
-        <source>Version %1 is installed: it starts next time.</source>
-        <translation>A versão %1 foi instalada: ela será usada na próxima vez que você abrir o ratcast.</translation>
-    </message>
-    <message>
-        <source>Restart now</source>
-        <translation>Reiniciar agora</translation>
-    </message>
-    <message>
-        <source>Download page</source>
-        <translation>Página de download</translation>
-    </message>
-    <message>
         <source>Check for updates</source>
         <translation>Verificar atualizações</translation>
-    </message>
-    <message>
-        <source>Update automatically</source>
-        <translation>Atualizar automaticamente</translation>
     </message>
     <message>
         <source>Your name, as the others see it</source>
@@ -317,6 +328,66 @@
     <message>
         <source>Cancel</source>
         <translation>Cancelar</translation>
+    </message>
+    <message>
+        <source>**What would you like ratcast to do?**
+
+
+**What would it help you with?**
+
+</source>
+        <translation>**O que você gostaria que o ratcast fizesse?**
+
+
+**Em que isso ajudaria você?**
+
+</translation>
+    </message>
+    <message>
+        <source>**What happened?**
+
+
+**What did you expect to happen?**
+
+
+**How can it be made to happen again?**
+1. 
+
+</source>
+        <translation>**O que aconteceu?**
+
+
+**O que você esperava que acontecesse?**
+
+
+**Como fazer isso acontecer de novo?**
+1. 
+
+</translation>
+    </message>
+    <message>
+        <source>**The log**, if you are willing to share it: drag ratcast.log here, from the folder the menu&apos;s &quot;Open log folder&quot; opens.
+
+</source>
+        <translation>**O log**, se você quiser compartilhá-lo: arraste para cá o ratcast.log, da pasta que &quot;Abrir pasta de logs&quot; no menu abre.
+
+</translation>
+    </message>
+    <message>
+        <source>Version %1 is ready</source>
+        <translation>A versão %1 está pronta</translation>
+    </message>
+    <message>
+        <source>Report a problem</source>
+        <translation>Relatar um problema</translation>
+    </message>
+    <message>
+        <source>Suggest a feature</source>
+        <translation>Sugerir um recurso</translation>
+    </message>
+    <message>
+        <source>About ratcast</source>
+        <translation>Sobre o ratcast</translation>
     </message>
     <message>
         <source>A device asks to become you</source>
@@ -413,6 +484,10 @@
     <message>
         <source>A group %1</source>
         <translation>Um grupo %1</translation>
+    </message>
+    <message>
+        <source>Menu</source>
+        <translation>Menu</translation>
     </message>
     <message>
         <source>Groups and friends (%1 asking)</source>
@@ -682,6 +757,10 @@
         <translation>Como está a chamada (Ctrl+I)</translation>
     </message>
     <message>
+        <source>Settings, updates, help</source>
+        <translation>Configurações, atualizações, ajuda</translation>
+    </message>
+    <message>
         <source>More</source>
         <translation>Mais</translation>
     </message>
@@ -899,6 +978,45 @@
     <message>
         <source>The small picture of your share goes on while another window is in use. It takes a little of the processor and graphics card, which a game may miss.</source>
         <translation>A imagem pequena do que você compartilha continua enquanto outra janela está em uso. Consome um pouco do processador e da placa de vídeo, que podem fazer falta a um jogo.</translation>
+    </message>
+</context>
+<context>
+    <name>UpdatePanel</name>
+    <message>
+        <source>Looking for a new version…</source>
+        <translation>Procurando uma nova versão…</translation>
+    </message>
+    <message>
+        <source>Downloading version %1… %2%</source>
+        <translation>Baixando a versão %1… %2%</translation>
+    </message>
+    <message>
+        <source>Installing version %1…</source>
+        <translation>Instalando a versão %1…</translation>
+    </message>
+    <message>
+        <source>Version %1 is installed: it starts next time.</source>
+        <translation>A versão %1 foi instalada: ela será usada na próxima vez que você abrir o ratcast.</translation>
+    </message>
+    <message>
+        <source>Version %1 is out: it downloads once the call is over.</source>
+        <translation>A versão %1 saiu: ela será baixada quando a chamada terminar.</translation>
+    </message>
+    <message>
+        <source>Restart now</source>
+        <translation>Reiniciar agora</translation>
+    </message>
+    <message>
+        <source>Download page</source>
+        <translation>Página de download</translation>
+    </message>
+    <message>
+        <source>Check for updates</source>
+        <translation>Verificar atualizações</translation>
+    </message>
+    <message>
+        <source>Update automatically</source>
+        <translation>Atualizar automaticamente</translation>
     </message>
 </context>
 <context>

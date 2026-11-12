@@ -2,6 +2,45 @@
 <!DOCTYPE TS>
 <TS version="2.1" language="zh_CN" sourcelanguage="en">
 <context>
+    <name>AboutDialog</name>
+    <message>
+        <source>Close</source>
+        <translation>关闭</translation>
+    </message>
+    <message>
+        <source>Version %1</source>
+        <translation>版本 %1</translation>
+    </message>
+    <message>
+        <source>Peer-to-peer calls and screen sharing for watching things together. Free and open source, under the MIT license.</source>
+        <translation>点对点通话与屏幕共享，一起看点什么。免费开源，采用 MIT 许可证。</translation>
+    </message>
+    <message>
+        <source>Copy version</source>
+        <translation>复制版本信息</translation>
+    </message>
+    <message>
+        <source>Copied</source>
+        <translation>已复制</translation>
+    </message>
+    <message>
+        <source>Website</source>
+        <translation>网站</translation>
+    </message>
+    <message>
+        <source>Source code</source>
+        <translation>源代码</translation>
+    </message>
+    <message>
+        <source>This build does not update itself. The new versions are on the releases page.</source>
+        <translation>此版本不会自动更新。新版本请到发布页面获取。</translation>
+    </message>
+    <message>
+        <source>Releases</source>
+        <translation>发布页面</translation>
+    </message>
+</context>
+<context>
     <name>FriendsPanel</name>
     <message>
         <source>Someone</source>
@@ -263,36 +302,8 @@
         <translation>设置</translation>
     </message>
     <message>
-        <source>Looking for a new version…</source>
-        <translation>正在检查新版本…</translation>
-    </message>
-    <message>
-        <source>Downloading version %1… %2%</source>
-        <translation>正在下载版本 %1… %2%</translation>
-    </message>
-    <message>
-        <source>Installing version %1…</source>
-        <translation>正在安装版本 %1…</translation>
-    </message>
-    <message>
-        <source>Version %1 is installed: it starts next time.</source>
-        <translation>版本 %1 已安装，下次启动时生效。</translation>
-    </message>
-    <message>
-        <source>Restart now</source>
-        <translation>立即重启</translation>
-    </message>
-    <message>
-        <source>Download page</source>
-        <translation>下载页面</translation>
-    </message>
-    <message>
         <source>Check for updates</source>
         <translation>检查更新</translation>
-    </message>
-    <message>
-        <source>Update automatically</source>
-        <translation>自动更新</translation>
     </message>
     <message>
         <source>Your name, as the others see it</source>
@@ -317,6 +328,66 @@
     <message>
         <source>Cancel</source>
         <translation>取消</translation>
+    </message>
+    <message>
+        <source>**What would you like ratcast to do?**
+
+
+**What would it help you with?**
+
+</source>
+        <translation>**你希望 ratcast 能做什么？**
+
+
+**这对你有什么帮助？**
+
+</translation>
+    </message>
+    <message>
+        <source>**What happened?**
+
+
+**What did you expect to happen?**
+
+
+**How can it be made to happen again?**
+1. 
+
+</source>
+        <translation>**发生了什么？**
+
+
+**你原本期望发生什么？**
+
+
+**如何重现？**
+1. 
+
+</translation>
+    </message>
+    <message>
+        <source>**The log**, if you are willing to share it: drag ratcast.log here, from the folder the menu&apos;s &quot;Open log folder&quot; opens.
+
+</source>
+        <translation>**日志**（如果你愿意分享）：从菜单中“打开日志文件夹”打开的文件夹里，把 ratcast.log 拖到这里。
+
+</translation>
+    </message>
+    <message>
+        <source>Version %1 is ready</source>
+        <translation>版本 %1 已就绪</translation>
+    </message>
+    <message>
+        <source>Report a problem</source>
+        <translation>报告问题</translation>
+    </message>
+    <message>
+        <source>Suggest a feature</source>
+        <translation>建议功能</translation>
+    </message>
+    <message>
+        <source>About ratcast</source>
+        <translation>关于 ratcast</translation>
     </message>
     <message>
         <source>A device asks to become you</source>
@@ -413,6 +484,10 @@
     <message>
         <source>A group %1</source>
         <translation>群组 %1</translation>
+    </message>
+    <message>
+        <source>Menu</source>
+        <translation>菜单</translation>
     </message>
     <message>
         <source>Groups and friends (%1 asking)</source>
@@ -681,6 +756,10 @@
         <translation>通话状况 (Ctrl+I)</translation>
     </message>
     <message>
+        <source>Settings, updates, help</source>
+        <translation>设置、更新、帮助</translation>
+    </message>
+    <message>
         <source>More</source>
         <translation>更多</translation>
     </message>
@@ -898,6 +977,45 @@
     <message>
         <source>The small picture of your share goes on while another window is in use. It takes a little of the processor and graphics card, which a game may miss.</source>
         <translation>使用其他窗口时，共享的小画面会继续播放。这会占用少量处理器和显卡资源，可能影响游戏。</translation>
+    </message>
+</context>
+<context>
+    <name>UpdatePanel</name>
+    <message>
+        <source>Looking for a new version…</source>
+        <translation>正在检查新版本…</translation>
+    </message>
+    <message>
+        <source>Downloading version %1… %2%</source>
+        <translation>正在下载版本 %1… %2%</translation>
+    </message>
+    <message>
+        <source>Installing version %1…</source>
+        <translation>正在安装版本 %1…</translation>
+    </message>
+    <message>
+        <source>Version %1 is installed: it starts next time.</source>
+        <translation>版本 %1 已安装，下次启动时生效。</translation>
+    </message>
+    <message>
+        <source>Version %1 is out: it downloads once the call is over.</source>
+        <translation>版本 %1 已发布：通话结束后会下载。</translation>
+    </message>
+    <message>
+        <source>Restart now</source>
+        <translation>立即重启</translation>
+    </message>
+    <message>
+        <source>Download page</source>
+        <translation>下载页面</translation>
+    </message>
+    <message>
+        <source>Check for updates</source>
+        <translation>检查更新</translation>
+    </message>
+    <message>
+        <source>Update automatically</source>
+        <translation>自动更新</translation>
     </message>
 </context>
 <context>

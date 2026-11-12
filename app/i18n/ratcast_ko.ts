@@ -2,6 +2,45 @@
 <!DOCTYPE TS>
 <TS version="2.1" language="ko" sourcelanguage="en">
 <context>
+    <name>AboutDialog</name>
+    <message>
+        <source>Close</source>
+        <translation>닫기</translation>
+    </message>
+    <message>
+        <source>Version %1</source>
+        <translation>버전 %1</translation>
+    </message>
+    <message>
+        <source>Peer-to-peer calls and screen sharing for watching things together. Free and open source, under the MIT license.</source>
+        <translation>함께 무언가를 보기 위한 P2P 통화와 화면 공유. MIT 라이선스의 무료 오픈 소스예요.</translation>
+    </message>
+    <message>
+        <source>Copy version</source>
+        <translation>버전 복사</translation>
+    </message>
+    <message>
+        <source>Copied</source>
+        <translation>복사됨</translation>
+    </message>
+    <message>
+        <source>Website</source>
+        <translation>웹사이트</translation>
+    </message>
+    <message>
+        <source>Source code</source>
+        <translation>소스 코드</translation>
+    </message>
+    <message>
+        <source>This build does not update itself. The new versions are on the releases page.</source>
+        <translation>이 빌드는 스스로 업데이트되지 않아요. 새 버전은 릴리스 페이지에 있어요.</translation>
+    </message>
+    <message>
+        <source>Releases</source>
+        <translation>릴리스</translation>
+    </message>
+</context>
+<context>
     <name>FriendsPanel</name>
     <message>
         <source>Someone</source>
@@ -263,36 +302,8 @@
         <translation>설정</translation>
     </message>
     <message>
-        <source>Looking for a new version…</source>
-        <translation>새 버전을 확인하는 중…</translation>
-    </message>
-    <message>
-        <source>Downloading version %1… %2%</source>
-        <translation>버전 %1 다운로드 중… %2%</translation>
-    </message>
-    <message>
-        <source>Installing version %1…</source>
-        <translation>버전 %1 설치 중…</translation>
-    </message>
-    <message>
-        <source>Version %1 is installed: it starts next time.</source>
-        <translation>버전 %1 설치 완료: 다음 실행 때 적용돼요.</translation>
-    </message>
-    <message>
-        <source>Restart now</source>
-        <translation>지금 다시 시작</translation>
-    </message>
-    <message>
-        <source>Download page</source>
-        <translation>다운로드 페이지</translation>
-    </message>
-    <message>
         <source>Check for updates</source>
         <translation>업데이트 확인</translation>
-    </message>
-    <message>
-        <source>Update automatically</source>
-        <translation>자동으로 업데이트</translation>
     </message>
     <message>
         <source>Your name, as the others see it</source>
@@ -317,6 +328,66 @@
     <message>
         <source>Cancel</source>
         <translation>취소</translation>
+    </message>
+    <message>
+        <source>**What would you like ratcast to do?**
+
+
+**What would it help you with?**
+
+</source>
+        <translation>**ratcast가 무엇을 할 수 있으면 좋겠나요?**
+
+
+**그게 어떤 데 도움이 되나요?**
+
+</translation>
+    </message>
+    <message>
+        <source>**What happened?**
+
+
+**What did you expect to happen?**
+
+
+**How can it be made to happen again?**
+1. 
+
+</source>
+        <translation>**무슨 일이 있었나요?**
+
+
+**원래 어떻게 될 거라고 예상했나요?**
+
+
+**어떻게 하면 다시 일어나나요?**
+1. 
+
+</translation>
+    </message>
+    <message>
+        <source>**The log**, if you are willing to share it: drag ratcast.log here, from the folder the menu&apos;s &quot;Open log folder&quot; opens.
+
+</source>
+        <translation>**로그**(공유해도 괜찮다면): 메뉴의 &apos;로그 폴더 열기&apos;로 열리는 폴더에서 ratcast.log를 여기로 끌어다 놓으세요.
+
+</translation>
+    </message>
+    <message>
+        <source>Version %1 is ready</source>
+        <translation>버전 %1 준비 완료</translation>
+    </message>
+    <message>
+        <source>Report a problem</source>
+        <translation>문제 신고</translation>
+    </message>
+    <message>
+        <source>Suggest a feature</source>
+        <translation>기능 제안</translation>
+    </message>
+    <message>
+        <source>About ratcast</source>
+        <translation>ratcast 정보</translation>
     </message>
     <message>
         <source>A device asks to become you</source>
@@ -413,6 +484,10 @@
     <message>
         <source>A group %1</source>
         <translation>그룹 %1</translation>
+    </message>
+    <message>
+        <source>Menu</source>
+        <translation>메뉴</translation>
     </message>
     <message>
         <source>Groups and friends (%1 asking)</source>
@@ -681,6 +756,10 @@
         <translation>통화 상태 (Ctrl+I)</translation>
     </message>
     <message>
+        <source>Settings, updates, help</source>
+        <translation>설정, 업데이트, 도움말</translation>
+    </message>
+    <message>
         <source>More</source>
         <translation>더보기</translation>
     </message>
@@ -898,6 +977,45 @@
     <message>
         <source>The small picture of your share goes on while another window is in use. It takes a little of the processor and graphics card, which a game may miss.</source>
         <translation>다른 창을 사용하는 동안에도 공유의 작은 화면이 계속 재생됩니다. 프로세서와 그래픽 카드를 약간 사용하므로 게임에 영향을 줄 수 있습니다.</translation>
+    </message>
+</context>
+<context>
+    <name>UpdatePanel</name>
+    <message>
+        <source>Looking for a new version…</source>
+        <translation>새 버전을 확인하는 중…</translation>
+    </message>
+    <message>
+        <source>Downloading version %1… %2%</source>
+        <translation>버전 %1 다운로드 중… %2%</translation>
+    </message>
+    <message>
+        <source>Installing version %1…</source>
+        <translation>버전 %1 설치 중…</translation>
+    </message>
+    <message>
+        <source>Version %1 is installed: it starts next time.</source>
+        <translation>버전 %1 설치 완료: 다음 실행 때 적용돼요.</translation>
+    </message>
+    <message>
+        <source>Version %1 is out: it downloads once the call is over.</source>
+        <translation>버전 %1이 나왔어요: 통화가 끝나면 다운로드해요.</translation>
+    </message>
+    <message>
+        <source>Restart now</source>
+        <translation>지금 다시 시작</translation>
+    </message>
+    <message>
+        <source>Download page</source>
+        <translation>다운로드 페이지</translation>
+    </message>
+    <message>
+        <source>Check for updates</source>
+        <translation>업데이트 확인</translation>
+    </message>
+    <message>
+        <source>Update automatically</source>
+        <translation>자동으로 업데이트</translation>
     </message>
 </context>
 <context>

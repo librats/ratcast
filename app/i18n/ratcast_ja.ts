@@ -2,6 +2,45 @@
 <!DOCTYPE TS>
 <TS version="2.1" language="ja" sourcelanguage="en">
 <context>
+    <name>AboutDialog</name>
+    <message>
+        <source>Close</source>
+        <translation>閉じる</translation>
+    </message>
+    <message>
+        <source>Version %1</source>
+        <translation>バージョン %1</translation>
+    </message>
+    <message>
+        <source>Peer-to-peer calls and screen sharing for watching things together. Free and open source, under the MIT license.</source>
+        <translation>一緒に何かを観るための、ピアツーピアの通話と画面共有。MIT ライセンスの無料オープンソースです。</translation>
+    </message>
+    <message>
+        <source>Copy version</source>
+        <translation>バージョンをコピー</translation>
+    </message>
+    <message>
+        <source>Copied</source>
+        <translation>コピーしました</translation>
+    </message>
+    <message>
+        <source>Website</source>
+        <translation>ウェブサイト</translation>
+    </message>
+    <message>
+        <source>Source code</source>
+        <translation>ソースコード</translation>
+    </message>
+    <message>
+        <source>This build does not update itself. The new versions are on the releases page.</source>
+        <translation>このビルドは自動で更新されません。新しいバージョンはリリースページにあります。</translation>
+    </message>
+    <message>
+        <source>Releases</source>
+        <translation>リリース</translation>
+    </message>
+</context>
+<context>
     <name>FriendsPanel</name>
     <message>
         <source>Someone</source>
@@ -263,36 +302,8 @@
         <translation>設定</translation>
     </message>
     <message>
-        <source>Looking for a new version…</source>
-        <translation>新しいバージョンを確認中…</translation>
-    </message>
-    <message>
-        <source>Downloading version %1… %2%</source>
-        <translation>バージョン %1 をダウンロード中… %2%</translation>
-    </message>
-    <message>
-        <source>Installing version %1…</source>
-        <translation>バージョン %1 をインストール中…</translation>
-    </message>
-    <message>
-        <source>Version %1 is installed: it starts next time.</source>
-        <translation>バージョン %1 をインストールしました。次回の起動から有効になります。</translation>
-    </message>
-    <message>
-        <source>Restart now</source>
-        <translation>今すぐ再起動</translation>
-    </message>
-    <message>
-        <source>Download page</source>
-        <translation>ダウンロードページ</translation>
-    </message>
-    <message>
         <source>Check for updates</source>
         <translation>アップデートを確認</translation>
-    </message>
-    <message>
-        <source>Update automatically</source>
-        <translation>自動でアップデート</translation>
     </message>
     <message>
         <source>Your name, as the others see it</source>
@@ -317,6 +328,66 @@
     <message>
         <source>Cancel</source>
         <translation>キャンセル</translation>
+    </message>
+    <message>
+        <source>**What would you like ratcast to do?**
+
+
+**What would it help you with?**
+
+</source>
+        <translation>**ratcast にどんなことをしてほしいですか？**
+
+
+**それは何の役に立ちますか？**
+
+</translation>
+    </message>
+    <message>
+        <source>**What happened?**
+
+
+**What did you expect to happen?**
+
+
+**How can it be made to happen again?**
+1. 
+
+</source>
+        <translation>**何が起きましたか？**
+
+
+**本来はどうなるはずでしたか？**
+
+
+**再現する手順は？**
+1. 
+
+</translation>
+    </message>
+    <message>
+        <source>**The log**, if you are willing to share it: drag ratcast.log here, from the folder the menu&apos;s &quot;Open log folder&quot; opens.
+
+</source>
+        <translation>**ログ**（共有してもよければ）：メニューの「ログフォルダーを開く」で開くフォルダーから、ratcast.log をここにドラッグしてください。
+
+</translation>
+    </message>
+    <message>
+        <source>Version %1 is ready</source>
+        <translation>バージョン %1 の準備ができました</translation>
+    </message>
+    <message>
+        <source>Report a problem</source>
+        <translation>問題を報告</translation>
+    </message>
+    <message>
+        <source>Suggest a feature</source>
+        <translation>機能を提案</translation>
+    </message>
+    <message>
+        <source>About ratcast</source>
+        <translation>ratcast について</translation>
     </message>
     <message>
         <source>A device asks to become you</source>
@@ -413,6 +484,10 @@
     <message>
         <source>A group %1</source>
         <translation>グループ %1</translation>
+    </message>
+    <message>
+        <source>Menu</source>
+        <translation>メニュー</translation>
     </message>
     <message>
         <source>Groups and friends (%1 asking)</source>
@@ -681,6 +756,10 @@
         <translation>通話の状態 (Ctrl+I)</translation>
     </message>
     <message>
+        <source>Settings, updates, help</source>
+        <translation>設定、アップデート、ヘルプ</translation>
+    </message>
+    <message>
         <source>More</source>
         <translation>その他</translation>
     </message>
@@ -898,6 +977,45 @@
     <message>
         <source>The small picture of your share goes on while another window is in use. It takes a little of the processor and graphics card, which a game may miss.</source>
         <translation>別のウィンドウを使っている間も、共有の小さな映像を再生し続けます。プロセッサとグラフィックカードを少し使うため、ゲームに影響することがあります。</translation>
+    </message>
+</context>
+<context>
+    <name>UpdatePanel</name>
+    <message>
+        <source>Looking for a new version…</source>
+        <translation>新しいバージョンを確認中…</translation>
+    </message>
+    <message>
+        <source>Downloading version %1… %2%</source>
+        <translation>バージョン %1 をダウンロード中… %2%</translation>
+    </message>
+    <message>
+        <source>Installing version %1…</source>
+        <translation>バージョン %1 をインストール中…</translation>
+    </message>
+    <message>
+        <source>Version %1 is installed: it starts next time.</source>
+        <translation>バージョン %1 をインストールしました。次回の起動から有効になります。</translation>
+    </message>
+    <message>
+        <source>Version %1 is out: it downloads once the call is over.</source>
+        <translation>バージョン %1 が公開されています。通話が終わるとダウンロードします。</translation>
+    </message>
+    <message>
+        <source>Restart now</source>
+        <translation>今すぐ再起動</translation>
+    </message>
+    <message>
+        <source>Download page</source>
+        <translation>ダウンロードページ</translation>
+    </message>
+    <message>
+        <source>Check for updates</source>
+        <translation>アップデートを確認</translation>
+    </message>
+    <message>
+        <source>Update automatically</source>
+        <translation>自動でアップデート</translation>
     </message>
 </context>
 <context>

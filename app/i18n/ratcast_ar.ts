@@ -2,6 +2,45 @@
 <!DOCTYPE TS>
 <TS version="2.1" language="ar" sourcelanguage="en">
 <context>
+    <name>AboutDialog</name>
+    <message>
+        <source>Close</source>
+        <translation>إغلاق</translation>
+    </message>
+    <message>
+        <source>Version %1</source>
+        <translation>الإصدار %1</translation>
+    </message>
+    <message>
+        <source>Peer-to-peer calls and screen sharing for watching things together. Free and open source, under the MIT license.</source>
+        <translation>مكالمات ومشاركة شاشة من نظير إلى نظير لمشاهدة الأشياء معًا. مجاني ومفتوح المصدر، بموجب ترخيص MIT.</translation>
+    </message>
+    <message>
+        <source>Copy version</source>
+        <translation>نسخ الإصدار</translation>
+    </message>
+    <message>
+        <source>Copied</source>
+        <translation>تم النسخ</translation>
+    </message>
+    <message>
+        <source>Website</source>
+        <translation>الموقع</translation>
+    </message>
+    <message>
+        <source>Source code</source>
+        <translation>الشيفرة المصدرية</translation>
+    </message>
+    <message>
+        <source>This build does not update itself. The new versions are on the releases page.</source>
+        <translation>هذا الإصدار لا يحدّث نفسه. الإصدارات الجديدة في صفحة الإصدارات.</translation>
+    </message>
+    <message>
+        <source>Releases</source>
+        <translation>الإصدارات</translation>
+    </message>
+</context>
+<context>
     <name>FriendsPanel</name>
     <message>
         <source>Someone</source>
@@ -263,36 +302,8 @@
         <translation>الإعدادات</translation>
     </message>
     <message>
-        <source>Looking for a new version…</source>
-        <translation>جارٍ البحث عن إصدار جديد…</translation>
-    </message>
-    <message>
-        <source>Downloading version %1… %2%</source>
-        <translation>جارٍ تنزيل الإصدار %1… %2%</translation>
-    </message>
-    <message>
-        <source>Installing version %1…</source>
-        <translation>جارٍ تثبيت الإصدار %1…</translation>
-    </message>
-    <message>
-        <source>Version %1 is installed: it starts next time.</source>
-        <translation>تم تثبيت الإصدار %1: سيعمل في المرة القادمة.</translation>
-    </message>
-    <message>
-        <source>Restart now</source>
-        <translation>إعادة التشغيل الآن</translation>
-    </message>
-    <message>
-        <source>Download page</source>
-        <translation>صفحة التنزيل</translation>
-    </message>
-    <message>
         <source>Check for updates</source>
         <translation>التحقق من وجود تحديثات</translation>
-    </message>
-    <message>
-        <source>Update automatically</source>
-        <translation>التحديث تلقائيًا</translation>
     </message>
     <message>
         <source>Your name, as the others see it</source>
@@ -317,6 +328,66 @@
     <message>
         <source>Cancel</source>
         <translation>إلغاء</translation>
+    </message>
+    <message>
+        <source>**What would you like ratcast to do?**
+
+
+**What would it help you with?**
+
+</source>
+        <translation>**ما الذي تودّ أن يفعله ratcast؟**
+
+
+**بماذا سيفيدك ذلك؟**
+
+</translation>
+    </message>
+    <message>
+        <source>**What happened?**
+
+
+**What did you expect to happen?**
+
+
+**How can it be made to happen again?**
+1. 
+
+</source>
+        <translation>**ماذا حدث؟**
+
+
+**ما الذي توقعت حدوثه؟**
+
+
+**كيف يمكن تكرار حدوثه؟**
+1. 
+
+</translation>
+    </message>
+    <message>
+        <source>**The log**, if you are willing to share it: drag ratcast.log here, from the folder the menu&apos;s &quot;Open log folder&quot; opens.
+
+</source>
+        <translation>**السجل**، إن كنت ترغب في مشاركته: اسحب ratcast.log إلى هنا من المجلد الذي يفتحه &quot;فتح مجلد السجلات&quot; في القائمة.
+
+</translation>
+    </message>
+    <message>
+        <source>Version %1 is ready</source>
+        <translation>الإصدار %1 جاهز</translation>
+    </message>
+    <message>
+        <source>Report a problem</source>
+        <translation>الإبلاغ عن مشكلة</translation>
+    </message>
+    <message>
+        <source>Suggest a feature</source>
+        <translation>اقتراح ميزة</translation>
+    </message>
+    <message>
+        <source>About ratcast</source>
+        <translation>حول ratcast</translation>
     </message>
     <message>
         <source>A device asks to become you</source>
@@ -413,6 +484,10 @@
     <message>
         <source>A group %1</source>
         <translation>مجموعة %1</translation>
+    </message>
+    <message>
+        <source>Menu</source>
+        <translation>القائمة</translation>
     </message>
     <message>
         <source>Groups and friends (%1 asking)</source>
@@ -686,6 +761,10 @@
         <translation>حالة المكالمة (Ctrl+I)</translation>
     </message>
     <message>
+        <source>Settings, updates, help</source>
+        <translation>الإعدادات والتحديثات والمساعدة</translation>
+    </message>
+    <message>
         <source>More</source>
         <translation>المزيد</translation>
     </message>
@@ -903,6 +982,45 @@
     <message>
         <source>The small picture of your share goes on while another window is in use. It takes a little of the processor and graphics card, which a game may miss.</source>
         <translation>تستمر الصورة الصغيرة لمشاركتك أثناء استخدام نافذة أخرى. تستهلك قليلًا من المعالج وبطاقة الرسوميات، وقد تحتاج اللعبة إليهما.</translation>
+    </message>
+</context>
+<context>
+    <name>UpdatePanel</name>
+    <message>
+        <source>Looking for a new version…</source>
+        <translation>جارٍ البحث عن إصدار جديد…</translation>
+    </message>
+    <message>
+        <source>Downloading version %1… %2%</source>
+        <translation>جارٍ تنزيل الإصدار %1… %2%</translation>
+    </message>
+    <message>
+        <source>Installing version %1…</source>
+        <translation>جارٍ تثبيت الإصدار %1…</translation>
+    </message>
+    <message>
+        <source>Version %1 is installed: it starts next time.</source>
+        <translation>تم تثبيت الإصدار %1: سيعمل في المرة القادمة.</translation>
+    </message>
+    <message>
+        <source>Version %1 is out: it downloads once the call is over.</source>
+        <translation>صدر الإصدار %1: سيتم تنزيله بعد انتهاء المكالمة.</translation>
+    </message>
+    <message>
+        <source>Restart now</source>
+        <translation>إعادة التشغيل الآن</translation>
+    </message>
+    <message>
+        <source>Download page</source>
+        <translation>صفحة التنزيل</translation>
+    </message>
+    <message>
+        <source>Check for updates</source>
+        <translation>التحقق من وجود تحديثات</translation>
+    </message>
+    <message>
+        <source>Update automatically</source>
+        <translation>التحديث تلقائيًا</translation>
     </message>
 </context>
 <context>

@@ -198,6 +198,10 @@ int main(int argc, char* argv[]) {
         {QStringLiteral("link"), link},
         {QStringLiteral("statsEvery"), every},
         {QStringLiteral("dataFolder"), QUrl::fromLocalFile(data)},
+        {QStringLiteral("systemInfo"),
+         QStringLiteral("Qt %1 · %2 · %3")
+             .arg(QString::fromLatin1(qVersion()), QSysInfo::prettyProductName(),
+                  QSysInfo::currentCpuArchitecture())},
     });
 
     QObject::connect(

@@ -2,6 +2,45 @@
 <!DOCTYPE TS>
 <TS version="2.1" language="ru" sourcelanguage="en">
 <context>
+    <name>AboutDialog</name>
+    <message>
+        <source>Close</source>
+        <translation>Закрыть</translation>
+    </message>
+    <message>
+        <source>Version %1</source>
+        <translation>Версия %1</translation>
+    </message>
+    <message>
+        <source>Peer-to-peer calls and screen sharing for watching things together. Free and open source, under the MIT license.</source>
+        <translation>Звонки и показ экрана напрямую между участниками — чтобы смотреть вместе. Бесплатно и с открытым кодом, лицензия MIT.</translation>
+    </message>
+    <message>
+        <source>Copy version</source>
+        <translation>Скопировать версию</translation>
+    </message>
+    <message>
+        <source>Copied</source>
+        <translation>Скопировано</translation>
+    </message>
+    <message>
+        <source>Website</source>
+        <translation>Сайт</translation>
+    </message>
+    <message>
+        <source>Source code</source>
+        <translation>Исходный код</translation>
+    </message>
+    <message>
+        <source>This build does not update itself. The new versions are on the releases page.</source>
+        <translation>Эта сборка не обновляется сама. Новые версии — на странице релизов.</translation>
+    </message>
+    <message>
+        <source>Releases</source>
+        <translation>Релизы</translation>
+    </message>
+</context>
+<context>
     <name>FriendsPanel</name>
     <message>
         <source>Someone</source>
@@ -263,36 +302,8 @@
         <translation>Настройки</translation>
     </message>
     <message>
-        <source>Looking for a new version…</source>
-        <translation>Поиск новой версии…</translation>
-    </message>
-    <message>
-        <source>Downloading version %1… %2%</source>
-        <translation>Загрузка версии %1… %2%</translation>
-    </message>
-    <message>
-        <source>Installing version %1…</source>
-        <translation>Установка версии %1…</translation>
-    </message>
-    <message>
-        <source>Version %1 is installed: it starts next time.</source>
-        <translation>Версия %1 установлена и запустится в следующий раз.</translation>
-    </message>
-    <message>
-        <source>Restart now</source>
-        <translation>Перезапустить</translation>
-    </message>
-    <message>
-        <source>Download page</source>
-        <translation>Страница загрузки</translation>
-    </message>
-    <message>
         <source>Check for updates</source>
         <translation>Проверить обновления</translation>
-    </message>
-    <message>
-        <source>Update automatically</source>
-        <translation>Обновлять автоматически</translation>
     </message>
     <message>
         <source>Your name, as the others see it</source>
@@ -317,6 +328,66 @@
     <message>
         <source>Cancel</source>
         <translation>Отмена</translation>
+    </message>
+    <message>
+        <source>**What would you like ratcast to do?**
+
+
+**What would it help you with?**
+
+</source>
+        <translation>**Что бы вы хотели, чтобы ratcast умел?**
+
+
+**Чем это вам поможет?**
+
+</translation>
+    </message>
+    <message>
+        <source>**What happened?**
+
+
+**What did you expect to happen?**
+
+
+**How can it be made to happen again?**
+1. 
+
+</source>
+        <translation>**Что случилось?**
+
+
+**Что вы ожидали?**
+
+
+**Как это повторить?**
+1. 
+
+</translation>
+    </message>
+    <message>
+        <source>**The log**, if you are willing to share it: drag ratcast.log here, from the folder the menu&apos;s &quot;Open log folder&quot; opens.
+
+</source>
+        <translation>**Журнал**, если вы готовы им поделиться: перетащите сюда ratcast.log из папки, которую открывает пункт меню «Открыть папку журнала».
+
+</translation>
+    </message>
+    <message>
+        <source>Version %1 is ready</source>
+        <translation>Готова версия %1</translation>
+    </message>
+    <message>
+        <source>Report a problem</source>
+        <translation>Сообщить о проблеме</translation>
+    </message>
+    <message>
+        <source>Suggest a feature</source>
+        <translation>Предложить идею</translation>
+    </message>
+    <message>
+        <source>About ratcast</source>
+        <translation>О программе ratcast</translation>
     </message>
     <message>
         <source>A device asks to become you</source>
@@ -413,6 +484,10 @@
     <message>
         <source>A group %1</source>
         <translation>Группа %1</translation>
+    </message>
+    <message>
+        <source>Menu</source>
+        <translation>Меню</translation>
     </message>
     <message>
         <source>Groups and friends (%1 asking)</source>
@@ -683,6 +758,10 @@
         <translation>Как идёт звонок (Ctrl+I)</translation>
     </message>
     <message>
+        <source>Settings, updates, help</source>
+        <translation>Настройки, обновления, помощь</translation>
+    </message>
+    <message>
         <source>More</source>
         <translation>Ещё</translation>
     </message>
@@ -900,6 +979,45 @@
     <message>
         <source>The small picture of your share goes on while another window is in use. It takes a little of the processor and graphics card, which a game may miss.</source>
         <translation>Маленькая картинка вашего показа продолжает обновляться, пока вы в другом окне. Это занимает немного процессора и видеокарты, которых может не хватить игре.</translation>
+    </message>
+</context>
+<context>
+    <name>UpdatePanel</name>
+    <message>
+        <source>Looking for a new version…</source>
+        <translation>Поиск новой версии…</translation>
+    </message>
+    <message>
+        <source>Downloading version %1… %2%</source>
+        <translation>Загрузка версии %1… %2%</translation>
+    </message>
+    <message>
+        <source>Installing version %1…</source>
+        <translation>Установка версии %1…</translation>
+    </message>
+    <message>
+        <source>Version %1 is installed: it starts next time.</source>
+        <translation>Версия %1 установлена и запустится в следующий раз.</translation>
+    </message>
+    <message>
+        <source>Version %1 is out: it downloads once the call is over.</source>
+        <translation>Вышла версия %1: она скачается, когда звонок закончится.</translation>
+    </message>
+    <message>
+        <source>Restart now</source>
+        <translation>Перезапустить</translation>
+    </message>
+    <message>
+        <source>Download page</source>
+        <translation>Страница загрузки</translation>
+    </message>
+    <message>
+        <source>Check for updates</source>
+        <translation>Проверить обновления</translation>
+    </message>
+    <message>
+        <source>Update automatically</source>
+        <translation>Обновлять автоматически</translation>
     </message>
 </context>
 <context>

@@ -27,9 +27,11 @@ import Ratcast.Video
 // A share watched may go full screen (F, a double click): only the share, on
 // black, its controls and the cursor there while the mouse moves.
 // The start also says what the updater does: a new version on its way, or in
-// place and to restart into. The start and the panel open the folder the log
-// is kept in. The settings (SettingsDialog), from the start and the room; the
-// window goes to the tray, if they say so, as it is minimized or closed —
+// place and to restart into (UpdatePanel). The start and the panel open the
+// folder the log is kept in. The app's menu, in the start's corner and among
+// the room's controls: the settings (SettingsDialog), a check for updates, a
+// problem or a feature told on GitHub, and About (AboutDialog). The
+// window goes to the tray, if the settings say so, as it is minimized or closed —
 // the room going on — and comes back from its icon.
 // Narrow — a phone held upright — the room is one column: the stage on top,
 // the members under it, chat and stats over both, and the controls that do
@@ -46,6 +48,9 @@ ApplicationWindow {
     required property int statsEvery
     /// Where the app keeps its identities and its log.
     required property url dataFolder
+    /// Qt's version, the system and its processor: for the About dialog and
+    /// a report.
+    required property string systemInfo
 
     readonly property bool inRoom: call.state === CallController.InRoom
     readonly property bool watching: call.watching.length > 0
@@ -310,6 +315,83 @@ ApplicationWindow {
         trayAvailable: tray.available
         // Wayland does not tell a window it was minimized.
         minimizedKnown: Qt.platform.pluginName !== "wayland"
+    }
+
+    AboutDialog {
+        id: aboutDialog
+        updater: updater
+        call: call
+        ratcastVersion: root.ratcastVersion
+        libratsVersion: root.libratsVersion
+        systemInfo: root.systemInfo
+    }
+
+    /// The About dialog, a check for a newer version under way in it.
+    function checkForUpdates() {
+        aboutDialog.open()
+        if (updater.supported && updater.state === Updater.Idle)
+            updater.check()
+    }
+
+    /// A new issue on GitHub, in the browser: a problem told (`feature`
+    /// false) or a feature asked for, what to say laid out and the versions
+    /// under it.
+    function reportIssue(feature) {
+        let body = feature
+            ? qsTr("**What would you like ratcast to do?**\n\n\n**What would it help you with?**\n\n")
+            : qsTr("**What happened?**\n\n\n**What did you expect to happen?**\n\n\n**How can it be made to happen again?**\n1. \n\n")
+        if (!feature && !root.mobile)
+            body += qsTr("**The log**, if you are willing to share it: drag ratcast.log here, from the folder the menu's \"Open log folder\" opens.\n\n")
+        body += "---\n" + aboutDialog.versions + "\n"
+        Qt.openUrlExternally(updater.repository + "/issues/new?labels="
+                             + (feature ? "enhancement" : "bug") + "&body=" + encodeURIComponent(body))
+    }
+
+    // The app's own menu, from the start and from the room: the settings, a
+    // newer version, a problem told or a feature asked for on GitHub, and
+    // what this ratcast is.
+    Menu {
+        id: appMenu
+
+        // An item hidden takes no room.
+        component AppMenuItem: MenuItem {
+            height: visible ? implicitHeight : 0
+        }
+
+        AppMenuItem {
+            text: qsTr("Settings")
+            icon.source: "icons/settings.svg"
+            onTriggered: settingsDialog.open()
+        }
+        AppMenuItem {
+            text: updater.state === Updater.Installed
+                  ? qsTr("Version %1 is ready").arg(updater.version) : qsTr("Check for updates")
+            icon.source: "icons/refresh-cw.svg"
+            onTriggered: root.checkForUpdates()
+        }
+        AppMenuItem {
+            text: qsTr("Open log folder")
+            icon.source: "icons/folder-open.svg"
+            visible: !root.mobile
+            onTriggered: Qt.openUrlExternally(root.dataFolder)
+        }
+        MenuSeparator {}
+        AppMenuItem {
+            text: qsTr("Report a problem")
+            icon.source: "icons/bug.svg"
+            onTriggered: root.reportIssue(false)
+        }
+        AppMenuItem {
+            text: qsTr("Suggest a feature")
+            icon.source: "icons/lightbulb.svg"
+            onTriggered: root.reportIssue(true)
+        }
+        MenuSeparator {}
+        AppMenuItem {
+            text: qsTr("About ratcast")
+            icon.source: "icons/info.svg"
+            onTriggered: aboutDialog.open()
+        }
     }
 
     // Another device opened this person's device link: it may become them.
@@ -798,6 +880,32 @@ ApplicationWindow {
 
     // ── The start ───────────────────────────────────────────────────────────
 
+    // The app's menu, in the corner; a dot for a newer version in place.
+    RoundButton {
+        id: startMenuButton
+
+        anchors.left: parent.left
+        anchors.top: parent.top
+        anchors.margins: 8
+        visible: call.state === CallController.Idle
+        flat: true
+        icon.source: "icons/menu.svg"
+        icon.width: 22
+        icon.height: 22
+        ToolTip.visible: hovered
+        ToolTip.text: qsTr("Menu")
+        ToolTip.delay: 300
+        onClicked: appMenu.popup(startMenuButton, 0, startMenuButton.height)
+
+        Dot {
+            anchors.right: parent.right
+            anchors.top: parent.top
+            anchors.margins: 6
+            visible: updater.state === Updater.Installed
+            color: Material.accent
+        }
+    }
+
     // Wide, the friends beside the start.
     Pane {
         id: friendsPane
@@ -886,66 +994,10 @@ ApplicationWindow {
             }
         }
 
-        ColumnLayout {
+        UpdatePanel {
             Layout.fillWidth: true
-            spacing: 4
+            updater: updater
             visible: updater.supported
-
-            Label {
-                Layout.fillWidth: true
-                horizontalAlignment: Text.AlignHCenter
-                wrapMode: Text.Wrap
-                opacity: 0.6
-                text: {
-                    switch (updater.state) {
-                    case Updater.Checking:
-                        return qsTr("Looking for a new version…")
-                    case Updater.Downloading:
-                        return qsTr("Downloading version %1… %2%").arg(updater.version)
-                                                                 .arg(Math.round(updater.progress * 100))
-                    case Updater.Installing:
-                        return qsTr("Installing version %1…").arg(updater.version)
-                    case Updater.Installed:
-                        return qsTr("Version %1 is installed: it starts next time.").arg(updater.version)
-                    default:
-                        return updater.notice
-                    }
-                }
-                visible: text.length > 0
-            }
-
-            RowLayout {
-                Layout.alignment: Qt.AlignHCenter
-                spacing: 8
-
-                Button {
-                    text: qsTr("Restart now")
-                    icon.source: "icons/rotate-ccw.svg"
-                    highlighted: true
-                    visible: updater.state === Updater.Installed
-                    onClicked: updater.restart()
-                }
-                Button {
-                    text: qsTr("Download page")
-                    icon.source: "icons/external-link.svg"
-                    flat: true
-                    visible: updater.state === Updater.Idle && updater.notice.length > 0
-                             && updater.page.toString().length > 0
-                    onClicked: Qt.openUrlExternally(updater.page)
-                }
-                Button {
-                    text: qsTr("Check for updates")
-                    icon.source: "icons/refresh-cw.svg"
-                    flat: true
-                    visible: updater.state === Updater.Idle && !updater.automatic
-                    onClicked: updater.check()
-                }
-                CheckBox {
-                    text: qsTr("Update automatically")
-                    checked: updater.automatic
-                    onToggled: updater.automatic = checked
-                }
-            }
         }
 
         TextField {
@@ -2209,11 +2261,17 @@ ApplicationWindow {
                 count: people.asking
                 onClicked: friendsDrawer.open()
             }
+            // The settings and the rest of the app's menu; a dot for a
+            // newer version in place.
             CallButton {
-                text: qsTr("Settings")
-                iconName: "settings"
+                id: roomMenuButton
+                text: qsTr("Menu")
+                tip: qsTr("Settings, updates, help")
+                iconName: "menu"
                 visible: !root.compact
-                onClicked: settingsDialog.open()
+                dot: updater.state === Updater.Installed ? Material.accent : "transparent"
+                onClicked: appMenu.popup(roomMenuButton, roomMenuButton.width - appMenu.width,
+                                         -appMenu.height)
             }
             // Narrow, what does not fit; the call's quality in its corner.
             CallButton {
@@ -2297,6 +2355,28 @@ ApplicationWindow {
                         text: qsTr("Settings")
                         icon.source: "icons/settings.svg"
                         onTriggered: settingsDialog.open()
+                    }
+                    MenuSeparator {}
+                    MoreItem {
+                        text: updater.state === Updater.Installed
+                              ? qsTr("Version %1 is ready").arg(updater.version) : qsTr("Check for updates")
+                        icon.source: "icons/refresh-cw.svg"
+                        onTriggered: root.checkForUpdates()
+                    }
+                    MoreItem {
+                        text: qsTr("Report a problem")
+                        icon.source: "icons/bug.svg"
+                        onTriggered: root.reportIssue(false)
+                    }
+                    MoreItem {
+                        text: qsTr("Suggest a feature")
+                        icon.source: "icons/lightbulb.svg"
+                        onTriggered: root.reportIssue(true)
+                    }
+                    MoreItem {
+                        text: qsTr("About ratcast")
+                        icon.source: "icons/info.svg"
+                        onTriggered: aboutDialog.open()
                     }
                 }
             }

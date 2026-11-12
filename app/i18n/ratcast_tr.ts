@@ -2,6 +2,45 @@
 <!DOCTYPE TS>
 <TS version="2.1" language="tr" sourcelanguage="en">
 <context>
+    <name>AboutDialog</name>
+    <message>
+        <source>Close</source>
+        <translation>Kapat</translation>
+    </message>
+    <message>
+        <source>Version %1</source>
+        <translation>Sürüm %1</translation>
+    </message>
+    <message>
+        <source>Peer-to-peer calls and screen sharing for watching things together. Free and open source, under the MIT license.</source>
+        <translation>Birlikte bir şeyler izlemek için eşler arası görüşme ve ekran paylaşımı. MIT lisansıyla özgür ve açık kaynak.</translation>
+    </message>
+    <message>
+        <source>Copy version</source>
+        <translation>Sürümü kopyala</translation>
+    </message>
+    <message>
+        <source>Copied</source>
+        <translation>Kopyalandı</translation>
+    </message>
+    <message>
+        <source>Website</source>
+        <translation>Web sitesi</translation>
+    </message>
+    <message>
+        <source>Source code</source>
+        <translation>Kaynak kodu</translation>
+    </message>
+    <message>
+        <source>This build does not update itself. The new versions are on the releases page.</source>
+        <translation>Bu derleme kendini güncellemez. Yeni sürümler yayınlar sayfasında.</translation>
+    </message>
+    <message>
+        <source>Releases</source>
+        <translation>Yayınlar</translation>
+    </message>
+</context>
+<context>
     <name>FriendsPanel</name>
     <message>
         <source>Someone</source>
@@ -263,36 +302,8 @@
         <translation>Ayarlar</translation>
     </message>
     <message>
-        <source>Looking for a new version…</source>
-        <translation>Yeni sürüm aranıyor…</translation>
-    </message>
-    <message>
-        <source>Downloading version %1… %2%</source>
-        <translation>%1 sürümü indiriliyor… %%2</translation>
-    </message>
-    <message>
-        <source>Installing version %1…</source>
-        <translation>%1 sürümü yükleniyor…</translation>
-    </message>
-    <message>
-        <source>Version %1 is installed: it starts next time.</source>
-        <translation>%1 sürümü yüklendi: bir sonraki açılışta devreye girer.</translation>
-    </message>
-    <message>
-        <source>Restart now</source>
-        <translation>Şimdi yeniden başlat</translation>
-    </message>
-    <message>
-        <source>Download page</source>
-        <translation>İndirme sayfası</translation>
-    </message>
-    <message>
         <source>Check for updates</source>
         <translation>Güncellemeleri denetle</translation>
-    </message>
-    <message>
-        <source>Update automatically</source>
-        <translation>Otomatik güncelle</translation>
     </message>
     <message>
         <source>Your name, as the others see it</source>
@@ -317,6 +328,66 @@
     <message>
         <source>Cancel</source>
         <translation>İptal</translation>
+    </message>
+    <message>
+        <source>**What would you like ratcast to do?**
+
+
+**What would it help you with?**
+
+</source>
+        <translation>**ratcast&apos;in ne yapmasını isterdiniz?**
+
+
+**Bu size ne konuda yardımcı olur?**
+
+</translation>
+    </message>
+    <message>
+        <source>**What happened?**
+
+
+**What did you expect to happen?**
+
+
+**How can it be made to happen again?**
+1. 
+
+</source>
+        <translation>**Ne oldu?**
+
+
+**Ne olmasını bekliyordunuz?**
+
+
+**Nasıl tekrarlanabilir?**
+1. 
+
+</translation>
+    </message>
+    <message>
+        <source>**The log**, if you are willing to share it: drag ratcast.log here, from the folder the menu&apos;s &quot;Open log folder&quot; opens.
+
+</source>
+        <translation>**Günlük**, paylaşmak isterseniz: menüdeki &quot;Günlük klasörünü aç&quot; ile açılan klasördeki ratcast.log dosyasını buraya sürükleyin.
+
+</translation>
+    </message>
+    <message>
+        <source>Version %1 is ready</source>
+        <translation>%1 sürümü hazır</translation>
+    </message>
+    <message>
+        <source>Report a problem</source>
+        <translation>Sorun bildir</translation>
+    </message>
+    <message>
+        <source>Suggest a feature</source>
+        <translation>Özellik öner</translation>
+    </message>
+    <message>
+        <source>About ratcast</source>
+        <translation>ratcast hakkında</translation>
     </message>
     <message>
         <source>A device asks to become you</source>
@@ -413,6 +484,10 @@
     <message>
         <source>A group %1</source>
         <translation>Bir grup %1</translation>
+    </message>
+    <message>
+        <source>Menu</source>
+        <translation>Menü</translation>
     </message>
     <message>
         <source>Groups and friends (%1 asking)</source>
@@ -681,6 +756,10 @@
         <translation>Görüşmenin durumu (Ctrl+I)</translation>
     </message>
     <message>
+        <source>Settings, updates, help</source>
+        <translation>Ayarlar, güncellemeler, yardım</translation>
+    </message>
+    <message>
         <source>More</source>
         <translation>Diğer</translation>
     </message>
@@ -898,6 +977,45 @@
     <message>
         <source>The small picture of your share goes on while another window is in use. It takes a little of the processor and graphics card, which a game may miss.</source>
         <translation>Başka bir pencere kullanılırken paylaşımının küçük görüntüsü devam eder. İşlemciden ve grafik kartından biraz kullanır; bu bir oyunu etkileyebilir.</translation>
+    </message>
+</context>
+<context>
+    <name>UpdatePanel</name>
+    <message>
+        <source>Looking for a new version…</source>
+        <translation>Yeni sürüm aranıyor…</translation>
+    </message>
+    <message>
+        <source>Downloading version %1… %2%</source>
+        <translation>%1 sürümü indiriliyor… %%2</translation>
+    </message>
+    <message>
+        <source>Installing version %1…</source>
+        <translation>%1 sürümü yükleniyor…</translation>
+    </message>
+    <message>
+        <source>Version %1 is installed: it starts next time.</source>
+        <translation>%1 sürümü yüklendi: bir sonraki açılışta devreye girer.</translation>
+    </message>
+    <message>
+        <source>Version %1 is out: it downloads once the call is over.</source>
+        <translation>%1 sürümü çıktı: görüşme bitince indirilecek.</translation>
+    </message>
+    <message>
+        <source>Restart now</source>
+        <translation>Şimdi yeniden başlat</translation>
+    </message>
+    <message>
+        <source>Download page</source>
+        <translation>İndirme sayfası</translation>
+    </message>
+    <message>
+        <source>Check for updates</source>
+        <translation>Güncellemeleri denetle</translation>
+    </message>
+    <message>
+        <source>Update automatically</source>
+        <translation>Otomatik güncelle</translation>
     </message>
 </context>
 <context>
