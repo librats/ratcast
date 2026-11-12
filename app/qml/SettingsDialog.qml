@@ -7,8 +7,9 @@ import Ratcast.Language
 
 // The settings, a section at a time: its name in the list on the left, its
 // page on the right. A section more is a name in `sections` and a page in
-// the StackLayout, in the same place; narrow, the names are tabs along the
-// top. What is set takes at once — a device
+// the StackLayout (a SettingsPage, scrolled where the dialog is too low), in
+// the same place; narrow — a phone —, the names are tabs along the top and
+// the dialog nearly the whole window. What is set takes at once — a device
 // chosen in a room too — and is kept: the devices by the controller, the
 // rest by Main.qml's Settings.
 Dialog {
@@ -41,8 +42,9 @@ Dialog {
     title: qsTr("Settings")
     modal: true
     anchors.centerIn: Overlay.overlay
-    width: Math.min(parent.width - 48, 640)
-    height: Math.min(parent.height - 48, 520)
+    // A phone's: nearly all the screen.
+    width: Math.min(parent.width - (parent.width < 560 ? 24 : 48), 640)
+    height: narrow ? parent.height - 24 : Math.min(parent.height - 48, 520)
     // Its own button, not Dialog.Close: Qt's word for that is in Qt's
     // translations, which the app does not carry.
     footer: DialogButtonBox {
@@ -55,6 +57,46 @@ Dialog {
 
     // What is plugged in now: looked at as the dialog opens.
     onAboutToShow: call.listDevices()
+
+    /// A check box whose words wrap, as narrow as the page: Qt's keeps its
+    /// text on one line, as wide as it is.
+    component WrappingCheckBox: CheckBox {
+        id: box
+
+        Layout.fillWidth: true
+        contentItem: Label {
+            text: box.text
+            wrapMode: Text.Wrap
+            verticalAlignment: Text.AlignVCenter
+            leftPadding: box.indicator && !box.mirrored ? box.indicator.width + box.spacing : 0
+            rightPadding: box.indicator && box.mirrored ? box.indicator.width + box.spacing : 0
+            opacity: box.enabled ? 1 : 0.5
+        }
+    }
+
+    /// A section's page, the dialog's width: scrolled where it is too low.
+    component SettingsPage: ScrollView {
+        id: page
+
+        default property alias content: column.data
+
+        contentWidth: availableWidth
+        clip: true
+
+        // Its rows as far apart as the page's spacing says.
+        ColumnLayout {
+            id: column
+            width: page.availableWidth
+            spacing: page.spacing
+        }
+    }
+
+    /// A section's heading: its words wrap, a page never wider for it.
+    component Heading: Label {
+        Layout.fillWidth: true
+        wrapMode: Text.Wrap
+        font.bold: true
+    }
 
     /// A device to choose: the system's default, or one of `devices` (maps of
     /// id, name and, for the one chosen when it is gone, missing).
@@ -71,9 +113,8 @@ Dialog {
         Layout.fillWidth: true
         spacing: 4
 
-        Label {
+        Heading {
             text: choice.label
-            font.bold: true
         }
         ComboBox {
             readonly property var entries: [{ id: "", name: choice.defaultName }].concat(
@@ -146,7 +187,7 @@ Dialog {
                 currentIndex: dialog.section
 
                 // ── Devices ─────────────────────────────────────────────────────
-                ColumnLayout {
+                SettingsPage {
                     spacing: 16
 
                     DeviceChoice {
@@ -185,18 +226,14 @@ Dialog {
                             ToolTip.text: qsTr("For a device plugged in just now")
                         }
                     }
-                    Item {
-                        Layout.fillHeight: true
-                    }
                 }
 
                 // ── Network ─────────────────────────────────────────────────────
-                ColumnLayout {
+                SettingsPage {
                     spacing: 4
 
-                    Label {
+                    Heading {
                         text: qsTr("Server")
-                        font.bold: true
                     }
                     TextField {
                         Layout.fillWidth: true
@@ -213,18 +250,14 @@ Dialog {
                                    "carried by it where no direct path does. Taken as a room is " +
                                    "made or joined.")
                     }
-                    Item {
-                        Layout.fillHeight: true
-                    }
                 }
 
                 // ── Language ────────────────────────────────────────────────────
-                ColumnLayout {
+                SettingsPage {
                     spacing: 4
 
-                    Label {
+                    Heading {
                         text: qsTr("Language")
-                        font.bold: true
                     }
                     ComboBox {
                         // The system's first, in the language it is now; the
@@ -250,9 +283,6 @@ Dialog {
                         font.pixelSize: 12
                         text: qsTr("Takes effect at once.")
                     }
-                    Item {
-                        Layout.fillHeight: true
-                    }
                 }
 
                 // ── You: this person on their devices, and backed up ────────────
@@ -264,9 +294,8 @@ Dialog {
                         width: parent.width
                         spacing: 4
 
-                        Label {
+                        Heading {
                             text: qsTr("Your name")
-                            font.bold: true
                         }
                         RowLayout {
                             Layout.fillWidth: true
@@ -290,10 +319,9 @@ Dialog {
                             text: qsTr("The four characters after it are yours alone: they tell two of a name apart.")
                         }
 
-                        Label {
+                        Heading {
                             Layout.topMargin: 12
                             text: qsTr("Your other devices")
-                            font.bold: true
                         }
                         Label {
                             Layout.fillWidth: true
@@ -355,10 +383,9 @@ Dialog {
                             }
                         }
 
-                        Label {
+                        Heading {
                             Layout.topMargin: 12
                             text: qsTr("Make this device someone else's")
-                            font.bold: true
                         }
                         RowLayout {
                             Layout.fillWidth: true
@@ -375,10 +402,9 @@ Dialog {
                             }
                         }
 
-                        Label {
+                        Heading {
                             Layout.topMargin: 12
                             text: qsTr("Backup")
-                            font.bold: true
                         }
                         Label {
                             Layout.fillWidth: true
@@ -388,7 +414,10 @@ Dialog {
                             text: qsTr("Your key and your friends in a file: with it, a new device is you again " +
                                        "even if every other is lost. Whoever has the file can be you.")
                         }
-                        RowLayout {
+                        // One under the other when they do not fit.
+                        Flow {
+                            Layout.fillWidth: true
+
                             Button {
                                 text: qsTr("Save a backup…")
                                 icon.source: "icons/save.svg"
@@ -429,16 +458,16 @@ Dialog {
                 }
 
                 // ── Window ──────────────────────────────────────────────────────
-                ColumnLayout {
+                SettingsPage {
                     spacing: 4
 
-                    CheckBox {
+                    WrappingCheckBox {
                         text: qsTr("Minimize to the tray")
                         enabled: dialog.trayAvailable && dialog.minimizedKnown
                         checked: dialog.minimizeToTray
                         onToggled: dialog.minimizeToTray = checked
                     }
-                    CheckBox {
+                    WrappingCheckBox {
                         text: qsTr("Close to the tray")
                         enabled: dialog.trayAvailable
                         checked: dialog.closeToTray
@@ -456,7 +485,7 @@ Dialog {
                                 qsTr("Minimized, it stays where it is: Wayland does not tell " +
                                      "applications."))
                     }
-                    CheckBox {
+                    WrappingCheckBox {
                         Layout.topMargin: 12
                         text: qsTr("Keep your share's preview playing in the background")
                         checked: dialog.keepSharePreview
@@ -470,9 +499,6 @@ Dialog {
                         text: qsTr("The small picture of your share goes on while another window is " +
                                    "in use. It takes a little of the processor and graphics card, " +
                                    "which a game may miss.")
-                    }
-                    Item {
-                        Layout.fillHeight: true
                     }
                 }
             }

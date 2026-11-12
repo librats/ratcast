@@ -336,10 +336,10 @@
 **What would it help you with?**
 
 </source>
-        <translation>**Que voudriez-vous que ratcast fasse ?**
+        <translation>**Que voudriez-vous que ratcast fasse&#xa0;?**
 
 
-**En quoi cela vous aiderait-il ?**
+**En quoi cela vous aiderait-il&#xa0;?**
 
 </translation>
     </message>
@@ -354,13 +354,13 @@
 1. 
 
 </source>
-        <translation>**Que s&apos;est-il passé ?**
+        <translation>**Que s&apos;est-il passé&#xa0;?**
 
 
-**À quoi vous attendiez-vous ?**
+**À quoi vous attendiez-vous&#xa0;?**
 
 
-**Comment reproduire le problème ?**
+**Comment reproduire le problème&#xa0;?**
 1. 
 
 </translation>
@@ -369,7 +369,7 @@
         <source>**The log**, if you are willing to share it: drag ratcast.log here, from the folder the menu&apos;s &quot;Open log folder&quot; opens.
 
 </source>
-        <translation>**Le journal**, si vous acceptez de le partager : glissez ici ratcast.log, depuis le dossier qu&apos;ouvre « Ouvrir le dossier des journaux » dans le menu.
+        <translation>**Le journal**, si vous acceptez de le partager&#xa0;: glissez ici ratcast.log, depuis le dossier qu&apos;ouvre «&#xa0;Ouvrir le dossier des journaux&#xa0;» dans le menu.
 
 </translation>
     </message>
@@ -1000,7 +1000,7 @@
     </message>
     <message>
         <source>Version %1 is out: it downloads once the call is over.</source>
-        <translation>La version %1 est sortie : elle sera téléchargée à la fin de l&apos;appel.</translation>
+        <translation>La version %1 est sortie&#xa0;: elle sera téléchargée à la fin de l&apos;appel.</translation>
     </message>
     <message>
         <source>Restart now</source>
