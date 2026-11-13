@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "app.ratcast",
+      "sha256_cert_fingerprints": [
+        "7B:A8:CE:FC:A5:E7:64:AD:3C:35:C2:7E:19:2B:2F:0C:CA:48:C2:64:39:2C:4C:FE:4B:9D:8C:07:88:C2:FD:F8"
+      ]
+    }
+  }
+]

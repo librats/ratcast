@@ -1885,9 +1885,10 @@ devices, and Ann's phone, added by a QR code from her PC, is Ann to Bob.
   is `rats://r/SECRET` (as a group's is `rats://g/…`), the page opening that: Android and macOS
   hand the app its links as `QUrl`s, which lowercase a host, and a secret in the host's place
   came lowercased — a link to no room, or to another; `rats://SECRET` is taken still, and the
-  web link is as it was (`/r/#SECRET`). Left: the site's `/.well-known/assetlinks.json` (the
-  SHA-256 of the key Play signs with and of release.yml's, which needs the `ANDROID_KEYSTORE`
-  secret: without it each release's APK has a key of its own): until it is there, Android opens
+  web link is as it was (`/r/#SECRET`). Left: the fingerprints in the site's
+  `/.well-known/assetlinks.json` (`website/public/`; the SHA-256 of the key Play signs with and
+  of release.yml's, which needs the `ANDROID_KEYSTORE` secret: without it each release's APK has
+  a key of its own): until they are there, Android opens
   the page, whose button opens the app; QR codes; macOS, Linux and Android tried by hand.
 - **14.3 Friends** ✅: a personal link (the person's key and a secret, reset at will) opened sends
   a request, shown on the other's devices: accept or decline; Add friend at a member's name in
