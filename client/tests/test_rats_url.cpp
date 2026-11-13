@@ -29,13 +29,26 @@ TEST(RatsUrl, APeerToLookFor) {
 TEST(RatsUrl, ARoomBySecret) {
     const RoomSecret room = RoomSecret::random();
     const std::string url = to_string(RatsUrl{room});
-    EXPECT_EQ(url.size(), std::string("rats://").size() + 22) << url;
+    ASSERT_EQ(url.size(), std::string("rats://r/").size() + 22) << url;
+    EXPECT_TRUE(url.starts_with("rats://r/")) << url;
+    const std::string secret = url.substr(std::string("rats://r/").size());
     const std::optional<RatsUrl> found = parse_rats_url(url + "/");
     ASSERT_TRUE(found);
     EXPECT_EQ(std::get<RoomSecret>(*found), room);
-    // As the website gives it, with the servers it is met at.
+    // As links were written before: the secret in the host's place.
+    EXPECT_EQ(parse_rats_url("rats://" + secret), found);
+    // In the path, the secret keeps its case where a URL parser lowercases the
+    // host (Qt's, as Android and macOS hand the app its links).
+    for (const std::string& bad : {std::string("rats://r/"), "rats://r/" + secret + "x",
+                                   std::string("rats://r/1.2.3.4:5")}) {
+        EXPECT_FALSE(parse_rats_url(bad)) << bad;
+    }
+    // As the website gives it, with the servers it is met at: the page's path
+    // the room's.
     const RatsLink link{room, {librats::HostEndpoint{"degitx.com", 7700}}};
+    EXPECT_EQ(to_web_link(link), "https://ratcast.app/r/#" + secret + "?via=degitx.com:7700");
     EXPECT_EQ(parse_rats_link(to_web_link(link)), link);
+    EXPECT_EQ(parse_rats_link(to_string(link)), link);
     // Each room made a secret of its own, and a key no secret tells.
     EXPECT_NE(RoomSecret::random(), room);
     EXPECT_NE(room_key(RoomSecret::random()), room_key(room));

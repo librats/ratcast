@@ -1881,8 +1881,13 @@ devices, and Ann's phone, added by a QR code from her PC, is Ann to Bob.
   the same — one app to a person, never them twice in a room — a link to that room bringing
   the window up, one to another asking whether to leave for it. Tested: the web links both ways, as messengers hand them on, and what is
   none; the controller's invites; on Windows by hand — the scheme registered, a link opened by
-  the system joined, one given to a second process taken by the first. Left: the site's
-  `/.well-known/assetlinks.json` (the release key's SHA-256): until it is there, Android opens
+  the system joined, one given to a second process taken by the first. A room's rats:// link
+  is `rats://r/SECRET` (as a group's is `rats://g/…`), the page opening that: Android and macOS
+  hand the app its links as `QUrl`s, which lowercase a host, and a secret in the host's place
+  came lowercased — a link to no room, or to another; `rats://SECRET` is taken still, and the
+  web link is as it was (`/r/#SECRET`). Left: the site's `/.well-known/assetlinks.json` (the
+  SHA-256 of the key Play signs with and of release.yml's, which needs the `ANDROID_KEYSTORE`
+  secret: without it each release's APK has a key of its own): until it is there, Android opens
   the page, whose button opens the app; QR codes; macOS, Linux and Android tried by hand.
 - **14.3 Friends** ✅: a personal link (the person's key and a secret, reset at will) opened sends
   a request, shown on the other's devices: accept or decline; Add friend at a member's name in

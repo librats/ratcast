@@ -12,10 +12,11 @@ export type LinkKind = "room" | "group" | "friend" | "device";
 /**
  * Each kind's rats:// link: what follows '#' after this. Keep them in step with the app's:
  * to_web_link() in client/include/ratcast/client/rats_url.h (a room's), group.h (a group's) and
- * people.h (a person's, a device's).
+ * people.h (a person's, a device's). Each key in the path: in the host's place Android and macOS
+ * hand the app a room's secret lowercased.
  */
 const SCHEMES: Record<LinkKind, string> = {
-  room: "rats://",
+  room: "rats://r/",
   group: "rats://g/",
   friend: "rats://u/",
   device: "rats://d/",

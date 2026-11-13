@@ -5,24 +5,26 @@
  * @brief rats:// links: where a room, or a ratcast node, is reached.
  *
  * Three kinds:
- * - "rats://ROOM", a room's secret (RoomSecret: 22 characters, base64url):
+ * - "rats://r/ROOM", a room's secret (RoomSecret: 22 characters, base64url):
  *   whoever has it meets the others in the room under a key of it
  *   (room_key()), at the servers and in the DHT — nobody's node, whoever
  *   comes first. A room made once has a secret of its own, a group's channel
- *   one of the group's (group.h);
+ *   one of the group's (group.h). In the path, not the host's place, where
+ *   URL parsers lowercase it — Qt's, as Android and macOS hand links to the
+ *   app; "rats://ROOM", as links were written before, is taken too;
  * - "rats://PEER-ID", the peer id in hex of a node that is discoverable,
  *   looked for through the DHT (a sender of the tools');
  * - "rats://HOST:PORT" (or "rats://[IPV6]:PORT"), an address to dial: a
  *   member on the same network, with no server nor the internet.
  * A trailing slash is allowed. A link (RatsLink) may name servers too:
- * "rats://ROOM?via=HOST:PORT", where the room is met that its members may not
+ * "rats://r/ROOM?via=HOST:PORT", where the room is met that its members may not
  * know of. And a server, as a user writes one (parse_server()).
  *
  * A link goes about as a web link too (to_web_link()): the website's page
  * that opens it in the app, "https://ratcast.app/r/#" and the link without
- * its "rats://" — clickable in every messenger, which rats:// is not, and
- * opening the app on Android by itself (its App Links). What follows '#'
- * never reaches the website's server.
+ * its "rats://" (a room's without its "r/" too) — clickable in every
+ * messenger, which rats:// is not, and opening the app on Android by itself
+ * (its App Links). What follows '#' never reaches the website's server.
  */
 
 #include <array>
@@ -78,7 +80,7 @@ std::optional<RatsLink> parse_rats_link(std::string_view link);
 std::string to_string(const RatsLink& link);
 
 /// The website's page that opens links in the app: a web link is this and the
-/// rats:// link without its scheme.
+/// rats:// link without its scheme (and a room's without its "r/").
 inline constexpr std::string_view kWebLinkPrefix = "https://ratcast.app/r/#";
 
 /// The link as a web link: "https://ratcast.app/r/#ROOM?via=…".

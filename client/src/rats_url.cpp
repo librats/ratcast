@@ -10,6 +10,9 @@ namespace ratcast {
 namespace {
 
 constexpr std::string_view kScheme = "rats://";
+/// A room's secret goes in the path, after this: in the host's place a URL
+/// parser lowercases it (Qt's, as Android's and macOS's links reach the app).
+constexpr std::string_view kRoomPath = "r/";
 constexpr std::string_view kVia = "via=";
 
 bool equal_ignoring_case(std::string_view a, std::string_view b) {
@@ -83,9 +86,14 @@ std::optional<RatsUrl> parse_rats_url(std::string_view url) {
     if (!url.starts_with(kScheme)) return std::nullopt;
     url.remove_prefix(kScheme.size());
     if (url.ends_with('/')) url.remove_suffix(1);
-    if (auto endpoint = librats::HostEndpoint::parse(url)) return RatsUrl{std::move(*endpoint)};
-    if (auto peer = PeerId::from_hex(url)) return RatsUrl{*peer};
-    // Neither a port nor 64 hex digits: 22 of base64url.
+    if (url.starts_with(kRoomPath)) {
+        url.remove_prefix(kRoomPath.size());  // a room's, nothing else
+    } else {
+        if (auto endpoint = librats::HostEndpoint::parse(url)) return RatsUrl{std::move(*endpoint)};
+        if (auto peer = PeerId::from_hex(url)) return RatsUrl{*peer};
+    }
+    // Neither a port nor 64 hex digits: 22 of base64url (as written before
+    // "r/", too).
     if (const std::optional<std::vector<uint8_t>> secret = from_base64url(url, 16)) {
         RoomSecret room;
         std::copy(secret->begin(), secret->end(), room.bytes.begin());
@@ -99,7 +107,7 @@ std::string to_string(const RatsUrl& url) {
         return std::string(kScheme) + endpoint->to_string();
     }
     if (const auto* room = std::get_if<RoomSecret>(&url)) {
-        return std::string(kScheme) + to_base64url(room->bytes);
+        return std::string(kScheme) + std::string(kRoomPath) + to_base64url(room->bytes);
     }
     return std::string(kScheme) + std::get<PeerId>(url).to_hex();
 }
@@ -141,7 +149,11 @@ std::string to_string(const RatsLink& link) {
 }
 
 std::string to_web_link(const RatsLink& link) {
-    return std::string(kWebLinkPrefix) + to_string(link).substr(kScheme.size());
+    // The page's own path stands for a room's: "/r/#SECRET", not "/r/#r/SECRET".
+    const std::string text = to_string(link);
+    const size_t carried =
+        kScheme.size() + (std::holds_alternative<RoomSecret>(link.url) ? kRoomPath.size() : 0);
+    return std::string(kWebLinkPrefix) + text.substr(carried);
 }
 
 std::optional<librats::HostEndpoint> parse_server(std::string_view text) {
