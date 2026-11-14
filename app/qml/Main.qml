@@ -1636,13 +1636,14 @@ ApplicationWindow {
                 ringed: call.speaking
                 showing: call.camera
 
-                // As a mirror shows one: what is left of the user is on the left.
+                // As a mirror shows one: what is left of the user is on the
+                // left. A phone's back camera as it sees, as the others do.
                 VideoView {
                     id: ownCamera
                     anchors.fill: parent
                     transform: Scale {
                         origin.x: ownCamera.width / 2
-                        xScale: -1
+                        xScale: call.cameraMirrored ? -1 : 1
                     }
                 }
             }

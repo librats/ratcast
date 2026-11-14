@@ -1724,7 +1724,9 @@ a desktop, the call held while the app is in the background.
   (13.5). On the phone (Snapdragon 732G): 640 x 480, 30 a second, turned to 480 x 640,
   both cameras seen on a desktop, the back one with the app in the background. MIUI opens a
   camera to a process under `adb shell`, gives it no pictures and may hang closing it, so the
-  capture test runs outside an application only when asked (`RATCAST_TEST_CAMERA`). Left: the sender's own back camera is shown mirrored, as a front one is.
+  capture test runs outside an application only when asked (`RATCAST_TEST_CAMERA`). The
+  sender's own camera is shown as a mirror shows one, all but a back one (`CameraInfo::facing`,
+  `CallController::cameraMirrored`): that one as it sees, as the others do.
 - **13.5 Sharing the screen** — done: MediaProjection, only Java's
   (`engine/src/android/java/ratcast/engine/ScreenShare.java`; `android/projection.h`): the
   system's dialog asks each time, shown by an activity of the engine's own over the app

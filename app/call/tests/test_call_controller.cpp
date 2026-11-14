@@ -850,6 +850,33 @@ TEST_F(CallControllerTest, TheDevicesChosenAreKeptAndUsed) {
     EXPECT_TRUE(QSettings(settings_file, QSettings::IniFormat).childGroups().isEmpty());
 }
 
+TEST_F(CallControllerTest, OnlyACameraLookingAwayIsNotShownAsAMirror) {
+    QTemporaryDir kept;
+    ASSERT_TRUE(kept.isValid());
+    CallController::Environment phone =
+        with_devices(kept.filePath("ratcast.conf"), std::make_shared<Opened>());
+    phone.list_cameras = [] {
+        return std::vector<CameraInfo>{{1, "0", "Front camera", CameraFacing::Front},
+                                       {2, "1", "Back camera", CameraFacing::Back}};
+    };
+    ann_.setEnvironment(phone);
+    EXPECT_TRUE(ann_.cameraMirrored());
+    int turned = 0;
+    QObject::connect(&ann_, &CallController::cameraMirroredChanged, [&] { ++turned; });
+
+    ann_.setCamera(true);
+    ann_.create();
+    ASSERT_EQ(ann_.state(), State::InRoom);
+    EXPECT_TRUE(ann_.cameraMirrored()) << "the first, the front one";
+    ann_.listDevices();
+    ann_.setCameraDevice("1");
+    EXPECT_FALSE(ann_.cameraMirrored()) << "the back one, as it sees";
+    ann_.setCameraDevice("0");
+    EXPECT_TRUE(ann_.cameraMirrored());
+    EXPECT_EQ(turned, 2);
+    ann_.leave();
+}
+
 TEST_F(CallControllerTest, ADeviceChosenInARoomIsUsedAtOnce) {
     QTemporaryDir kept;
     ASSERT_TRUE(kept.isValid());

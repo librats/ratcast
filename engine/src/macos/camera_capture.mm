@@ -407,8 +407,12 @@ namespace ratcast::backend {
 Result<std::vector<CameraInfo>> list_cameras() {
     std::vector<CameraInfo> cameras;
     for (AVCaptureDevice* device in macos::camera_devices()) {
+        const CameraFacing facing =
+            device.position == AVCaptureDevicePositionFront  ? CameraFacing::Front
+            : device.position == AVCaptureDevicePositionBack ? CameraFacing::Back
+                                                             : CameraFacing::Unknown;
         cameras.push_back({macos::node_of(device.uniqueID), macos::utf8(device.uniqueID),
-                           macos::utf8(device.localizedName)});
+                           macos::utf8(device.localizedName), facing});
     }
     return cameras;
 }

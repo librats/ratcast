@@ -34,6 +34,14 @@
 
 namespace ratcast {
 
+/// Which way a camera looks, where the system says.
+enum class CameraFacing : uint8_t {
+    Unknown,   ///< not said: a desktop's camera, mostly looking at its user
+    Front,     ///< at the one holding the device
+    Back,      ///< away from them
+    External,  ///< a camera plugged in
+};
+
 struct CameraInfo {
     uint32_t node = 0;  ///< what CameraOptions::node takes, while the camera is there
     /// What CameraOptions::id takes: the same from one run to the next (on
@@ -41,6 +49,8 @@ struct CameraInfo {
     /// its unique id; on Android its camera id).
     std::string id;
     std::string name;  ///< as the system names it, for a UI
+    /// Said on Android and macOS.
+    CameraFacing facing = CameraFacing::Unknown;
 };
 
 struct CameraOptions {

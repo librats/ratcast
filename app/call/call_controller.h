@@ -159,6 +159,9 @@ class CallController : public QObject {
     /// This side's camera on: sent while in a room, and with the next one;
     /// kept from one room to the next. Off again if there is none.
     Q_PROPERTY(bool camera READ camera WRITE setCamera NOTIFY cameraChanged)
+    /// This side's own camera best shown as a mirror shows one: all but one
+    /// looking away from the user (a phone's back camera), as last opened.
+    Q_PROPERTY(bool cameraMirrored READ cameraMirrored NOTIFY cameraMirroredChanged)
     /// This side sharing a screen or a window, or the desktop's dialog open
     /// to choose one.
     Q_PROPERTY(bool sharing READ sharing NOTIFY sharingChanged)
@@ -357,6 +360,7 @@ public:
     void setCameraDevice(const QString& id) { choose(Camera, id); }
     bool camera() const { return camera_; }
     void setCamera(bool on);
+    bool cameraMirrored() const { return camera_mirrored_; }
     bool sharing() const { return sharing_; }
     bool choosing() const { return choosing_; }
     QString watching() const { return watching_; }
@@ -392,6 +396,7 @@ Q_SIGNALS:
     void speakerDeviceChanged();
     void cameraDeviceChanged();
     void cameraChanged();
+    void cameraMirroredChanged();
     void sharingChanged();
     void choosingChanged();
     void watchingChanged();
@@ -522,6 +527,7 @@ private:
     bool heard_ = false;  ///< the microphone allowed in this room
     bool camera_ = false;
     int camera_turn_ = 0;  ///< which turning on an answer to ask_camera is for
+    bool camera_mirrored_ = true;
     bool sharing_ = false;
     bool choosing_ = false;
     QString watching_;

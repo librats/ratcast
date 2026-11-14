@@ -1059,6 +1059,18 @@ void CallController::start_camera() {
 }
 
 void CallController::open_camera() {
+    // The one opened: the one chosen, or the first there is.
+    if (environment_.list_cameras) {
+        const std::vector<CameraInfo> cameras = environment_.list_cameras();
+        const std::string chosen = chosen_id(Camera);
+        const auto found = std::ranges::find(cameras, chosen, &CameraInfo::id);
+        const auto opened = found != cameras.end() ? found : cameras.begin();
+        const bool mirrored = opened == cameras.end() || opened->facing != CameraFacing::Back;
+        if (mirrored != camera_mirrored_) {
+            camera_mirrored_ = mirrored;
+            Q_EMIT cameraMirroredChanged();
+        }
+    }
     std::unique_ptr<VideoSource> device =
         environment_.open_camera ? environment_.open_camera(chosen_id(Camera)) : nullptr;
     if (!device) {

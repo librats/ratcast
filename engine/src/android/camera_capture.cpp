@@ -143,7 +143,9 @@ std::vector<CameraInfo> infos_of(const std::vector<Camera>& cameras) {
         const char* names[3] = {"Front camera", "Back camera", "External camera"};
         std::string name = names[facing];
         if (++counts[facing] > 1) name += " " + std::to_string(counts[facing]);
-        infos.push_back({node_of(camera.id), camera.id, std::move(name)});
+        constexpr CameraFacing kFacings[3] = {CameraFacing::Front, CameraFacing::Back,
+                                              CameraFacing::External};
+        infos.push_back({node_of(camera.id), camera.id, std::move(name), kFacings[facing]});
     }
     return infos;
 }
