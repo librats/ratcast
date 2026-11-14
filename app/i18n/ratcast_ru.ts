@@ -526,28 +526,8 @@
         <translation>Забыть</translation>
     </message>
     <message>
-        <source>Send a link to whoever is to join:</source>
-        <translation>Отправьте ссылку тем, кого хотите позвать:</translation>
-    </message>
-    <message>
-        <source>Copy</source>
-        <translation>Копировать</translation>
-    </message>
-    <message>
         <source>Copy the link</source>
         <translation>Скопировать ссылку</translation>
-    </message>
-    <message>
-        <source>1 more link</source>
-        <translation>Ещё 1 ссылка</translation>
-    </message>
-    <message numerus="yes">
-        <source>%n more links</source>
-        <translation>
-            <numerusform>Ещё %n ссылка</numerusform>
-            <numerusform>Ещё %n ссылки</numerusform>
-            <numerusform>Ещё %n ссылок</numerusform>
-        </translation>
     </message>
     <message>
         <source>In the room</source>
@@ -656,6 +636,34 @@
     <message>
         <source>Hide your share</source>
         <translation>Скрыть ваш показ</translation>
+    </message>
+    <message>
+        <source>Send the group&apos;s link to whoever is to join:</source>
+        <translation>Отправьте ссылку на группу тем, кого хотите позвать:</translation>
+    </message>
+    <message>
+        <source>Send the link to whoever is to join:</source>
+        <translation>Отправьте ссылку тем, кого хотите позвать:</translation>
+    </message>
+    <message>
+        <source>Copied</source>
+        <translation>Скопировано</translation>
+    </message>
+    <message>
+        <source>Show it as a QR code</source>
+        <translation>Показать как QR-код</translation>
+    </message>
+    <message>
+        <source>Links for the same network</source>
+        <translation>Ссылки для той же сети</translation>
+    </message>
+    <message>
+        <source>Point a phone&apos;s camera at it to join the room there.</source>
+        <translation>Наведите на него камеру телефона, чтобы войти в комнату с него.</translation>
+    </message>
+    <message>
+        <source>These lead straight to this device, by its address on each network it is on: for someone on the same Wi-Fi or network, even with no internet. Anywhere else, send the main link.</source>
+        <translation>Они ведут прямо на это устройство, по его адресу в каждой сети, где оно есть: для того, кто в той же Wi-Fi или сети, даже без интернета. Во всех остальных случаях отправляйте основную ссылку.</translation>
     </message>
     <message>
         <source>See what the others see</source>

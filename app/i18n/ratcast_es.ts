@@ -526,27 +526,8 @@
         <translation>Olvidar</translation>
     </message>
     <message>
-        <source>Send a link to whoever is to join:</source>
-        <translation>Envía un enlace a quien vaya a unirse:</translation>
-    </message>
-    <message>
-        <source>Copy</source>
-        <translation>Copiar</translation>
-    </message>
-    <message>
         <source>Copy the link</source>
         <translation>Copiar el enlace</translation>
-    </message>
-    <message>
-        <source>1 more link</source>
-        <translation>1 enlace más</translation>
-    </message>
-    <message numerus="yes">
-        <source>%n more links</source>
-        <translation>
-            <numerusform>%n enlace más</numerusform>
-            <numerusform>%n enlaces más</numerusform>
-        </translation>
     </message>
     <message>
         <source>In the room</source>
@@ -655,6 +636,34 @@
     <message>
         <source>Hide your share</source>
         <translation>Ocultar tu transmisión</translation>
+    </message>
+    <message>
+        <source>Send the group&apos;s link to whoever is to join:</source>
+        <translation>Envía el enlace del grupo a quien vaya a unirse:</translation>
+    </message>
+    <message>
+        <source>Send the link to whoever is to join:</source>
+        <translation>Envía el enlace a quien vaya a unirse:</translation>
+    </message>
+    <message>
+        <source>Copied</source>
+        <translation>Copiado</translation>
+    </message>
+    <message>
+        <source>Show it as a QR code</source>
+        <translation>Mostrarlo como código QR</translation>
+    </message>
+    <message>
+        <source>Links for the same network</source>
+        <translation>Enlaces para la misma red</translation>
+    </message>
+    <message>
+        <source>Point a phone&apos;s camera at it to join the room there.</source>
+        <translation>Apunta la cámara de un teléfono para unirte a la sala desde él.</translation>
+    </message>
+    <message>
+        <source>These lead straight to this device, by its address on each network it is on: for someone on the same Wi-Fi or network, even with no internet. Anywhere else, send the main link.</source>
+        <translation>Llevan directamente a este dispositivo, por su dirección en cada red en la que está: para alguien en la misma Wi-Fi o red, incluso sin internet. En cualquier otro caso, envía el enlace principal.</translation>
     </message>
     <message>
         <source>See what the others see</source>

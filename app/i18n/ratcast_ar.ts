@@ -526,31 +526,8 @@
         <translation>انسَ</translation>
     </message>
     <message>
-        <source>Send a link to whoever is to join:</source>
-        <translation>أرسل رابطًا إلى من سينضم:</translation>
-    </message>
-    <message>
-        <source>Copy</source>
-        <translation>نسخ</translation>
-    </message>
-    <message>
         <source>Copy the link</source>
         <translation>نسخ الرابط</translation>
-    </message>
-    <message>
-        <source>1 more link</source>
-        <translation>رابط آخر</translation>
-    </message>
-    <message numerus="yes">
-        <source>%n more links</source>
-        <translation>
-            <numerusform>لا روابط أخرى</numerusform>
-            <numerusform>رابط آخر</numerusform>
-            <numerusform>رابطان آخران</numerusform>
-            <numerusform>%n روابط أخرى</numerusform>
-            <numerusform>%n رابطًا آخر</numerusform>
-            <numerusform>%n رابط آخر</numerusform>
-        </translation>
     </message>
     <message>
         <source>In the room</source>
@@ -659,6 +636,34 @@
     <message>
         <source>Hide your share</source>
         <translation>إخفاء مشاركتك</translation>
+    </message>
+    <message>
+        <source>Send the group&apos;s link to whoever is to join:</source>
+        <translation>أرسل رابط المجموعة إلى من سينضم:</translation>
+    </message>
+    <message>
+        <source>Send the link to whoever is to join:</source>
+        <translation>أرسل الرابط إلى من سينضم:</translation>
+    </message>
+    <message>
+        <source>Copied</source>
+        <translation>تم النسخ</translation>
+    </message>
+    <message>
+        <source>Show it as a QR code</source>
+        <translation>اعرضه كرمز QR</translation>
+    </message>
+    <message>
+        <source>Links for the same network</source>
+        <translation>روابط للشبكة نفسها</translation>
+    </message>
+    <message>
+        <source>Point a phone&apos;s camera at it to join the room there.</source>
+        <translation>وجّه كاميرا هاتف إليه للانضمام إلى الغرفة من هناك.</translation>
+    </message>
+    <message>
+        <source>These lead straight to this device, by its address on each network it is on: for someone on the same Wi-Fi or network, even with no internet. Anywhere else, send the main link.</source>
+        <translation>تقود هذه مباشرة إلى هذا الجهاز، بعنوانه على كل شبكة هو عليها: لمن هو على شبكة Wi-Fi نفسها أو الشبكة نفسها، حتى دون إنترنت. في أي مكان آخر، أرسل الرابط الرئيسي.</translation>
     </message>
     <message>
         <source>See what the others see</source>

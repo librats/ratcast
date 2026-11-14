@@ -526,27 +526,8 @@
         <translation>भूल जाएँ</translation>
     </message>
     <message>
-        <source>Send a link to whoever is to join:</source>
-        <translation>जिसे जुड़ना है, उसे लिंक भेजें:</translation>
-    </message>
-    <message>
-        <source>Copy</source>
-        <translation>कॉपी करें</translation>
-    </message>
-    <message>
         <source>Copy the link</source>
         <translation>लिंक कॉपी करें</translation>
-    </message>
-    <message>
-        <source>1 more link</source>
-        <translation>1 और लिंक</translation>
-    </message>
-    <message numerus="yes">
-        <source>%n more links</source>
-        <translation>
-            <numerusform>%n और लिंक</numerusform>
-            <numerusform>%n और लिंक</numerusform>
-        </translation>
     </message>
     <message>
         <source>In the room</source>
@@ -655,6 +636,34 @@
     <message>
         <source>Hide your share</source>
         <translation>अपना शेयर छिपाएँ</translation>
+    </message>
+    <message>
+        <source>Send the group&apos;s link to whoever is to join:</source>
+        <translation>जिसे जुड़ना है उसे समूह का लिंक भेजें:</translation>
+    </message>
+    <message>
+        <source>Send the link to whoever is to join:</source>
+        <translation>जिसे जुड़ना है उसे लिंक भेजें:</translation>
+    </message>
+    <message>
+        <source>Copied</source>
+        <translation>कॉपी हो गया</translation>
+    </message>
+    <message>
+        <source>Show it as a QR code</source>
+        <translation>QR कोड के रूप में दिखाएँ</translation>
+    </message>
+    <message>
+        <source>Links for the same network</source>
+        <translation>उसी नेटवर्क के लिए लिंक</translation>
+    </message>
+    <message>
+        <source>Point a phone&apos;s camera at it to join the room there.</source>
+        <translation>वहाँ कमरे से जुड़ने के लिए किसी फ़ोन का कैमरा इस पर रखें।</translation>
+    </message>
+    <message>
+        <source>These lead straight to this device, by its address on each network it is on: for someone on the same Wi-Fi or network, even with no internet. Anywhere else, send the main link.</source>
+        <translation>ये सीधे इस डिवाइस तक ले जाते हैं, हर उस नेटवर्क पर इसके पते से जिस पर यह है: उसी Wi-Fi या नेटवर्क पर किसी के लिए, बिना इंटरनेट के भी। बाकी हर जगह मुख्य लिंक भेजें।</translation>
     </message>
     <message>
         <source>See what the others see</source>

@@ -526,26 +526,8 @@
         <translation>Unut</translation>
     </message>
     <message>
-        <source>Send a link to whoever is to join:</source>
-        <translation>Katılacak kişiye bir bağlantı gönderin:</translation>
-    </message>
-    <message>
-        <source>Copy</source>
-        <translation>Kopyala</translation>
-    </message>
-    <message>
         <source>Copy the link</source>
         <translation>Bağlantıyı kopyala</translation>
-    </message>
-    <message>
-        <source>1 more link</source>
-        <translation>1 bağlantı daha</translation>
-    </message>
-    <message numerus="yes">
-        <source>%n more links</source>
-        <translation>
-            <numerusform>%n bağlantı daha</numerusform>
-        </translation>
     </message>
     <message>
         <source>In the room</source>
@@ -654,6 +636,34 @@
     <message>
         <source>Hide your share</source>
         <translation>Paylaşımınızı gizle</translation>
+    </message>
+    <message>
+        <source>Send the group&apos;s link to whoever is to join:</source>
+        <translation>Katılacak kişilere grubun bağlantısını gönderin:</translation>
+    </message>
+    <message>
+        <source>Send the link to whoever is to join:</source>
+        <translation>Katılacak kişilere bağlantıyı gönderin:</translation>
+    </message>
+    <message>
+        <source>Copied</source>
+        <translation>Kopyalandı</translation>
+    </message>
+    <message>
+        <source>Show it as a QR code</source>
+        <translation>QR kod olarak göster</translation>
+    </message>
+    <message>
+        <source>Links for the same network</source>
+        <translation>Aynı ağ için bağlantılar</translation>
+    </message>
+    <message>
+        <source>Point a phone&apos;s camera at it to join the room there.</source>
+        <translation>Odaya oradan katılmak için bir telefonun kamerasını ona tutun.</translation>
+    </message>
+    <message>
+        <source>These lead straight to this device, by its address on each network it is on: for someone on the same Wi-Fi or network, even with no internet. Anywhere else, send the main link.</source>
+        <translation>Bunlar, bulunduğu her ağdaki adresiyle doğrudan bu cihaza götürür: aynı Wi-Fi ya da ağdaki biri için, internet olmasa bile. Başka her yerde ana bağlantıyı gönderin.</translation>
     </message>
     <message>
         <source>See what the others see</source>

@@ -526,26 +526,8 @@
         <translation>忘记</translation>
     </message>
     <message>
-        <source>Send a link to whoever is to join:</source>
-        <translation>把链接发给要加入的人：</translation>
-    </message>
-    <message>
-        <source>Copy</source>
-        <translation>复制</translation>
-    </message>
-    <message>
         <source>Copy the link</source>
         <translation>复制链接</translation>
-    </message>
-    <message>
-        <source>1 more link</source>
-        <translation>还有 1 个链接</translation>
-    </message>
-    <message numerus="yes">
-        <source>%n more links</source>
-        <translation>
-            <numerusform>还有 %n 个链接</numerusform>
-        </translation>
     </message>
     <message>
         <source>In the room</source>
@@ -654,6 +636,34 @@
     <message>
         <source>Hide your share</source>
         <translation>隐藏你的共享画面</translation>
+    </message>
+    <message>
+        <source>Send the group&apos;s link to whoever is to join:</source>
+        <translation>把群组链接发给要加入的人:</translation>
+    </message>
+    <message>
+        <source>Send the link to whoever is to join:</source>
+        <translation>把链接发给要加入的人:</translation>
+    </message>
+    <message>
+        <source>Copied</source>
+        <translation>已复制</translation>
+    </message>
+    <message>
+        <source>Show it as a QR code</source>
+        <translation>显示为二维码</translation>
+    </message>
+    <message>
+        <source>Links for the same network</source>
+        <translation>同一网络的链接</translation>
+    </message>
+    <message>
+        <source>Point a phone&apos;s camera at it to join the room there.</source>
+        <translation>用手机摄像头对准它，即可在手机上加入房间。</translation>
+    </message>
+    <message>
+        <source>These lead straight to this device, by its address on each network it is on: for someone on the same Wi-Fi or network, even with no internet. Anywhere else, send the main link.</source>
+        <translation>这些链接通过本设备在所在各网络上的地址直接连到本设备：适用于同一 Wi-Fi 或网络中的人，即使没有互联网。其他情况请发送主链接。</translation>
     </message>
     <message>
         <source>See what the others see</source>

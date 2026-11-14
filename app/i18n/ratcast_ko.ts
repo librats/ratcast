@@ -526,26 +526,8 @@
         <translation>지우기</translation>
     </message>
     <message>
-        <source>Send a link to whoever is to join:</source>
-        <translation>참여할 사람에게 링크를 보내세요:</translation>
-    </message>
-    <message>
-        <source>Copy</source>
-        <translation>복사</translation>
-    </message>
-    <message>
         <source>Copy the link</source>
         <translation>링크 복사</translation>
-    </message>
-    <message>
-        <source>1 more link</source>
-        <translation>링크 1개 더</translation>
-    </message>
-    <message numerus="yes">
-        <source>%n more links</source>
-        <translation>
-            <numerusform>링크 %n개 더</numerusform>
-        </translation>
     </message>
     <message>
         <source>In the room</source>
@@ -654,6 +636,34 @@
     <message>
         <source>Hide your share</source>
         <translation>내 공유 화면 숨기기</translation>
+    </message>
+    <message>
+        <source>Send the group&apos;s link to whoever is to join:</source>
+        <translation>참여할 사람에게 그룹 링크를 보내세요:</translation>
+    </message>
+    <message>
+        <source>Send the link to whoever is to join:</source>
+        <translation>참여할 사람에게 링크를 보내세요:</translation>
+    </message>
+    <message>
+        <source>Copied</source>
+        <translation>복사됨</translation>
+    </message>
+    <message>
+        <source>Show it as a QR code</source>
+        <translation>QR 코드로 보기</translation>
+    </message>
+    <message>
+        <source>Links for the same network</source>
+        <translation>같은 네트워크용 링크</translation>
+    </message>
+    <message>
+        <source>Point a phone&apos;s camera at it to join the room there.</source>
+        <translation>휴대폰 카메라를 대면 그 기기에서 방에 참여할 수 있습니다.</translation>
+    </message>
+    <message>
+        <source>These lead straight to this device, by its address on each network it is on: for someone on the same Wi-Fi or network, even with no internet. Anywhere else, send the main link.</source>
+        <translation>이 기기가 연결된 각 네트워크의 주소로 이 기기에 바로 연결됩니다. 같은 Wi-Fi나 네트워크에 있는 사람용이며 인터넷 없이도 됩니다. 그 밖의 경우에는 기본 링크를 보내세요.</translation>
     </message>
     <message>
         <source>See what the others see</source>

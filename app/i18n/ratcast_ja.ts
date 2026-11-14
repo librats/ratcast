@@ -526,26 +526,8 @@
         <translation>削除</translation>
     </message>
     <message>
-        <source>Send a link to whoever is to join:</source>
-        <translation>参加する人にリンクを送ってください：</translation>
-    </message>
-    <message>
-        <source>Copy</source>
-        <translation>コピー</translation>
-    </message>
-    <message>
         <source>Copy the link</source>
         <translation>リンクをコピー</translation>
-    </message>
-    <message>
-        <source>1 more link</source>
-        <translation>ほかに 1 件のリンク</translation>
-    </message>
-    <message numerus="yes">
-        <source>%n more links</source>
-        <translation>
-            <numerusform>ほかに %n 件のリンク</numerusform>
-        </translation>
     </message>
     <message>
         <source>In the room</source>
@@ -654,6 +636,34 @@
     <message>
         <source>Hide your share</source>
         <translation>共有画面のプレビューを隠す</translation>
+    </message>
+    <message>
+        <source>Send the group&apos;s link to whoever is to join:</source>
+        <translation>参加する人にグループのリンクを送ってください:</translation>
+    </message>
+    <message>
+        <source>Send the link to whoever is to join:</source>
+        <translation>参加する人にリンクを送ってください:</translation>
+    </message>
+    <message>
+        <source>Copied</source>
+        <translation>コピーしました</translation>
+    </message>
+    <message>
+        <source>Show it as a QR code</source>
+        <translation>QRコードで表示</translation>
+    </message>
+    <message>
+        <source>Links for the same network</source>
+        <translation>同じネットワーク用のリンク</translation>
+    </message>
+    <message>
+        <source>Point a phone&apos;s camera at it to join the room there.</source>
+        <translation>スマートフォンのカメラを向けると、そこでルームに参加できます。</translation>
+    </message>
+    <message>
+        <source>These lead straight to this device, by its address on each network it is on: for someone on the same Wi-Fi or network, even with no internet. Anywhere else, send the main link.</source>
+        <translation>このデバイスが接続している各ネットワーク上のアドレスで、このデバイスに直接つながります。同じWi-Fiやネットワークにいる人向けで、インターネットがなくても使えます。それ以外の場合はメインのリンクを送ってください。</translation>
     </message>
     <message>
         <source>See what the others see</source>

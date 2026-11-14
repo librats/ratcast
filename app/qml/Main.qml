@@ -1171,8 +1171,6 @@ ApplicationWindow {
     Pane {
         id: side
 
-        property bool allInvites: false
-
         // Sizes bound, not anchors let go: an anchor taken away leaves the
         // size it gave, which a binding that did not change does not undo.
         anchors.left: parent.left
@@ -1193,41 +1191,158 @@ ApplicationWindow {
                 font.bold: true
             }
             Label {
-                text: qsTr("Send a link to whoever is to join:")
+                Layout.fillWidth: true
+                text: call.group.length > 0 ? qsTr("Send the group's link to whoever is to join:")
+                                            : qsTr("Send the link to whoever is to join:")
+                wrapMode: Text.Wrap
                 opacity: 0.7
                 font.pixelSize: 12
             }
-            Repeater {
-                model: root.compact && !side.allInvites ? call.invites.slice(0, 1) : call.invites
 
-                RowLayout {
-                    required property string modelData
-                    Layout.fillWidth: true
+            // The one link that works anywhere, the first invite; the others,
+            // this device's addresses, a menu away.
+            Rectangle {
+                id: invite
 
-                    TextField {
+                readonly property string link: call.invites.length > 0 ? call.invites[0] : ""
+                property bool copied: false
+
+                Layout.fillWidth: true
+                implicitHeight: inviteColumn.implicitHeight + 16
+                radius: 8
+                color: Qt.rgba(Material.foreground.r, Material.foreground.g, Material.foreground.b,
+                               0.06)
+
+                Timer {
+                    id: copiedShown
+                    interval: 1500
+                    onTriggered: invite.copied = false
+                }
+
+                ColumnLayout {
+                    id: inviteColumn
+                    anchors.fill: parent
+                    anchors.margins: 8
+                    anchors.leftMargin: 12
+                    anchors.topMargin: 2
+                    spacing: 0
+
+                    RowLayout {
                         Layout.fillWidth: true
-                        readOnly: true
-                        text: modelData
-                        selectByMouse: true
-                        font.pixelSize: 11
+                        spacing: 0
+
+                        Label {
+                            Layout.fillWidth: true
+                            text: invite.link.replace(/^https:\/\//, "")
+                            textFormat: Text.PlainText
+                            elide: Text.ElideRight
+                            font.pixelSize: 12
+                            opacity: 0.8
+                        }
+                        ToolButton {
+                            display: AbstractButton.IconOnly
+                            icon.source: "icons/qr-code.svg"
+                            onClicked: inviteQr.open()
+                            ToolTip.visible: hovered
+                            ToolTip.text: qsTr("Show it as a QR code")
+                        }
+                        ToolButton {
+                            display: AbstractButton.IconOnly
+                            icon.source: "icons/ellipsis.svg"
+                            visible: call.invites.length > 1
+                            onClicked: otherInvites.open()
+                            ToolTip.visible: hovered
+                            ToolTip.text: qsTr("Links for the same network")
+                        }
                     }
-                    ToolButton {
-                        text: qsTr("Copy")
-                        display: AbstractButton.IconOnly
-                        icon.source: "icons/copy.svg"
-                        onClicked: call.copy(modelData)
-                        ToolTip.visible: hovered
-                        ToolTip.text: qsTr("Copy the link")
+                    Button {
+                        Layout.fillWidth: true
+                        text: invite.copied ? qsTr("Copied") : qsTr("Copy the link")
+                        icon.source: invite.copied ? "icons/check.svg" : "icons/copy.svg"
+                        highlighted: true
+                        onClicked: {
+                            call.copy(invite.link)
+                            invite.copied = true
+                            copiedShown.restart()
+                        }
                     }
                 }
             }
 
-            Button {
-                text: call.invites.length === 2 ? qsTr("1 more link")
-                                                : qsTr("%n more links", "", call.invites.length - 1)
-                flat: true
-                visible: root.compact && !side.allInvites && call.invites.length > 1
-                onClicked: side.allInvites = true
+            Popup {
+                id: inviteQr
+
+                parent: Overlay.overlay
+                anchors.centerIn: parent
+                modal: true
+                padding: 16
+
+                ColumnLayout {
+                    spacing: 8
+
+                    QrCode {
+                        Layout.alignment: Qt.AlignHCenter
+                        Layout.preferredWidth: 240
+                        Layout.preferredHeight: 240
+                        text: invite.link
+                    }
+                    Label {
+                        Layout.maximumWidth: 240
+                        text: qsTr("Point a phone's camera at it to join the room there.")
+                        wrapMode: Text.Wrap
+                        horizontalAlignment: Text.AlignHCenter
+                        opacity: 0.7
+                    }
+                }
+            }
+
+            // This device's addresses: straight to it, for someone on the
+            // same network — no internet needed, nor a server.
+            Dialog {
+                id: otherInvites
+
+                parent: Overlay.overlay
+                anchors.centerIn: parent
+                width: Math.min(root.width - 32, 480)
+                modal: true
+                title: qsTr("Links for the same network")
+                standardButtons: Dialog.Close
+
+                ColumnLayout {
+                    anchors.left: parent.left
+                    anchors.right: parent.right
+                    spacing: 8
+
+                    Label {
+                        Layout.fillWidth: true
+                        text: qsTr("These lead straight to this device, by its address on each network it is on: for someone on the same Wi-Fi or network, even with no internet. Anywhere else, send the main link.")
+                        wrapMode: Text.Wrap
+                        opacity: 0.7
+                    }
+                    Repeater {
+                        model: call.invites.slice(1)
+
+                        RowLayout {
+                            required property string modelData
+                            Layout.fillWidth: true
+
+                            TextField {
+                                Layout.fillWidth: true
+                                readOnly: true
+                                text: modelData
+                                selectByMouse: true
+                                font.pixelSize: 12
+                            }
+                            ToolButton {
+                                display: AbstractButton.IconOnly
+                                icon.source: "icons/copy.svg"
+                                onClicked: call.copy(modelData)
+                                ToolTip.visible: hovered
+                                ToolTip.text: qsTr("Copy the link")
+                            }
+                        }
+                    }
+                }
             }
 
             Label {
