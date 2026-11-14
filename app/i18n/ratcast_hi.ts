@@ -486,6 +486,26 @@
         <translation>एक समूह %1</translation>
     </message>
     <message>
+        <source>Someone without a name</source>
+        <translation>बिना नाम का कोई</translation>
+    </message>
+    <message>
+        <source>%1 and %2 more</source>
+        <translation>%1 और %2 अन्य</translation>
+    </message>
+    <message>
+        <source>left today at %1</source>
+        <translation>आज %1 बजे छोड़ा</translation>
+    </message>
+    <message>
+        <source>left yesterday at %1</source>
+        <translation>कल %1 बजे छोड़ा</translation>
+    </message>
+    <message>
+        <source>left %1</source>
+        <translation>%1 को छोड़ा</translation>
+    </message>
+    <message>
         <source>Menu</source>
         <translation>मेन्यू</translation>
     </message>
@@ -496,6 +516,14 @@
     <message>
         <source>Groups and friends</source>
         <translation>समूह और दोस्त</translation>
+    </message>
+    <message>
+        <source>Recent rooms</source>
+        <translation>हाल के कमरे</translation>
+    </message>
+    <message>
+        <source>Forget</source>
+        <translation>भूल जाएँ</translation>
     </message>
     <message>
         <source>Send a link to whoever is to join:</source>

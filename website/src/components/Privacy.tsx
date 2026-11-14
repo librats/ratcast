@@ -5,7 +5,7 @@ import { Footer } from "./Footer";
 import { Logo } from "./Nav";
 
 /** When the policy last changed: change it with the text. */
-export const PRIVACY_UPDATED = "November 6, 2026";
+export const PRIVACY_UPDATED = "November 14, 2026";
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
@@ -181,6 +181,10 @@ export function Privacy() {
               known and, for a group you made, the key that renames it;
             </li>
             <li>the ratcast servers it has heard of;</li>
+            <li>
+              the last three rooms you left that others were in, to return to: their links, the names the others gave
+              there and when you left (you can forget each one);
+            </li>
             <li>
               your settings: the language, the microphone, speaker and camera you chose, the volume you set for each
               member (by their key) and, on a computer, the screen or window you last shared.

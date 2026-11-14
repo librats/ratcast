@@ -759,6 +759,26 @@ ApplicationWindow {
         return name.length > 0 ? name : qsTr("Someone %1").arg(peer)
     }
 
+    /// Who was in a room left, as recentRooms keeps them: three names at most.
+    function recentNames(names) {
+        if (names.length === 0)
+            return qsTr("Someone without a name")
+        const shown = names.slice(0, 3).join(", ")
+        return names.length > 3 ? qsTr("%1 and %2 more").arg(shown).arg(names.length - 3) : shown
+    }
+
+    /// When a room was left: today's and yesterday's by the time alone.
+    function leftWhen(left) {
+        const day = date => new Date(date.getFullYear(), date.getMonth(), date.getDate()).getTime()
+        const days = Math.round((day(new Date()) - day(left)) / 86400000)
+        const time = left.toLocaleTimeString(Qt.locale(), Locale.ShortFormat)
+        if (days === 0)
+            return qsTr("left today at %1").arg(time)
+        if (days === 1)
+            return qsTr("left yesterday at %1").arg(time)
+        return qsTr("left %1").arg(left.toLocaleString(Qt.locale(), Locale.ShortFormat))
+    }
+
     /// A quality as a colour: "good", "fair", "poor", or none yet.
     function qualityColor(quality) {
         switch (quality) {
@@ -940,7 +960,8 @@ ApplicationWindow {
         RatLogo {
             Layout.alignment: Qt.AlignHCenter
             Layout.preferredWidth: Math.max(140, Math.min(parent.width, 440,
-                                                          (root.height - 420) * implicitWidth / implicitHeight))
+                                                          (root.height - 420 - recentList.taken)
+                                                          * implicitWidth / implicitHeight))
             Layout.preferredHeight: Layout.preferredWidth * implicitHeight / implicitWidth
             running: parent.visible && root.visibility !== Window.Minimized
                      && root.visibility !== Window.Hidden
@@ -1041,6 +1062,78 @@ ApplicationWindow {
             text: call.notice
             color: Material.color(Material.Orange)
             visible: text.length > 0
+        }
+
+        // The rooms last left, a way back without their link: whoever is
+        // still there is met again.
+        ColumnLayout {
+            id: recentList
+            /// What it takes of the window's height.
+            readonly property real taken: visible ? implicitHeight + parent.spacing : 0
+            Layout.fillWidth: true
+            spacing: 0
+            visible: call.recentRooms.length > 0
+
+            Label {
+                text: qsTr("Recent rooms")
+                font.pixelSize: 12
+                opacity: 0.6
+            }
+            Repeater {
+                model: call.recentRooms
+
+                ItemDelegate {
+                    id: recent
+                    required property var modelData
+                    Layout.fillWidth: true
+                    leftPadding: 8
+                    rightPadding: 0
+                    topPadding: 4
+                    bottomPadding: 4
+                    onClicked: root.openLink(modelData.link)
+
+                    contentItem: RowLayout {
+                        spacing: 12
+
+                        Glyph {
+                            glyph: "history"
+                        }
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: 0
+
+                            Label {
+                                Layout.fillWidth: true
+                                text: root.recentNames(recent.modelData.names)
+                                textFormat: Text.PlainText
+                                elide: Text.ElideRight
+                            }
+                            Label {
+                                Layout.fillWidth: true
+                                text: root.leftWhen(recent.modelData.left)
+                                elide: Text.ElideRight
+                                font.pixelSize: 11
+                                opacity: 0.6
+                            }
+                        }
+                        ToolButton {
+                            display: AbstractButton.IconOnly
+                            icon.source: "icons/log-in.svg"
+                            highlighted: true
+                            onClicked: root.openLink(recent.modelData.link)
+                            ToolTip.visible: hovered
+                            ToolTip.text: qsTr("Join")
+                        }
+                        ToolButton {
+                            display: AbstractButton.IconOnly
+                            icon.source: "icons/x.svg"
+                            onClicked: call.forgetRoom(recent.modelData.link)
+                            ToolTip.visible: hovered
+                            ToolTip.text: qsTr("Forget")
+                        }
+                    }
+                }
+            }
         }
     }
 

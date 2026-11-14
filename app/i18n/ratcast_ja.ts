@@ -486,6 +486,26 @@
         <translation>グループ %1</translation>
     </message>
     <message>
+        <source>Someone without a name</source>
+        <translation>名前のない人</translation>
+    </message>
+    <message>
+        <source>%1 and %2 more</source>
+        <translation>%1 ほか %2 人</translation>
+    </message>
+    <message>
+        <source>left today at %1</source>
+        <translation>今日 %1 に退出</translation>
+    </message>
+    <message>
+        <source>left yesterday at %1</source>
+        <translation>昨日 %1 に退出</translation>
+    </message>
+    <message>
+        <source>left %1</source>
+        <translation>%1 に退出</translation>
+    </message>
+    <message>
         <source>Menu</source>
         <translation>メニュー</translation>
     </message>
@@ -496,6 +516,14 @@
     <message>
         <source>Groups and friends</source>
         <translation>グループと友達</translation>
+    </message>
+    <message>
+        <source>Recent rooms</source>
+        <translation>最近のルーム</translation>
+    </message>
+    <message>
+        <source>Forget</source>
+        <translation>削除</translation>
     </message>
     <message>
         <source>Send a link to whoever is to join:</source>

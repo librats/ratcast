@@ -486,6 +486,26 @@
         <translation>Eine Gruppe %1</translation>
     </message>
     <message>
+        <source>Someone without a name</source>
+        <translation>Jemand ohne Namen</translation>
+    </message>
+    <message>
+        <source>%1 and %2 more</source>
+        <translation>%1 und %2 weitere</translation>
+    </message>
+    <message>
+        <source>left today at %1</source>
+        <translation>heute um %1 verlassen</translation>
+    </message>
+    <message>
+        <source>left yesterday at %1</source>
+        <translation>gestern um %1 verlassen</translation>
+    </message>
+    <message>
+        <source>left %1</source>
+        <translation>verlassen am %1</translation>
+    </message>
+    <message>
         <source>Menu</source>
         <translation>Menü</translation>
     </message>
@@ -496,6 +516,14 @@
     <message>
         <source>Groups and friends</source>
         <translation>Gruppen und Freunde</translation>
+    </message>
+    <message>
+        <source>Recent rooms</source>
+        <translation>Letzte Räume</translation>
+    </message>
+    <message>
+        <source>Forget</source>
+        <translation>Vergessen</translation>
     </message>
     <message>
         <source>Send a link to whoever is to join:</source>

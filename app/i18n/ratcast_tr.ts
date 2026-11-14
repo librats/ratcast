@@ -486,6 +486,26 @@
         <translation>Bir grup %1</translation>
     </message>
     <message>
+        <source>Someone without a name</source>
+        <translation>İsimsiz biri</translation>
+    </message>
+    <message>
+        <source>%1 and %2 more</source>
+        <translation>%1 ve %2 kişi daha</translation>
+    </message>
+    <message>
+        <source>left today at %1</source>
+        <translation>bugün %1&apos;de ayrıldınız</translation>
+    </message>
+    <message>
+        <source>left yesterday at %1</source>
+        <translation>dün %1&apos;de ayrıldınız</translation>
+    </message>
+    <message>
+        <source>left %1</source>
+        <translation>%1 tarihinde ayrıldınız</translation>
+    </message>
+    <message>
         <source>Menu</source>
         <translation>Menü</translation>
     </message>
@@ -496,6 +516,14 @@
     <message>
         <source>Groups and friends</source>
         <translation>Gruplar ve arkadaşlar</translation>
+    </message>
+    <message>
+        <source>Recent rooms</source>
+        <translation>Son odalar</translation>
+    </message>
+    <message>
+        <source>Forget</source>
+        <translation>Unut</translation>
     </message>
     <message>
         <source>Send a link to whoever is to join:</source>

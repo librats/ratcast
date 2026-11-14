@@ -1,6 +1,7 @@
 #include "call_controller.h"
 
 #include <QClipboard>
+#include <QDateTime>
 #include <QGuiApplication>
 #include <QMetaObject>
 #include <QStandardPaths>
@@ -243,6 +244,8 @@ CallController::CallController(QObject* parent)
 }
 
 CallController::~CallController() {
+    // Closed in a room: the way back kept all the same.
+    if (call_) remember_room();
     ++generation_;
     dialog_.request_stop();
     if (dialog_.joinable()) dialog_.join();
@@ -260,6 +263,7 @@ void CallController::setEnvironment(Environment environment) {
     setServer(environment_.server);
     load_hearing();
     load_devices();
+    load_recent();
 }
 
 bool CallController::attach(QPointer<VideoView>& slot, Pictures& pictures, VideoView* view) {
@@ -401,6 +405,11 @@ void CallController::joinInstead(const QString& link) {
 
 void CallController::start(CallConfig config, State state) {
     room_ = config.dial;
+    // The way back, kept as it is left: the room's own link — its secret, or
+    // the member's dialed, with the servers it is met at; a group's never.
+    room_link_ = room_ && group_link_.isEmpty()
+                     ? QString::fromStdString(to_web_link(RatsLink{*room_, config.servers}))
+                     : QString();
     set_notice({});
     chat_.clear();
     told_hearing_.clear();
@@ -468,6 +477,89 @@ void CallController::start(CallConfig config, State state) {
 
 void CallController::leave() { end(); }
 
+// ── The rooms left ──────────────────────────────────────────────────────────
+//
+// Kept in the settings as the array rooms/recent: link, names, left (ISO 8601,
+// UTC).
+
+namespace {
+
+constexpr int kMostRecent = 3;
+const QString kRecentArray = QStringLiteral("rooms/recent");
+const QString kLink = QStringLiteral("link");
+const QString kNames = QStringLiteral("names");
+const QString kLeft = QStringLiteral("left");
+
+/// The room a link leads to, to tell two links of one apart from others'.
+std::optional<RatsUrl> room_of(const QString& link) {
+    const std::optional<RatsLink> parsed = parse_rats_link(link.toStdString());
+    if (!parsed) return std::nullopt;
+    return parsed->url;
+}
+
+}  // namespace
+
+void CallController::load_recent() {
+    recent_.clear();
+    if (environment_.settings) {
+        const std::unique_ptr<QSettings> settings = environment_.settings();
+        const int size = settings->beginReadArray(kRecentArray);
+        for (int i = 0; i < size && recent_.size() < kMostRecent; ++i) {
+            settings->setArrayIndex(i);
+            const QString link = settings->value(kLink).toString();
+            const QDateTime left =
+                QDateTime::fromString(settings->value(kLeft).toString(), Qt::ISODate);
+            if (!room_of(link) || !left.isValid()) continue;
+            recent_.push_back(QVariantMap{
+                {kLink, link}, {kNames, settings->value(kNames).toStringList()}, {kLeft, left}});
+        }
+        settings->endArray();
+    }
+    Q_EMIT recentRoomsChanged();
+}
+
+void CallController::save_recent() {
+    Q_EMIT recentRoomsChanged();
+    if (!environment_.settings) return;
+    const std::unique_ptr<QSettings> settings = environment_.settings();
+    settings->remove(kRecentArray);
+    if (recent_.isEmpty()) return;
+    settings->beginWriteArray(kRecentArray, int(recent_.size()));
+    for (int i = 0; i < recent_.size(); ++i) {
+        const QVariantMap room = recent_[i].toMap();
+        settings->setArrayIndex(i);
+        settings->setValue(kLink, room.value(kLink));
+        settings->setValue(kNames, room.value(kNames));
+        settings->setValue(kLeft, room.value(kLeft).toDateTime().toUTC().toString(Qt::ISODate));
+    }
+    settings->endArray();
+}
+
+void CallController::remember_room() {
+    const QString link = std::exchange(room_link_, {});
+    const QStringList names = std::exchange(seen_, {});
+    const bool met = std::exchange(met_, false);
+    if (link.isEmpty() || !met) return;
+    const std::optional<RatsUrl> room = room_of(link);
+    recent_.removeIf([&](const QVariant& kept) {
+        return room_of(kept.toMap().value(kLink).toString()) == room;
+    });
+    recent_.prepend(
+        QVariantMap{{kLink, link}, {kNames, names}, {kLeft, QDateTime::currentDateTimeUtc()}});
+    while (recent_.size() > kMostRecent) recent_.removeLast();
+    save_recent();
+}
+
+void CallController::forgetRoom(const QString& link) {
+    const std::optional<RatsUrl> room = room_of(link);
+    if (!room || recent_.removeIf([&](const QVariant& kept) {
+            return room_of(kept.toMap().value(kLink).toString()) == room;
+        }) == 0) {
+        return;
+    }
+    save_recent();
+}
+
 void CallController::ring(const QString& person) {
     if (!people_ || !people_->ready()) return;
     if (state_ == State::Idle) create();
@@ -484,6 +576,7 @@ void CallController::acceptRing(const QString& id) {
 
 void CallController::end(QString notice) {
     if (call_) LOG_INFO("app", "leaving the room");
+    remember_room();
     // A friend rung to the room it leaves stops ringing.
     if (people_ && people_->ringing().size() > 0) people_->hangUp();
     ++generation_;
@@ -674,6 +767,11 @@ void CallController::update_members() {
                     befriendable =
                         !is_friend && has_secret && std::ranges::find(asked, whose) == asked.end();
                 }
+            }
+            met_ = true;
+            if (!presence.name.empty()) {
+                const QString name = QString::fromStdString(presence.name);
+                if (!seen_.contains(name)) seen_.push_back(name);
             }
             members.push_back({
                 .id = id_of(peer),

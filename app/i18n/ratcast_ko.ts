@@ -486,6 +486,26 @@
         <translation>그룹 %1</translation>
     </message>
     <message>
+        <source>Someone without a name</source>
+        <translation>이름 없는 사람</translation>
+    </message>
+    <message>
+        <source>%1 and %2 more</source>
+        <translation>%1 외 %2명</translation>
+    </message>
+    <message>
+        <source>left today at %1</source>
+        <translation>오늘 %1에 나감</translation>
+    </message>
+    <message>
+        <source>left yesterday at %1</source>
+        <translation>어제 %1에 나감</translation>
+    </message>
+    <message>
+        <source>left %1</source>
+        <translation>%1에 나감</translation>
+    </message>
+    <message>
         <source>Menu</source>
         <translation>메뉴</translation>
     </message>
@@ -496,6 +516,14 @@
     <message>
         <source>Groups and friends</source>
         <translation>그룹과 친구</translation>
+    </message>
+    <message>
+        <source>Recent rooms</source>
+        <translation>최근 방</translation>
+    </message>
+    <message>
+        <source>Forget</source>
+        <translation>지우기</translation>
     </message>
     <message>
         <source>Send a link to whoever is to join:</source>

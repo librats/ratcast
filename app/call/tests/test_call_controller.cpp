@@ -13,6 +13,7 @@
 #include <gtest/gtest.h>
 
 #include <QCoreApplication>
+#include <QDateTime>
 #include <QDir>
 #include <QGuiApplication>
 #include <QStringList>
@@ -400,7 +401,8 @@ TEST_F(CallControllerTest, EachMemberIsHeardAsLoudAsSetAndItIsKept) {
     // As it comes again: nothing kept.
     carl_.setVolume(bob, 1.0);
     carl_.setMutedHere(bob, false);
-    EXPECT_TRUE(QSettings(settings_file, QSettings::IniFormat).childGroups().isEmpty());
+    EXPECT_EQ(QSettings(settings_file, QSettings::IniFormat).childGroups(), QStringList{"rooms"})
+        << "the room Ann left, alone";
 }
 
 TEST_F(CallControllerTest, AMemberCutOffIsListedByNameReconnectingUntilBack) {
@@ -847,6 +849,64 @@ TEST_F(CallControllerTest, TheDevicesChosenAreKeptAndUsed) {
     carl_.setMicrophoneDevice("");
     carl_.setSpeakerDevice("");
     carl_.setCameraDevice("");
+    EXPECT_TRUE(QSettings(settings_file, QSettings::IniFormat).childGroups().isEmpty());
+}
+
+TEST_F(CallControllerTest, ARoomLeftIsKeptToReturnTo) {
+    QTemporaryDir kept;
+    ASSERT_TRUE(kept.isValid());
+    const QString settings_file = kept.filePath("ratcast.conf");
+    const auto keeping = [&](const QString& file) {
+        CallController::Environment environment = ::environment();
+        environment.settings = [file] {
+            return std::make_unique<QSettings>(file, QSettings::IniFormat);
+        };
+        return environment;
+    };
+    ann_.setEnvironment(keeping(settings_file));
+    ann_.setName("Ann");
+    EXPECT_TRUE(ann_.recentRooms().isEmpty());
+
+    // Nobody came: nothing to return to.
+    ann_.create();
+    ASSERT_EQ(ann_.state(), State::InRoom);
+    ann_.leave();
+    EXPECT_TRUE(ann_.recentRooms().isEmpty());
+
+    bob_.setEnvironment(keeping(kept.filePath("bob.conf")));
+    bob_.setName("Bob");
+    both_in();
+    const QString secret = ann_.invites().value(0);
+    const QString by_address = address(ann_);
+    ann_.leave();
+    // Bob came by Ann's address: back by it, while she is there.
+    bob_.leave();
+    ASSERT_EQ(bob_.recentRooms().size(), 1);
+    EXPECT_EQ(bob_.recentRooms()[0].toMap().value("link"), by_address);
+    EXPECT_EQ(bob_.recentRooms()[0].toMap().value("names").toStringList(), QStringList{"Ann"});
+    bob_.forgetRoom(by_address);
+    ASSERT_EQ(ann_.recentRooms().size(), 1);
+    QVariantMap room = ann_.recentRooms()[0].toMap();
+    EXPECT_EQ(room.value("link"), secret) << "by its secret";
+    EXPECT_EQ(room.value("names").toStringList(), QStringList{"Bob"});
+    EXPECT_LE(room.value("left").toDateTime().secsTo(QDateTime::currentDateTimeUtc()), 5);
+
+    // Back by it, nobody met there (no server here to meet at): kept as it was.
+    ann_.join(secret);
+    EXPECT_EQ(ann_.state(), State::Joining);
+    ann_.leave();
+    ASSERT_EQ(ann_.recentRooms().size(), 1);
+    EXPECT_EQ(ann_.recentRooms()[0].toMap().value("left"), room.value("left"));
+
+    // Kept for the next run.
+    carl_.setEnvironment(keeping(settings_file));
+    ASSERT_EQ(carl_.recentRooms().size(), 1);
+    room = carl_.recentRooms()[0].toMap();
+    EXPECT_EQ(room.value("link"), secret);
+    EXPECT_EQ(room.value("names").toStringList(), QStringList{"Bob"});
+
+    carl_.forgetRoom(secret);
+    EXPECT_TRUE(carl_.recentRooms().isEmpty());
     EXPECT_TRUE(QSettings(settings_file, QSettings::IniFormat).childGroups().isEmpty());
 }
 

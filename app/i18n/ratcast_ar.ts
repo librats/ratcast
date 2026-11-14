@@ -486,6 +486,26 @@
         <translation>مجموعة %1</translation>
     </message>
     <message>
+        <source>Someone without a name</source>
+        <translation>شخص بلا اسم</translation>
+    </message>
+    <message>
+        <source>%1 and %2 more</source>
+        <translation>%1 و%2 آخرون</translation>
+    </message>
+    <message>
+        <source>left today at %1</source>
+        <translation>غادرت اليوم في %1</translation>
+    </message>
+    <message>
+        <source>left yesterday at %1</source>
+        <translation>غادرت أمس في %1</translation>
+    </message>
+    <message>
+        <source>left %1</source>
+        <translation>غادرت في %1</translation>
+    </message>
+    <message>
         <source>Menu</source>
         <translation>القائمة</translation>
     </message>
@@ -496,6 +516,14 @@
     <message>
         <source>Groups and friends</source>
         <translation>المجموعات والأصدقاء</translation>
+    </message>
+    <message>
+        <source>Recent rooms</source>
+        <translation>الغرف الأخيرة</translation>
+    </message>
+    <message>
+        <source>Forget</source>
+        <translation>انسَ</translation>
     </message>
     <message>
         <source>Send a link to whoever is to join:</source>

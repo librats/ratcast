@@ -174,6 +174,7 @@ qt_add_qml_module(ratcast_app
         qml/icons/globe.svg
         qml/icons/headphone-off.svg
         qml/icons/headphones.svg
+        qml/icons/history.svg
         qml/icons/info.svg
         qml/icons/languages.svg
         qml/icons/lightbulb.svg

@@ -486,6 +486,26 @@
         <translation>群组 %1</translation>
     </message>
     <message>
+        <source>Someone without a name</source>
+        <translation>无名氏</translation>
+    </message>
+    <message>
+        <source>%1 and %2 more</source>
+        <translation>%1 等 %2 人</translation>
+    </message>
+    <message>
+        <source>left today at %1</source>
+        <translation>今天 %1 离开</translation>
+    </message>
+    <message>
+        <source>left yesterday at %1</source>
+        <translation>昨天 %1 离开</translation>
+    </message>
+    <message>
+        <source>left %1</source>
+        <translation>%1 离开</translation>
+    </message>
+    <message>
         <source>Menu</source>
         <translation>菜单</translation>
     </message>
@@ -496,6 +516,14 @@
     <message>
         <source>Groups and friends</source>
         <translation>群组和好友</translation>
+    </message>
+    <message>
+        <source>Recent rooms</source>
+        <translation>最近的房间</translation>
+    </message>
+    <message>
+        <source>Forget</source>
+        <translation>忘记</translation>
     </message>
     <message>
         <source>Send a link to whoever is to join:</source>

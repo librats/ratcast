@@ -108,6 +108,12 @@ class CallController : public QObject {
     /// the networks this host is on. Any member's will do. join() takes them
     /// and rats:// links alike.
     Q_PROPERTY(QStringList invites READ invites NOTIFY invitesChanged)
+    /// The rooms last left, the latest first: their link, `link` (a web
+    /// link: the room's secret, or the member's it was joined by), the names
+    /// of the others seen there, `names`, and when it was left, `left`. Kept
+    /// from one run to the next; a room is kept if anyone else was in it, a
+    /// group's never (the group is its way back).
+    Q_PROPERTY(QVariantList recentRooms READ recentRooms NOTIFY recentRoomsChanged)
     /// The group whose room this is (its id in hex, as PeopleController's
     /// groups have it); "" for a room of nobody's.
     Q_PROPERTY(QString group READ group NOTIFY groupChanged)
@@ -292,6 +298,8 @@ public:
     /// another room, that one is left first.
     Q_INVOKABLE void enter(const QString& group);
     Q_INVOKABLE void leave();
+    /// That room no longer among recentRooms.
+    Q_INVOKABLE void forgetRoom(const QString& link);
     /// Ask the desktop for a screen (or a window) and share it, with the
     /// computer's sound if asked. In a room, while the dialog is not open.
     /// Sharing already, it is shown in place of what is, the share going on
@@ -331,6 +339,7 @@ public:
 
     State state() const { return state_; }
     QStringList invites() const { return invites_; }
+    QVariantList recentRooms() const { return recent_; }
     QString group() const { return group_; }
     QString notice() const { return notice_; }
     QString name() const { return name_; }
@@ -383,6 +392,7 @@ Q_SIGNALS:
     void stateChanged();
     void invitesChanged();
     void groupChanged();
+    void recentRoomsChanged();
     void noticeChanged();
     void nameChanged();
     void serverChanged();
@@ -486,6 +496,11 @@ private:
     };
     /// What the settings keep, and the call told it.
     void load_hearing();
+    /// The rooms last left, as the settings keep them; kept anew.
+    void load_recent();
+    void save_recent();
+    /// The room being left among recentRooms, first, if anyone else was seen.
+    void remember_room();
     /// `id` heard so from now on: kept, saved, the call told.
     void hear(const QString& id, Hearing hearing);
     void tell_hearing(const QString& id, const Hearing& hearing);
@@ -509,6 +524,10 @@ private:
     QString group_;                ///< the group whose room this is, in hex
     QString group_link_;           ///< its link, the room's first invite
     std::optional<RatsUrl> room_;  ///< where this room is met
+    QString room_link_;            ///< its own link, to come back by; "" for a group's
+    QStringList seen_;             ///< the names of the others seen in it
+    bool met_ = false;             ///< anyone else seen in it, named or not
+    QVariantList recent_;
     QString notice_;
     QString name_;
     QString server_;
