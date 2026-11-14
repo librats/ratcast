@@ -826,6 +826,14 @@
         <translation>Выйти</translation>
     </message>
     <message>
+        <source>Your camera</source>
+        <translation>Ваша камера</translation>
+    </message>
+    <message>
+        <source>%1&apos;s camera</source>
+        <translation>Камера: %1</translation>
+    </message>
+    <message>
         <source>%1&apos;s share</source>
         <translation>Показ: %1</translation>
     </message>

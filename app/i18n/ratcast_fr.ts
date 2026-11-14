@@ -639,11 +639,11 @@
     </message>
     <message>
         <source>Send the group&apos;s link to whoever is to join:</source>
-        <translation>Envoyez le lien du groupe à qui doit rejoindre :</translation>
+        <translation>Envoyez le lien du groupe à qui doit rejoindre&#xa0;:</translation>
     </message>
     <message>
         <source>Send the link to whoever is to join:</source>
-        <translation>Envoyez le lien à qui doit rejoindre :</translation>
+        <translation>Envoyez le lien à qui doit rejoindre&#xa0;:</translation>
     </message>
     <message>
         <source>Copied</source>
@@ -663,7 +663,7 @@
     </message>
     <message>
         <source>These lead straight to this device, by its address on each network it is on: for someone on the same Wi-Fi or network, even with no internet. Anywhere else, send the main link.</source>
-        <translation>Ils mènent directement à cet appareil, par son adresse sur chaque réseau où il se trouve : pour quelqu’un sur le même Wi-Fi ou réseau, même sans internet. Partout ailleurs, envoyez le lien principal.</translation>
+        <translation>Ils mènent directement à cet appareil, par son adresse sur chaque réseau où il se trouve&#xa0;: pour quelqu’un sur le même Wi-Fi ou réseau, même sans internet. Partout ailleurs, envoyez le lien principal.</translation>
     </message>
     <message>
         <source>See what the others see</source>
@@ -824,6 +824,14 @@
     <message>
         <source>Leave</source>
         <translation>Quitter</translation>
+    </message>
+    <message>
+        <source>Your camera</source>
+        <translation>Votre caméra</translation>
+    </message>
+    <message>
+        <source>%1&apos;s camera</source>
+        <translation>Caméra de %1</translation>
     </message>
     <message>
         <source>%1&apos;s share</source>

@@ -826,6 +826,14 @@
         <translation>나가기</translation>
     </message>
     <message>
+        <source>Your camera</source>
+        <translation>내 카메라</translation>
+    </message>
+    <message>
+        <source>%1&apos;s camera</source>
+        <translation>%1 님의 카메라</translation>
+    </message>
+    <message>
         <source>%1&apos;s share</source>
         <translation>%1 님의 공유 화면</translation>
     </message>

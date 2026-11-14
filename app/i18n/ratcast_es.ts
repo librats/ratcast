@@ -826,6 +826,14 @@
         <translation>Salir</translation>
     </message>
     <message>
+        <source>Your camera</source>
+        <translation>Tu cámara</translation>
+    </message>
+    <message>
+        <source>%1&apos;s camera</source>
+        <translation>Cámara de %1</translation>
+    </message>
+    <message>
         <source>%1&apos;s share</source>
         <translation>Transmisión de %1</translation>
     </message>

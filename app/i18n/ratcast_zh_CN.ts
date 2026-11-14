@@ -826,6 +826,14 @@
         <translation>离开</translation>
     </message>
     <message>
+        <source>Your camera</source>
+        <translation>你的摄像头</translation>
+    </message>
+    <message>
+        <source>%1&apos;s camera</source>
+        <translation>%1 的摄像头</translation>
+    </message>
+    <message>
         <source>%1&apos;s share</source>
         <translation>%1 的共享画面</translation>
     </message>

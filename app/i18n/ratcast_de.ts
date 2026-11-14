@@ -826,6 +826,14 @@
         <translation>Verlassen</translation>
     </message>
     <message>
+        <source>Your camera</source>
+        <translation>Deine Kamera</translation>
+    </message>
+    <message>
+        <source>%1&apos;s camera</source>
+        <translation>Kamera von %1</translation>
+    </message>
+    <message>
         <source>%1&apos;s share</source>
         <translation>Freigabe von %1</translation>
     </message>

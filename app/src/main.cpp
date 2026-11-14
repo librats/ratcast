@@ -58,8 +58,9 @@ void log_qt_message(QtMsgType type, const QMessageLogContext& context, const QSt
 
 /// What the window asks of Android's activity; elsewhere nothing. Its
 /// toBackground(): the app sent behind as Home sends it (a window cannot be
-/// minimized there), the room going on. Its share full screen: turned on its
-/// side, either way up, as a film is watched; back as it was after.
+/// minimized there), the room going on. Its share full screen (or a camera's
+/// wider than high): turned on its side, either way up, as a film is watched;
+/// back as it was after.
 class Activity final : public QObject {
     Q_OBJECT
 
@@ -74,10 +75,10 @@ public Q_SLOTS:
 #endif
     }
 
-    void full_screen_changed() {
+    void on_its_side_changed() {
 #ifdef Q_OS_ANDROID
         // ActivityInfo's SCREEN_ORIENTATION_SENSOR_LANDSCAPE, _UNSPECIFIED.
-        const jint orientation = window_->property("fullScreen").toBool() ? 6 : -1;
+        const jint orientation = window_->property("onItsSide").toBool() ? 6 : -1;
         QJniObject activity = QNativeInterface::QAndroidApplication::context();
         if (activity.isValid()) activity.callMethod<void>("setRequestedOrientation", orientation);
 #endif
@@ -213,7 +214,7 @@ int main(int argc, char* argv[]) {
     links.show_to(window);
     Activity activity(window);
     QObject::connect(window, SIGNAL(toBackground()), &activity, SLOT(to_background()));
-    QObject::connect(window, SIGNAL(fullScreenChanged()), &activity, SLOT(full_screen_changed()));
+    QObject::connect(window, SIGNAL(onItsSideChanged()), &activity, SLOT(on_its_side_changed()));
 
     return QGuiApplication::exec();
 }

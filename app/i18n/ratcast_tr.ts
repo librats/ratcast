@@ -826,6 +826,14 @@
         <translation>Ayrıl</translation>
     </message>
     <message>
+        <source>Your camera</source>
+        <translation>Kameranız</translation>
+    </message>
+    <message>
+        <source>%1&apos;s camera</source>
+        <translation>Kamera: %1</translation>
+    </message>
+    <message>
         <source>%1&apos;s share</source>
         <translation>Paylaşan: %1</translation>
     </message>

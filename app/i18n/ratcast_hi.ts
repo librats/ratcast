@@ -826,6 +826,14 @@
         <translation>छोड़ें</translation>
     </message>
     <message>
+        <source>Your camera</source>
+        <translation>आपका कैमरा</translation>
+    </message>
+    <message>
+        <source>%1&apos;s camera</source>
+        <translation>%1 का कैमरा</translation>
+    </message>
+    <message>
         <source>%1&apos;s share</source>
         <translation>%1 का शेयर</translation>
     </message>

@@ -72,12 +72,20 @@ ApplicationWindow {
         || (settingsDialog.keepSharePreview
             && root.visibility !== Window.Minimized && root.visibility !== Window.Hidden)
 
-    /// The share watched on the whole screen, nothing else drawn.
+    /// The share watched on the whole screen, or a camera, nothing else drawn.
     property bool fullScreen: false
     /// Whose share went full screen — another's, or none, ends it — and
     /// their name, to say so.
     property string fullScreenOf: ""
     property string fullScreenName: ""
+    /// Whose camera is full screen in the share's place: a member's peer id,
+    /// "self" for this side's own; "" for the share.
+    property string fullScreenCamera: ""
+    readonly property bool cameraFullScreen: fullScreen && fullScreenCamera.length > 0
+    /// The picture full screen, on a phone, turned on its side as a film is
+    /// watched (main.cpp): a share, or a camera's that is wider than high.
+    readonly property bool onItsSide: fullScreen
+        && (!cameraFullScreen || fullCamera.pictureWide)
     /// How the window was before, to go back to.
     property int windowedVisibility: Window.Windowed
     /// Said over the stage a few seconds: a share that ended full screen.
@@ -178,13 +186,35 @@ ApplicationWindow {
             root.windowedVisibility = root.visibility
             root.fullScreenOf = call.watching
             root.fullScreenName = root.watchedName()
+            root.fullScreenCamera = ""
             root.fullScreen = true
             root.showFullScreen()
             chrome.wake()
         } else {
             root.fullScreen = false
+            root.fullScreenCamera = ""
             root.visibility = root.windowedVisibility
         }
+    }
+
+    /// A camera on the whole screen: a member's (`id` its peer id), or this
+    /// side's own ("self"); `name` whose it is.
+    function setCameraFullScreen(id, name) {
+        if (root.fullScreen)
+            root.setFullScreen(false)
+        root.windowedVisibility = root.visibility
+        root.fullScreenOf = ""
+        root.fullScreenName = name
+        root.fullScreenCamera = id
+        root.fullScreen = true
+        root.showFullScreen()
+        chrome.wake()
+    }
+
+    /// The camera full screen gone (turned off, or its member left): out.
+    function cameraGone(id) {
+        if (root.cameraFullScreen && root.fullScreenCamera === id)
+            root.setFullScreen(false)
     }
 
     // The share full screen ended, or another plays in its place: out, and why.
@@ -195,7 +225,7 @@ ApplicationWindow {
                 root.fullScreenName = root.watchedName()
         }
         function onWatchingChanged() {
-            if (!root.fullScreen || call.watching === root.fullScreenOf)
+            if (!root.fullScreen || root.cameraFullScreen || call.watching === root.fullScreenOf)
                 return
             root.setFullScreen(false)
             root.stageNotice = qsTr("%1 stopped sharing").arg(root.fullScreenName)
@@ -1628,7 +1658,7 @@ ApplicationWindow {
             height: stage.column ? stage.width * 9 / 16 : stage.height
             anchors.right: stage.camerasBeside ? cameras.left : parent.right
             anchors.rightMargin: stage.camerasBeside ? 12 : 0
-            visible: root.watching
+            visible: root.watching && !root.cameraFullScreen
         }
 
         // A double click on the share takes it full screen and back; full
@@ -1642,6 +1672,28 @@ ApplicationWindow {
             // A touch brings them as the mouse does.
             onPressed: if (root.fullScreen) chrome.wake()
             onPositionChanged: if (root.fullScreen) chrome.wake()
+        }
+
+        // A camera full screen: its tile's view moved here (Tile's `place`),
+        // and back as it ends.
+        Item {
+            id: fullCamera
+
+            /// The view in it wider than high (or none yet: as a share).
+            readonly property bool pictureWide: children.length === 0
+                || children[0].pictureSize.width >= children[0].pictureSize.height
+
+            anchors.fill: parent
+            visible: root.cameraFullScreen
+        }
+        MouseArea {
+            anchors.fill: fullCamera
+            enabled: root.cameraFullScreen
+            hoverEnabled: true
+            cursorShape: chrome.shown ? Qt.ArrowCursor : Qt.BlankCursor
+            onDoubleClicked: root.setFullScreen(false)
+            onPressed: chrome.wake()
+            onPositionChanged: chrome.wake()
         }
 
         // Over the share; narrow, under it.
@@ -1706,6 +1758,10 @@ ApplicationWindow {
         component Tile: Rectangle {
             id: tile
             default property alias content: holder.data
+            /// Where its view is, but full screen.
+            readonly property Item place: holder
+            /// Whose camera it shows, as setCameraFullScreen() takes it.
+            property string cameraId
             property string caption
             /// Whose first letter stands for the pictures not shown.
             property string named: caption
@@ -1741,6 +1797,42 @@ ApplicationWindow {
                 anchors.fill: parent
                 anchors.margins: 3
                 visible: tile.showing
+            }
+            HoverHandler {
+                id: tileHover
+            }
+            // A double click or tap on the camera takes it full screen.
+            TapHandler {
+                enabled: tile.showing
+                onDoubleTapped: root.setCameraFullScreen(tile.cameraId, tile.named)
+            }
+            // The same, for whoever does not know to: on hovering, and
+            // always on a phone.
+            Rectangle {
+                anchors.right: parent.right
+                anchors.top: parent.top
+                anchors.margins: 6
+                width: 28
+                height: 28
+                radius: 14
+                color: maximizeHover.hovered ? "#cc000000" : "#99000000"
+                visible: tile.showing && (tileHover.hovered || root.mobile)
+
+                Glyph {
+                    anchors.centerIn: parent
+                    glyph: "maximize"
+                    color: "white"
+                    opacity: 1
+                }
+                HoverHandler {
+                    id: maximizeHover
+                    cursorShape: Qt.PointingHandCursor
+                }
+                TapHandler {
+                    onTapped: root.setCameraFullScreen(tile.cameraId, tile.named)
+                }
+                ToolTip.visible: maximizeHover.hovered
+                ToolTip.text: qsTr("Full screen")
             }
             Label {
                 anchors.left: parent.left
@@ -1821,17 +1913,23 @@ ApplicationWindow {
                     height: width * 3 / 4
                     visible: !root.watching || cameraShown
                     caption: root.memberName(name, peer)
+                    cameraId: peerId
                     ringed: tile.speaking
                     showing: cameraShown
                     // On, but not among the last to speak.
                     note: camera && !cameraShown ? qsTr("camera hidden") : ""
+                    onShowingChanged: if (!showing) root.cameraGone(peerId)
 
                     VideoView {
                         id: theirCamera
+                        parent: root.fullScreenCamera === tile.peerId ? fullCamera : tile.place
                         anchors.fill: parent
                     }
                     Component.onCompleted: call.setCameraView(tile.peerId, theirCamera)
-                    Component.onDestruction: call.setCameraView(tile.peerId, null)
+                    Component.onDestruction: {
+                        root.cameraGone(tile.peerId)
+                        call.setCameraView(tile.peerId, null)
+                    }
                 }
             }
 
@@ -1839,15 +1937,19 @@ ApplicationWindow {
                 width: cameras.tileWidth
                 height: width * 3 / 4
                 visible: !root.watching || call.camera
+                id: ownTile
                 caption: qsTr("You")
                 named: call.name
+                cameraId: "self"
                 ringed: call.speaking
                 showing: call.camera
+                onShowingChanged: if (!showing) root.cameraGone("self")
 
                 // As a mirror shows one: what is left of the user is on the
                 // left. A phone's back camera as it sees, as the others do.
                 VideoView {
                     id: ownCamera
+                    parent: root.fullScreenCamera === "self" ? fullCamera : ownTile.place
                     anchors.fill: parent
                     transform: Scale {
                         origin.x: ownCamera.width / 2
@@ -2328,7 +2430,7 @@ ApplicationWindow {
     }
     Shortcut {
         sequence: "F"
-        enabled: root.inRoom && root.watching
+        enabled: root.inRoom && (root.watching || root.fullScreen)
         onActivated: root.setFullScreen(!root.fullScreen)
     }
     Shortcut {
@@ -2659,7 +2761,9 @@ ApplicationWindow {
                 anchors.top: parent.top
                 anchors.margins: 16
                 font.pixelSize: 16
-                text: qsTr("%1's share").arg(root.fullScreenName)
+                text: root.fullScreenCamera === "self" ? qsTr("Your camera")
+                    : root.cameraFullScreen ? qsTr("%1's camera").arg(root.fullScreenName)
+                    : qsTr("%1's share").arg(root.fullScreenName)
             }
         }
 
@@ -2722,15 +2826,18 @@ ApplicationWindow {
                     ToolTip.text: call.qualityReason.length > 0
                                   ? call.quality + ": " + call.qualityReason : call.quality
                 }
+                // A share's; a camera has none.
                 ShareVolume {
                     Layout.fillWidth: root.compact
                     Layout.preferredWidth: root.compact ? 1 : -1  // columns alike
                     Layout.leftMargin: 8
+                    visible: !root.cameraFullScreen
                 }
                 Button {
                     Layout.fillWidth: root.compact
                     Layout.preferredWidth: root.compact ? 1 : -1  // columns alike
                     Layout.leftMargin: root.compact ? 0 : 8
+                    visible: !root.cameraFullScreen
                     text: qsTr("Stop watching")
                     icon.source: "icons/eye-off.svg"
                     onClicked: {

@@ -826,6 +826,14 @@
         <translation>مغادرة</translation>
     </message>
     <message>
+        <source>Your camera</source>
+        <translation>كاميرتك</translation>
+    </message>
+    <message>
+        <source>%1&apos;s camera</source>
+        <translation>كاميرا %1</translation>
+    </message>
+    <message>
         <source>%1&apos;s share</source>
         <translation>مشاركة %1</translation>
     </message>

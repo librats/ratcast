@@ -826,6 +826,14 @@
         <translation>退出</translation>
     </message>
     <message>
+        <source>Your camera</source>
+        <translation>あなたのカメラ</translation>
+    </message>
+    <message>
+        <source>%1&apos;s camera</source>
+        <translation>%1 のカメラ</translation>
+    </message>
+    <message>
         <source>%1&apos;s share</source>
         <translation>%1 の共有画面</translation>
     </message>
