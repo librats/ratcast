@@ -44,8 +44,8 @@ public:
     bool hand_on(const QString& link);
 
 public Q_SLOTS:
-    /// QDesktopServices' handler. An https:// link that is no room's goes on
-    /// to the browser.
+    /// QDesktopServices' handler, called from any thread. An https:// link
+    /// that is no room's goes on to the browser.
     void open(const QUrl& url);
 
 protected:

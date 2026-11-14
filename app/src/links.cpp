@@ -16,6 +16,7 @@
 #include <QProcess>
 #include <QSettings>
 #include <QStandardPaths>
+#include <QThread>
 #include <QVariant>
 #include <QWindow>
 
@@ -90,6 +91,13 @@ bool LinkOpener::hand_on(const QString& link) {
 }
 
 void LinkOpener::open(const QUrl& url) {
+    // Android's handler runs on its own thread, a link that comes while the
+    // app runs (one it starts with comes on this one): onto the window's, where
+    // openLink() answers.
+    if (QThread::currentThread() != thread()) {
+        QMetaObject::invokeMethod(this, [this, url] { open(url); }, Qt::QueuedConnection);
+        return;
+    }
     const QString link = url.toString();
     if (url.scheme() != kRats && !parse_rats_link(link.toStdString()) &&
         !parse_person_link(link.toStdString()) && !parse_group_link(link.toStdString())) {
