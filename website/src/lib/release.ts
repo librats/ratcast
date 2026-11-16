@@ -3,6 +3,8 @@ import { useEffect, useState } from "react";
 export const REPO = "librats/ratcast";
 export const REPO_URL = `https://github.com/${REPO}`;
 export const RELEASES_URL = `${REPO_URL}/releases/latest`;
+/** Where Android installs it from; the APK of each release is the way around it. */
+export const PLAY_URL = "https://play.google.com/store/apps/details?id=app.ratcast";
 
 export type Platform = "windows" | "linux" | "mac" | "android" | "other";
 

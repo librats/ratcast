@@ -1,34 +1,39 @@
-import { Apple, ArrowDownToLine, Smartphone } from "lucide-react";
-import { formatSize, RELEASES_URL, useLatestRelease, usePlatform } from "../lib/release";
-import { LinuxIcon, WindowsIcon } from "./ui";
+import { Apple, ArrowDownToLine } from "lucide-react";
+import { formatSize, PLAY_URL, RELEASES_URL, useLatestRelease, usePlatform } from "../lib/release";
+import { GooglePlayIcon, LinuxIcon, WindowsIcon } from "./ui";
 
-const NAMES = { windows: "Windows", linux: "Linux", mac: "macOS", android: "Android" } as const;
-const FORMATS = { windows: "zip", linux: "AppImage", mac: "DMG", android: "APK" } as const;
+const NAMES = { windows: "Windows", linux: "Linux", mac: "macOS" } as const;
+const FORMATS = { windows: "zip", linux: "AppImage", mac: "DMG" } as const;
 
-/** The big button: the package for the visitor's system, straight from the latest release. */
+/**
+ * The big button: the package for the visitor's system, straight from the latest release; on
+ * Android, Google Play.
+ */
 export function DownloadButton() {
   const release = useLatestRelease();
   const platform = usePlatform();
-  const target = platform === "other" ? null : platform;
+  const android = platform === "android";
+  const target = platform === "other" || android ? null : platform;
   const pkg = target ? release?.packages.find((p) => p.platform === target) : undefined;
 
-  const href = pkg ? pkg.url : target ? RELEASES_URL : "/#download";
-  const Icon =
-    target === "linux"
+  const href = android ? PLAY_URL : pkg ? pkg.url : target ? RELEASES_URL : "/#download";
+  const Icon = android
+    ? GooglePlayIcon
+    : target === "linux"
       ? LinuxIcon
       : target === "windows"
         ? WindowsIcon
         : target === "mac"
           ? Apple
-          : target === "android"
-            ? Smartphone
-            : ArrowDownToLine;
-  const label = target ? `Download for ${NAMES[target]}` : "Download ratcast";
-  const detail = pkg
-    ? `v${release!.version} · ${FORMATS[target!]} · ${formatSize(pkg.size)}`
-    : target
-      ? "Latest release on GitHub"
-      : "Windows, Linux, macOS & Android";
+          : ArrowDownToLine;
+  const label = android ? "Get it on Google Play" : target ? `Download for ${NAMES[target]}` : "Download ratcast";
+  const detail = android
+    ? "Android 10+ · free"
+    : pkg
+      ? `v${release!.version} · ${FORMATS[target!]} · ${formatSize(pkg.size)}`
+      : target
+        ? "Latest release on GitHub"
+        : "Windows, Linux, macOS · Android on Google Play";
 
   return (
     <a

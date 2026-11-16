@@ -18,15 +18,17 @@
 
 <p align="center"><b>Peer-to-peer calls and screen sharing for watching things together.</b><br><a href="https://ratcast.app">ratcast.app</a></p>
 
-One person shares a movie, a game or a desktop, and the others watch it live while everyone talks.
-There is no account to create and no service in the middle. You make a room, send the link, and
+One person shares a movie, a game or a desktop, and the others watch it live while everyone talks,
+at the screen's full resolution — 1440p and 4K at up to 60 fps. There is no account to create and
+no service in the middle. You make a room, send the link, and
 the picture goes straight from the sharer to each viewer, encrypted end to end.
 
 ratcast is built on [librats](https://github.com/librats/librats). It comes in two parts:
 
 - **ratcast**: the desktop app for Windows and Linux, with macOS (Apple Silicon) in preview,
-  and Android in preview too: watching a share, talking, a camera, and sharing the phone's
-  screen with its sound.
+  and the Android app, [on Google Play](https://play.google.com/store/apps/details?id=app.ratcast)
+  (in preview too): watching a share, talking, a camera, and sharing the phone's screen with
+  its sound.
 - **libratcast**: the media transport underneath it. You can use it on its own, much like SRT
   or librist.
 
@@ -45,8 +47,10 @@ ratcast is built on [librats](https://github.com/librats/librats). It comes in t
   (`https://ratcast.app/g/#…`) once, and see from the start who is in it now — a click and
   you are there, and who shares. Its members' devices keep it; no server holds it. A link
   that got out is reset: the old one lets nobody in, the members are given the new one.
-- **Share a screen or a window with its sound.** Viewers hear what your applications play, but
-  never the call's own voices.
+- **Share a screen or a window with its sound, at full resolution.** The picture goes out at the
+  screen's own size, never scaled down — 1440p and 4K at up to 60 fps — so a movie or a game
+  looks as it does on the sharer's screen. Viewers hear what your applications play, but never
+  the call's own voices.
 - **Voice that is easy to listen to.** Echo cancellation, noise suppression and automatic gain
   (WebRTC AudioProcessing) are built in. You can mute or deafen yourself and see who is speaking.
 - **Camera.** Each side can show itself next to the share. Without a share, everyone is a tile
@@ -76,14 +80,16 @@ ratcast is built on [librats](https://github.com/librats/librats). It comes in t
 
 ## Download
 
-Get the latest build from [Releases](https://github.com/librats/ratcast/releases).
+On Android, install ratcast from
+[Google Play](https://play.google.com/store/apps/details?id=app.ratcast). For the desktop, get the
+latest build from [Releases](https://github.com/librats/ratcast/releases).
 
 | Platform | Package | Notes |
 |---|---|---|
+| Android 10+ arm64 (preview) | [Google Play](https://play.google.com/store/apps/details?id=app.ratcast) | Watch, talk, show a camera and share the screen; Google Play keeps it up to date. A room's link opens the app. Without Google Play, `ratcast-<version>-android-arm64.apk` from Releases installs too (allow installing from that app; a newer APK installs over it) |
 | Windows 10/11 x64 | `ratcast-<version>-windows-x64-setup.exe` | Installs for your user, no administrator rights needed. It is not signed: Windows may warn before the first start. Or take `ratcast-<version>-windows-x64.zip`, unzip it and run `ratcast.exe` |
 | Linux x86_64 | `ratcast-<version>-linux-x86_64.AppImage` | glibc 2.39+ and PipeWire 1.0+ (Ubuntu 24.04, Debian 13, Fedora 40 or newer) |
 | macOS 14+ Apple Silicon (preview) | `ratcast-<version>-macos-arm64.dmg` | Drag `ratcast` into Applications. It is not notarized: open it the first time with right-click → **Open** |
-| Android 10+ arm64 (preview) | `ratcast-<version>-android-arm64.apk` | Open it on the phone and allow installing from that app. Watch, talk, show a camera and share the screen; a newer APK installs over it. A room's link opens the app |
 
 ## Using it
 

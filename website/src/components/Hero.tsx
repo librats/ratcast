@@ -1,7 +1,7 @@
 import { motion, useScroll, useTransform } from "motion/react";
-import { ArrowRight, Lock, UserPlus, Zap } from "lucide-react";
+import { ArrowRight, Lock, MonitorPlay, UserPlus, Zap } from "lucide-react";
 import { useRef } from "react";
-import { REPO_URL, useLatestRelease } from "../lib/release";
+import { PLAY_URL, REPO_URL, useLatestRelease } from "../lib/release";
 import { AppMock } from "./AppMock";
 import { DownloadButton } from "./DownloadButton";
 import { GitHubIcon } from "./ui";
@@ -89,8 +89,9 @@ export function Hero() {
           transition={{ duration: 0.8, delay: 0.6, ease: EASE }}
           className="mx-auto mt-7 max-w-2xl text-lg text-pretty text-fog/60 md:text-xl"
         >
-          One person shares a movie, a game or a desktop, and the others watch it live while everyone talks. Make a
-          room, send the link: the picture goes straight to each friend, encrypted end to end.
+          One person shares a movie, a game or a desktop, and the others watch it live while everyone talks, at the
+          screen's full resolution, up to 4K at 60 fps. Make a room, send the link: the picture goes straight to each
+          friend, encrypted end to end.
         </motion.p>
 
         <motion.div
@@ -115,7 +116,11 @@ export function Hero() {
           transition={{ duration: 1, delay: 1 }}
           className="mt-5 font-mono text-xs text-fog/40"
         >
-          Windows 10/11 · Linux AppImage · macOS 14+ · Android 10+ · MIT licensed
+          Windows 10/11 · Linux AppImage · macOS 14+ ·{" "}
+          <a href={PLAY_URL} className="underline-offset-4 hover:text-fog/70 hover:underline">
+            Android 10+ on Google Play
+          </a>{" "}
+          · MIT licensed
         </motion.p>
       </div>
 
@@ -134,6 +139,9 @@ export function Hero() {
           </Badge>
           <Badge icon={UserPlus} className="bottom-28 -left-36 [animation-delay:-4s]">
             Leo joined by link
+          </Badge>
+          <Badge icon={MonitorPlay} className="-right-36 bottom-20 [animation-delay:-3s]">
+            Full resolution, up to 4K60
           </Badge>
           <AppMock />
         </motion.div>

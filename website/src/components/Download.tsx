@@ -1,8 +1,8 @@
 import { Apple, ArrowDownToLine, Smartphone } from "lucide-react";
 import type { ReactNode } from "react";
-import { formatSize, RELEASES_URL, useLatestRelease, usePlatform, type Package } from "../lib/release";
+import { formatSize, PLAY_URL, RELEASES_URL, useLatestRelease, usePlatform, type Package } from "../lib/release";
 import { CodeWindow } from "./Developers";
-import { LinuxIcon, Reveal, SectionHeading, SpotlightCard, WindowsIcon } from "./ui";
+import { GooglePlayIcon, LinuxIcon, Reveal, SectionHeading, SpotlightCard, WindowsIcon } from "./ui";
 
 const TARGETS: {
   platform: Package["platform"];
@@ -11,6 +11,8 @@ const TARGETS: {
   format: string;
   needs: string;
   steps: string;
+  /** Installed from a store, not from the release's package. */
+  store?: { url: string; label: string };
 }[] = [
   {
     platform: "windows",
@@ -36,6 +38,15 @@ const TARGETS: {
     needs: "macOS 14+ on Apple Silicon. Sharing the applications' sound needs 14.2+.",
     steps: "Drag ratcast into Applications. It is not notarized: open it the first time with right-click → Open",
   },
+  {
+    platform: "android",
+    name: "Android",
+    icon: <GooglePlayIcon className="size-7" />,
+    format: "arm64 · Google Play · preview",
+    needs: "Android 10+ on arm64. Watch, talk, and share your camera or screen with its sound.",
+    steps: "Install it from Google Play; a room's link opens the app",
+    store: { url: PLAY_URL, label: "Get it on Google Play" },
+  },
 ];
 
 const SERVER = `git clone --recursive https://github.com/librats/ratcast.git && cd ratcast
@@ -48,7 +59,7 @@ sudo systemctl enable --now ratcast-server`;
 export function Download() {
   const release = useLatestRelease();
   const mine = usePlatform();
-  const android = release?.packages.find((p) => p.platform === "android");
+  const apk = release?.packages.find((p) => p.platform === "android");
 
   return (
     <section id="download" className="relative scroll-mt-24 overflow-hidden py-24">
@@ -61,7 +72,7 @@ export function Download() {
           Free and open source. It keeps itself up to date.
         </SectionHeading>
 
-        <div className="mt-14 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+        <div className="mt-14 grid gap-4 md:grid-cols-2 lg:grid-cols-4">
           {TARGETS.map((t, i) => {
             const pkg = release?.packages.find((p) => p.platform === t.platform);
             const yours = mine === t.platform;
@@ -81,20 +92,20 @@ export function Download() {
                   <h3 className="mt-6 text-2xl font-semibold tracking-tight">{t.name}</h3>
                   <p className="font-mono text-sm text-fog/50">
                     {t.format}
-                    {pkg && ` · ${formatSize(pkg.size)}`}
+                    {pkg && !t.store && ` · ${formatSize(pkg.size)}`}
                   </p>
                   <p className="mt-4 text-sm text-fog/60">{t.needs}</p>
                   <p className="mt-1 text-sm text-fog/40">{t.steps}.</p>
                   <a
-                    href={pkg?.url ?? RELEASES_URL}
+                    href={t.store?.url ?? pkg?.url ?? RELEASES_URL}
                     className={`mt-7 flex items-center justify-center gap-2 rounded-xl px-4 py-3 text-sm font-medium transition ${
                       yours
                         ? "bg-fog text-ink hover:bg-white"
                         : "border border-white/10 bg-white/5 hover:border-white/25 hover:bg-white/10"
                     }`}
                   >
-                    <ArrowDownToLine className="size-4" />
-                    {pkg ? pkg.name : `Download for ${t.name}`}
+                    {t.store ? <GooglePlayIcon className="size-4" /> : <ArrowDownToLine className="size-4" />}
+                    {t.store ? t.store.label : pkg ? pkg.name : `Download for ${t.name}`}
                   </a>
                 </SpotlightCard>
               </Reveal>
@@ -104,19 +115,16 @@ export function Download() {
 
         <Reveal
           delay={0.2}
-          className={`mt-4 flex flex-col items-center justify-between gap-3 rounded-2xl border border-dashed px-6 py-4 text-sm text-fog/50 sm:flex-row ${
-            mine === "android" ? "border-cyan/30" : "border-white/10"
-          }`}
+          className="mt-4 flex flex-col items-center justify-between gap-3 rounded-2xl border border-dashed border-white/10 px-6 py-4 text-sm text-fog/50 sm:flex-row"
         >
           <span className="flex items-center gap-3">
             <Smartphone className="size-4 shrink-0" />
             <span>
-              Android 10+ on arm64, in preview: watch, talk, and share your camera or
-              screen.{" "}
-              <a href={android?.url ?? RELEASES_URL} className="text-cyan hover:underline">
-                {android ? `${android.name} · ${formatSize(android.size)}` : "The APK"}
-              </a>
-              . A newer one installs over it.
+              No Google Play on the phone?{" "}
+              <a href={apk?.url ?? RELEASES_URL} className="text-cyan hover:underline">
+                {apk ? `${apk.name} · ${formatSize(apk.size)}` : "The APK"}
+              </a>{" "}
+              installs as it is; a newer one installs over it.
             </span>
           </span>
           <a href={release?.url ?? RELEASES_URL} className="text-cyan hover:underline">

@@ -259,8 +259,8 @@ const CARDS: { span: string; icon: LucideIcon; title: string; text: string; demo
   {
     span: "lg:col-span-3",
     icon: MonitorPlay,
-    title: "A screen or a window, with its sound",
-    text: "Viewers hear what your applications play, but never the call's own voices. Games, movies, a whole desktop.",
+    title: "Full resolution, with its sound",
+    text: "A screen or a window goes out at its own size, never scaled down: 1440p and 4K at up to 60 fps. Viewers hear what your applications play, but never the call's own voices. Games, movies, a whole desktop.",
     demo: <Equalizer className="mt-6" />,
   },
   {
