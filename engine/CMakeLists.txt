@@ -160,6 +160,13 @@ else()
     )
 endif()
 
+# The pointer apart from the pictures: Windows' for now.
+if(WIN32)
+    target_sources(ratcast_engine PRIVATE src/windows/cursor_source.cpp)
+else()
+    target_sources(ratcast_engine PRIVATE src/capture/cursor_source_unavailable.cpp)
+endif()
+
 # Only Android's system is told of a call.
 if(NOT ANDROID)
     target_sources(ratcast_engine PRIVATE src/in_call_none.cpp)

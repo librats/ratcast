@@ -14,7 +14,7 @@ ratcast_add_test(engine_tests
     LIBS
         ratcast::engine
     # A GPU's encoder sessions, the sound devices, the desktop, the cameras.
-    EXCLUSIVE "Encoders/*:Wasapi*:GraphicsCapture*:CameraTest.*:CoreAudio*:MacScreenCapture*:MacCamera*:AAudio*:AndroidCamera*"
+    EXCLUSIVE "Encoders/*:CursorSource*:Wasapi*:GraphicsCapture*:CameraTest.*:CoreAudio*:MacScreenCapture*:MacCamera*:AAudio*:AndroidCamera*"
 )
 # Private headers, for the parts tested on their own, and the tests' own.
 target_include_directories(engine_tests PRIVATE
@@ -50,6 +50,7 @@ if(RATCAST_PIPEWIRE_FOUND)
 elseif(WIN32)
     target_sources(engine_tests PRIVATE
         windows/test_camera_capture.cpp
+        windows/test_cursor_source.cpp
         windows/test_d3d11.cpp
         windows/test_graphics_capture.cpp
         windows/test_wasapi_audio.cpp
