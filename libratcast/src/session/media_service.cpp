@@ -18,8 +18,10 @@ librats::ByteView view_of(const Buffer& buffer) noexcept {
 
 }  // namespace
 
-MediaService::MediaService(SessionHandlers handlers, SessionConfig config, Duration tick_interval)
+MediaService::MediaService(SessionHandlers handlers, SessionConfig config, Duration tick_interval,
+                           Admission admission)
     : tick_interval_(tick_interval),
+      admission_(admission),
       // The MediaNetwork base is constructed before any member, so the session
       // may hold on to it already.
       session_(static_cast<MediaNetwork&>(*this), SteadyClock::instance(), std::move(handlers),
@@ -32,30 +34,81 @@ void MediaService::attach(librats::NodeContext& ctx) {
     network.on_with_deadline(
         librats::MessageType::Media,
         [this](const librats::Peer& peer, librats::ByteView bytes, librats::Deadline deadline) {
+            if (!passes(peer.id())) return;
             std::optional<Timestamp> due;
             if (librats::is_live(deadline)) {
                 due = std::chrono::time_point_cast<Duration>(deadline);
             }
             session_.on_message(peer.id(), std::span(bytes.data(), bytes.size()), due);
         });
-    network.on_peer_connected(
-        [this](const librats::Peer& peer) { session_.on_peer_connected(peer.id()); });
-    network.on_peer_rerouted(
-        [this](const librats::Peer& peer) { session_.on_peer_rerouted(peer.id()); });
-    network.on_peer_disconnected([this](const librats::PeerId& peer, librats::CloseReason) {
-        session_.on_peer_disconnected(peer);
+    network.on_peer_connected([this](const librats::Peer& peer) {
+        bool tell = true;
+        if (admission_ == Admission::Required) {
+            std::lock_guard lock(gate_);
+            connected_.insert(peer.id());
+            tell = admitted_.contains(peer.id()) && in_session_.insert(peer.id()).second;
+        }
+        if (tell) session_.on_peer_connected(peer.id());
     });
-    network.on_peer_writable(
-        [this](const librats::Peer& peer) { session_.on_peer_writable(peer.id()); });
+    network.on_peer_rerouted([this](const librats::Peer& peer) {
+        if (passes(peer.id())) session_.on_peer_rerouted(peer.id());
+    });
+    network.on_peer_disconnected([this](const librats::PeerId& peer, librats::CloseReason) {
+        bool tell = true;
+        if (admission_ == Admission::Required) {
+            std::lock_guard lock(gate_);
+            connected_.erase(peer);
+            tell = in_session_.erase(peer) > 0;
+        }
+        if (tell) session_.on_peer_disconnected(peer);
+    });
+    network.on_peer_writable([this](const librats::Peer& peer) {
+        if (passes(peer.id())) session_.on_peer_writable(peer.id());
+    });
     // Turns path sampling on, every NodeConfig::path_sample_ms (100 ms if 0).
     network.on_peer_path([this](const librats::Peer& peer, const librats::PathStats& sample) {
-        session_.on_peer_path(peer.id(), sample);
+        if (passes(peer.id())) session_.on_peer_path(peer.id(), sample);
     });
     network.on_live_outcome(librats::MessageType::Media,
                             [this](const librats::Peer& peer, uint64_t tag, bool delivered) {
-                                session_.on_live_outcome(peer.id(), tag, delivered);
+                                if (passes(peer.id()))
+                                    session_.on_live_outcome(peer.id(), tag, delivered);
                             });
     network_.store(&network, std::memory_order_release);
+}
+
+void MediaService::admit(const PeerId& peer) {
+    if (admission_ == Admission::Everyone) return;
+    bool tell = false;
+    {
+        std::lock_guard lock(gate_);
+        admitted_.insert(peer);
+        tell = connected_.contains(peer) && in_session_.insert(peer).second;
+    }
+    if (tell) session_.on_peer_connected(peer);
+}
+
+void MediaService::dismiss(const PeerId& peer) {
+    if (admission_ == Admission::Everyone) return;
+    bool tell = false;
+    {
+        std::lock_guard lock(gate_);
+        admitted_.erase(peer);
+        tell = in_session_.erase(peer) > 0;
+    }
+    if (tell) session_.on_peer_disconnected(peer);
+}
+
+bool MediaService::admitted(const PeerId& peer) const {
+    if (admission_ == Admission::Everyone) return true;
+    std::lock_guard lock(gate_);
+    return admitted_.contains(peer);
+}
+
+bool MediaService::passes(const PeerId& peer) const {
+    if (admission_ == Admission::Everyone) return true;
+    std::lock_guard lock(gate_);
+    return in_session_.contains(peer);
 }
 
 void MediaService::start() {

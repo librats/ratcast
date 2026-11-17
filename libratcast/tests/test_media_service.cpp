@@ -268,3 +268,47 @@ TEST(MediaService, ARelayPassesFramesOnToAViewer) {
     relay_node.stop();
     sender_node.stop();
 }
+
+// Admission asked for: a peer connected but not admitted is told of no stream
+// and what it sends is dropped; admitted, it is the session's; dismissed, it
+// leaves the session though still connected.
+TEST(MediaService, APeerReachesTheSessionOnlyOnceAdmitted) {
+    librats::Node sender_node(config(true));
+    auto* sender = sender_node.add_subsystem(std::make_unique<MediaService>(
+        SessionHandlers{}, SessionConfig{}, 10ms, Admission::Required));
+
+    std::atomic<int> announced{0};
+    librats::Node receiver_node(config(false));
+    MediaService* receiver = nullptr;
+    receiver = receiver_node.add_subsystem(std::make_unique<MediaService>(SessionHandlers{
+        .stream_announced =
+            [&](const PeerId& peer, const StreamDescription& d) {
+                ++announced;
+                EXPECT_TRUE(receiver->session().subscribe(peer, d.id));
+            },
+    }));
+
+    ASSERT_TRUE(sender->session().add_stream(screen()));
+    ASSERT_TRUE(sender_node.start());
+    ASSERT_TRUE(receiver_node.start());
+    receiver_node.connect("127.0.0.1", sender_node.listen_port());
+    ASSERT_TRUE(wait_for([&] { return sender_node.connected_peers().size() == 1; }));
+
+    // Connected, not admitted: nothing offered, no subscriber.
+    std::this_thread::sleep_for(300ms);
+    EXPECT_EQ(announced, 0);
+    EXPECT_EQ(sender->session().outgoing_stats(1)->subscribers, 0u);
+    EXPECT_FALSE(sender->admitted(receiver_node.local_id()));
+
+    sender->admit(receiver_node.local_id());
+    EXPECT_TRUE(sender->admitted(receiver_node.local_id()));
+    ASSERT_TRUE(wait_for([&] { return sender->session().outgoing_stats(1)->subscribers == 1; }));
+    EXPECT_EQ(announced, 1);
+
+    sender->dismiss(receiver_node.local_id());
+    EXPECT_EQ(sender->session().outgoing_stats(1)->subscribers, 0u);
+    EXPECT_EQ(sender_node.connected_peers().size(), 1u);
+
+    receiver_node.stop();
+    sender_node.stop();
+}

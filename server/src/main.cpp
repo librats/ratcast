@@ -3,7 +3,7 @@
 //
 //   ratcast-server [--port 7700] [--bind ADDRESS] [--data-dir DIR]
 //                  [--relay-mbps 20] [--max-relayed 64] [--announce]
-//                  [--stats-every 10] [--verbose]
+//                  [--protocol ratcast/0] [--stats-every 10] [--verbose]
 
 #include <atomic>
 #include <charconv>
@@ -31,6 +31,9 @@ constexpr const char* kUsage =
     "  --announce        be found by the other servers in the DHT and find them:\n"
     "                    calls they help are told of this one, and meet and are\n"
     "                    carried here though nobody named it\n"
+    "  --protocol NAME   the protocol its nodes speak (" RATCAST_PROTOCOL
+    "): another\n"
+    "                    application's on librats, as ratvnc/1, beside ratcast's\n"
     "  --stats-every S   print what it does every S seconds, 0: never (10)\n"
     "  --verbose         librats' logs, all of them\n"
     "Calls reach it as rats://HOST:PORT (CallConfig::servers, the app's settings,\n"
@@ -78,6 +81,8 @@ int main(int argc, char** argv) {
             config.bind_address = value;
         } else if (name == "--data-dir") {
             config.data_dir = value;
+        } else if (name == "--protocol" && !value.empty()) {
+            config.protocol = value;
         } else if (name == "--port" && (n = number(value, 65535))) {
             config.port = static_cast<uint16_t>(*n);
         } else if (name == "--relay-mbps" && (n = number(value, 10000)) && *n > 0) {
@@ -107,8 +112,10 @@ int main(int argc, char** argv) {
         return 1;
     }
     const std::unique_ptr<ratcast::Server>& server = *started;
-    std::printf("ratcast-server %s on port %u%s\n", server->id().to_hex().c_str(),
-                unsigned{server->port()}, config.announce ? ", announced" : "");
+    const std::string protocol =
+        config.protocol == RATCAST_PROTOCOL ? std::string() : ", protocol " + config.protocol;
+    std::printf("ratcast-server %s on port %u%s%s\n", server->id().to_hex().c_str(),
+                unsigned{server->port()}, config.announce ? ", announced" : "", protocol.c_str());
     std::fflush(stdout);
 
     auto next = std::chrono::steady_clock::now();
