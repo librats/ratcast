@@ -96,10 +96,12 @@ elseif(WIN32)
         src/windows/audio_device.cpp
         src/windows/camera_capture.cpp
         src/windows/d3d11.cpp
+        src/windows/desktop_duplication.cpp
         src/windows/graphics_capture.cpp
         src/windows/nv12_converter.cpp
         src/windows/screen_awake.cpp
         src/windows/screen_capture.cpp
+        src/windows/texture_reader.cpp
         src/windows/wasapi_audio.cpp
     )
     target_link_libraries(ratcast_engine PRIVATE

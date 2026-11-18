@@ -31,6 +31,9 @@ public:
     /// it can; WARP, the software one, where there is no GPU (a virtual
     /// machine).
     static Result<std::shared_ptr<Device>> create();
+    /// A device on `adapter` (what DXGI's duplication of one of its outputs
+    /// needs), processing video if it can.
+    static Result<std::shared_ptr<Device>> create(IDXGIAdapter* adapter);
 
     GpuApi api() const noexcept override { return GpuApi::D3D11; }
 

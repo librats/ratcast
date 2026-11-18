@@ -3,6 +3,7 @@
 
 #include "ratcast/engine/screen_capture.h"
 
+#include "windows/desktop_duplication.h"
 #include "windows/graphics_capture.h"
 
 namespace ratcast {
@@ -11,6 +12,9 @@ Result<std::unique_ptr<ScreenCapture>> open_screen_capture(const ScreenCaptureOp
                                                            std::stop_token stop) {
     if (!options.monitors && !options.windows) return fail(Errc::InvalidArgument);
     if (stop.stop_requested()) return fail(Errc::Cancelled);
+    if (options.desktop_duplication && options.monitors) {
+        return dxgi::duplicate_monitor(options.restore_token, options);
+    }
     if (!wgc::supported()) return fail(Errc::Unavailable);
     if (options.monitors) {
         if (HMONITOR monitor = wgc::find_monitor(options.restore_token))

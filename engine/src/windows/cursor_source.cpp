@@ -14,6 +14,7 @@
 #include "ratcast/engine/cursor_source.h"
 #include "sleeper.h"
 #include "windows/cursor_image.h"
+#include "windows/input_desktop.h"
 
 namespace ratcast {
 namespace windows {
@@ -174,6 +175,11 @@ private:
         // whatever the process itself was made.
         SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
         Sleeper sleeper;
+        // The pointer of the desktop that takes input — the secure one too,
+        // where this process may read it — looked for again now and then.
+        win::InputDesktop desktop;
+        desktop.follow();
+        unsigned looks = 0;
         std::unordered_set<uint32_t> images_told;
         HCURSOR handle = nullptr;
         uint32_t image_id = 0;
@@ -181,6 +187,7 @@ private:
 
         auto next = std::chrono::steady_clock::now();
         while (!stop.stop_requested()) {
+            if (++looks % 32 == 0) desktop.follow();
             CURSORINFO info{.cbSize = sizeof(CURSORINFO)};
             CursorState state{.visible = false};
             // Fails on a desktop this process cannot read (UAC, the lock screen).

@@ -12,9 +12,9 @@ namespace {
 using win::ComPtr;
 
 HRESULT create_device(D3D_DRIVER_TYPE type, UINT flags, ComPtr<ID3D11Device>& device,
-                      ComPtr<ID3D11DeviceContext>& context) {
-    return D3D11CreateDevice(nullptr, type, nullptr, flags, nullptr, 0, D3D11_SDK_VERSION, &device,
-                             nullptr, &context);
+                      ComPtr<ID3D11DeviceContext>& context, IDXGIAdapter* adapter = nullptr) {
+    return D3D11CreateDevice(adapter, adapter ? D3D_DRIVER_TYPE_UNKNOWN : type, nullptr, flags,
+                             nullptr, 0, D3D11_SDK_VERSION, &device, nullptr, &context);
 }
 
 /// `rows` rows of `row_bytes` each, from one stride to another.
@@ -25,6 +25,28 @@ void copy_rows(const uint8_t* from, size_t from_stride, uint8_t* to, size_t to_s
 }
 
 }  // namespace
+
+Result<std::shared_ptr<Device>> Device::create(IDXGIAdapter* adapter) {
+    std::shared_ptr<Device> device(new Device);
+    constexpr UINT kBgra = D3D11_CREATE_DEVICE_BGRA_SUPPORT;
+    HRESULT result =
+        create_device(D3D_DRIVER_TYPE_UNKNOWN, kBgra | D3D11_CREATE_DEVICE_VIDEO_SUPPORT,
+                      device->device_, device->context_, adapter);
+    if (FAILED(result)) {
+        result = create_device(D3D_DRIVER_TYPE_UNKNOWN, kBgra, device->device_, device->context_,
+                               adapter);
+    }
+    if (FAILED(result)) {
+        LOG_WARN("engine",
+                 "no Direct3D 11 device on the adapter: 0x" << std::hex << unsigned(result));
+        return fail(win::errc_of(result));
+    }
+    if (FAILED(device->context_.As(&device->multithread_))) return fail(Errc::Unavailable);
+    device->multithread_->SetMultithreadProtected(TRUE);
+    ComPtr<ID3D11VideoDevice> video;
+    device->video_ = SUCCEEDED(device->device_.As(&video));
+    return device;
+}
 
 Result<std::shared_ptr<Device>> Device::create() {
     std::shared_ptr<Device> device(new Device);

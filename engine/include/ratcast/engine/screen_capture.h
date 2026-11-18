@@ -54,6 +54,14 @@ struct ScreenCaptureOptions {
     bool gpu = false;
     uint32_t max_frame_rate = 60;  ///< 0 for as many as the screen sends
 
+    /// Windows, a screen named by its restore token: DXGI Desktop Duplication
+    /// in place of Windows.Graphics.Capture — whichever desktop takes input,
+    /// the secure one (the lock and login screens, UAC) too for a process
+    /// running as SYSTEM, and no border on Windows 10; the pointer never drawn
+    /// in, whatever `cursor` says (cursor_source.h tells it apart). Unavailable
+    /// where the system will not duplicate the screen. Ignored elsewhere.
+    bool desktop_duplication = false;
+
     /// From an earlier capture's restore_token(): the same choice, unasked.
     std::string restore_token;
 };
