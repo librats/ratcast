@@ -106,6 +106,22 @@ TEST(CursorImage, TheSystemsCursorsAllRead) {
     }
 }
 
+/// The calling thread in physical pixels, as the source tells the pointer, for
+/// as long as it lives; then as it was, so that the tests after are not changed.
+class PhysicalPixels {
+public:
+    PhysicalPixels()
+        : previous_(SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2)) {}
+    ~PhysicalPixels() {
+        if (previous_) SetThreadDpiAwarenessContext(previous_);
+    }
+    PhysicalPixels(const PhysicalPixels&) = delete;
+    PhysicalPixels& operator=(const PhysicalPixels&) = delete;
+
+private:
+    DPI_AWARENESS_CONTEXT previous_;
+};
+
 /// What a source told, in order.
 struct Heard {
     std::mutex mutex;
@@ -122,13 +138,15 @@ struct Heard {
 };
 
 TEST(CursorSource, FollowsThePointerAndToldEachImageBeforeItsState) {
-    SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+    const PhysicalPixels physical;
+    // Before the source: one still running when a failed assertion returns
+    // tells what it sees to what it was given until it is gone.
+    Heard heard;
     auto source = open_cursor_source({.rate = 200});
     ASSERT_TRUE(source) << to_string(source.error());
 
     POINT before{};
     GetCursorPos(&before);
-    Heard heard;
     ASSERT_TRUE((*source)->start(
         [&](const CursorImage& image) {
             std::lock_guard lock(heard.mutex);

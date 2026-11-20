@@ -27,6 +27,22 @@ using namespace std::chrono_literals;
 
 const std::wstring kClassName = L"RatcastDuplicationTest" + std::to_wstring(GetCurrentProcessId());
 
+/// The calling thread in physical pixels, as the capture's own, for as long as
+/// it lives; then as it was, so that the tests after are not changed.
+class PhysicalPixels {
+public:
+    PhysicalPixels()
+        : previous_(SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2)) {}
+    ~PhysicalPixels() {
+        if (previous_) SetThreadDpiAwarenessContext(previous_);
+    }
+    PhysicalPixels(const PhysicalPixels&) = delete;
+    PhysicalPixels& operator=(const PhysicalPixels&) = delete;
+
+private:
+    DPI_AWARENESS_CONTEXT previous_;
+};
+
 /// A popup window filled with one colour, topmost, on a thread of its own.
 class Patch {
 public:
@@ -48,6 +64,9 @@ public:
 
 private:
     void run(RECT where, std::promise<HWND>& made) {
+        // `where` is in physical pixels: a window made by a DPI-unaware thread
+        // would be placed by it scaled, elsewhere than asked on a scaled screen.
+        SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
         WNDCLASSW wc{};
         wc.lpfnWndProc = &Patch::procedure;
         wc.hInstance = GetModuleHandleW(nullptr);
@@ -166,8 +185,12 @@ Result<std::unique_ptr<ScreenCapture>> open(const Primary& screen, PixelFormat f
 }
 
 TEST(DesktopDuplication, ThePrimaryScreenComesWithAWindowWhereItIs) {
-    SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+    const PhysicalPixels physical;
     const Primary screen = primary();
+    // Before the captures: a capture still running when a failed assertion
+    // returns hands its pictures to what it was given until it is gone.
+    Newest newest;
+    Newest later;
     auto capture = open(screen, PixelFormat::BGRA, false);
     if (!capture && capture.error() == Errc::Unavailable) GTEST_SKIP() << "no duplication here";
     ASSERT_TRUE(capture) << to_string(capture.error());
@@ -176,7 +199,6 @@ TEST(DesktopDuplication, ThePrimaryScreenComesWithAWindowWhereItIs) {
     const RECT where{screen.bounds.left + 50, screen.bounds.top + 60, screen.bounds.left + 250,
                      screen.bounds.top + 160};
     Patch patch(where, RGB(10, 200, 30));
-    Newest newest;
     ASSERT_TRUE((*capture)->start(newest.sink(), {}));
     const uint32_t width = uint32_t(screen.bounds.right - screen.bounds.left);
     const auto seen = newest.wait([&](const VideoFrame& picture) {
@@ -189,7 +211,6 @@ TEST(DesktopDuplication, ThePrimaryScreenComesWithAWindowWhereItIs) {
     (*capture)->stop();
     auto slow = open(screen, PixelFormat::BGRA, false, 2);
     ASSERT_TRUE(slow);
-    Newest later;
     ASSERT_TRUE((*slow)->start(later.sink(), {}));
     ASSERT_TRUE(later.wait([](const VideoFrame&) { return true; }));
     for (int i = 0; i < 10; ++i) {
@@ -204,14 +225,15 @@ TEST(DesktopDuplication, ThePrimaryScreenComesWithAWindowWhereItIs) {
 }
 
 TEST(DesktopDuplication, PicturesStayOnTheGpuAsNv12) {
+    const PhysicalPixels physical;
     const Primary screen = primary();
+    Newest newest;  // before the capture, which hands its pictures to it
     auto capture = open(screen, PixelFormat::NV12, true);
     if (!capture && capture.error() == Errc::Unavailable) GTEST_SKIP() << "no duplication here";
     ASSERT_TRUE(capture);
     Patch patch({screen.bounds.left + 10, screen.bounds.top + 10, screen.bounds.left + 90,
                  screen.bounds.top + 90},
                 RGB(255, 0, 255));
-    Newest newest;
     ASSERT_TRUE((*capture)->start(newest.sink(), {}));
     const auto seen = newest.wait([](const VideoFrame&) { return true; });
     (*capture)->stop();
