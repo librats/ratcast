@@ -90,6 +90,14 @@ private:
 
     const Duration tick_interval_;
     const Admission admission_;
+    /// Held from deciding that a peer joins or leaves the session until the
+    /// session has heard it (Admission::Required), so that admit() or dismiss()
+    /// on one thread and the peer connecting or going on the network's cannot
+    /// tell the session in the opposite order to the one they decided in — a
+    /// peer gone left in it, or one dismissed let back, or told of the
+    /// session's streams again as its route moves. Recursive: a session's
+    /// handler may admit or dismiss a peer.
+    std::recursive_mutex membership_;
     /// The peers admitted, and those connected (Admission::Required).
     mutable std::mutex gate_;
     std::unordered_set<PeerId, PeerId::Hash> admitted_;

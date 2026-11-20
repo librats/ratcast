@@ -32,6 +32,10 @@ constexpr std::string_view kMonitor = "monitor:";
 constexpr UINT kWaitMs = 100;
 /// How long before trying again what failed (the secure desktop, a mode change).
 constexpr auto kRetry = 250ms;
+/// How long the screen may be missing (a mode change takes it away a moment)
+/// before the capture ends, as Windows.Graphics.Capture's does when its screen
+/// goes.
+constexpr auto kGone = 5s;
 
 std::wstring wide(std::string_view text) {
     if (text.empty()) return {};
@@ -100,11 +104,13 @@ public:
           clock_(clock) {}
     ~Duplication() override { stop(); }
 
-    Result<void> start(Sink sink, EndHandler) override {
+    Result<void> start(Sink sink, EndHandler ended) override {
         std::lock_guard lock(mutex_);
         if (thread_.joinable()) return fail(Errc::InvalidArgument);
-        thread_ =
-            std::jthread([this, sink = std::move(sink)](std::stop_token stop) { run(stop, sink); });
+        thread_ = std::jthread(
+            [this, sink = std::move(sink), ended = std::move(ended)](std::stop_token stop) {
+                run(stop, sink, ended);
+            });
         return {};
     }
 
@@ -158,17 +164,31 @@ private:
         return result;
     }
 
-    void run(std::stop_token stop, const Sink& sink) {
+    void run(std::stop_token stop, const Sink& sink, const EndHandler& ended) {
         // Physical pixels, as the screen's own.
         SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
         win::InputDesktop desktop;
         Session session;
         FramePacer pacer(options_.max_frame_rate);
         HRESULT last_failure = S_OK;
+        std::optional<std::chrono::steady_clock::time_point> missing_since;
         while (!stop.stop_requested()) {
             if (!session.duplication) {
                 desktop.follow();
                 const HRESULT opened = open(session);
+                if (opened == DXGI_ERROR_NOT_FOUND) {
+                    // The screen unplugged, or gone a moment in a mode change:
+                    // the capture over once it has stayed away.
+                    const auto now = std::chrono::steady_clock::now();
+                    if (!missing_since) missing_since = now;
+                    if (now - *missing_since >= kGone) {
+                        LOG_INFO("engine", "screen duplication ends: the screen is gone");
+                        if (ended) ended(Result<void>{});
+                        return;
+                    }
+                } else {
+                    missing_since.reset();
+                }
                 if (FAILED(opened)) {
                     if (opened != last_failure) {
                         LOG_INFO("engine",
@@ -187,34 +207,38 @@ private:
             // While a change is held back, only until its time may come.
             const HRESULT acquired =
                 session.duplication->AcquireNextFrame(session.held ? 4 : kWaitMs, &info, &resource);
-            if (acquired == DXGI_ERROR_WAIT_TIMEOUT) {
-                if (session.held && pacer.admit(clock_.now())) {
-                    give(session, *session.held.Get(), session.held_at, sink);
-                    session.held.Reset();
+            if (acquired != DXGI_ERROR_WAIT_TIMEOUT) {
+                if (FAILED(acquired)) {
+                    // The desktop switched, the mode changed, a full-screen
+                    // application took the screen: duplicated again, wherever
+                    // input is now.
+                    session.duplication.Reset();
+                    continue;
                 }
-                continue;
-            }
-            if (FAILED(acquired)) {
-                // The desktop switched, the mode changed, a full-screen
-                // application took the screen: duplicated again, wherever
-                // input is now.
-                session.duplication.Reset();
-                continue;
-            }
-            if (info.LastPresentTime.QuadPart != 0) {  // else the pointer alone moved
-                ComPtr<ID3D11Texture2D> texture;
-                resource.As(&texture);
-                const Timestamp captured =
-                    std::min(win::at_qpc(hundreds_of_ns(info.LastPresentTime.QuadPart), clock_),
-                             clock_.now());
-                if (texture && pacer.admit(clock_.now())) {
-                    session.held.Reset();
-                    give(session, *texture.Get(), captured, sink);
-                } else if (texture) {
-                    hold(session, *texture.Get(), captured);
+                if (info.LastPresentTime.QuadPart != 0) {  // else the pointer alone moved
+                    ComPtr<ID3D11Texture2D> texture;
+                    resource.As(&texture);
+                    const Timestamp captured = std::min(
+                        win::at_qpc(hundreds_of_ns(info.LastPresentTime.QuadPart), clock_),
+                        clock_.now());
+                    if (texture && pacer.admit(clock_.now())) {
+                        session.held.Reset();
+                        give(session, *texture.Get(), captured, sink);
+                    } else if (texture) {
+                        hold(session, *texture.Get(), captured);
+                    }
                 }
+                if (session.duplication) session.duplication->ReleaseFrame();
             }
-            if (session.duplication) session.duplication->ReleaseFrame();
+            // A change held back goes when its time comes, whatever woke the
+            // loop: not only a wait that timed out, which a pointer moving
+            // all the while on a fast screen (a frame of its own each
+            // refresh, at 240 Hz and up quicker than the wait) never lets
+            // happen.
+            if (session.held && session.reader && pacer.admit(clock_.now())) {
+                give(session, *session.held.Get(), session.held_at, sink);
+                session.held.Reset();
+            }
         }
     }
 

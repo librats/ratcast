@@ -42,8 +42,13 @@ void MediaService::attach(librats::NodeContext& ctx) {
             session_.on_message(peer.id(), std::span(bytes.data(), bytes.size()), due);
         });
     network.on_peer_connected([this](const librats::Peer& peer) {
-        bool tell = true;
-        if (admission_ == Admission::Required) {
+        if (admission_ == Admission::Everyone) {
+            session_.on_peer_connected(peer.id());
+            return;
+        }
+        const std::lock_guard order(membership_);
+        bool tell = false;
+        {
             std::lock_guard lock(gate_);
             connected_.insert(peer.id());
             tell = admitted_.contains(peer.id()) && in_session_.insert(peer.id()).second;
@@ -51,11 +56,23 @@ void MediaService::attach(librats::NodeContext& ctx) {
         if (tell) session_.on_peer_connected(peer.id());
     });
     network.on_peer_rerouted([this](const librats::Peer& peer) {
+        if (admission_ == Admission::Everyone) {
+            session_.on_peer_rerouted(peer.id());
+            return;
+        }
+        // In order with admit() and dismiss(), as a connection is: a peer
+        // dismissed meanwhile is told nothing of the session again.
+        const std::lock_guard order(membership_);
         if (passes(peer.id())) session_.on_peer_rerouted(peer.id());
     });
     network.on_peer_disconnected([this](const librats::PeerId& peer, librats::CloseReason) {
-        bool tell = true;
-        if (admission_ == Admission::Required) {
+        if (admission_ == Admission::Everyone) {
+            session_.on_peer_disconnected(peer);
+            return;
+        }
+        const std::lock_guard order(membership_);
+        bool tell = false;
+        {
             std::lock_guard lock(gate_);
             connected_.erase(peer);
             tell = in_session_.erase(peer) > 0;
@@ -79,6 +96,7 @@ void MediaService::attach(librats::NodeContext& ctx) {
 
 void MediaService::admit(const PeerId& peer) {
     if (admission_ == Admission::Everyone) return;
+    const std::lock_guard order(membership_);
     bool tell = false;
     {
         std::lock_guard lock(gate_);
@@ -90,6 +108,7 @@ void MediaService::admit(const PeerId& peer) {
 
 void MediaService::dismiss(const PeerId& peer) {
     if (admission_ == Admission::Everyone) return;
+    const std::lock_guard order(membership_);
     bool tell = false;
     {
         std::lock_guard lock(gate_);

@@ -224,6 +224,54 @@ TEST(DesktopDuplication, ThePrimaryScreenComesWithAWindowWhereItIs) {
     (*slow)->stop();
 }
 
+// A change held back goes when its time comes though the pointer never stops
+// moving: each move wakes the capture with a frame of its own, once a refresh,
+// and on a screen of 240 Hz or more those come quicker than the capture's wait
+// for a change times out. (At 60 Hz the wait times out between them anyway.)
+TEST(DesktopDuplication, AHeldBackChangeComesWhileThePointerMoves) {
+    const PhysicalPixels physical;
+    const Primary screen = primary();
+    Newest newest;
+    auto capture = open(screen, PixelFormat::BGRA, false, 2);
+    if (!capture && capture.error() == Errc::Unavailable) GTEST_SKIP() << "no duplication here";
+    ASSERT_TRUE(capture);
+    const RECT where{screen.bounds.left + 50, screen.bounds.top + 60, screen.bounds.left + 250,
+                     screen.bounds.top + 160};
+    Patch patch(where, RGB(10, 200, 30));
+    ASSERT_TRUE((*capture)->start(newest.sink(), {}));
+    ASSERT_TRUE(newest.wait([](const VideoFrame&) { return true; }));
+
+    POINT before{};
+    GetCursorPos(&before);
+    std::atomic<bool> moving{true};
+    std::thread mover([&] {
+        SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+        // Away from the patch, as often as a fast mouse reports.
+        const int x = screen.bounds.left + 400;
+        const int y = screen.bounds.top + 300;
+        auto next = std::chrono::steady_clock::now();
+        for (int i = 0; moving; ++i) {
+            SetCursorPos(x + i % 40, y);
+            next += 500us;
+            while (std::chrono::steady_clock::now() < next) std::this_thread::yield();
+        }
+    });
+    std::this_thread::sleep_for(100ms);
+    for (int i = 0; i < 10; ++i) {
+        patch.set_colour(RGB(200, uint8_t(i * 20), 40));
+        std::this_thread::sleep_for(20ms);
+    }
+    patch.set_colour(RGB(40, 60, 220));
+    const auto seen = newest.wait(
+        [&](const VideoFrame& picture) { return close_to(pixel(picture, 150, 110), {220, 60, 40}); },
+        3s);
+    moving = false;
+    mover.join();
+    SetCursorPos(before.x, before.y);
+    (*capture)->stop();
+    EXPECT_TRUE(seen) << "the last colour never came while the pointer moved";
+}
+
 TEST(DesktopDuplication, PicturesStayOnTheGpuAsNv12) {
     const PhysicalPixels physical;
     const Primary screen = primary();

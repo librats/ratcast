@@ -10,6 +10,8 @@
 
 #include <windows.h>
 
+#include <dwmapi.h>
+
 #include <array>
 #include <atomic>
 #include <chrono>
@@ -57,10 +59,16 @@ public:
         SetWindowPos(window_, nullptr, 0, 0, width, height, SWP_NOMOVE | SWP_NOZORDER);
     }
 
-    /// The window's size on screen, its frame included: what is captured.
+    /// The window's size on screen, its frame included: what is captured. In
+    /// physical pixels, as the capture's are, whatever this thread's DPI
+    /// awareness and the screen's scale (GetWindowRect would give a
+    /// DPI-unaware thread logical ones, and the frame's invisible borders).
     SIZE size() const {
         RECT bounds{};
-        GetWindowRect(window_, &bounds);
+        if (FAILED(DwmGetWindowAttribute(window_, DWMWA_EXTENDED_FRAME_BOUNDS, &bounds,
+                                         sizeof(bounds)))) {
+            GetWindowRect(window_, &bounds);
+        }
         return {bounds.right - bounds.left, bounds.bottom - bounds.top};
     }
 

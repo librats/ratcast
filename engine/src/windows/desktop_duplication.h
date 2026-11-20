@@ -12,7 +12,8 @@
  * switches (or the display's mode changes, or a full-screen application takes
  * it) it duplicates the screen again, there. Where it may not (a user's
  * process before the secure desktop), it waits, sending nothing, and goes on
- * as the desktop comes back.
+ * as the desktop comes back. A screen gone (unplugged) for a few seconds ends
+ * the capture, its EndHandler told success, as Windows.Graphics.Capture's.
  *
  * Each picture goes through d3d11::TextureReader as Windows.Graphics.Capture's
  * do. A change the frame rate lets through only later is not lost: the last
