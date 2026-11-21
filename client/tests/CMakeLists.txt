@@ -23,3 +23,5 @@ ratcast_add_test(client_tests
     LIBS
         ratcast::client
 )
+# The engine's Sleeper: waits that end on time, which Windows' own do not.
+target_include_directories(client_tests PRIVATE "${PROJECT_SOURCE_DIR}/engine/src")

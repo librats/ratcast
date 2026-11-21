@@ -20,7 +20,7 @@
 #include "ratcast/client/video_player.h"
 #include "ratcast/client/video_publisher.h"
 #include "ratcast/engine/pattern_source.h"
-#include "ratcast/engine/real_time.h"
+#include "sleeper.h"
 
 using namespace ratcast;
 using namespace std::chrono_literals;
@@ -459,16 +459,20 @@ TEST_F(VideoPipelineTest, PlaysEvenlyPastFramesThatCameLate) {
             encoded[i].push_back({v.info, Buffer::copy_of(v.payload.bytes())});
         }));
     }
-    // Fed in time, as the path would: these waits must end when due too.
-    keep_time_on_this_thread();
+    // Fed in time, as the path would: these waits must end when due too. A
+    // plain sleep on Windows ends on the system timer's tick, up to 15.6 ms
+    // late: frames meant to be on time would come late, and run the late runs
+    // into one another.
+    Sleeper sleeper;
     const Timestamp start = SteadyClock::instance().now();
+    const auto steady_start = std::chrono::steady_clock::now();
     Timestamp held_until{};
     for (uint64_t i = 0; i < encoded.size(); ++i) {
         const Timestamp due = start + int64_t(i) * kFrame;
         if (i == 15) held_until = due + 80ms;
         if (i == 30) held_until = due + 70ms;
         if (i == 45) held_until = due + 60ms;
-        std::this_thread::sleep_until(std::max(due, held_until));
+        sleeper.until(steady_start + (std::max(due, held_until) - start));
         for (EncodedFrame& f : encoded[i]) player.push(std::move(f));
     }
     ASSERT_TRUE(eventually([&] { return player.stats().pictures == 60; }));
