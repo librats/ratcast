@@ -107,10 +107,8 @@ public:
     Result<void> start(Sink sink, EndHandler ended) override {
         std::lock_guard lock(mutex_);
         if (thread_.joinable()) return fail(Errc::InvalidArgument);
-        thread_ = std::jthread(
-            [this, sink = std::move(sink), ended = std::move(ended)](std::stop_token stop) {
-                run(stop, sink, ended);
-            });
+        thread_ = std::jthread([this, sink = std::move(sink), ended = std::move(ended)](
+                                   std::stop_token stop) { run(stop, sink, ended); });
         return {};
     }
 
@@ -218,9 +216,9 @@ private:
                 if (info.LastPresentTime.QuadPart != 0) {  // else the pointer alone moved
                     ComPtr<ID3D11Texture2D> texture;
                     resource.As(&texture);
-                    const Timestamp captured = std::min(
-                        win::at_qpc(hundreds_of_ns(info.LastPresentTime.QuadPart), clock_),
-                        clock_.now());
+                    const Timestamp captured =
+                        std::min(win::at_qpc(hundreds_of_ns(info.LastPresentTime.QuadPart), clock_),
+                                 clock_.now());
                     if (texture && pacer.admit(clock_.now())) {
                         session.held.Reset();
                         give(session, *texture.Get(), captured, sink);

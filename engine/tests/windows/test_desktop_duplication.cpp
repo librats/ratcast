@@ -263,7 +263,9 @@ TEST(DesktopDuplication, AHeldBackChangeComesWhileThePointerMoves) {
     }
     patch.set_colour(RGB(40, 60, 220));
     const auto seen = newest.wait(
-        [&](const VideoFrame& picture) { return close_to(pixel(picture, 150, 110), {220, 60, 40}); },
+        [&](const VideoFrame& picture) {
+            return close_to(pixel(picture, 150, 110), {220, 60, 40});
+        },
         3s);
     moving = false;
     mover.join();
