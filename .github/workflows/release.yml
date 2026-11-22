@@ -32,6 +32,10 @@ env:
   CODECS: >-
     av1_nvenc hevc_nvenc h264_nvenc av1_amf hevc_amf h264_amf av1_qsv hevc_qsv h264_qsv
     libsvtav1 libaom-av1 libopenh264 libdav1d
+  # vcpkg's ports as of this commit, not the runner image's: a new image may
+  # bring a compiler its vcpkg has not caught up with (Visual Studio 18 broke
+  # dav1d until vcpkg's November 2026 patches). Moved by hand, forward only.
+  VCPKG_COMMIT: ea49500a3353603af1190ca9a786a9015d638ea0
 
 jobs:
   windows:
@@ -61,6 +65,13 @@ jobs:
           "label=$version" >> $env:GITHUB_OUTPUT
           # The updater finds the package by this name (app/update/release.h).
           "name=ratcast-$version-windows-x64" >> $env:GITHUB_OUTPUT
+
+      - name: Pin vcpkg
+        run: |
+          git -C $env:VCPKG_INSTALLATION_ROOT fetch --quiet origin $env:VCPKG_COMMIT
+          git -C $env:VCPKG_INSTALLATION_ROOT reset --quiet --hard FETCH_HEAD
+          & "$env:VCPKG_INSTALLATION_ROOT\bootstrap-vcpkg.bat" -disableMetrics
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
 
       - name: Restore vcpkg's packages
         uses: actions/cache/restore@v4
@@ -254,6 +265,13 @@ jobs:
           libxcb-keysyms1 libxcb-render-util0 libxcb-shape0 libxcb-xinerama0 libxcb-xkb1
           libxcb-randr0 xvfb libgl1-mesa-dri
 
+      - name: Pin vcpkg
+        run: |
+          vcpkg="${VCPKG_INSTALLATION_ROOT:-/usr/local/share/vcpkg}"
+          git -C "$vcpkg" fetch --quiet origin "$VCPKG_COMMIT"
+          git -C "$vcpkg" reset --quiet --hard FETCH_HEAD
+          "$vcpkg/bootstrap-vcpkg.sh" -disableMetrics
+
       - name: Restore vcpkg's packages
         uses: actions/cache/restore@v4
         with:
@@ -402,6 +420,13 @@ jobs:
           fi
           # The updater finds the package by this name (app/update/release.h).
           echo "name=ratcast-$version-macos-arm64" >> "$GITHUB_OUTPUT"
+
+      - name: Pin vcpkg
+        run: |
+          vcpkg="${VCPKG_INSTALLATION_ROOT:-/usr/local/share/vcpkg}"
+          git -C "$vcpkg" fetch --quiet origin "$VCPKG_COMMIT"
+          git -C "$vcpkg" reset --quiet --hard FETCH_HEAD
+          "$vcpkg/bootstrap-vcpkg.sh" -disableMetrics
 
       - name: Restore vcpkg's packages
         uses: actions/cache/restore@v4
@@ -616,6 +641,13 @@ jobs:
           echo "ANDROID_NDK_HOME=$ndk" >> "$GITHUB_ENV"
           echo "ANDROID_SDK_ROOT=$ANDROID_HOME" >> "$GITHUB_ENV"
           echo "BUILD_TOOLS=$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -n 1)" >> "$GITHUB_ENV"
+
+      - name: Pin vcpkg
+        run: |
+          vcpkg="${VCPKG_INSTALLATION_ROOT:-/usr/local/share/vcpkg}"
+          git -C "$vcpkg" fetch --quiet origin "$VCPKG_COMMIT"
+          git -C "$vcpkg" reset --quiet --hard FETCH_HEAD
+          "$vcpkg/bootstrap-vcpkg.sh" -disableMetrics
 
       - name: Restore vcpkg's packages
         uses: actions/cache/restore@v4
