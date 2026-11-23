@@ -236,7 +236,7 @@ Result<Subject> pick(const ScreenCaptureOptions& options, const std::stop_token&
 class ScreenStream {
 public:
     ScreenStream(const Subject& subject, const ScreenCaptureOptions& options, Clock& clock,
-                 VideoSource::Sink sink, VideoSource::EndHandler ended)
+                 uint32_t lines, VideoSource::Sink sink, VideoSource::EndHandler ended)
         : options_(options),
           clock_(clock),
           sink_(std::move(sink)),
@@ -245,6 +245,7 @@ public:
           window_(subject.window),
           width_(subject.width),
           height_(subject.height),
+          lines_(lines),
           pacer_(options.max_frame_rate),
           queue_(dispatch_queue_create("ratcast.screen-capture", DISPATCH_QUEUE_SERIAL)) {}
 
@@ -297,6 +298,16 @@ public:
         return {};
     }
 
+    /// Pictures of no more than `lines` lines from now on: ScreenCaptureKit
+    /// draws them so.
+    void limit(uint32_t lines) {
+        dispatch_async(queue_, ^{
+            if (lines == lines_) return;
+            lines_ = lines;
+            [stream_ updateConfiguration:configuration(width_, height_) completionHandler:nil];
+        });
+    }
+
     /// On the queue: one picture of the stream's.
     void take(CMSampleBufferRef buffer) {
         CFArrayRef attachments = CMSampleBufferGetSampleAttachmentsArray(buffer, false);
@@ -346,10 +357,12 @@ public:
     }
 
 private:
+    /// For pictures of `width` x `height`, made no more than lines_ lines.
     SCStreamConfiguration* configuration(uint32_t width, uint32_t height) const {
         SCStreamConfiguration* configuration = [[SCStreamConfiguration alloc] init];
-        configuration.width = width;
-        configuration.height = height;
+        const PictureSize size = fit_lines(width, height, lines_);
+        configuration.width = size.width;
+        configuration.height = size.height;
         configuration.minimumFrameInterval = options_.max_frame_rate > 0
                                                  ? CMTimeMake(1, int32_t(options_.max_frame_rate))
                                                  : kCMTimeZero;
@@ -405,8 +418,9 @@ private:
     const bool window_;
 
     // The queue's, once started.
-    uint32_t width_;
+    uint32_t width_;  ///< of what is captured, before it is made smaller
     uint32_t height_;
+    uint32_t lines_;  ///< limit_size()'s
     FramePacer pacer_;
     bool over_ = false;
 
@@ -427,8 +441,8 @@ public:
     Result<void> start(Sink sink, EndHandler ended) override {
         std::lock_guard lock(mutex_);
         if (stream_) return fail(Errc::InvalidArgument);
-        auto stream = std::make_unique<ScreenStream>(subject_, options_, clock_, std::move(sink),
-                                                     std::move(ended));
+        auto stream = std::make_unique<ScreenStream>(subject_, options_, clock_, lines_,
+                                                     std::move(sink), std::move(ended));
         if (Result<void> started = stream->start(); !started) return started;
         stream_ = std::move(stream);
         return {};
@@ -441,12 +455,19 @@ public:
 
     const std::string& restore_token() const noexcept override { return subject_.token; }
 
+    void limit_size(uint32_t lines) override {
+        std::lock_guard lock(mutex_);
+        lines_ = lines;
+        if (stream_) stream_->limit(lines);
+    }
+
 private:
     const Subject subject_;
     const ScreenCaptureOptions options_;
     Clock& clock_;
-    std::mutex mutex_;  ///< serialises start() and stop()
+    std::mutex mutex_;  ///< serialises start(), stop() and limit_size()
     std::unique_ptr<ScreenStream> stream_;
+    uint32_t lines_ = 0;
 };
 
 }  // namespace

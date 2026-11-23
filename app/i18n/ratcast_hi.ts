@@ -857,6 +857,10 @@
         <translation>नेटवर्क</translation>
     </message>
     <message>
+        <source>Sharing</source>
+        <translation>स्क्रीन शेयर</translation>
+    </message>
+    <message>
         <source>Language</source>
         <translation>भाषा</translation>
     </message>
@@ -911,6 +915,46 @@
     <message>
         <source>For a device plugged in just now</source>
         <translation>अभी-अभी लगाए गए डिवाइस के लिए</translation>
+    </message>
+    <message>
+        <source>Resolution</source>
+        <translation>रिज़ॉल्यूशन</translation>
+    </message>
+    <message>
+        <source>Automatic</source>
+        <translation>स्वचालित</translation>
+    </message>
+    <message>
+        <source>As the screen has it</source>
+        <translation>स्क्रीन जैसा</translation>
+    </message>
+    <message>
+        <source>As sharp as the connection and the computer allow: lower when they cannot keep up, back up when they can, never above the screen&apos;s own.</source>
+        <translation>कनेक्शन और कंप्यूटर जितना संभाल सकें उतना साफ़: जब वे साथ न दे पाएँ तो कम, जब दे पाएँ तो फिर से ज़्यादा, पर स्क्रीन के अपने रिज़ॉल्यूशन से कभी ज़्यादा नहीं।</translation>
+    </message>
+    <message>
+        <source>A lower one is lighter on a slow connection and a weak computer; a screen with less is sent as it is.</source>
+        <translation>कम रिज़ॉल्यूशन धीमे कनेक्शन और कमज़ोर कंप्यूटर पर हल्का पड़ता है; इससे कम वाली स्क्रीन जैसी है वैसी ही भेजी जाती है।</translation>
+    </message>
+    <message>
+        <source>Takes effect at once, while sharing too.</source>
+        <translation>तुरंत लागू होता है, शेयर करते समय भी।</translation>
+    </message>
+    <message>
+        <source>Frame rate</source>
+        <translation>फ़्रेम रेट</translation>
+    </message>
+    <message>
+        <source>60 frames a second</source>
+        <translation>60 फ़्रेम प्रति सेकंड</translation>
+    </message>
+    <message>
+        <source>30 frames a second</source>
+        <translation>30 फ़्रेम प्रति सेकंड</translation>
+    </message>
+    <message>
+        <source>60 is smooth, for games and films; 30 is half the work for the computer, and enough for documents and code. Taken by the next share.</source>
+        <translation>60 सहज है, गेम और फ़िल्मों के लिए; 30 से कंप्यूटर का काम आधा हो जाता है और दस्तावेज़ों व कोड के लिए काफ़ी है। अगली शेयरिंग से लागू होता है।</translation>
     </message>
     <message>
         <source>Server</source>

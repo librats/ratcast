@@ -353,6 +353,11 @@ public:
     /// or one that ended by itself, or with the source's own failure to
     /// start, the one before still published.
     Result<void> switch_source(StreamId stream, std::unique_ptr<VideoSource> source);
+    /// Send the video stream `stream` at no more than `max_lines` lines, and
+    /// with `adapt` at fewer as the path and the encoder need, from now on
+    /// (VideoPublisher::set_size()). Fails with InvalidArgument for no video
+    /// stream so published.
+    Result<void> set_video_size(StreamId stream, uint32_t max_lines, bool adapt);
     /// Stop the source and withdraw the stream.
     void unpublish(StreamId stream);
     /// Every stream published, by id.

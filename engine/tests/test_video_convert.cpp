@@ -398,3 +398,74 @@ TEST(VideoConvert, RgbFromYuvUndoesTheConversion) {
         }
     }
 }
+
+TEST(VideoConvert, FitsLinesAsVideoSizesAreNamed) {
+    EXPECT_EQ(fit_lines(3840, 2160, 1080), (PictureSize{1920, 1080}));
+    EXPECT_EQ(fit_lines(3840, 2160, 720), (PictureSize{1280, 720}));
+    EXPECT_EQ(fit_lines(2560, 1600, 1080), (PictureSize{1728, 1080}));
+    EXPECT_EQ(fit_lines(1366, 768, 720), (PictureSize{1280, 720})) << "1280.6, to the nearest even";
+    EXPECT_EQ(fit_lines(3440, 1440, 1080), (PictureSize{2580, 1080})) << "wide: its height says";
+    EXPECT_EQ(fit_lines(1080, 2400, 720), (PictureSize{720, 1600})) << "upright: its width says";
+    EXPECT_EQ(fit_lines(1920, 1080, 1080), (PictureSize{1920, 1080})) << "fits as it is";
+    EXPECT_EQ(fit_lines(800, 600, 720), (PictureSize{800, 600})) << "never made larger";
+    EXPECT_EQ(fit_lines(3840, 2160, 0), (PictureSize{3840, 2160})) << "0: no limit";
+    EXPECT_EQ(fit_lines(801, 601, 0), (PictureSize{800, 600})) << "even";
+}
+
+TEST(VideoConvert, TheScalerMakesAPictureSmallerAsAsked) {
+    FrameScaler scaler;
+    for (PixelFormat format : {PixelFormat::NV12, PixelFormat::I420}) {
+        MutableVideoFrame drawn = MutableVideoFrame::allocate(format, 128, 96);
+        std::mt19937 rng(5);
+        for (size_t i = 0; i < plane_count(format); ++i) {
+            for (size_t y = 0; y < plane_rows(format, i, 96); ++y) {
+                uint8_t* row = drawn.plane(i).data + y * drawn.plane(i).stride;
+                for (size_t x = 0; x < plane_row_bytes(format, i, 128); ++x)
+                    row[x] = static_cast<uint8_t>(rng());
+            }
+        }
+        const VideoFrame picture =
+            std::move(drawn).freeze(Timestamp{3s}, {ColorMatrix::BT601, ColorRange::Full});
+        Result<VideoFrame> scaled = scaler.scale(picture, 64, 48);
+        if (!scaled && scaled.error() == Errc::Unavailable) GTEST_SKIP() << "no FFmpeg here";
+        ASSERT_TRUE(scaled);
+        EXPECT_EQ(scaled->format(), format);
+        EXPECT_EQ(scaled->width(), 64u);
+        EXPECT_EQ(scaled->height(), 48u);
+        EXPECT_EQ(scaled->capture_time(), Timestamp{3s});
+        EXPECT_EQ(scaled->color_space(), picture.color_space());
+
+        // Half each way: each sample the mean of the four it covers, as
+        // shrink_frame() makes it, to within rounding.
+        Result<VideoFrame> shrunk = shrink_frame(picture, 2);
+        ASSERT_TRUE(shrunk);
+        for (size_t i = 0; i < plane_count(format); ++i) {
+            for (size_t y = 0; y < plane_rows(format, i, 48); ++y) {
+                for (size_t x = 0; x < plane_row_bytes(format, i, 64); ++x) {
+                    ASSERT_NEAR(pixel(*scaled, i, uint32_t(x), uint32_t(y)),
+                                pixel(*shrunk, i, uint32_t(x), uint32_t(y)), 2)
+                        << "plane " << i << " at " << x << "," << y;
+                }
+            }
+        }
+
+        // Another size after: a third smaller, all of it read.
+        Result<VideoFrame> other = scaler.scale(picture, 86, 64);
+        ASSERT_TRUE(other);
+        EXPECT_EQ(other->width(), 86u);
+        EXPECT_EQ(other->height(), 64u);
+    }
+}
+
+TEST(VideoConvert, TheScalerRefusesWhatItCannotDo) {
+    FrameScaler scaler;
+    const VideoFrame nv12 = draw_pattern({PixelFormat::NV12, 64, 64}, 0, Timestamp{});
+    if (Result<VideoFrame> probe = scaler.scale(nv12, 32, 32);
+        !probe && probe.error() == Errc::Unavailable) {
+        GTEST_SKIP() << "no FFmpeg here";
+    }
+    EXPECT_EQ(scaler.scale(nv12, 31, 32).error(), Errc::InvalidArgument) << "odd";
+    EXPECT_EQ(scaler.scale(nv12, 0, 32).error(), Errc::InvalidArgument);
+    EXPECT_EQ(scaler.scale(VideoFrame{}, 32, 32).error(), Errc::InvalidArgument);
+    EXPECT_EQ(scaler.scale(solid_bgra(64, 64, 1, 2, 3), 32, 32).error(), Errc::Unsupported);
+}

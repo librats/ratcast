@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <string>
 #include <utility>
 
 #include "librats/util/logger.h"
@@ -15,6 +16,18 @@ constexpr auto kStillAfter = std::chrono::milliseconds(100);
 
 /// How often the viewers are looked at between keyframes, for what they decode.
 constexpr auto kViewersEvery = std::chrono::seconds(1);
+
+/// How long pictures in GPU memory may still come larger than a new limit
+/// before they are made smaller here: the source that draws them smaller
+/// itself (a screen's) does so within a few pictures, and one made smaller
+/// on the CPU in between would start the encoder over for memory, and again
+/// for the GPU's. Those that come meanwhile are dropped.
+constexpr auto kSourceFollows = std::chrono::milliseconds(500);
+
+/// Frames a second the encoder is set to.
+uint32_t frame_rate_of(const VideoEncoderConfig& config) {
+    return config.frame_rate_num / std::max(config.frame_rate_den, 1u);
+}
 
 /// The GPU whose memory `picture` is in, if any.
 std::shared_ptr<GpuDevice> device_of(const VideoFrame& picture) {
@@ -42,20 +55,30 @@ Codec codec_for_viewers(Codec preferred, std::span<const std::vector<Codec>> vie
 }
 
 VideoPublisher::VideoPublisher(MediaSession& session, VideoPublisherConfig config, Clock& clock)
-    : session_(session), config_(std::move(config)), clock_(clock), codec_(config_.encoder.codec) {}
+    : session_(session),
+      config_(std::move(config)),
+      clock_(clock),
+      asked_lines_(config_.max_lines),
+      asked_adapt_(config_.adapt_size),
+      codec_(config_.encoder.codec) {}
 
 VideoPublisher::~VideoPublisher() { stop(); }
 
 Result<void> VideoPublisher::start(VideoSource& source, EndHandler ended) {
     std::lock_guard lifecycle(lifecycle_);
     if (source_) return fail(Errc::InvalidArgument);
+    uint32_t lines = 0;
     {
         std::lock_guard lock(mutex_);
         stopping_ = false;
         finished_ = false;
         keyframe_requested_ = false;
         have_picture_ = false;
+        size_asked_ = true;  // the adapter starts over, at the most
+        lines = asked_lines_;
     }
+    lines_ = lines;
+    source.limit_size(lines);
     // The stream is announced afresh, so rate control starts over.
     const std::optional<BitrateLimits> limits = bitrate_limits();
     bitrate_ = limits ? limits->start : config_.encoder.bitrate;
@@ -72,6 +95,7 @@ Result<void> VideoPublisher::start(VideoSource& source, EndHandler ended) {
         thread_.join();
         return started;
     }
+    std::lock_guard source_lock(source_mutex_);
     source_ = &source;
     return {};
 }
@@ -84,12 +108,14 @@ Result<void> VideoPublisher::switch_source(VideoSource& next) {
         if (finished_) return fail(Errc::InvalidArgument);  // over, to be stopped
     }
     const uint64_t before = sources_;
+    next.limit_size(lines_.load());
     if (Result<void> started = start_source(next, ++sources_); !started) {
         std::lock_guard lock(mutex_);
         current_ = before;
         return started;
     }
     source_->stop();  // what it showed last may still be encoded: it went before
+    std::lock_guard source_lock(source_mutex_);
     source_ = &next;
     return {};
 }
@@ -109,7 +135,10 @@ void VideoPublisher::stop() {
     std::lock_guard lifecycle(lifecycle_);
     if (!source_) return;
     source_->stop();  // no picture arrives after this
-    source_ = nullptr;
+    {
+        std::lock_guard source_lock(source_mutex_);
+        source_ = nullptr;
+    }
     {
         std::lock_guard lock(mutex_);
         stopping_ = true;
@@ -121,6 +150,7 @@ void VideoPublisher::stop() {
     if (announced_) session_.remove_stream(config_.stream);
     announced_.reset();
     encoder_.reset();
+    adapter_.reset();
     last_ = VideoFrame{};
 }
 
@@ -136,9 +166,33 @@ void VideoPublisher::set_bitrate(uint32_t bits_per_second) {
     if (bits_per_second > 0) bitrate_.store(bits_per_second, std::memory_order_relaxed);
 }
 
+void VideoPublisher::set_size(uint32_t max_lines, bool adapt) {
+    {
+        std::lock_guard lock(mutex_);
+        if (max_lines == asked_lines_ && adapt == asked_adapt_) return;
+        asked_lines_ = max_lines;
+        asked_adapt_ = adapt;
+        size_asked_ = true;
+        // A still screen sends nothing: its last picture again, of the new
+        // size, which starts a new encoder and so is a keyframe anyway.
+        keyframe_requested_ = true;
+    }
+    wake_.notify_one();
+}
+
+uint32_t VideoPublisher::encoder_bitrate(uint32_t width, uint32_t height) const {
+    const uint32_t bitrate = bitrate_.load(std::memory_order_relaxed);
+    if (!config_.bitrate_by_size) return bitrate;
+    return std::min(bitrate, bitrate_for_size(width, height, frame_rate_of(config_.encoder),
+                                              config_.encoder.bitrate));
+}
+
 std::optional<BitrateLimits> VideoPublisher::bitrate_limits() const {
     if (!config_.rate_control) return std::nullopt;
-    const uint32_t max = config_.encoder.bitrate;
+    const uint32_t max =
+        config_.bitrate_by_size
+            ? bitrate_for_size(3840, 2160, frame_rate_of(config_.encoder), config_.encoder.bitrate)
+            : config_.encoder.bitrate;
     const uint32_t start = std::min(config_.start_bitrate, max);
     return BitrateLimits{.min = std::min(config_.min_bitrate, start), .start = start, .max = max};
 }
@@ -218,6 +272,14 @@ void VideoPublisher::run() {
 
 Result<void> VideoPublisher::publish(VideoFrame picture, bool keyframe) {
     follow_viewers(keyframe);
+    picture = fit(std::move(picture));
+    if (picture.empty()) {  // dropped while its source makes them smaller
+        if (keyframe) {
+            std::lock_guard lock(mutex_);
+            keyframe_requested_ = true;
+        }
+        return {};
+    }
     if (!encoder_ || picture.width() != encoder_config_.width ||
         picture.height() != encoder_config_.height ||
         picture.color_space() != encoder_config_.color_space ||
@@ -239,7 +301,7 @@ Result<void> VideoPublisher::publish(VideoFrame picture, bool keyframe) {
         }
         if (!opened) return opened;
     }
-    if (const uint32_t bitrate = bitrate_.load(std::memory_order_relaxed);
+    if (const uint32_t bitrate = encoder_bitrate(picture.width(), picture.height());
         bitrate != encoder_config_.bitrate) {
         encoder_->set_bitrate(bitrate);
         encoder_config_.bitrate = bitrate;
@@ -267,6 +329,84 @@ Result<void> VideoPublisher::publish(VideoFrame picture, bool keyframe) {
     std::lock_guard lock(mutex_);
     have_picture_ = true;
     return {};
+}
+
+VideoFrame VideoPublisher::fit(VideoFrame picture) {
+    bool asked = false;
+    uint32_t max_lines = 0;
+    bool adapt = false;
+    {
+        std::lock_guard lock(mutex_);
+        asked = std::exchange(size_asked_, false);
+        max_lines = asked_lines_;
+        adapt = asked_adapt_;
+    }
+    if (asked) {
+        if (adapt) {
+            adapter_.emplace(SizeAdapterConfig{.max_lines = max_lines,
+                                               .frame_rate = frame_rate_of(config_.encoder),
+                                               .at_1080p60 = config_.encoder.bitrate},
+                             clock_.now());
+        } else {
+            adapter_.reset();
+        }
+        if (max_lines != lines_.load()) {
+            limit(max_lines);
+        } else {
+            std::lock_guard lock(stats_mutex_);
+            stats_.lines = max_lines;
+        }
+    }
+
+    const uint32_t lines = lines_.load();
+    if (lines != 0 && std::min(picture.width(), picture.height()) > lines) {
+        if (picture.gpu() && clock_.now() - limited_at_ < kSourceFollows) return {};
+        const PictureSize size = fit_lines(picture.width(), picture.height(), lines);
+        Result<VideoFrame> scaled = scaler_.scale(picture, size.width, size.height);
+        if (scaled) {
+            picture = std::move(*scaled);
+            std::lock_guard lock(stats_mutex_);
+            ++stats_.scaled;
+        } else if (!std::exchange(scaling_failed_, true)) {
+            LOG_WARN("client", "stream " << config_.stream << ": pictures of " << picture.width()
+                                         << "x" << picture.height() << " sent as they are, not "
+                                         << size.width << "x" << size.height << ": "
+                                         << to_string(scaled.error()));
+        }
+    }
+
+    if (adapter_) {
+        uint64_t pictures = 0;
+        uint64_t skipped = 0;
+        {
+            std::lock_guard lock(stats_mutex_);
+            pictures = stats_.pictures;
+            skipped = stats_.skipped;
+        }
+        const uint32_t bitrate = bitrate_.load(std::memory_order_relaxed);
+        const uint32_t next = adapter_->update(clock_.now(), picture.width(), picture.height(),
+                                               bitrate, pictures, skipped);
+        if (next != lines) {
+            LOG_INFO("client", "stream " << config_.stream << ": sent at "
+                                         << (next != 0 ? std::to_string(next) + " lines"
+                                                       : std::string("the size it comes"))
+                                         << " from now on, at " << bitrate << " bit/s, " << skipped
+                                         << " of " << pictures << " pictures skipped so far");
+            limit(next);
+        }
+    }
+    return picture;
+}
+
+void VideoPublisher::limit(uint32_t lines) {
+    lines_ = lines;
+    limited_at_ = clock_.now();
+    {
+        std::lock_guard lock(stats_mutex_);
+        stats_.lines = lines;
+    }
+    std::lock_guard lock(source_mutex_);
+    if (source_) source_->limit_size(lines);
 }
 
 /// The codec its viewers all decode as they come, looked for with a keyframe
@@ -304,7 +444,7 @@ Result<void> VideoPublisher::open_encoder(const VideoFrame& picture) {
     config.height = picture.height();
     config.color_space = picture.color_space();
     config.device = device_of(picture);  // read where it is, if the encoder can
-    config.bitrate = bitrate_.load(std::memory_order_relaxed);
+    config.bitrate = encoder_bitrate(config.width, config.height);
     Result<std::unique_ptr<VideoEncoder>> encoder = open_video_encoder(config);
     if (!encoder) {
         LOG_WARN("client", "stream " << config_.stream << ": no encoder for " << config.width << "x"

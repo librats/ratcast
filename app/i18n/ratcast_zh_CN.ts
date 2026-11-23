@@ -857,6 +857,10 @@
         <translation>网络</translation>
     </message>
     <message>
+        <source>Sharing</source>
+        <translation>屏幕共享</translation>
+    </message>
+    <message>
         <source>Language</source>
         <translation>语言</translation>
     </message>
@@ -911,6 +915,46 @@
     <message>
         <source>For a device plugged in just now</source>
         <translation>检测刚接入的设备</translation>
+    </message>
+    <message>
+        <source>Resolution</source>
+        <translation>分辨率</translation>
+    </message>
+    <message>
+        <source>Automatic</source>
+        <translation>自动</translation>
+    </message>
+    <message>
+        <source>As the screen has it</source>
+        <translation>与屏幕相同</translation>
+    </message>
+    <message>
+        <source>As sharp as the connection and the computer allow: lower when they cannot keep up, back up when they can, never above the screen&apos;s own.</source>
+        <translation>在网络和电脑允许的范围内尽量清晰：跟不上时降低，跟得上时再提高，绝不超过屏幕本身的分辨率。</translation>
+    </message>
+    <message>
+        <source>A lower one is lighter on a slow connection and a weak computer; a screen with less is sent as it is.</source>
+        <translation>分辨率越低，对慢速网络和性能较弱的电脑越轻松；低于此分辨率的屏幕按原样发送。</translation>
+    </message>
+    <message>
+        <source>Takes effect at once, while sharing too.</source>
+        <translation>立即生效，共享过程中也是如此。</translation>
+    </message>
+    <message>
+        <source>Frame rate</source>
+        <translation>帧率</translation>
+    </message>
+    <message>
+        <source>60 frames a second</source>
+        <translation>每秒 60 帧</translation>
+    </message>
+    <message>
+        <source>30 frames a second</source>
+        <translation>每秒 30 帧</translation>
+    </message>
+    <message>
+        <source>60 is smooth, for games and films; 30 is half the work for the computer, and enough for documents and code. Taken by the next share.</source>
+        <translation>60 帧流畅，适合游戏和电影；30 帧让电脑的工作量减半，用于文档和代码已经足够。从下一次共享开始生效。</translation>
     </message>
     <message>
         <source>Server</source>

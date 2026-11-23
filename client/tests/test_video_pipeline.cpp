@@ -9,6 +9,7 @@
 #include <chrono>
 #include <condition_variable>
 #include <functional>
+#include <limits>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -58,6 +59,10 @@ public:
         std::lock_guard lock(mutex_);
         if (ended_) std::exchange(ended_, nullptr)({});
     }
+    void limit_size(uint32_t lines) override { limit = lines; }
+
+    /// What limit_size() said last; none: never said.
+    std::atomic<uint32_t> limit{std::numeric_limits<uint32_t>::max()};
 
 private:
     const Result<void> starts_;
@@ -508,4 +513,69 @@ TEST_F(VideoPipelineTest, AimsWhereRateControlAsks) {
     const size_t before = picture_count();
     EXPECT_TRUE(eventually([&] { return picture_count() > before + 10; }));
     EXPECT_EQ(player_->stats().decode_errors, 0u);
+}
+
+TEST_F(VideoPipelineTest, SendsNoMoreLinesThanAsked) {
+    if (Result<VideoFrame> probe = FrameScaler{}.scale(picture(0, 64, 64), 32, 32);
+        !probe && probe.error() == Errc::Unavailable) {
+        GTEST_SKIP() << "no FFmpeg here";
+    }
+    publisher_.reset();
+    VideoPublisherConfig config;
+    config.encoder.bitrate = 1'000'000;
+    config.max_lines = 180;
+    publisher_ = std::make_unique<VideoPublisher>(*sender_, config);
+    ASSERT_TRUE(publisher_->start(source_));
+    EXPECT_EQ(source_.limit, 180u) << "asked of the source before it starts";
+
+    // A source that gives them larger all the same: made smaller here.
+    source_.show(picture(0, 640, 360));
+    play();
+    uint64_t i = 1;
+    ASSERT_TRUE(eventually([&] {
+        source_.show(picture(i++, 640, 360));
+        std::this_thread::sleep_for(10ms);
+        return wait_for_picture([](const VideoFrame& p) { return p.width() == 320; });
+    }));
+    for (const VideoFrame& p : pictures()) {
+        EXPECT_EQ(p.width(), 320u);
+        EXPECT_EQ(p.height(), 180u);
+    }
+    VideoPublisherStats sent = publisher_->stats();
+    EXPECT_EQ(sent.lines, 180u);
+    EXPECT_GE(sent.scaled, 1u);
+    EXPECT_EQ(sent.width, 320u);
+    {
+        std::lock_guard lock(mutex_);
+        ASSERT_FALSE(announced_.empty());
+        EXPECT_EQ(announced_.back().video()->height, 180u);
+    }
+
+    // As they come from now on: the source told, the size the source's.
+    publisher_->set_size(0, false);
+    ASSERT_TRUE(eventually([&] {
+        source_.show(picture(i++, 640, 360));
+        std::this_thread::sleep_for(10ms);
+        return wait_for_picture([](const VideoFrame& p) { return p.width() == 640; });
+    }));
+    EXPECT_EQ(source_.limit, 0u);
+    EXPECT_EQ(publisher_->stats().lines, 0u);
+}
+
+TEST_F(VideoPipelineTest, ASourceThatComesSmallerIsSentAsItIs) {
+    publisher_.reset();
+    VideoPublisherConfig config;
+    config.encoder.bitrate = 1'000'000;
+    config.max_lines = 180;
+    publisher_ = std::make_unique<VideoPublisher>(*sender_, config);
+    ASSERT_TRUE(publisher_->start(source_));
+    source_.show(picture(0, 320, 180));
+    play();
+    uint64_t i = 1;
+    ASSERT_TRUE(eventually([&] {
+        source_.show(picture(i++, 320, 180));
+        return picture_count() >= 3;
+    }));
+    EXPECT_EQ(publisher_->stats().scaled, 0u);
+    EXPECT_EQ(publisher_->stats().width, 320u);
 }

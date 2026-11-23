@@ -91,6 +91,8 @@ SentStreamReport sent_video(const VideoPublisherStats& now, const VideoPublisher
     sent.gpu_input = now.gpu_input;
     sent.width = now.width;
     sent.height = now.height;
+    sent.lines = now.lines;
+    sent.scaled_here = now.scaled > before.scaled;
     const uint64_t pictures = now.pictures - before.pictures;
     const uint64_t frames = now.frames - before.frames;
     sent.source_fps = interval.per_second(pictures);
@@ -414,7 +416,10 @@ ReportSection sent_section(const SentStreamReport& s) {
     auto& rows = section.rows;
     switch (s.kind) {
         case MediaKind::Video:
-            rows = {{"Size", size(s.width, s.height)},
+            rows = {{"Size", size(s.width, s.height) +
+                                 (s.lines > 0 ? format(" (at most %u lines%s)", s.lines,
+                                                       s.scaled_here ? ", scaled by the CPU" : "")
+                                              : std::string())},
                     {"Encoder", s.encoder + (s.gpu_input ? " (GPU)" : "")},
                     {"Frame rate", format("%.0f fps (source %.0f)", s.fps, s.source_fps)},
                     {"Bitrate", rate(s.bitrate) + (s.target > 0 ? " (aim " + rate(s.target) + ")"

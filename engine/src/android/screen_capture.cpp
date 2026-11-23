@@ -8,7 +8,9 @@
 // AHardwareBuffer (android/hardware_picture.h), for MediaCodec's encoder to
 // draw into its surface, the reader kept while any of its pictures is. A turn
 // of the screen is looked for twice a second, and the display mirrored into
-// a reader of the turned size from then on.
+// a reader of the turned size from then on — as it is, at once, into one of
+// fewer lines when the size is limited (limit_size()): the system draws the
+// screen smaller.
 //
 // A reader's callbacks reach the capture through a link of the reader's own
 // (ReaderLink), which the capture is cut from, waiting for a callback at
@@ -78,12 +80,12 @@ struct ReaderLink : std::enable_shared_from_this<ReaderLink> {
 using Reader = std::shared_ptr<ReaderLink>;
 
 /// A picture's size for `screen`: within kLongestSide, its proportions kept,
-/// even.
-std::pair<uint32_t, uint32_t> size_for(const android::Projection::Screen& screen) {
+/// even, and of no more than `lines` lines (fit_lines()).
+PictureSize size_for(const android::Projection::Screen& screen, uint32_t lines) {
     const uint32_t longest = std::max(screen.width, screen.height);
     const double scale = longest > kLongestSide ? double(kLongestSide) / longest : 1.0;
     const auto even = [&](uint32_t side) { return std::max(2u, uint32_t(side * scale) & ~1u); };
-    return {even(screen.width), even(screen.height)};
+    return fit_lines(even(screen.width), even(screen.height), lines);
 }
 
 class AndroidScreenCapture final : public ScreenCapture {
@@ -100,6 +102,15 @@ public:
 
     const std::string& restore_token() const noexcept override { return no_token_; }
 
+    void limit_size(uint32_t lines) override {
+        {
+            std::lock_guard lock(watch_mutex_);
+            lines_ = lines;
+            limited_ = true;
+        }
+        watch_woken_.notify_all();
+    }
+
     Result<void> start(Sink sink, EndHandler ended) override {
         std::lock_guard lock(start_mutex_);
         if (watcher_.joinable()) return fail(Errc::InvalidArgument);
@@ -111,7 +122,7 @@ public:
             ended_ = std::move(ended);
             over_ = false;
         }
-        if (Result<void> shown = show(*screen); !shown) return shown;
+        if (Result<void> shown = show(*screen, lines()); !shown) return shown;
         watcher_ = std::jthread([this](std::stop_token stop) { watch(stop); });
         return {};
     }
@@ -151,9 +162,10 @@ public:
     }
 
 private:
-    /// The screen mirrored into a reader of its size.
-    Result<void> show(const android::Projection::Screen& screen) {
-        const auto [width, height] = size_for(screen);
+    /// The screen mirrored into a reader of its size, of no more than
+    /// `lines` lines.
+    Result<void> show(const android::Projection::Screen& screen, uint32_t lines) {
+        const auto [width, height] = size_for(screen, lines);
         auto reader = std::make_shared<ReaderLink>();
         const media_status_t made =
             options_.gpu ? AImageReader_newWithUsage(int32_t(width), int32_t(height),
@@ -178,6 +190,8 @@ private:
         std::swap(reader_, reader);
         if (reader) retire(std::move(reader));
         shown_ = screen;
+        std::lock_guard lock(watch_mutex_);
+        shown_lines_ = lines;
         return {};
     }
 
@@ -190,16 +204,23 @@ private:
         reader->capture = nullptr;
     }
 
-    /// The watcher's thread: the projection stopped, or the screen turned.
+    uint32_t lines() {
+        std::lock_guard lock(watch_mutex_);
+        return lines_;
+    }
+
+    /// The watcher's thread: the projection stopped, the screen turned, or
+    /// the size limited otherwise.
     void watch(std::stop_token stop) {
-        std::mutex mutex;
-        std::condition_variable_any woken;
         for (;;) {
+            uint32_t lines = 0;
             {
-                std::unique_lock lock(mutex);
-                if (woken.wait_for(lock, stop, kWatchEvery, [] { return false; }) ||
-                    stop.stop_requested())
-                    return;
+                std::unique_lock lock(watch_mutex_);
+                // Woken for a new limit, or looking again in a while.
+                watch_woken_.wait_for(lock, stop, kWatchEvery, [&] { return limited_; });
+                if (stop.stop_requested()) return;
+                limited_ = false;
+                lines = lines_;
             }
             if (projection_->stopped()) {
                 LOG_INFO("engine", "the screen is shared no more: the projection stopped");
@@ -207,9 +228,10 @@ private:
                 return;
             }
             const std::optional<android::Projection::Screen> screen = projection_->screen();
-            if (!screen || (screen->width == shown_.width && screen->height == shown_.height))
+            if (!screen || (screen->width == shown_.width && screen->height == shown_.height &&
+                            lines == shown_lines_))
                 continue;
-            if (Result<void> shown = show(*screen); !shown) {
+            if (Result<void> shown = show(*screen, lines); !shown) {
                 LOG_WARN("engine", "the turned screen is not shown");
                 end(fail(shown.error()));
                 return;
@@ -281,7 +303,13 @@ private:
     std::mutex start_mutex_;  ///< serialises start() and stop()
     Reader reader_;           ///< the one the display draws into: start()'s, then the watcher's
     android::Projection::Screen shown_;
+    uint32_t shown_lines_ = 0;  ///< the limit reader_ was made for, under watch_mutex_
     std::jthread watcher_;
+
+    std::mutex watch_mutex_;  ///< over lines_, limited_ and shown_lines_
+    std::condition_variable_any watch_woken_;
+    uint32_t lines_ = 0;    ///< limit_size()'s
+    bool limited_ = false;  ///< lines_ told since the watcher last looked
 
     std::mutex mutex_;  ///< over the sink, the end and the pacer
     VideoSource::Sink sink_;

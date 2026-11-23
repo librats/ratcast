@@ -310,7 +310,8 @@ frames or a growing queue, careful up, starting low so that the first keyframe i
 - fewer keyframes: every bitrate change of a software encoder is a keyframe (7 in a 15 s run
   against 3 at a fixed bitrate, 15 on `cap-6`) — once ramped, change less often and in larger
   steps; encoders that change in flight (hardware, 4.2) need no keyframe at all;
-- a resolution / frame-rate ladder for paths too narrow for the picture at any bitrate.
+- ✅ a resolution ladder for paths too narrow for the picture at any bitrate (below); a frame
+  rate one is left: 30 fps is the user's to set for now.
 
 librats: **needs** L2 (c) ✅ (on `jitter` the estimate rate control follows was what Startup
 left, 1–2 Mbit/s on a 1 Gbit/s path).
@@ -326,6 +327,19 @@ one alongside and switch with a keyframe (SVT-AV1 at 1080p: a 25–31 ms picture
 wherever that goes, so `jitter` and `reorder-2` played at 1.5–3.5 Mbit/s with more stalls than at
 a fixed 8 — until L2 (c), below. Two streams to one viewer (camera and screen) each take the
 whole path for now: they share it in stage 6.
+
+Notes on the ladder (2026-11-23): a share goes out at 2160, 1440, 1080 or 720 lines
+(`SizeAdapter`, `client/size_adapter.h`), the bitrate rate control aims at against what each size
+needs (`bitrate_for_size()`: 8 Mbit/s for 1080p60, others by pixels a second to the power 0.75 —
+22.6 for 4K60, which is also the screen's most now): down after 3 s below 35% of it, straight to
+the largest size kept; up after 10 s at 60% of the next, twice as long after a step up that came
+straight back; a level down for good when the encoder skips a fifth of the pictures. Each change
+is a keyframe, so 5 s pass after one before the next. The capture draws the smaller picture
+where that is cheaper (`VideoSource::limit_size()`: the D3D11 video processor as it makes NV12,
+ScreenCaptureKit's size, Android's virtual display); the rest is scaled by libswscale in the
+publisher (`FrameScaler`; Linux's PipeWire pictures). The app's settings: Automatic (the
+default), the screen's own, or at most 1440p, 1080p or 720p; 60 or 30 fps. Through
+`ratcast-netsim` at 3 Mbit/s a 4K30 share went to 720p within 8 s.
 
 After L2 (c) (librats as of 2026-10-20; `bench/netem.py --repeat 3`, rate-controlled, before →
 after): `jitter` 53 → 60 fps, 1.7 → 5.7 Mbit/s over the run, 9 → 2 cuts, p95 156 → 88 ms,

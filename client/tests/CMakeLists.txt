@@ -16,6 +16,7 @@ ratcast_add_test(client_tests
         test_playout_schedule.cpp
         test_preview.cpp
         test_rats_url.cpp
+        test_size_adapter.cpp
         test_ts_probe.cpp
         test_video_pipeline.cpp
         test_voice.cpp

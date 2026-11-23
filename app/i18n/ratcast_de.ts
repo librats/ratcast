@@ -857,6 +857,10 @@
         <translation>Netzwerk</translation>
     </message>
     <message>
+        <source>Sharing</source>
+        <translation>Teilen</translation>
+    </message>
+    <message>
         <source>Language</source>
         <translation>Sprache</translation>
     </message>
@@ -911,6 +915,46 @@
     <message>
         <source>For a device plugged in just now</source>
         <translation>Für ein gerade angeschlossenes Gerät</translation>
+    </message>
+    <message>
+        <source>Resolution</source>
+        <translation>Auflösung</translation>
+    </message>
+    <message>
+        <source>Automatic</source>
+        <translation>Automatisch</translation>
+    </message>
+    <message>
+        <source>As the screen has it</source>
+        <translation>Wie der Bildschirm</translation>
+    </message>
+    <message>
+        <source>As sharp as the connection and the computer allow: lower when they cannot keep up, back up when they can, never above the screen&apos;s own.</source>
+        <translation>So scharf, wie Verbindung und Computer es zulassen: niedriger, wenn sie nicht mithalten, wieder höher, sobald sie es können, nie über der des Bildschirms.</translation>
+    </message>
+    <message>
+        <source>A lower one is lighter on a slow connection and a weak computer; a screen with less is sent as it is.</source>
+        <translation>Eine niedrigere schont langsame Verbindungen und schwache Computer; ein Bildschirm mit weniger wird gesendet, wie er ist.</translation>
+    </message>
+    <message>
+        <source>Takes effect at once, while sharing too.</source>
+        <translation>Gilt sofort, auch während des Teilens.</translation>
+    </message>
+    <message>
+        <source>Frame rate</source>
+        <translation>Bildrate</translation>
+    </message>
+    <message>
+        <source>60 frames a second</source>
+        <translation>60 Bilder pro Sekunde</translation>
+    </message>
+    <message>
+        <source>30 frames a second</source>
+        <translation>30 Bilder pro Sekunde</translation>
+    </message>
+    <message>
+        <source>60 is smooth, for games and films; 30 is half the work for the computer, and enough for documents and code. Taken by the next share.</source>
+        <translation>60 ist flüssig, für Spiele und Filme; 30 halbiert die Arbeit für den Computer und reicht für Dokumente und Code. Gilt ab dem nächsten Teilen.</translation>
     </message>
     <message>
         <source>Server</source>

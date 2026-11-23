@@ -353,6 +353,17 @@ uint32_t shrink_factor(uint32_t width, uint32_t height, uint32_t max_width,
     return std::max(across(width, max_width), across(height, max_height));
 }
 
+PictureSize fit_lines(uint32_t width, uint32_t height, uint32_t lines) noexcept {
+    const uint32_t shorter = std::min(width, height);
+    if (lines == 0 || shorter <= lines) return {width & ~1u, height & ~1u};
+    lines = std::max(2u, lines & ~1u);
+    const uint32_t longer = std::max(width, height);
+    // Rounded to the nearest even: 1366 x 768 at 720 lines is 1280 x 720.
+    const uint64_t scaled = (uint64_t(longer) * lines + shorter) / (2 * uint64_t(shorter)) * 2;
+    const uint32_t other = std::max<uint32_t>(2, uint32_t(scaled));
+    return width >= height ? PictureSize{other, lines} : PictureSize{lines, other};
+}
+
 YuvToRgb rgb_from_yuv(ColorSpace color_space) noexcept {
     const bool bt709 = color_space.matrix == ColorMatrix::BT709;
     const double kr = bt709 ? 0.2126 : 0.299;

@@ -260,7 +260,7 @@ const CARDS: { span: string; icon: LucideIcon; title: string; text: string; demo
     span: "lg:col-span-3",
     icon: MonitorPlay,
     title: "Full resolution, with its sound",
-    text: "A screen or a window goes out at its own size, never scaled down: 1440p and 4K at up to 60 fps. Viewers hear what your applications play, but never the call's own voices. Games, movies, a whole desktop.",
+    text: "A screen or a window goes out at its own size: 1440p and 4K at up to 60 fps, stepping down to 1080p or 720p only while the connection or the computer cannot carry more. Viewers hear what your applications play, but never the call's own voices. Games, movies, a whole desktop.",
     demo: <Equalizer className="mt-6" />,
   },
   {

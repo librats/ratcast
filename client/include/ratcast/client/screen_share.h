@@ -45,9 +45,16 @@ struct ScreenShareConfig {
     /// Where the desktop's choice is kept, one file per kind; "": asked each
     /// time.
     std::string data_dir = {};
-    /// Codec and encoder, the most rate control goes up to and the frame rate
-    /// at most; the size comes from the screen.
+    /// Codec and encoder, the most rate control goes up to — for 1080 lines
+    /// at 60 frames a second, other sizes and rates in proportion
+    /// (bitrate_for_size()) — and the frame rate at most; the size comes from
+    /// the screen.
     VideoEncoderConfig video = default_video();
+    /// Sent at no more than this many lines (fit_lines(); 0: as the screen
+    /// has), and with `adapt_size` at fewer as the path and the encoder need
+    /// (SizeAdapter); set_screen_share_size() changes them as it goes.
+    uint32_t max_lines = 0;
+    bool adapt_size = true;
     uint32_t audio_bitrate = 128'000;
     /// How long a frame is worth delivering.
     Duration latency = std::chrono::milliseconds(200);
@@ -83,6 +90,11 @@ Result<void> publish_screen_share(Call& call, ScreenShareSources sources,
 /// is let go). Fails as Call::switch_source does — InvalidArgument when
 /// nothing is shared — and the pictures before are still shared.
 Result<void> switch_screen_share(Call& call, ScreenShareSources sources);
+
+/// The pictures shared on `call` sent at no more than `max_lines` lines, and
+/// with `adapt` at fewer as needed, from now on (ScreenShareConfig::max_lines,
+/// adapt_size). Fails with InvalidArgument when nothing is shared.
+Result<void> set_screen_share_size(Call& call, uint32_t max_lines, bool adapt);
 
 /// Stop sharing on `call`: the pictures and the sound withdrawn.
 void unpublish_screen_share(Call& call);

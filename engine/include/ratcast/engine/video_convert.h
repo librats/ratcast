@@ -14,6 +14,7 @@
  */
 
 #include <array>
+#include <memory>
 
 #include "ratcast/core/buffer.h"
 #include "ratcast/core/result.h"
@@ -46,6 +47,44 @@ Result<VideoFrame> shrink_frame(const VideoFrame& picture, uint32_t factor);
 /// fit within `max_width` x `max_height`; 1 for one that fits already.
 uint32_t shrink_factor(uint32_t width, uint32_t height, uint32_t max_width,
                        uint32_t max_height) noexcept;
+
+struct PictureSize {
+    uint32_t width = 0;
+    uint32_t height = 0;
+
+    friend bool operator==(const PictureSize&, const PictureSize&) = default;
+};
+
+/// The size a `width` x `height` picture has with no more than `lines` lines,
+/// as video sizes are named ("1080p"): its shorter side `lines`, its
+/// proportions kept, the other side rounded to even — one of more lines made
+/// smaller, any other as it is. `lines` 0 is no limit. A capture that makes
+/// its pictures smaller itself (VideoSource::limit_size()) makes them this
+/// size, as whoever scales them after would.
+PictureSize fit_lines(uint32_t width, uint32_t height, uint32_t lines) noexcept;
+
+/// Pictures made another size, one after another, through libswscale (an
+/// area-weighted filter: text made smaller stays legible as shapes), in
+/// their own 4:2:0 format and colour space. What it worked out for one size
+/// is kept for the next picture of it. Unavailable without FFmpeg. Not
+/// thread-safe.
+class FrameScaler {
+public:
+    FrameScaler();
+    ~FrameScaler();
+    FrameScaler(const FrameScaler&) = delete;
+    FrameScaler& operator=(const FrameScaler&) = delete;
+
+    /// `picture` made `width` x `height`, both even, with its capture time.
+    /// A picture in GPU memory is downloaded first. Fails with Unsupported for
+    /// a format other than NV12 or I420, InvalidArgument for an odd or empty
+    /// size, Unavailable without FFmpeg.
+    Result<VideoFrame> scale(const VideoFrame& picture, uint32_t width, uint32_t height);
+
+private:
+    struct State;
+    std::unique_ptr<State> state_;
+};
 
 /// The other way, for whoever draws YUV pictures (a shader): R, G and B, each
 /// a row `a, b, c, d` meaning `a·Y + b·Cb + c·Cr + d`, of samples read as a

@@ -857,6 +857,10 @@
         <translation>الشبكة</translation>
     </message>
     <message>
+        <source>Sharing</source>
+        <translation>المشاركة</translation>
+    </message>
+    <message>
         <source>Language</source>
         <translation>اللغة</translation>
     </message>
@@ -911,6 +915,46 @@
     <message>
         <source>For a device plugged in just now</source>
         <translation>لجهاز وُصِّل للتو</translation>
+    </message>
+    <message>
+        <source>Resolution</source>
+        <translation>الدقة</translation>
+    </message>
+    <message>
+        <source>Automatic</source>
+        <translation>تلقائية</translation>
+    </message>
+    <message>
+        <source>As the screen has it</source>
+        <translation>كما في الشاشة</translation>
+    </message>
+    <message>
+        <source>As sharp as the connection and the computer allow: lower when they cannot keep up, back up when they can, never above the screen&apos;s own.</source>
+        <translation>بأعلى وضوح يسمح به الاتصال والحاسوب: أقل حين لا يواكبان، وأعلى من جديد حين يستطيعان، ولا تتجاوز أبدًا دقة الشاشة نفسها.</translation>
+    </message>
+    <message>
+        <source>A lower one is lighter on a slow connection and a weak computer; a screen with less is sent as it is.</source>
+        <translation>الدقة الأقل أخف على الاتصال البطيء والحاسوب الضعيف؛ والشاشة ذات الدقة الأقل تُرسل كما هي.</translation>
+    </message>
+    <message>
+        <source>Takes effect at once, while sharing too.</source>
+        <translation>يسري فورًا، حتى أثناء المشاركة.</translation>
+    </message>
+    <message>
+        <source>Frame rate</source>
+        <translation>معدل الإطارات</translation>
+    </message>
+    <message>
+        <source>60 frames a second</source>
+        <translation>60 إطارًا في الثانية</translation>
+    </message>
+    <message>
+        <source>30 frames a second</source>
+        <translation>30 إطارًا في الثانية</translation>
+    </message>
+    <message>
+        <source>60 is smooth, for games and films; 30 is half the work for the computer, and enough for documents and code. Taken by the next share.</source>
+        <translation>60 سلس، للألعاب والأفلام؛ و30 نصف العمل على الحاسوب، ويكفي للمستندات والشيفرة. يسري من المشاركة التالية.</translation>
     </message>
     <message>
         <source>Server</source>

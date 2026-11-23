@@ -48,9 +48,11 @@ ratcast is built on [librats](https://github.com/librats/librats). It comes in t
   you are there, and who shares. Its members' devices keep it; no server holds it. A link
   that got out is reset: the old one lets nobody in, the members are given the new one.
 - **Share a screen or a window with its sound, at full resolution.** The picture goes out at the
-  screen's own size, never scaled down — 1440p and 4K at up to 60 fps — so a movie or a game
-  looks as it does on the sharer's screen. Viewers hear what your applications play, but never
-  the call's own voices.
+  screen's own size — 1440p and 4K at up to 60 fps — so a movie or a game looks as it does on
+  the sharer's screen. Where the connection or the computer cannot carry that, it steps down to
+  1440p, 1080p or 720p, and back up once they can; or it keeps to the resolution and frame rate
+  set (Settings, Sharing). Viewers hear what your applications play, but never the call's own
+  voices.
 - **Voice that is easy to listen to.** Echo cancellation, noise suppression and automatic gain
   (WebRTC AudioProcessing) are built in. You can mute or deafen yourself and see who is speaking.
 - **Camera.** Each side can show itself next to the share. Without a share, everyone is a tile

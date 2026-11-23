@@ -29,12 +29,13 @@ Dialog {
 
     // The window's last: Android has no tray, and no section for it.
     readonly property var sections: Qt.platform.os === "android"
-                                    ? [qsTr("Devices"), qsTr("Network"), qsTr("Language"),
-                                       qsTr("You")]
-                                    : [qsTr("Devices"), qsTr("Network"), qsTr("Language"),
-                                       qsTr("You"), qsTr("Window")]
+                                    ? [qsTr("Devices"), qsTr("Sharing"), qsTr("Network"),
+                                       qsTr("Language"), qsTr("You")]
+                                    : [qsTr("Devices"), qsTr("Sharing"), qsTr("Network"),
+                                       qsTr("Language"), qsTr("You"), qsTr("Window")]
     /// Each section's icon, of icons/.
-    readonly property var sectionIcons: ["headphones", "globe", "languages", "user", "app-window"]
+    readonly property var sectionIcons: ["headphones", "screen-share", "globe", "languages",
+                                         "user", "app-window"]
     /// The section shown.
     property int section: 0
     readonly property bool narrow: width < 520
@@ -225,6 +226,77 @@ Dialog {
                             ToolTip.visible: hovered
                             ToolTip.text: qsTr("For a device plugged in just now")
                         }
+                    }
+                }
+
+                // ── Sharing: how one's screen is sent ───────────────────────────
+                SettingsPage {
+                    spacing: 4
+
+                    Heading {
+                        text: qsTr("Resolution")
+                    }
+                    ComboBox {
+                        readonly property var entries: [
+                            { value: "auto", name: qsTr("Automatic") },
+                            { value: "original", name: qsTr("As the screen has it") },
+                            { value: "1440", name: "1440p" },
+                            { value: "1080", name: "1080p" },
+                            { value: "720", name: "720p" }
+                        ]
+
+                        Layout.fillWidth: true
+                        model: entries
+                        textRole: "name"
+                        valueRole: "value"
+                        currentIndex: Math.max(0, entries.findIndex(entry => entry.value === dialog.call.shareSize))
+                        onActivated: dialog.call.shareSize = currentValue
+                    }
+                    Label {
+                        Layout.fillWidth: true
+                        wrapMode: Text.Wrap
+                        opacity: 0.6
+                        font.pixelSize: 12
+                        text: dialog.call.shareSize === "auto"
+                              ? qsTr("As sharp as the connection and the computer allow: lower " +
+                                     "when they cannot keep up, back up when they can, never " +
+                                     "above the screen's own.")
+                              : qsTr("A lower one is lighter on a slow connection and a weak " +
+                                     "computer; a screen with less is sent as it is.")
+                    }
+                    Label {
+                        Layout.fillWidth: true
+                        wrapMode: Text.Wrap
+                        opacity: 0.6
+                        font.pixelSize: 12
+                        text: qsTr("Takes effect at once, while sharing too.")
+                    }
+
+                    Heading {
+                        Layout.topMargin: 12
+                        text: qsTr("Frame rate")
+                    }
+                    ComboBox {
+                        readonly property var entries: [
+                            { value: 60, name: qsTr("60 frames a second") },
+                            { value: 30, name: qsTr("30 frames a second") }
+                        ]
+
+                        Layout.fillWidth: true
+                        model: entries
+                        textRole: "name"
+                        valueRole: "value"
+                        currentIndex: Math.max(0, entries.findIndex(entry => entry.value === dialog.call.shareFrameRate))
+                        onActivated: dialog.call.shareFrameRate = currentValue
+                    }
+                    Label {
+                        Layout.fillWidth: true
+                        wrapMode: Text.Wrap
+                        opacity: 0.6
+                        font.pixelSize: 12
+                        text: qsTr("60 is smooth, for games and films; 30 is half the work for " +
+                                   "the computer, and enough for documents and code. Taken by " +
+                                   "the next share.")
                     }
                 }
 

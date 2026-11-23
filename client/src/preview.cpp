@@ -23,6 +23,7 @@ public:
             std::move(ended));
     }
     void stop() override { source_->stop(); }
+    void limit_size(uint32_t lines) override { source_->limit_size(lines); }
 
 private:
     std::unique_ptr<VideoSource> source_;

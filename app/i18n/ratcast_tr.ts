@@ -857,6 +857,10 @@
         <translation>Ağ</translation>
     </message>
     <message>
+        <source>Sharing</source>
+        <translation>Paylaşım</translation>
+    </message>
+    <message>
         <source>Language</source>
         <translation>Dil</translation>
     </message>
@@ -911,6 +915,46 @@
     <message>
         <source>For a device plugged in just now</source>
         <translation>Yeni takılan bir aygıt için</translation>
+    </message>
+    <message>
+        <source>Resolution</source>
+        <translation>Çözünürlük</translation>
+    </message>
+    <message>
+        <source>Automatic</source>
+        <translation>Otomatik</translation>
+    </message>
+    <message>
+        <source>As the screen has it</source>
+        <translation>Ekranınki</translation>
+    </message>
+    <message>
+        <source>As sharp as the connection and the computer allow: lower when they cannot keep up, back up when they can, never above the screen&apos;s own.</source>
+        <translation>Bağlantının ve bilgisayarın izin verdiği kadar net: yetişemediklerinde düşer, yetişebildiklerinde yeniden yükselir, ekranın kendi çözünürlüğünü asla aşmaz.</translation>
+    </message>
+    <message>
+        <source>A lower one is lighter on a slow connection and a weak computer; a screen with less is sent as it is.</source>
+        <translation>Daha düşük olanı yavaş bağlantıyı ve zayıf bilgisayarı daha az yorar; daha düşük çözünürlüklü bir ekran olduğu gibi gönderilir.</translation>
+    </message>
+    <message>
+        <source>Takes effect at once, while sharing too.</source>
+        <translation>Hemen geçerli olur, paylaşım sırasında da.</translation>
+    </message>
+    <message>
+        <source>Frame rate</source>
+        <translation>Kare hızı</translation>
+    </message>
+    <message>
+        <source>60 frames a second</source>
+        <translation>Saniyede 60 kare</translation>
+    </message>
+    <message>
+        <source>30 frames a second</source>
+        <translation>Saniyede 30 kare</translation>
+    </message>
+    <message>
+        <source>60 is smooth, for games and films; 30 is half the work for the computer, and enough for documents and code. Taken by the next share.</source>
+        <translation>60 akıcıdır, oyunlar ve filmler için; 30 bilgisayarın işini yarıya indirir ve belgeler ile kod için yeterlidir. Bir sonraki paylaşımda geçerli olur.</translation>
     </message>
     <message>
         <source>Server</source>

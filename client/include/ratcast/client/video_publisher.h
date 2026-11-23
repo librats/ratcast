@@ -26,6 +26,13 @@
  * The stream is rate-controlled unless configured otherwise: the session
  * follows the paths to the viewers and the publisher hands the bitrate it
  * asks for (set_bitrate()) to the encoder before the next picture.
+ *
+ * The pictures may be sent smaller than they come (set_size()): of no more
+ * lines than asked, or as many as the path and the encoder carry
+ * (SizeAdapter). The source is asked for them so where it makes them
+ * cheaper (VideoSource::limit_size(): a screen drawn smaller by the GPU);
+ * what still comes larger is scaled here, on the CPU (FrameScaler). And the
+ * most the encoder aims at may follow their size (bitrate_by_size).
  */
 
 #include <atomic>
@@ -38,11 +45,14 @@
 #include <span>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 
+#include "ratcast/client/size_adapter.h"
 #include "ratcast/core/result.h"
 #include "ratcast/core/time.h"
 #include "ratcast/engine/video_codec.h"
+#include "ratcast/engine/video_convert.h"
 #include "ratcast/engine/video_frame.h"
 #include "ratcast/engine/video_source.h"
 #include "ratcast/session/media_session.h"
@@ -69,6 +79,17 @@ struct VideoPublisherConfig {
     /// for is passed over for the next (a phone's: no AV1). False, or an
     /// encoder named: encoder.codec always.
     bool follow_viewers = true;
+    /// The pictures sent at no more than `max_lines` lines (fit_lines(): the
+    /// shorter side; 0, as they come), and with `adapt_size` at fewer when
+    /// the path or the encoder cannot carry them (SizeAdapter); set_size()
+    /// changes both as it goes.
+    uint32_t max_lines = 0;
+    bool adapt_size = false;
+    /// encoder.bitrate the most for 1080 lines at 60 frames a second, a
+    /// picture of another size or rate held to bitrate_for_size()'s; rate
+    /// control's most what 2160 lines would have, whatever is sent, as the
+    /// size may grow.
+    bool bitrate_by_size = false;
 };
 
 /// The codec to code a stream in for viewers who each decode `viewers[i]` as
@@ -94,6 +115,8 @@ struct VideoPublisherStats {
     Duration max_encode_time{};
     uint32_t width = 0;  ///< of the pictures now
     uint32_t height = 0;
+    uint32_t lines = 0;      ///< the most they are sent at now; 0: as they come
+    uint64_t scaled = 0;     ///< pictures made smaller here, on the CPU
     uint32_t bitrate = 0;    ///< what the encoder aims at now
     std::string encoder;     ///< the encoder in use, e.g. "libsvtav1"
     bool gpu_input = false;  ///< it reads the pictures in GPU memory where they are
@@ -137,6 +160,11 @@ public:
     /// bitrate_changed asks for. Any thread.
     void set_bitrate(uint32_t bits_per_second);
 
+    /// Send the pictures at no more than `max_lines` lines, and with `adapt`
+    /// at fewer as the path and the encoder need, from the next picture on
+    /// (VideoPublisherConfig::max_lines, adapt_size). Any thread.
+    void set_size(uint32_t max_lines, bool adapt);
+
     VideoPublisherStats stats() const;
 
 private:
@@ -149,6 +177,13 @@ private:
     void finish(Result<void> outcome, uint64_t source = 0);
     void run();
     Result<void> publish(VideoFrame picture, bool keyframe);
+    /// `picture` no larger than lines_, and lines_ followed on from it.
+    VideoFrame fit(VideoFrame picture);
+    /// What the encoder aims at: rate control's, held to what a picture of
+    /// `width` x `height` is worth (bitrate_by_size).
+    uint32_t encoder_bitrate(uint32_t width, uint32_t height) const;
+    /// The pictures made no larger than `lines` from now on, the source told.
+    void limit(uint32_t lines);
     Result<void> open_encoder(const VideoFrame& picture);
     void follow_viewers(bool now);
     std::optional<BitrateLimits> bitrate_limits() const;
@@ -158,7 +193,8 @@ private:
     const VideoPublisherConfig config_;
     Clock& clock_;
 
-    std::mutex lifecycle_;  ///< serialises start(), switch_source() and stop()
+    std::mutex lifecycle_;     ///< serialises start(), switch_source() and stop()
+    std::mutex source_mutex_;  ///< over source_, for the encoder thread's limit()
     VideoSource* source_ = nullptr;
     uint64_t sources_ = 0;  ///< started, the number of the last
     EndHandler ended_;
@@ -173,6 +209,9 @@ private:
     bool have_picture_ = false;  ///< the encoder thread has a last picture to repeat
     bool stopping_ = false;
     bool finished_ = false;
+    uint32_t asked_lines_ = 0;  ///< set_size()'s, or the config's
+    bool asked_adapt_ = false;
+    bool size_asked_ = true;            ///< for the encoder thread to take
     std::atomic<uint32_t> bitrate_{0};  ///< the latest set_bitrate(), or where start() began
 
     // The encoder thread's own.
@@ -187,6 +226,11 @@ private:
     std::vector<Codec> unusable_;              ///< codecs no encoder opened for
     std::vector<std::vector<Codec>> decodes_;  ///< what the viewers said they decode, last looked
     std::optional<Timestamp> viewers_seen_;    ///< on clock_, when follow_viewers() last looked
+    std::optional<SizeAdapter> adapter_;       ///< with adapt_size
+    std::atomic<uint32_t> lines_{0};           ///< what the pictures are made no larger than
+    Timestamp limited_at_{};                   ///< on clock_, when lines_ last changed
+    FrameScaler scaler_;
+    bool scaling_failed_ = false;  ///< said once
 
     mutable std::mutex stats_mutex_;
     VideoPublisherStats stats_;

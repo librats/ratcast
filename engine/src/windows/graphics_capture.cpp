@@ -25,6 +25,7 @@
 #include <winrt/Windows.Graphics.DirectX.h>
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <mutex>
 #include <optional>
@@ -180,11 +181,13 @@ public:
     using EndHandler = VideoSource::EndHandler;
 
     Stream(capture::GraphicsCaptureItem item, HWND window, const ScreenCaptureOptions& options,
-           Clock& clock, Sink sink, EndHandler ended)
+           Clock& clock, std::shared_ptr<const std::atomic<uint32_t>> lines, Sink sink,
+           EndHandler ended)
         : item_(std::move(item)),
           window_(window),
           options_(options),
           clock_(clock),
+          lines_(std::move(lines)),
           sink_(std::move(sink)),
           ended_(std::move(ended)),
           pacer_(options.max_frame_rate) {}
@@ -308,7 +311,8 @@ private:
             winrt::check_hresult(access->GetInterface(IID_PPV_ARGS(&texture)));
             Result<std::optional<VideoFrame>> read =
                 reader_->read(*texture.Get(), uint32_t(std::max(content.Width, 0)),
-                              uint32_t(std::max(content.Height, 0)), captured);
+                              uint32_t(std::max(content.Height, 0)), captured,
+                              lines_->load(std::memory_order_relaxed));
             if (!read) winrt::throw_hresult(E_FAIL);
             picture = std::move(*read);
         } catch (const winrt::hresult_error& error) {
@@ -336,6 +340,7 @@ private:
     const HWND window_;  ///< the window captured; none for a screen
     const ScreenCaptureOptions options_;
     Clock& clock_;
+    const std::shared_ptr<const std::atomic<uint32_t>> lines_;  ///< GraphicsCapture's limit
     const Sink sink_;
     const EndHandler ended_;
 
@@ -367,8 +372,8 @@ public:
     Result<void> start(Sink sink, EndHandler ended) override {
         std::lock_guard lock(mutex_);
         if (stream_) return fail(Errc::InvalidArgument);
-        auto stream = std::make_shared<Stream>(item_, window_, options_, clock_, std::move(sink),
-                                               std::move(ended));
+        auto stream = std::make_shared<Stream>(item_, window_, options_, clock_, lines_,
+                                               std::move(sink), std::move(ended));
         Result<void> opened = win::in_multithreaded_apartment([&] {
             Result<void> made = stream->open();
             if (!made) stream->close();
@@ -387,6 +392,9 @@ public:
 
     const std::string& restore_token() const noexcept override { return token_; }
 
+    // Made smaller by the GPU's video processor as it turns them into NV12.
+    void limit_size(uint32_t lines) override { lines_->store(lines, std::memory_order_relaxed); }
+
 private:
     const capture::GraphicsCaptureItem item_;
     const HWND window_;
@@ -395,6 +403,8 @@ private:
     Clock& clock_;
     std::mutex mutex_;  ///< serialises start() and stop()
     std::shared_ptr<Stream> stream_;
+    const std::shared_ptr<std::atomic<uint32_t>> lines_ =
+        std::make_shared<std::atomic<uint32_t>>(0);
 };
 
 Result<std::unique_ptr<ScreenCapture>> pick_here(const ScreenCaptureOptions& options,

@@ -56,6 +56,9 @@ Result<void> publish_screen_share(Call& call, ScreenShareSources sources,
     video.lifetime = config.latency;
     video.encoder = config.video;
     video.start_bitrate = std::min(video.start_bitrate, config.video.bitrate);
+    video.max_lines = config.max_lines;
+    video.adapt_size = config.adapt_size;
+    video.bitrate_by_size = true;
     if (Result<VideoPublisher*> published = call.publish(std::move(sources.pictures), video);
         !published) {
         return fail(published.error());
@@ -81,6 +84,10 @@ Result<void> publish_screen_share(Call& call, ScreenShareSources sources,
 
 Result<void> switch_screen_share(Call& call, ScreenShareSources sources) {
     return call.switch_source(kScreenStream, std::move(sources.pictures));
+}
+
+Result<void> set_screen_share_size(Call& call, uint32_t max_lines, bool adapt) {
+    return call.set_video_size(kScreenStream, max_lines, adapt);
 }
 
 void unpublish_screen_share(Call& call) {

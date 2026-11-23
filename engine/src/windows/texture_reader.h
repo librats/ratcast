@@ -7,8 +7,8 @@
  * What Windows.Graphics.Capture and DXGI Desktop Duplication both hand out is
  * a BGRA texture of the GPU's, lent for a moment. Each is turned into NV12 by
  * the GPU and kept where it is when GPU pictures were asked for
- * (Nv12Converter); otherwise, or where the GPU cannot, it is copied into
- * memory the CPU reads and converted from there.
+ * (Nv12Converter), made smaller there when asked; otherwise, or where the
+ * GPU cannot, it is copied into memory the CPU reads and converted from there.
  */
 
 #include <cstdint>
@@ -32,11 +32,13 @@ public:
     ~TextureReader();
 
     /// The top-left `width` x `height` of `texture`, one of the device's — made
-    /// even for a 4:2:0 format — as a picture captured at `captured`; nullopt
-    /// when there is none to give (every GPU picture still held, nothing left
-    /// of the size). Fails when the GPU does.
+    /// even for a 4:2:0 format — as a picture captured at `captured`, of no
+    /// more than `lines` lines (fit_lines(); 0: no limit) where the GPU makes
+    /// it so — the CPU's are left as they are, for whoever scales them;
+    /// nullopt when there is none to give (every GPU picture still held,
+    /// nothing left of the size). Fails when the GPU does.
     Result<std::optional<VideoFrame>> read(ID3D11Texture2D& texture, uint32_t width,
-                                           uint32_t height, Timestamp captured);
+                                           uint32_t height, Timestamp captured, uint32_t lines = 0);
 
     const std::shared_ptr<Device>& device() const noexcept { return device_; }
 

@@ -172,6 +172,15 @@ class CallController : public QObject {
     /// to choose one.
     Q_PROPERTY(bool sharing READ sharing NOTIFY sharingChanged)
     Q_PROPERTY(bool choosing READ choosing NOTIFY choosingChanged)
+    /// How a share is sent: "auto" — at as many lines as the path and the
+    /// computer carry, up to the screen's (SizeAdapter) —, "original" — the
+    /// screen's —, or at no more than "1440", "1080" or "720" lines. Kept
+    /// from one run to the next; while sharing, taken at once.
+    Q_PROPERTY(QString shareSize READ shareSize WRITE setShareSize NOTIFY shareSizeChanged)
+    /// The frames a second a share is sent at, at most: 60 or 30. Kept; taken
+    /// by the next share.
+    Q_PROPERTY(
+        int shareFrameRate READ shareFrameRate WRITE setShareFrameRate NOTIFY shareFrameRateChanged)
     /// The id of the member whose share plays into `video`; "" for none.
     Q_PROPERTY(QString watching READ watching NOTIFY watchingChanged)
     /// That member as a row of `members` (a map of its roles); empty for none.
@@ -372,6 +381,10 @@ public:
     bool cameraMirrored() const { return camera_mirrored_; }
     bool sharing() const { return sharing_; }
     bool choosing() const { return choosing_; }
+    QString shareSize() const { return share_size_; }
+    void setShareSize(const QString& size);
+    int shareFrameRate() const { return share_frame_rate_; }
+    void setShareFrameRate(int frames);
     QString watching() const { return watching_; }
     QVariantMap watched() const { return watched_; }
     VideoView* video() const { return video_; }
@@ -409,6 +422,8 @@ Q_SIGNALS:
     void cameraMirroredChanged();
     void sharingChanged();
     void choosingChanged();
+    void shareSizeChanged();
+    void shareFrameRateChanged();
     void watchingChanged();
     void watchedChanged();
     void videoChanged();
@@ -430,6 +445,8 @@ private:
     void set_notice(QString notice);
     void set_sharing(bool sharing);
     void set_choosing(bool choosing);
+    /// shareSize and shareFrameRate as the settings keep them.
+    void load_share_settings();
     void set_watching(QString id);
     /// Start the call `config` says and be in `state`: talking, reporting.
     void start(CallConfig config, State state);
@@ -558,6 +575,8 @@ private:
     QVariantList stats_;
     QString quality_;
     QString quality_reason_;
+    QString share_size_ = QStringLiteral("auto");
+    int share_frame_rate_ = 60;
     int stats_every_ = 0;
     unsigned printed_seconds_ = 0;  ///< into the call, as printed
     QPointer<VideoView> video_;

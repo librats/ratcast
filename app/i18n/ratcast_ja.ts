@@ -857,6 +857,10 @@
         <translation>ネットワーク</translation>
     </message>
     <message>
+        <source>Sharing</source>
+        <translation>画面共有</translation>
+    </message>
+    <message>
         <source>Language</source>
         <translation>言語</translation>
     </message>
@@ -911,6 +915,46 @@
     <message>
         <source>For a device plugged in just now</source>
         <translation>接続したばかりのデバイスを探します</translation>
+    </message>
+    <message>
+        <source>Resolution</source>
+        <translation>解像度</translation>
+    </message>
+    <message>
+        <source>Automatic</source>
+        <translation>自動</translation>
+    </message>
+    <message>
+        <source>As the screen has it</source>
+        <translation>画面のまま</translation>
+    </message>
+    <message>
+        <source>As sharp as the connection and the computer allow: lower when they cannot keep up, back up when they can, never above the screen&apos;s own.</source>
+        <translation>接続とコンピューターが許す限り鮮明に。追いつかないときは下げ、余裕が戻れば上げます。画面本来の解像度を超えることはありません。</translation>
+    </message>
+    <message>
+        <source>A lower one is lighter on a slow connection and a weak computer; a screen with less is sent as it is.</source>
+        <translation>低くするほど遅い回線や非力なコンピューターの負担が軽くなります。それより低い画面はそのまま送られます。</translation>
+    </message>
+    <message>
+        <source>Takes effect at once, while sharing too.</source>
+        <translation>すぐに反映されます。共有中も同様です。</translation>
+    </message>
+    <message>
+        <source>Frame rate</source>
+        <translation>フレームレート</translation>
+    </message>
+    <message>
+        <source>60 frames a second</source>
+        <translation>毎秒60フレーム</translation>
+    </message>
+    <message>
+        <source>30 frames a second</source>
+        <translation>毎秒30フレーム</translation>
+    </message>
+    <message>
+        <source>60 is smooth, for games and films; 30 is half the work for the computer, and enough for documents and code. Taken by the next share.</source>
+        <translation>60はなめらかで、ゲームや映画向きです。30はコンピューターの負担が半分になり、文書やコードには十分です。次の共有から反映されます。</translation>
     </message>
     <message>
         <source>Server</source>

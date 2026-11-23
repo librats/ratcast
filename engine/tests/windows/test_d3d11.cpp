@@ -128,7 +128,8 @@ TEST_F(D3D11Test, TheGpuConvertsInTheCpusColours) {
                                          ColorSpace{ColorMatrix::BT601, ColorRange::Full}}) {
         const std::unique_ptr<d3d11::Nv12Converter> converter = this->converter(color_space);
         if (!converter) GTEST_SKIP() << "no video processor here";
-        Result<VideoFrame> converted = converter->convert(*texture.Get(), 112, 64, Timestamp{1s});
+        Result<VideoFrame> converted =
+            converter->convert(*texture.Get(), 112, 64, 112, 64, Timestamp{1s});
         ASSERT_TRUE(converted);
         ASSERT_TRUE(converted->gpu());
         EXPECT_EQ(converted->color_space(), color_space);
@@ -148,7 +149,7 @@ TEST_F(D3D11Test, TheGpuConvertsOnlyTheSizeAsked) {
     const win::ComPtr<ID3D11Texture2D> texture = texture_of(bgra);
     const std::unique_ptr<d3d11::Nv12Converter> converter = this->converter();
     if (!converter) GTEST_SKIP() << "no video processor here";
-    Result<VideoFrame> converted = converter->convert(*texture.Get(), 64, 32, Timestamp{});
+    Result<VideoFrame> converted = converter->convert(*texture.Get(), 64, 32, 64, 32, Timestamp{});
     ASSERT_TRUE(converted);
     EXPECT_EQ(converted->width(), 64u);
     EXPECT_EQ(converted->height(), 32u);
@@ -163,28 +164,57 @@ TEST_F(D3D11Test, TheGpuConvertsOnlyTheSizeAsked) {
     EXPECT_TRUE(same_samples(*gpu, *cpu, 3));
 }
 
+TEST_F(D3D11Test, TheGpuMakesAPictureSmallerAsAsked) {
+    const VideoFrame bgra = blocks(224, 128);
+    const win::ComPtr<ID3D11Texture2D> texture = texture_of(bgra);
+    const std::unique_ptr<d3d11::Nv12Converter> converter = this->converter();
+    if (!converter) GTEST_SKIP() << "no video processor here";
+    Result<VideoFrame> converted =
+        converter->convert(*texture.Get(), 224, 128, 112, 64, Timestamp{2s});
+    ASSERT_TRUE(converted);
+    EXPECT_EQ(converted->width(), 112u);
+    EXPECT_EQ(converted->height(), 64u);
+    EXPECT_EQ(converted->capture_time(), Timestamp{2s});
+    Result<VideoFrame> gpu = download_frame(*converted);
+    ASSERT_TRUE(gpu);
+    Result<VideoFrame> full = convert_frame(bgra, PixelFormat::NV12);
+    ASSERT_TRUE(full);
+    Result<VideoFrame> cpu = shrink_frame(*full, 2);
+    ASSERT_TRUE(cpu);
+    // The whole picture, each block's 8 x 8 now: its middle as the CPU has
+    // it, whatever the GPU's filter does at the edges.
+    for (uint32_t y = 4; y < 64; y += 8) {
+        for (uint32_t x = 4; x < 112; x += 8) {
+            const int got = gpu->plane(0).data[y * gpu->plane(0).stride + x];
+            const int wanted = cpu->plane(0).data[y * cpu->plane(0).stride + x];
+            EXPECT_NEAR(got, wanted, 3) << "at " << x << ", " << y;
+        }
+    }
+}
+
 TEST_F(D3D11Test, NoPictureWhileEveryOneIsHeld) {
     const win::ComPtr<ID3D11Texture2D> texture = texture_of(blocks(64, 64));
     const std::unique_ptr<d3d11::Nv12Converter> converter = this->converter();
     if (!converter) GTEST_SKIP() << "no video processor here";
     std::vector<VideoFrame> held;
     for (size_t i = 0; i < d3d11::Nv12Converter::kPictures; ++i) {
-        Result<VideoFrame> picture = converter->convert(*texture.Get(), 64, 64, Timestamp{});
+        Result<VideoFrame> picture =
+            converter->convert(*texture.Get(), 64, 64, 64, 64, Timestamp{});
         ASSERT_TRUE(picture);
         ASSERT_FALSE(picture->empty()) << "picture " << i;
         held.push_back(std::move(*picture));
     }
-    Result<VideoFrame> none = converter->convert(*texture.Get(), 64, 64, Timestamp{});
+    Result<VideoFrame> none = converter->convert(*texture.Get(), 64, 64, 64, 64, Timestamp{});
     ASSERT_TRUE(none);
     EXPECT_TRUE(none->empty());
 
     held.pop_back();  // its texture goes back to the pool
-    Result<VideoFrame> again = converter->convert(*texture.Get(), 64, 64, Timestamp{});
+    Result<VideoFrame> again = converter->convert(*texture.Get(), 64, 64, 64, 64, Timestamp{});
     ASSERT_TRUE(again);
     EXPECT_FALSE(again->empty());
 
     // A new size starts a new pool, whatever the old one's pictures do.
-    Result<VideoFrame> smaller = converter->convert(*texture.Get(), 32, 32, Timestamp{});
+    Result<VideoFrame> smaller = converter->convert(*texture.Get(), 32, 32, 32, 32, Timestamp{});
     ASSERT_TRUE(smaller);
     EXPECT_FALSE(smaller->empty());
     held.clear();  // given back to a pool given up: let go

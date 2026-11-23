@@ -1,11 +1,22 @@
 // What FFmpeg provides, in a build without it: there is nothing to open.
 
 #include "ratcast/engine/file_source.h"
+#include "ratcast/engine/video_convert.h"
 #include "video/codec_backend.h"
 
 namespace ratcast {
 
 Result<std::unique_ptr<FileSource>> open_file_source(const FileSourceOptions&, Clock&) {
+    return fail(Errc::Unavailable);
+}
+
+struct FrameScaler::State {};
+
+FrameScaler::FrameScaler() = default;
+
+FrameScaler::~FrameScaler() = default;
+
+Result<VideoFrame> FrameScaler::scale(const VideoFrame&, uint32_t, uint32_t) {
     return fail(Errc::Unavailable);
 }
 

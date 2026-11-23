@@ -1136,6 +1136,67 @@ TEST_F(CallControllerTest, EveryShareIsChosenInTheDialog) {
     EXPECT_EQ(asked_with, "") << "no choice kept to restore";
 }
 
+TEST_F(CallControllerTest, AShareIsSentAsSetAndThatIsKept) {
+    CallController::Environment ann = environment();
+    QTemporaryDir kept;
+    ASSERT_TRUE(kept.isValid());
+    const QString settings_file = kept.filePath("ratcast.conf");
+    ann.settings = [settings_file] {
+        return std::make_unique<QSettings>(settings_file, QSettings::IniFormat);
+    };
+    auto asked = std::make_shared<std::vector<ScreenShareConfig>>();
+    ann.open_share = [asked, open = ann.open_share](const ScreenShareConfig& config,
+                                                    std::stop_token cancel) {
+        asked->push_back(config);
+        return open(config, std::move(cancel));
+    };
+    ann_.setEnvironment(ann);
+    EXPECT_EQ(ann_.shareSize(), "auto") << "as the path and the computer carry, at first";
+    EXPECT_EQ(ann_.shareFrameRate(), 60);
+
+    make_room();
+    ann_.share(false, false);
+    ASSERT_TRUE(wait_for([&] { return ann_.sharing(); })) << ann_.notice().toStdString();
+    ASSERT_EQ(asked->size(), 1u);
+    EXPECT_EQ(asked->back().max_lines, 0u);
+    EXPECT_TRUE(asked->back().adapt_size);
+    EXPECT_EQ(asked->back().video.frame_rate_num, 60u);
+
+    // Set while sharing: the size at once.
+    ann_.setShareSize("720");
+    ann_.setShareFrameRate(30);
+    ann_.setShareSize("4K");  // none of those offered: as it was
+    ann_.setShareFrameRate(25);
+    EXPECT_EQ(ann_.shareSize(), "720");
+    EXPECT_EQ(ann_.shareFrameRate(), 30);
+    // The panel says so: the pattern's 240 lines, sent at no more than 720.
+    const auto size_shown = [&] {
+        for (const QVariant& section : ann_.stats()) {
+            for (const QVariant& row : section.toMap().value("rows").toList()) {
+                if (row.toMap().value("label") == "Size")
+                    return row.toMap().value("value").toString();
+            }
+        }
+        return QString();
+    };
+    EXPECT_TRUE(wait_for([&] { return size_shown() == "320x240 (at most 720 lines)"; }))
+        << size_shown().toStdString();
+    ann_.stopSharing();
+    ann_.share(false, false);
+    ASSERT_TRUE(wait_for([&] { return ann_.sharing(); })) << ann_.notice().toStdString();
+    ASSERT_EQ(asked->size(), 2u);
+    EXPECT_EQ(asked->back().max_lines, 720u);
+    EXPECT_FALSE(asked->back().adapt_size);
+    EXPECT_EQ(asked->back().video.frame_rate_num, 30u) << "the frame rate with the next share";
+
+    // Kept for another run.
+    CallController::Environment bob = environment();
+    bob.settings = ann.settings;
+    bob_.setEnvironment(bob);
+    EXPECT_EQ(bob_.shareSize(), "720");
+    EXPECT_EQ(bob_.shareFrameRate(), 30);
+}
+
 TEST_F(CallControllerTest, AShareTheDesktopCannotMakeSaysWhy) {
     CallController::Environment unavailable = environment();
     unavailable.open_share = [](const ScreenShareConfig&, std::stop_token) {

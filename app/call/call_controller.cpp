@@ -18,6 +18,7 @@
 #include <map>
 #include <mutex>
 #include <string>
+#include <tuple>
 #include <utility>
 
 #include "librats/util/logger.h"
@@ -28,6 +29,21 @@ namespace {
 QString describe(Errc error) { return QString::fromLatin1(to_string(error)); }
 
 QString id_of(const PeerId& peer) { return QString::fromStdString(peer.to_hex()); }
+
+const QString kShareSize = QStringLiteral("share/size");
+const QString kShareFrameRate = QStringLiteral("share/frameRate");
+const QStringList kShareSizes = {QStringLiteral("auto"), QStringLiteral("original"),
+                                 QStringLiteral("1440"), QStringLiteral("1080"),
+                                 QStringLiteral("720")};
+const QList<int> kShareFrameRates = {60, 30};
+
+/// A shareSize as ScreenShareConfig has it: the most lines, and whether fewer
+/// as the path and the computer need.
+std::pair<uint32_t, bool> lines_of(const QString& size) {
+    if (size == QStringLiteral("auto")) return {0, true};
+    if (size == QStringLiteral("original")) return {0, false};
+    return {size.toUInt(), false};
+}
 
 /// A device chosen as the log names it: by its name, or the system's default.
 std::string device_named(const QString& id, const QString& name) {
@@ -241,6 +257,7 @@ CallController::CallController(QObject* parent)
     connect(&logging_, &QTimer::timeout, this, &CallController::log_stats);
     load_hearing();
     load_devices();
+    load_share_settings();
 }
 
 CallController::~CallController() {
@@ -264,6 +281,7 @@ void CallController::setEnvironment(Environment environment) {
     load_hearing();
     load_devices();
     load_recent();
+    load_share_settings();
 }
 
 bool CallController::attach(QPointer<VideoView>& slot, Pictures& pictures, VideoView* view) {
@@ -812,6 +830,8 @@ void CallController::share(bool window, bool sound) {
     ScreenShareConfig config;
     config.window = window;
     config.sound = sound && !switching;
+    std::tie(config.max_lines, config.adapt_size) = lines_of(share_size_);
+    config.video.frame_rate_num = uint32_t(share_frame_rate_);
 #ifdef Q_OS_ANDROID
     // What the applications play is heard only with the microphone's leave:
     // without it, the screen alone.
@@ -875,6 +895,49 @@ void CallController::stop_share() {
     share_preview_.reset();
     if (share_preview_view_) share_preview_view_->clear();
     set_sharing(false);
+}
+
+// ── How a share is sent ─────────────────────────────────────────────────────
+//
+// Kept in the settings as share/size and share/frameRate.
+
+void CallController::load_share_settings() {
+    QString size = QStringLiteral("auto");
+    int frames = 60;
+    if (environment_.settings) {
+        const std::unique_ptr<QSettings> settings = environment_.settings();
+        size = settings->value(kShareSize, size).toString();
+        frames = settings->value(kShareFrameRate, frames).toInt();
+    }
+    if (!kShareSizes.contains(size)) size = QStringLiteral("auto");
+    if (!kShareFrameRates.contains(frames)) frames = 60;
+    if (size != share_size_) {
+        share_size_ = size;
+        Q_EMIT shareSizeChanged();
+    }
+    if (frames != share_frame_rate_) {
+        share_frame_rate_ = frames;
+        Q_EMIT shareFrameRateChanged();
+    }
+}
+
+void CallController::setShareSize(const QString& size) {
+    if (size == share_size_ || !kShareSizes.contains(size)) return;
+    share_size_ = size;
+    LOG_INFO("app", "a share sent at " << size.toStdString());
+    if (environment_.settings) environment_.settings()->setValue(kShareSize, size);
+    Q_EMIT shareSizeChanged();
+    if (sharing_ && call_) {
+        const auto [lines, adapt] = lines_of(size);
+        (void)set_screen_share_size(*call_, lines, adapt);
+    }
+}
+
+void CallController::setShareFrameRate(int frames) {
+    if (frames == share_frame_rate_ || !kShareFrameRates.contains(frames)) return;
+    share_frame_rate_ = frames;
+    if (environment_.settings) environment_.settings()->setValue(kShareFrameRate, frames);
+    Q_EMIT shareFrameRateChanged();
 }
 
 void CallController::stopSharing() {

@@ -4,6 +4,7 @@
 #include <dxgi1_6.h>
 #include <windows.h>
 
+#include <atomic>
 #include <chrono>
 #include <mutex>
 #include <optional>
@@ -121,6 +122,9 @@ public:
     }
 
     const std::string& restore_token() const noexcept override { return token_; }
+
+    // Made smaller by the GPU's video processor as it turns them into NV12.
+    void limit_size(uint32_t lines) override { lines_.store(lines, std::memory_order_relaxed); }
 
 private:
     /// What a run holds: the device of the output's adapter and the
@@ -242,8 +246,9 @@ private:
 
     /// The screen as it is in `texture`, to the sink.
     void give(Session& session, ID3D11Texture2D& texture, Timestamp captured, const Sink& sink) {
-        Result<std::optional<VideoFrame>> picture = session.reader->read(
-            texture, session.desc.ModeDesc.Width, session.desc.ModeDesc.Height, captured);
+        Result<std::optional<VideoFrame>> picture =
+            session.reader->read(texture, session.desc.ModeDesc.Width, session.desc.ModeDesc.Height,
+                                 captured, lines_.load(std::memory_order_relaxed));
         if (!picture) {
             session.duplication.Reset();  // the GPU went: everything made again
             session.reader.reset();
@@ -281,7 +286,8 @@ private:
     const std::string token_;
     const ScreenCaptureOptions options_;
     Clock& clock_;
-    std::mutex mutex_;  ///< serialises start() and stop()
+    std::atomic<uint32_t> lines_{0};  ///< limit_size()'s
+    std::mutex mutex_;                ///< serialises start() and stop()
     std::jthread thread_;
 };
 

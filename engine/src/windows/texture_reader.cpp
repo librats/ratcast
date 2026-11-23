@@ -23,7 +23,8 @@ TextureReader::TextureReader(std::shared_ptr<Device> device, PixelFormat format,
 TextureReader::~TextureReader() = default;
 
 Result<std::optional<VideoFrame>> TextureReader::read(ID3D11Texture2D& texture, uint32_t width,
-                                                      uint32_t height, Timestamp captured) {
+                                                      uint32_t height, Timestamp captured,
+                                                      uint32_t lines) {
     D3D11_TEXTURE2D_DESC desc;
     texture.GetDesc(&desc);
     width = std::min(width, desc.Width);
@@ -35,7 +36,9 @@ Result<std::optional<VideoFrame>> TextureReader::read(ID3D11Texture2D& texture, 
     if (width == 0 || height == 0) return std::optional<VideoFrame>{};
 
     if (converter_) {
-        Result<VideoFrame> picture = converter_->convert(texture, width, height, captured);
+        const PictureSize out = fit_lines(width, height, lines);
+        Result<VideoFrame> picture =
+            converter_->convert(texture, width, height, out.width, out.height, captured);
         if (picture && picture->empty()) return std::optional<VideoFrame>{};  // dropped
         if (picture) return std::optional<VideoFrame>{std::move(*picture)};
         // A size its video processor will not take, say: through memory from

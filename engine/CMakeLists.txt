@@ -34,6 +34,7 @@ if(RATCAST_FFMPEG_FOUND)
     target_sources(ratcast_engine PRIVATE
         src/ffmpeg/av.cpp
         src/ffmpeg/file_source.cpp
+        src/ffmpeg/frame_scaler.cpp
         src/ffmpeg/video_decoder.cpp
         src/ffmpeg/video_encoder.cpp
     )

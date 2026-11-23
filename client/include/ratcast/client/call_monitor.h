@@ -98,10 +98,12 @@ struct SentStreamReport {
     bool gpu_input = false;
     uint32_t width = 0;  ///< pictures
     uint32_t height = 0;
-    double source_fps = 0;  ///< pictures, or blocks of sound, from the source
-    double fps = 0;         ///< frames sent
-    double bitrate = 0;     ///< of those frames, bits per second
-    uint32_t target = 0;    ///< what rate control aims at; 0 without it
+    uint32_t lines = 0;        ///< what they are sent at, at most; 0: as they come
+    bool scaled_here = false;  ///< made smaller on the CPU over the interval
+    double source_fps = 0;     ///< pictures, or blocks of sound, from the source
+    double fps = 0;            ///< frames sent
+    double bitrate = 0;        ///< of those frames, bits per second
+    uint32_t target = 0;       ///< what rate control aims at; 0 without it
     Duration encode_time{};
     /// Pictures or blocks of sound the encoder never took; a feed's bytes
     /// that were no packet.

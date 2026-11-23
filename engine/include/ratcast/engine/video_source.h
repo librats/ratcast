@@ -14,6 +14,7 @@
  * left out), which is what encoders take.
  */
 
+#include <cstdint>
 #include <functional>
 
 #include "ratcast/core/result.h"
@@ -41,6 +42,14 @@ public:
     /// Stop. When this returns, neither handler is running or will be called
     /// again. The source may be started again.
     virtual void stop() = 0;
+
+    /// Pictures of no more than `lines` lines (fit_lines(): their shorter
+    /// side; 0, as they come) from a moment on, where the source makes them
+    /// so for less than scaling them after costs — a screen drawn smaller by
+    /// the GPU or the system. Others ignore it, as this does: whoever wants
+    /// them smaller looks at what comes. Any thread, started or not; it holds
+    /// across a stop() and the next start().
+    virtual void limit_size(uint32_t lines) { (void)lines; }
 };
 
 }  // namespace ratcast

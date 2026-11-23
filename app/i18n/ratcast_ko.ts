@@ -857,6 +857,10 @@
         <translation>네트워크</translation>
     </message>
     <message>
+        <source>Sharing</source>
+        <translation>화면 공유</translation>
+    </message>
+    <message>
         <source>Language</source>
         <translation>언어</translation>
     </message>
@@ -911,6 +915,46 @@
     <message>
         <source>For a device plugged in just now</source>
         <translation>방금 연결한 장치를 찾아요</translation>
+    </message>
+    <message>
+        <source>Resolution</source>
+        <translation>해상도</translation>
+    </message>
+    <message>
+        <source>Automatic</source>
+        <translation>자동</translation>
+    </message>
+    <message>
+        <source>As the screen has it</source>
+        <translation>화면 그대로</translation>
+    </message>
+    <message>
+        <source>As sharp as the connection and the computer allow: lower when they cannot keep up, back up when they can, never above the screen&apos;s own.</source>
+        <translation>연결과 컴퓨터가 허용하는 만큼 선명하게: 따라가지 못하면 낮추고, 여유가 생기면 다시 높이며, 화면 원래 해상도를 넘지 않습니다.</translation>
+    </message>
+    <message>
+        <source>A lower one is lighter on a slow connection and a weak computer; a screen with less is sent as it is.</source>
+        <translation>낮을수록 느린 연결과 성능이 낮은 컴퓨터에 부담이 적습니다. 그보다 낮은 화면은 그대로 보냅니다.</translation>
+    </message>
+    <message>
+        <source>Takes effect at once, while sharing too.</source>
+        <translation>바로 적용되며, 공유 중에도 마찬가지입니다.</translation>
+    </message>
+    <message>
+        <source>Frame rate</source>
+        <translation>프레임 속도</translation>
+    </message>
+    <message>
+        <source>60 frames a second</source>
+        <translation>초당 60프레임</translation>
+    </message>
+    <message>
+        <source>30 frames a second</source>
+        <translation>초당 30프레임</translation>
+    </message>
+    <message>
+        <source>60 is smooth, for games and films; 30 is half the work for the computer, and enough for documents and code. Taken by the next share.</source>
+        <translation>60은 부드러워서 게임과 영화에 알맞고, 30은 컴퓨터 부담이 절반이며 문서와 코드에는 충분합니다. 다음 공유부터 적용됩니다.</translation>
     </message>
     <message>
         <source>Server</source>

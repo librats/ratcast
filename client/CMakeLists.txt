@@ -26,6 +26,7 @@ add_library(ratcast_client STATIC
     src/preview.cpp
     src/rats_url.cpp
     src/screen_share.cpp
+    src/size_adapter.cpp
     src/ts_probe.cpp
     src/video_player.cpp
     src/video_publisher.cpp

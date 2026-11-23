@@ -6,11 +6,11 @@
  *
  * The device's video processor (ID3D11VideoProcessor: fixed-function hardware
  * every GPU with a video engine has) turns what Windows.Graphics.Capture
- * gives into what hardware encoders take, in the colour space asked for,
- * without the picture leaving the GPU. Each picture is drawn into a texture
- * of a small pool, given back when the last frame that carries it goes; with
- * every one of them still held, there is no picture — the source drops it,
- * as capture APIs do whose buffers are not returned.
+ * gives into what hardware encoders take, in the colour space asked for and
+ * made smaller when asked, without the picture leaving the GPU. Each picture is drawn into a
+ * texture of a small pool, given back when the last frame that carries it goes; with every one of
+ * them still held, there is no picture — the source drops it, as capture APIs do whose buffers are
+ * not returned.
  */
 
 #include <cstdint>
@@ -36,11 +36,12 @@ public:
                                                          ColorSpace color_space);
     ~Nv12Converter();
 
-    /// The top-left `width` x `height` — both even — of `bgra` as an NV12
-    /// picture captured at `captured`; an empty frame when every picture of the
-    /// pool is still held.
+    /// The top-left `width` x `height` of `bgra` as an NV12 picture of
+    /// `out_width` x `out_height` — all even; made smaller where they are
+    /// less — captured at `captured`; an empty frame when every picture of
+    /// the pool is still held.
     Result<VideoFrame> convert(ID3D11Texture2D& bgra, uint32_t width, uint32_t height,
-                               Timestamp captured);
+                               uint32_t out_width, uint32_t out_height, Timestamp captured);
 
 private:
     struct State;

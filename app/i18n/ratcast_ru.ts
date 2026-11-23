@@ -857,6 +857,10 @@
         <translation>Сеть</translation>
     </message>
     <message>
+        <source>Sharing</source>
+        <translation>Показ экрана</translation>
+    </message>
+    <message>
         <source>Language</source>
         <translation>Язык</translation>
     </message>
@@ -911,6 +915,46 @@
     <message>
         <source>For a device plugged in just now</source>
         <translation>Если устройство только что подключили</translation>
+    </message>
+    <message>
+        <source>Resolution</source>
+        <translation>Разрешение</translation>
+    </message>
+    <message>
+        <source>Automatic</source>
+        <translation>Авто</translation>
+    </message>
+    <message>
+        <source>As the screen has it</source>
+        <translation>Как у экрана</translation>
+    </message>
+    <message>
+        <source>As sharp as the connection and the computer allow: lower when they cannot keep up, back up when they can, never above the screen&apos;s own.</source>
+        <translation>Настолько чётко, насколько позволяют связь и компьютер: ниже, когда они не справляются, и снова выше, когда справляются, но не выше, чем у самого экрана.</translation>
+    </message>
+    <message>
+        <source>A lower one is lighter on a slow connection and a weak computer; a screen with less is sent as it is.</source>
+        <translation>Чем ниже разрешение, тем легче медленной связи и слабому компьютеру. Экран с меньшим разрешением передаётся как есть.</translation>
+    </message>
+    <message>
+        <source>Takes effect at once, while sharing too.</source>
+        <translation>Применяется сразу, в том числе во время показа.</translation>
+    </message>
+    <message>
+        <source>Frame rate</source>
+        <translation>Частота кадров</translation>
+    </message>
+    <message>
+        <source>60 frames a second</source>
+        <translation>60 кадров в секунду</translation>
+    </message>
+    <message>
+        <source>30 frames a second</source>
+        <translation>30 кадров в секунду</translation>
+    </message>
+    <message>
+        <source>60 is smooth, for games and films; 30 is half the work for the computer, and enough for documents and code. Taken by the next share.</source>
+        <translation>60 — плавно, для игр и фильмов. 30 — вдвое меньше работы для компьютера, и этого хватает для документов и кода. Применяется со следующего показа.</translation>
     </message>
     <message>
         <source>Server</source>

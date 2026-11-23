@@ -106,6 +106,7 @@ struct Call::Published {
     virtual Result<void> switch_source(std::unique_ptr<VideoSource>&) {
         return fail(Errc::InvalidArgument);
     }
+    virtual Result<void> set_size(uint32_t, bool) { return fail(Errc::InvalidArgument); }
 
     const std::string label;
 };
@@ -139,6 +140,14 @@ struct Call::PublishedAs final : Published {
             return {};
         } else {
             return Published::switch_source(next);
+        }
+    }
+    Result<void> set_size(uint32_t max_lines, bool adapt) override {
+        if constexpr (kVideo) {
+            publisher.set_size(max_lines, adapt);
+            return {};
+        } else {
+            return Published::set_size(max_lines, adapt);
         }
     }
 
@@ -575,6 +584,17 @@ Result<void> Call::switch_source(StreamId stream, std::unique_ptr<VideoSource> s
     }
     LOG_INFO("call", "sending " << published->label << " " << stream << " from another source");
     return {};  // the one before goes with `source`, stopped
+}
+
+Result<void> Call::set_video_size(StreamId stream, uint32_t max_lines, bool adapt) {
+    std::shared_ptr<Published> published;
+    {
+        std::lock_guard lock(publishing_);
+        const auto it = published_.find(stream);
+        if (it == published_.end()) return fail(Errc::InvalidArgument);
+        published = it->second;
+    }
+    return published->set_size(max_lines, adapt);
 }
 
 void Call::unpublish(StreamId stream) {

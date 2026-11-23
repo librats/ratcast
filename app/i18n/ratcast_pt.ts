@@ -857,6 +857,10 @@
         <translation>Rede</translation>
     </message>
     <message>
+        <source>Sharing</source>
+        <translation>Compartilhar</translation>
+    </message>
+    <message>
         <source>Language</source>
         <translation>Idioma</translation>
     </message>
@@ -911,6 +915,46 @@
     <message>
         <source>For a device plugged in just now</source>
         <translation>Para um dispositivo recém-conectado</translation>
+    </message>
+    <message>
+        <source>Resolution</source>
+        <translation>Resolução</translation>
+    </message>
+    <message>
+        <source>Automatic</source>
+        <translation>Automática</translation>
+    </message>
+    <message>
+        <source>As the screen has it</source>
+        <translation>A da tela</translation>
+    </message>
+    <message>
+        <source>As sharp as the connection and the computer allow: lower when they cannot keep up, back up when they can, never above the screen&apos;s own.</source>
+        <translation>Tão nítida quanto a conexão e o computador permitirem: mais baixa quando não dão conta, mais alta de novo quando conseguem, nunca acima da própria tela.</translation>
+    </message>
+    <message>
+        <source>A lower one is lighter on a slow connection and a weak computer; a screen with less is sent as it is.</source>
+        <translation>Uma mais baixa alivia uma conexão lenta e um computador fraco; uma tela com menos é enviada como está.</translation>
+    </message>
+    <message>
+        <source>Takes effect at once, while sharing too.</source>
+        <translation>Vale na hora, também durante o compartilhamento.</translation>
+    </message>
+    <message>
+        <source>Frame rate</source>
+        <translation>Taxa de quadros</translation>
+    </message>
+    <message>
+        <source>60 frames a second</source>
+        <translation>60 quadros por segundo</translation>
+    </message>
+    <message>
+        <source>30 frames a second</source>
+        <translation>30 quadros por segundo</translation>
+    </message>
+    <message>
+        <source>60 is smooth, for games and films; 30 is half the work for the computer, and enough for documents and code. Taken by the next share.</source>
+        <translation>60 é fluido, para jogos e filmes; 30 é metade do trabalho para o computador e basta para documentos e código. Vale a partir do próximo compartilhamento.</translation>
     </message>
     <message>
         <source>Server</source>

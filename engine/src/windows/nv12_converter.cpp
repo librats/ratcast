@@ -34,16 +34,20 @@ struct Pool {
     }
 };
 
-D3D11_VIDEO_PROCESSOR_CONTENT_DESC content(uint32_t width, uint32_t height) {
+/// `width` x `height` in, `out_width` x `out_height` out: a picture made
+/// smaller is drawn for quality, one of its size for speed.
+D3D11_VIDEO_PROCESSOR_CONTENT_DESC content(uint32_t width, uint32_t height, uint32_t out_width,
+                                           uint32_t out_height) {
     D3D11_VIDEO_PROCESSOR_CONTENT_DESC desc{};
     desc.InputFrameFormat = D3D11_VIDEO_FRAME_FORMAT_PROGRESSIVE;
     desc.InputFrameRate = {60, 1};
     desc.InputWidth = width;
     desc.InputHeight = height;
     desc.OutputFrameRate = {60, 1};
-    desc.OutputWidth = width;
-    desc.OutputHeight = height;
-    desc.Usage = D3D11_VIDEO_USAGE_OPTIMAL_SPEED;
+    desc.OutputWidth = out_width;
+    desc.OutputHeight = out_height;
+    desc.Usage = out_width == width && out_height == height ? D3D11_VIDEO_USAGE_OPTIMAL_SPEED
+                                                            : D3D11_VIDEO_USAGE_OPTIMAL_QUALITY;
     return desc;
 }
 
@@ -65,18 +69,22 @@ struct Nv12Converter::State {
     ComPtr<ID3D11VideoContext> video_context;
     ColorSpace color_space;
 
-    // For the current size.
+    // For the current sizes, in and out.
     uint32_t width = 0;
     uint32_t height = 0;
+    uint32_t out_width = 0;
+    uint32_t out_height = 0;
     ComPtr<ID3D11VideoProcessorEnumerator> enumerator;
     ComPtr<ID3D11VideoProcessor> processor;
     ComPtr<ID3D11Texture2D> input;  ///< the picture to convert, copied out of the source's
     ComPtr<ID3D11VideoProcessorInputView> input_view;
     std::shared_ptr<Pool> pool = std::make_shared<Pool>();
 
-    /// Ready for `width` x `height`. Under the device's lock.
-    HRESULT resize(uint32_t new_width, uint32_t new_height) {
-        width = height = 0;
+    /// Ready for `new_width` x `new_height` in, `new_out_width` x
+    /// `new_out_height` out. Under the device's lock.
+    HRESULT resize(uint32_t new_width, uint32_t new_height, uint32_t new_out_width,
+                   uint32_t new_out_height) {
+        width = height = out_width = out_height = 0;
         input_view.Reset();
         input.Reset();
         processor.Reset();
@@ -88,7 +96,8 @@ struct Nv12Converter::State {
             pool->free.clear();
         }
 
-        const D3D11_VIDEO_PROCESSOR_CONTENT_DESC desc = content(new_width, new_height);
+        const D3D11_VIDEO_PROCESSOR_CONTENT_DESC desc =
+            content(new_width, new_height, new_out_width, new_out_height);
         HRESULT result = video_device->CreateVideoProcessorEnumerator(&desc, &enumerator);
         if (FAILED(result)) return result;
         result = video_device->CreateVideoProcessor(enumerator.Get(), 0, &processor);
@@ -134,6 +143,8 @@ struct Nv12Converter::State {
         video_context->VideoProcessorSetStreamAutoProcessingMode(processor.Get(), 0, FALSE);
         width = new_width;
         height = new_height;
+        out_width = new_out_width;
+        out_height = new_out_height;
         return S_OK;
     }
 
@@ -154,8 +165,8 @@ struct Nv12Converter::State {
         if (!slot) {
             slot = std::make_unique<Slot>();
             D3D11_TEXTURE2D_DESC texture{};
-            texture.Width = width;
-            texture.Height = height;
+            texture.Width = out_width;
+            texture.Height = out_height;
             texture.MipLevels = 1;
             texture.ArraySize = 1;
             texture.Format = DXGI_FORMAT_NV12;
@@ -191,7 +202,7 @@ Result<std::unique_ptr<Nv12Converter>> Nv12Converter::create(std::shared_ptr<Dev
         return fail(Errc::Unavailable);
     }
     // Whether this processor takes BGRA in and gives NV12 out at all.
-    const D3D11_VIDEO_PROCESSOR_CONTENT_DESC desc = content(64, 64);
+    const D3D11_VIDEO_PROCESSOR_CONTENT_DESC desc = content(64, 64, 64, 64);
     ComPtr<ID3D11VideoProcessorEnumerator> enumerator;
     UINT in = 0;
     UINT out = 0;
@@ -213,12 +224,16 @@ Nv12Converter::Nv12Converter(std::unique_ptr<State> state) noexcept : state_(std
 Nv12Converter::~Nv12Converter() = default;
 
 Result<VideoFrame> Nv12Converter::convert(ID3D11Texture2D& bgra, uint32_t width, uint32_t height,
+                                          uint32_t out_width, uint32_t out_height,
                                           Timestamp captured) {
     State& state = *state_;
     const Lock lock(*state.device);
-    if (width != state.width || height != state.height) {
-        if (const HRESULT result = state.resize(width, height); FAILED(result)) {
-            LOG_WARN("engine", "no video processor for " << width << "x" << height << ": 0x"
+    if (width != state.width || height != state.height || out_width != state.out_width ||
+        out_height != state.out_height) {
+        if (const HRESULT result = state.resize(width, height, out_width, out_height);
+            FAILED(result)) {
+            LOG_WARN("engine", "no video processor for " << width << "x" << height << " to "
+                                                         << out_width << "x" << out_height << ": 0x"
                                                          << std::hex << unsigned(result));
             return fail(win::errc_of(result));
         }
@@ -239,7 +254,7 @@ Result<VideoFrame> Nv12Converter::convert(ID3D11Texture2D& bgra, uint32_t width,
     state.device->context()->Flush();  // under way while the picture goes to its encoder
     ComPtr<ID3D11Texture2D> texture = slot->texture;
     return VideoFrame(
-        PixelFormat::NV12, width, height,
+        PixelFormat::NV12, out_width, out_height,
         std::make_shared<Picture>(state.device, std::move(texture), 0, std::move(slot)), captured,
         state.color_space);
 }
