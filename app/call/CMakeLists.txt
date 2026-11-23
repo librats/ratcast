@@ -5,6 +5,8 @@
 # static QML module: the app links its plugin.
 
 qt_add_library(ratcast_call STATIC
+    attachments.cpp
+    attachments.h
     call_controller.cpp
     call_controller.h
     chat_model.cpp

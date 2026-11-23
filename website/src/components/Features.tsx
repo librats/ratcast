@@ -205,7 +205,7 @@ function CameraGrid() {
 const MESSAGES = [
   { who: "Mia", text: "who brought snacks" },
   { who: "Leo", text: "github.com/librats 🔗" },
-  { who: "Sam", text: "joining in 2 min" },
+  { who: "Sam", text: "📎 trailer.mp4 · 48 MB" },
 ];
 
 function ChatFeed() {
@@ -308,8 +308,8 @@ const CARDS: { span: string; icon: LucideIcon; title: string; text: string; demo
   {
     span: "lg:col-span-2",
     icon: MessagesSquare,
-    title: "Text chat",
-    text: "Write to the room beside the call. Late joiners see the last hundred messages.",
+    title: "Text chat, with files",
+    text: "Write to the room beside the call; late joiners see the last hundred messages. Images and files go peer to peer to whoever asks, never ahead of the call.",
     demo: <ChatFeed />,
   },
   {

@@ -3,6 +3,11 @@
 #include <QDateTime>
 #include <QLocale>
 #include <QRegularExpression>
+#include <QUrl>
+#include <QVariantMap>
+
+#include "attachments.h"
+#include "ratcast/client/chat_files.h"
 
 #include <algorithm>
 #include <chrono>
@@ -68,8 +73,11 @@ void ChatModel::add(const ChatMessage& message, bool mine) {
         [](const Row& row, const ChatMessage& m) { return key(row.message) < key(m); });
     if (at != rows_.end() && key(at->message) == key(message)) return;
     const int row = int(at - rows_.begin());
+    QStringList previews;
+    for (const ChatAttachment& file : message.attachments) previews << preview_url(file.preview);
     beginInsertRows({}, row, row);
-    rows_.insert(at, Row{message, chat_html(QString::fromStdString(message.text)), mine});
+    rows_.insert(at, Row{message, chat_html(QString::fromStdString(message.text)), mine,
+                         std::move(previews)});
     endInsertRows();
     // The one after may continue this one, where it continued another.
     if (row + 1 < rowCount()) Q_EMIT dataChanged(index(row + 1), index(row + 1), {ContinuedRole});
@@ -79,8 +87,72 @@ void ChatModel::add(const ChatMessage& message, bool mine) {
 void ChatModel::clear() {
     beginResetModel();
     rows_.clear();
+    tags_.clear();
+    files_.clear();
     endResetModel();
     set_unread(0);
+}
+
+template <typename Matches>
+void ChatModel::changed(int role, Matches matches) {
+    for (size_t row = 0; row < rows_.size(); ++row) {
+        if (matches(rows_[row].message))
+            Q_EMIT dataChanged(index(int(row)), index(int(row)), {role});
+    }
+}
+
+void ChatModel::know(const PeerId& author, const QString& tag) {
+    QString& known = tags_[author];
+    if (known == tag) return;
+    known = tag;
+    changed(TagRole, [&](const ChatMessage& m) { return m.author == author; });
+}
+
+void ChatModel::set_file(const FileId& id, FileState state) {
+    FileState& known = files_[id];
+    if (known == state) return;
+    known = std::move(state);
+    changed(AttachmentsRole, [&](const ChatMessage& m) {
+        return std::ranges::any_of(m.attachments,
+                                   [&](const ChatAttachment& file) { return file.id == id; });
+    });
+}
+
+ChatModel::FileState ChatModel::file(const FileId& id) const {
+    const auto it = files_.find(id);
+    return it != files_.end() ? it->second : FileState{};
+}
+
+std::optional<std::pair<ChatAttachment, PeerId>> ChatModel::attachment(const FileId& id) const {
+    for (auto row = rows_.rbegin(); row != rows_.rend(); ++row) {
+        for (const ChatAttachment& file : row->message.attachments) {
+            if (file.id == id) return std::pair(file, row->message.author);
+        }
+    }
+    return std::nullopt;
+}
+
+QVariantList ChatModel::attachments(const Row& row) const {
+    static const char* const kStatuses[] = {"none", "fetching", "here", "failed", "unavailable"};
+    QVariantList list;
+    for (size_t i = 0; i < row.message.attachments.size(); ++i) {
+        const ChatAttachment& file = row.message.attachments[i];
+        const FileState state = this->file(file.id);
+        const bool here = state.status == FileState::Status::Here;
+        list << QVariantMap{
+            {"id", QString::fromStdString(to_hex(file.id))},
+            {"name", QString::fromStdString(file.name)},
+            {"size", size_text(file.size)},
+            {"image", file.image()},
+            {"width", int(file.width)},
+            {"height", int(file.height)},
+            {"preview", row.previews.value(qsizetype(i))},
+            {"status", QString::fromLatin1(kStatuses[int(state.status)])},
+            {"url", here ? QUrl::fromLocalFile(state.path).toString() : QString()},
+            {"progress", file.size > 0 ? double(state.received) / double(file.size) : 0.0},
+        };
+    }
+    return list;
 }
 
 void ChatModel::setReading(bool reading) {
@@ -120,15 +192,22 @@ QVariant ChatModel::data(const QModelIndex& index, int role) const {
         case TimeRole: return time_of(message.sent);
         case MineRole: return rows_[row].mine;
         case ContinuedRole: return continued(row);
+        case TagRole: {
+            const auto it = tags_.find(message.author);
+            return it != tags_.end() ? it->second : QString();
+        }
+        case AttachmentsRole: return attachments(rows_[row]);
         default: return {};
     }
 }
 
 QHash<int, QByteArray> ChatModel::roleNames() const {
     return {
-        {AuthorRole, "author"}, {PeerRole, "peer"},           {NameRole, "name"},
-        {TextRole, "text"},     {HtmlRole, "html"},           {TimeRole, "time"},
+        {AuthorRole, "author"}, {PeerRole, "peer"},
+        {NameRole, "name"},     {TextRole, "text"},
+        {HtmlRole, "html"},     {TimeRole, "time"},
         {MineRole, "mine"},     {ContinuedRole, "continued"},
+        {TagRole, "tag"},       {AttachmentsRole, "attachments"},
     };
 }
 

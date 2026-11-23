@@ -1430,6 +1430,24 @@ sends one out. Steps are taken in the order the user picks, not their numbers'.
   joiner through another, told on coming back after a link was lost; the app — the model's
   order, continuing and unread, its html showing any text as written and making links of web
   links alone, two controllers and a third coming later.
+  Files, later (2026-11-23): a message carries up to 10 (`ChatAttachment`: a name, a size, the
+  id its bytes are known by — BLAKE2b's, `file_id()` — an image's size and a JPEG of it of 4 KB
+  at most), appended to `Chat` and `ChatTold` (a build before them reads the text alone, and
+  drops a message of files with none). The bytes go apart: a member asks one that may have them
+  (`FileAsk`, the sayer first, then each other member; `FileNone` for none), who sends them
+  through librats' `FileTransfer` — its lane below every other, so a file never holds up a
+  frame — and what comes is kept only if its id is the one asked for (`FileExchange`,
+  `client/src/file_exchange.h`: a thread of its own, an offer told from another of the same
+  member by its size, one such awaited of a member at a time; `Call::fetch_file()`,
+  `CallConfig::files_dir`). Whoever has a file sends it on: it can be had while anyone who has
+  it is in the room. The app: each message under its author's avatar, in the colour of whose
+  they are (`ChatModel::know()`); files attached by a clip, dropped on the window or pasted
+  (an image saved as a PNG first), read through off the GUI thread (`attachments.h`); another's
+  image up to 16 MB fetched by itself into the cache — emptied as the next room starts — any
+  other file as asked, put among the downloads; an image seen whole over the window. Not
+  here: a receiver taking files from several members at once is not paced against the share it
+  watches (the sender's side is: FileChunk's lane); a file is not resumed when its sender goes
+  part way, but asked again of the next.
 - **7.2 A link that holds** ✅: a member whose link is lost without leaving is dialed again (stage
   10 left it to rejoin), shown as coming back meanwhile, through a server where no punch gets
   through. librats: **needs** L22 ✅.

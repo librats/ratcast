@@ -15,9 +15,12 @@
 #include <QCoreApplication>
 #include <QDateTime>
 #include <QDir>
+#include <QFile>
 #include <QGuiApplication>
+#include <QImage>
 #include <QStringList>
 #include <QTemporaryDir>
+#include <QUrl>
 
 #include <algorithm>
 #include <atomic>
@@ -307,6 +310,81 @@ TEST_F(CallControllerTest, WhatIsSaidIsListedByEachAndReadByOneWhoComesLater) {
     ann_.leave();
     ann_.create();
     EXPECT_EQ(ann_.chat()->rowCount(), 0);
+}
+
+TEST_F(CallControllerTest, FilesGoWithWhatIsSaidAnImageComingByItself) {
+    QTemporaryDir ann_files;
+    QTemporaryDir bob_files;
+    QTemporaryDir bob_downloads;
+    for (auto [side, files] : {std::pair{&ann_, &ann_files}, std::pair{&bob_, &bob_files}}) {
+        CallController::Environment env = environment();
+        env.call.files_dir = files->path().toStdString();
+        env.downloads = bob_downloads.path();
+        side->setEnvironment(std::move(env));
+    }
+    ann_.setName("Ann");
+    bob_.setName("Bob");
+    both_in();
+
+    // An image and a file of words, as Ann has them.
+    QImage red(320, 200, QImage::Format_RGB32);
+    red.fill(Qt::red);
+    const QString image = QDir(ann_files.path()).filePath("red.png");
+    ASSERT_TRUE(red.save(image));
+    const QString notes = QDir(ann_files.path()).filePath("notes.txt");
+    {
+        QFile file(notes);
+        ASSERT_TRUE(file.open(QIODevice::WriteOnly));
+        file.write("what to bring\n");
+    }
+    ann_.attachFiles({QUrl::fromLocalFile(image), QUrl::fromLocalFile(notes),
+                      QUrl::fromLocalFile(ann_files.path())});
+    EXPECT_FALSE(ann_.notice().isEmpty()) << "a folder is no file";
+    ASSERT_EQ(ann_.draftFiles().size(), 2);
+    ASSERT_TRUE(wait_for([&] { return ann_.draftReady(); }));
+    const QVariantMap drafted = ann_.draftFiles()[0].toMap();
+    EXPECT_TRUE(drafted.value("image").toBool());
+    EXPECT_EQ(drafted.value("url").toUrl(), QUrl::fromLocalFile(image));
+
+    ASSERT_TRUE(ann_.say(""));
+    EXPECT_TRUE(ann_.draftFiles().isEmpty());
+    const auto files = [](CallController& side) {
+        return side.chat()->data(side.chat()->index(0), ChatModel::AttachmentsRole).toList();
+    };
+    ASSERT_EQ(files(ann_).size(), 2);
+    EXPECT_EQ(files(ann_)[0].toMap().value("status"), "here") << "one's own is";
+
+    // Bob has the image as it comes; the words as he asks.
+    ASSERT_TRUE(wait_for([&] { return bob_.chat()->rowCount() == 1; }));
+    QVariantMap picture = files(bob_)[0].toMap();
+    EXPECT_TRUE(picture.value("image").toBool());
+    EXPECT_EQ(picture.value("width"), 320);
+    EXPECT_EQ(picture.value("height"), 200);
+    EXPECT_TRUE(picture.value("preview").toString().startsWith("data:image/jpeg;base64,"));
+    ASSERT_TRUE(wait_for([&] { return files(bob_)[0].toMap().value("status") == "here"; }));
+    picture = files(bob_)[0].toMap();
+    EXPECT_TRUE(picture.value("url").toString().startsWith(
+        QUrl::fromLocalFile(bob_files.path()).toString()))
+        << "in the call's folder";
+    EXPECT_EQ(QImage(QUrl(picture.value("url").toString()).toLocalFile()).pixelColor(5, 5),
+              QColor(Qt::red));
+
+    QVariantMap words = files(bob_)[1].toMap();
+    EXPECT_EQ(words.value("status"), "none");
+    EXPECT_FALSE(words.value("image").toBool());
+    bob_.fetchFile(words.value("id").toString());
+    ASSERT_TRUE(wait_for([&] { return files(bob_)[1].toMap().value("status") == "here"; }));
+    words = files(bob_)[1].toMap();
+    const QString put = QUrl(words.value("url").toString()).toLocalFile();
+    EXPECT_EQ(put, QDir(bob_downloads.path()).filePath("notes.txt")) << "among the downloads";
+    QFile came(put);
+    ASSERT_TRUE(came.open(QIODevice::ReadOnly));
+    EXPECT_EQ(came.readAll(), "what to bring\n");
+
+    // A copy of the image among the downloads too, under a name not taken.
+    const QString saved = bob_.saveFile(picture.value("id").toString());
+    EXPECT_EQ(saved, QDir(bob_downloads.path()).filePath("red.png"));
+    EXPECT_TRUE(QFile::exists(saved));
 }
 
 TEST_F(CallControllerTest, EveryoneTalksAndIsSeenSpeakingUntilMutedOrDeafened) {

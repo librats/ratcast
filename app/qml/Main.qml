@@ -6,6 +6,7 @@ import QtQuick.Controls
 import QtQuick.Controls.Material
 // IconImage: an icon of icons/ outside a button, in the colour of its text.
 import QtQuick.Controls.impl
+import QtQuick.Dialogs
 import QtQuick.Layouts
 import Qt.labs.platform as Platform
 import Ratcast.Call
@@ -503,6 +504,56 @@ ApplicationWindow {
         }
         onAccepted: if (ring) call.acceptRing(ring.id)
         onRejected: if (ring) people.answerRing(ring.id, false)
+    }
+
+    // An image of the chat, seen whole.
+    ImageViewer {
+        id: imageViewer
+        call: call
+    }
+
+    // Files dropped anywhere on the room go with the next message: the chat
+    // opened on them.
+    DropArea {
+        id: fileDrop
+        anchors.fill: parent
+        z: 100
+        enabled: root.inRoom
+        onEntered: drag => drag.accepted = drag.hasUrls
+        onDropped: drop => {
+            if (!drop.hasUrls)
+                return
+            call.attachFiles(drop.urls)
+            chatPane.shown = true
+            drop.accept(Qt.CopyAction)
+        }
+
+        Rectangle {
+            anchors.fill: parent
+            visible: fileDrop.containsDrag
+            color: Qt.rgba(0, 0, 0, 0.6)
+            border.width: 3
+            border.color: Material.accent
+
+            ColumnLayout {
+                anchors.centerIn: parent
+                spacing: 12
+
+                Glyph {
+                    Layout.alignment: Qt.AlignHCenter
+                    glyph: "paperclip"
+                    sourceSize: Qt.size(48, 48)
+                    color: Material.accent
+                    opacity: 1
+                }
+                Label {
+                    Layout.alignment: Qt.AlignHCenter
+                    text: qsTr("Drop to send in the chat")
+                    font.pixelSize: 20
+                    font.bold: true
+                }
+            }
+        }
     }
 
     // Someone sharing in a group's room this device is not in: told for a
@@ -2311,6 +2362,8 @@ ApplicationWindow {
                     // At the newest: a message coming is followed; scrolled
                     // up to read, the view stays.
                     property bool following: true
+                    // For the delegates, whose own `call` would hide the id.
+                    readonly property CallController room: call
 
                     anchors.fill: parent
                     clip: true
@@ -2320,70 +2373,126 @@ ApplicationWindow {
                     onCountChanged: if (following) Qt.callLater(positionViewAtEnd)
                     ScrollBar.vertical: ScrollBar {}
 
-                    delegate: ColumnLayout {
-                        id: message
-                        required property string peer
+                    delegate: MessageView {
                         required property string name
-                        required property string html
-                        required property string time
-                        required property bool mine
-                        required property bool continued
                         width: ListView.view.width
-                        spacing: 0
+                        call: messages.room
+                        shownName: mine ? (messages.room.name.length > 0 ? messages.room.name
+                                                                         : qsTr("You"))
+                                        : root.memberName(name, peer)
+                        onOpened: file => imageViewer.show(file)
+                    }
+                }
+            }
+
+            // The files to go with the next message: each with its picture or
+            // a file's icon, its name and size, taken off by its cross; one
+            // still being read through turning.
+            Flow {
+                Layout.fillWidth: true
+                Layout.leftMargin: 8
+                Layout.rightMargin: 8
+                Layout.topMargin: 6
+                spacing: 6
+                visible: call.draftFiles.length > 0
+
+                Repeater {
+                    model: call.draftFiles
+
+                    Rectangle {
+                        id: chip
+                        required property var modelData
+                        width: chipRow.implicitWidth + 12
+                        height: 44
+                        radius: 6
+                        color: Qt.rgba(1, 1, 1, 0.07)
 
                         RowLayout {
-                            Layout.fillWidth: true
-                            Layout.leftMargin: 12
-                            Layout.rightMargin: 12
-                            Layout.topMargin: 10
-                            visible: !message.continued
+                            id: chipRow
+                            anchors.verticalCenter: parent.verticalCenter
+                            x: 6
                             spacing: 6
 
-                            PlainLabel {
-                                Layout.maximumWidth: message.width - 100
-                                text: message.mine ? qsTr("You")
-                                                   : root.memberName(message.name, message.peer)
-                                font.bold: true
-                                color: message.mine ? Material.accent : Material.foreground
-                            }
-                            Label {
-                                Layout.fillWidth: true
-                                text: message.time
-                                opacity: 0.5
-                                font.pixelSize: 11
-                            }
-                        }
-                        // Escaped by the model: no markup but its links.
-                        TextEdit {
-                            id: words
-                            Layout.fillWidth: true
-                            Layout.leftMargin: 12
-                            Layout.rightMargin: 12
-                            Layout.topMargin: 2
-                            readOnly: true
-                            selectByMouse: true
-                            textFormat: TextEdit.RichText
-                            wrapMode: TextEdit.Wrap
-                            text: message.html
-                            color: Material.foreground
-                            selectionColor: Material.accent
-                            font.pixelSize: 14
-                            onLinkActivated: link => Qt.openUrlExternally(link)
+                            Item {
+                                Layout.preferredWidth: 32
+                                Layout.preferredHeight: 32
 
-                            HoverHandler {
-                                cursorShape: words.hoveredLink.length > 0 ? Qt.PointingHandCursor
-                                                                          : Qt.IBeamCursor
+                                Image {
+                                    anchors.fill: parent
+                                    source: chip.modelData.url
+                                    sourceSize: Qt.size(64, 64)
+                                    fillMode: Image.PreserveAspectCrop
+                                    asynchronous: true
+                                    visible: chip.modelData.image
+                                }
+                                Glyph {
+                                    anchors.centerIn: parent
+                                    glyph: "file"
+                                    sourceSize: Qt.size(22, 22)
+                                    visible: chip.modelData.ready && !chip.modelData.image
+                                }
+                                BusyIndicator {
+                                    anchors.fill: parent
+                                    running: !chip.modelData.ready
+                                }
+                            }
+                            ColumnLayout {
+                                spacing: 0
+                                PlainLabel {
+                                    Layout.maximumWidth: 150
+                                    text: chip.modelData.name
+                                    font.pixelSize: 13
+                                }
+                                Label {
+                                    text: chip.modelData.ready ? chip.modelData.size
+                                                               : qsTr("Getting it ready…")
+                                    font.pixelSize: 11
+                                    opacity: 0.6
+                                }
+                            }
+                            ToolButton {
+                                Layout.preferredWidth: 32
+                                Layout.preferredHeight: 32
+                                padding: 4
+                                display: AbstractButton.IconOnly
+                                icon.source: "icons/x.svg"
+                                icon.width: 14
+                                icon.height: 14
+                                onClicked: call.removeDraftFile(chip.modelData.key)
+                                ToolTip.visible: hovered
+                                ToolTip.text: qsTr("Remove")
                             }
                         }
                     }
                 }
             }
 
-            // The box, and a button that sends it as Enter does.
+            // The box, a clip to attach files by, and a button that sends it
+            // as Enter does.
             RowLayout {
                 Layout.fillWidth: true
                 Layout.margins: 8
                 spacing: 4
+
+                ToolButton {
+                    Layout.alignment: Qt.AlignBottom
+                    text: qsTr("Attach files")
+                    display: AbstractButton.IconOnly
+                    icon.source: "icons/paperclip.svg"
+                    onClicked: attachDialog.open()
+                    ToolTip.visible: hovered
+                    ToolTip.text: root.mobile ? text : qsTr("Attach files (or drop them here, or paste)")
+                }
+                FileDialog {
+                    id: attachDialog
+                    title: qsTr("Attach files")
+                    fileMode: FileDialog.OpenFiles
+                    onAccepted: {
+                        call.attachFiles(selectedFiles)
+                        if (!root.mobile)
+                            draft.forceActiveFocus()
+                    }
+                }
 
                 ScrollView {
                     Layout.fillWidth: true
@@ -2406,15 +2515,23 @@ ApplicationWindow {
                         }
                         Keys.onReturnPressed: event => sendOn(event)
                         Keys.onEnterPressed: event => sendOn(event)
+                        // A file or an image on the clipboard goes with the
+                        // message; words are pasted as words.
+                        Keys.onPressed: event => {
+                            if (event.matches(StandardKey.Paste) && call.attachClipboard())
+                                event.accepted = true
+                        }
                     }
                 }
                 ToolButton {
+                    readonly property bool ready: (draft.text.trim().length > 0
+                                                   || call.draftFiles.length > 0) && call.draftReady
                     Layout.alignment: Qt.AlignBottom
                     text: qsTr("Send")
                     display: AbstractButton.IconOnly
                     icon.source: "icons/send.svg"
-                    icon.color: draft.text.trim().length > 0 ? Material.accent : Material.hintTextColor
-                    enabled: draft.text.trim().length > 0
+                    icon.color: ready ? Material.accent : Material.hintTextColor
+                    enabled: ready
                     onClicked: draft.send()
                     ToolTip.visible: hovered
                     ToolTip.text: qsTr("Send (Enter)")

@@ -2,8 +2,14 @@
 
 #include <QClipboard>
 #include <QDateTime>
+#include <QDesktopServices>
+#include <QDir>
+#include <QFile>
+#include <QFileInfo>
 #include <QGuiApplication>
+#include <QImage>
 #include <QMetaObject>
+#include <QMimeData>
 #include <QStandardPaths>
 #include <QVariantMap>
 #ifdef Q_OS_ANDROID
@@ -21,6 +27,7 @@
 #include <tuple>
 #include <utility>
 
+#include "attachments.h"
 #include "librats/util/logger.h"
 
 namespace ratcast::app {
@@ -234,6 +241,10 @@ CallController::Environment CallController::Environment::system() {
     };
 #endif
     environment.settings = [] { return std::make_unique<QSettings>(); };
+    environment.call.files_dir =
+        (QStandardPaths::writableLocation(QStandardPaths::CacheLocation) + QStringLiteral("/chat"))
+            .toStdString();
+    environment.downloads = QStandardPaths::writableLocation(QStandardPaths::DownloadLocation);
     return environment;
 }
 
@@ -261,6 +272,8 @@ CallController::CallController(QObject* parent)
 }
 
 CallController::~CallController() {
+    for (const DraftFile& file : draft_) *file.stop = true;
+    files_pool_.waitForDone();
     // Closed in a room: the way back kept all the same.
     if (call_) remember_room();
     ++generation_;
@@ -430,6 +443,7 @@ void CallController::start(CallConfig config, State state) {
                      : QString();
     set_notice({});
     chat_.clear();
+    clear_files();
     told_hearing_.clear();
     // The room's node is one of a moment: a new peer id each room and nothing
     // kept, so that no room is tied to another by it. Its DHT starts from the
@@ -469,6 +483,8 @@ void CallController::start(CallConfig config, State state) {
         return;
     }
     call_ = std::move(*started);
+    if (people_ && people_->people())
+        chat_.know(call_->id(), QString::fromStdString(people_->people()->person().tag()));
     const auto named = [this](Device device) {
         return device_named(chosen_[device].id, chosen_[device].name);
     };
@@ -615,6 +631,7 @@ void CallController::end(QString notice) {
     if (preview_) preview_->clear();
     if (share_preview_view_) share_preview_view_->clear();
     share_preview_.reset();
+    clear_draft();
     update_levels();
     update_members();
     set_choosing(false);
@@ -778,6 +795,8 @@ void CallController::update_members() {
                 const PersonId& whose = card->certificate.person;
                 person = QString::fromStdString(whose.to_hex());
                 tag = QString::fromStdString(whose.tag());
+                // What it says is shown as whose it is, after it goes too.
+                chat_.know(peer, tag);
                 if (people && whose != self) {
                     is_friend = people->is_friend(whose);
                     const bool has_secret =
@@ -1323,18 +1342,241 @@ void CallController::log_stats() {
 bool CallController::say(const QString& text) {
     if (!call_) return false;
     std::string words = chat_text(text);
-    if (words.empty()) return false;
+    if (words.empty() && draft_.empty()) return false;
+    if (!draftReady()) return false;
     if (words.size() > ChatMessage::kMaxTextSize) {
         set_notice(tr("That is too long to send: say it in a few messages."));
         return false;
     }
-    const Result<ChatMessage> said = call_->say(std::move(words));
+    std::vector<SharedFile> files;
+    for (const DraftFile& file : draft_) files.push_back(*file.file);
+    const Result<ChatMessage> said = call_->say(std::move(words), files);
     if (!said) {
         set_notice(tr("That cannot be sent (%1).").arg(describe(said.error())));
         return false;
     }
+    for (const SharedFile& file : files) {
+        chat_.set_file(file.attachment.id, {.status = ChatModel::FileState::Status::Here,
+                                            .path = QString::fromStdString(file.path)});
+    }
     chat_.add(*said, /*mine=*/true);
+    clear_draft();
     return true;
+}
+
+// ── The files of what is said ───────────────────────────────────────────────
+
+QVariantList CallController::draftFiles() const {
+    QVariantList list;
+    for (const DraftFile& draft : draft_) {
+        const bool image = draft.file && draft.file->attachment.image();
+        list << QVariantMap{
+            {"key", draft.key},
+            {"name", QFileInfo(draft.path).fileName()},
+            {"size", draft.file ? size_text(draft.file->attachment.size) : QString()},
+            {"image", image},
+            {"url", image ? QUrl::fromLocalFile(draft.path).toString() : QString()},
+            {"ready", draft.file.has_value()},
+        };
+    }
+    return list;
+}
+
+bool CallController::draftReady() const {
+    return std::ranges::all_of(draft_, [](const DraftFile& file) { return file.file.has_value(); });
+}
+
+void CallController::attachFiles(const QList<QUrl>& urls) {
+    for (const QUrl& url : urls) {
+        const QString path = url.toLocalFile();
+        if (path.isEmpty()) continue;
+        if (QFileInfo(path).isDir()) {
+            set_notice(tr("A folder cannot be sent: only files."));
+            continue;
+        }
+        prepare(path);
+    }
+}
+
+bool CallController::attachClipboard() {
+    const QMimeData* clipboard = QGuiApplication::clipboard()->mimeData();
+    if (!clipboard) return false;
+    // Files copied where the system keeps them.
+    if (clipboard->hasUrls()) {
+        QList<QUrl> files;
+        for (const QUrl& url : clipboard->urls())
+            if (url.isLocalFile()) files << url;
+        if (!files.isEmpty()) {
+            attachFiles(files);
+            return true;
+        }
+    }
+    // An image, but not a document's words that come with a picture of
+    // themselves: those are pasted as words.
+    if (!clipboard->hasImage() || (clipboard->hasText() && !clipboard->text().trimmed().isEmpty()))
+        return false;
+    const QImage image = qvariant_cast<QImage>(clipboard->imageData());
+    const QString folder = QString::fromStdString(environment_.call.files_dir);
+    const QString path = save_pasted(
+        image, (folder.isEmpty() ? QDir::tempPath() : folder) + QStringLiteral("/pasted"));
+    if (path.isEmpty()) {
+        set_notice(tr("The image cannot be pasted."));
+        return true;
+    }
+    prepare(path);
+    return true;
+}
+
+void CallController::removeDraftFile(int key) {
+    const auto it = std::ranges::find(draft_, key, &DraftFile::key);
+    if (it == draft_.end()) return;
+    *it->stop = true;
+    draft_.erase(it);
+    Q_EMIT draftFilesChanged();
+}
+
+void CallController::prepare(const QString& path) {
+    if (draft_.size() >= ChatMessage::kMaxAttachments) {
+        set_notice(
+            tr("At most %1 files go with one message.").arg(int(ChatMessage::kMaxAttachments)));
+        return;
+    }
+    DraftFile& draft = draft_.emplace_back();
+    draft.key = ++draft_key_;
+    draft.path = path;
+    files_pool_.start([this, key = draft.key, path, stop = draft.stop] {
+        Result<SharedFile> file = share_file(path, stop.get());
+        if (*stop) return;
+        QMetaObject::invokeMethod(
+            this, [this, key, file = std::move(file)] { prepared(key, file); },
+            Qt::QueuedConnection);
+    });
+    Q_EMIT draftFilesChanged();
+}
+
+void CallController::prepared(int key, Result<SharedFile> file) {
+    const auto it = std::ranges::find(draft_, key, &DraftFile::key);
+    if (it == draft_.end()) return;  // taken off meanwhile
+    if (!file) {
+        set_notice(tr("'%1' cannot be sent (%2).")
+                       .arg(QFileInfo(it->path).fileName(), describe(file.error())));
+        draft_.erase(it);
+    } else if (std::ranges::any_of(draft_, [&](const DraftFile& other) {
+                   return other.file && other.file->attachment.id == file->attachment.id;
+               })) {
+        draft_.erase(it);  // the same file twice: once
+    } else {
+        it->file = std::move(*file);
+    }
+    Q_EMIT draftFilesChanged();
+}
+
+void CallController::clear_draft() {
+    if (draft_.empty()) return;
+    for (const DraftFile& file : draft_) *file.stop = true;
+    draft_.clear();
+    Q_EMIT draftFilesChanged();
+}
+
+void CallController::follow_files(const ChatMessage& message) {
+    for (const ChatAttachment& file : message.attachments) {
+        if (chat_.file(file.id).status != ChatModel::FileState::Status::None) continue;
+        if (const std::optional<std::string> path = call_->file(file.id)) {
+            chat_.set_file(file.id, {.status = ChatModel::FileState::Status::Here,
+                                     .path = QString::fromStdString(*path)});
+        } else if (file.image() && file.size <= kFetchImagesUpTo) {
+            fetchFile(QString::fromStdString(to_hex(file.id)));
+        }
+    }
+}
+
+void CallController::fetchFile(const QString& id) {
+    const std::optional<FileId> file = file_id_of_hex(id.toStdString());
+    if (!call_ || !file) return;
+    const std::optional<std::pair<ChatAttachment, PeerId>> said = chat_.attachment(*file);
+    if (!said) return;
+    using Status = ChatModel::FileState::Status;
+    const Status status = chat_.file(*file).status;
+    if (status == Status::Fetching || status == Status::Here) return;
+    chat_.set_file(*file, {.status = Status::Fetching});
+    if (const Result<void> asked = call_->fetch_file(said->first, said->second); !asked)
+        chat_.set_file(*file, {.status = Status::Failed});
+}
+
+void CallController::stopFetching(const QString& id) {
+    const std::optional<FileId> file = file_id_of_hex(id.toStdString());
+    if (call_ && file) call_->stop_fetching(*file);
+}
+
+void CallController::fetched(const FileId& id, Result<std::string> path) {
+    using Status = ChatModel::FileState::Status;
+    if (!path) {
+        chat_.set_file(id, {.status = path.error() == Errc::Cancelled     ? Status::None
+                                      : path.error() == Errc::Unavailable ? Status::Unavailable
+                                                                          : Status::Failed});
+        return;
+    }
+    QString at = QDir::cleanPath(QDir::fromNativeSeparators(QString::fromStdString(*path)));
+    // A file that is no image is the user's: among the downloads, there to
+    // stay once the room is left.
+    const std::optional<std::pair<ChatAttachment, PeerId>> said = chat_.attachment(id);
+    if (said && !said->first.image() && !environment_.downloads.isEmpty() &&
+        QDir().mkpath(environment_.downloads)) {
+        const QString put = free_path(environment_.downloads, QFileInfo(at).fileName());
+        if (QFile::rename(at, put) || (QFile::copy(at, put) && QFile::remove(at))) {
+            at = put;
+            call_->keep_file(id, at.toStdString());
+        }
+    }
+    chat_.set_file(id, {.status = Status::Here, .path = at});
+}
+
+QString CallController::here(const QString& id) const {
+    const std::optional<FileId> file = file_id_of_hex(id.toStdString());
+    if (!file) return {};
+    const ChatModel::FileState state = chat_.file(*file);
+    if (state.status != ChatModel::FileState::Status::Here || !QFileInfo::exists(state.path))
+        return {};
+    return state.path;
+}
+
+void CallController::openFile(const QString& id) {
+    const QString path = here(id);
+    if (!path.isEmpty()) QDesktopServices::openUrl(QUrl::fromLocalFile(path));
+}
+
+void CallController::showFile(const QString& id) {
+    const QString path = here(id);
+    if (!path.isEmpty()) QDesktopServices::openUrl(QUrl::fromLocalFile(QFileInfo(path).path()));
+}
+
+QString CallController::saveFile(const QString& id) {
+    const QString path = here(id);
+    if (path.isEmpty() || environment_.downloads.isEmpty()) return {};
+    const QString put = QDir().mkpath(environment_.downloads)
+                            ? free_path(environment_.downloads, QFileInfo(path).fileName())
+                            : QString();
+    if (put.isEmpty() || !QFile::copy(path, put)) {
+        set_notice(tr("The file cannot be saved among the downloads."));
+        return {};
+    }
+    return put;
+}
+
+void CallController::clear_files() {
+    const QString folder = QString::fromStdString(environment_.call.files_dir);
+    if (folder.isEmpty()) return;
+    // Only what the app and the call put there: a folder of each file's id,
+    // what came part way, what was pasted.
+    const QDir dir(folder);
+    for (const QFileInfo& entry :
+         dir.entryInfoList(QDir::Dirs | QDir::NoDotAndDotDot | QDir::Hidden)) {
+        const QString name = entry.fileName();
+        if (name == QStringLiteral(".partial") || name == QStringLiteral("pasted") ||
+            file_id_of_hex(name.toStdString())) {
+            QDir(entry.absoluteFilePath()).removeRecursively();
+        }
+    }
 }
 
 void CallController::copy(const QString& text) { QGuiApplication::clipboard()->setText(text); }
@@ -1394,8 +1636,21 @@ CallHandlers CallController::handlers(uint64_t generation) {
         .said =
             [this, generation](const ChatMessage& message) {
                 // This side's own too, said before it came back.
-                post(generation,
-                     [this, message] { chat_.add(message, message.author == call_->id()); });
+                post(generation, [this, message] {
+                    chat_.add(message, message.author == call_->id());
+                    follow_files(message);
+                });
+            },
+        .file_progress =
+            [this, generation](const FileId& id, uint64_t received, uint64_t) {
+                post(generation, [this, id, received] {
+                    chat_.set_file(id, {.status = ChatModel::FileState::Status::Fetching,
+                                        .received = received});
+                });
+            },
+        .file_fetched =
+            [this, generation](const FileId& id, Result<std::string> path) {
+                post(generation, [this, id, path] { fetched(id, path); });
             },
         .source_ended =
             [this, generation](StreamId stream, Result<void> outcome) {

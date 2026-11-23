@@ -41,6 +41,37 @@
     </message>
 </context>
 <context>
+    <name>FileView</name>
+    <message>
+        <source>Download</source>
+        <translation>ダウンロード</translation>
+    </message>
+    <message>
+        <source>Nobody in the room has it now</source>
+        <translation>今ルームの誰も持っていません</translation>
+    </message>
+    <message>
+        <source>Stop</source>
+        <translation>停止</translation>
+    </message>
+    <message>
+        <source>%1 · nobody in the room has it now</source>
+        <translation>%1 · 今ルームの誰も持っていません</translation>
+    </message>
+    <message>
+        <source>%1 · it did not come</source>
+        <translation>%1 · 受け取れませんでした</translation>
+    </message>
+    <message>
+        <source>Open</source>
+        <translation>開く</translation>
+    </message>
+    <message>
+        <source>Show in its folder</source>
+        <translation>フォルダーで表示</translation>
+    </message>
+</context>
+<context>
     <name>FriendsPanel</name>
     <message>
         <source>Someone</source>
@@ -244,6 +275,25 @@
     </message>
 </context>
 <context>
+    <name>ImageViewer</name>
+    <message>
+        <source>Save</source>
+        <translation>保存</translation>
+    </message>
+    <message>
+        <source>Saved among the downloads</source>
+        <translation>ダウンロードに保存しました</translation>
+    </message>
+    <message>
+        <source>Open</source>
+        <translation>開く</translation>
+    </message>
+    <message>
+        <source>Close</source>
+        <translation>閉じる</translation>
+    </message>
+</context>
+<context>
     <name>Main</name>
     <message>
         <source>%1 stopped sharing</source>
@@ -436,6 +486,10 @@
     <message>
         <source>Decline</source>
         <translation>拒否</translation>
+    </message>
+    <message>
+        <source>Drop to send in the chat</source>
+        <translation>ドロップしてチャットに送信</translation>
     </message>
     <message>
         <source>Accept</source>
@@ -684,6 +738,22 @@
     <message>
         <source>Nothing said yet</source>
         <translation>まだメッセージはありません</translation>
+    </message>
+    <message>
+        <source>Getting it ready…</source>
+        <translation>準備中…</translation>
+    </message>
+    <message>
+        <source>Remove</source>
+        <translation>削除</translation>
+    </message>
+    <message>
+        <source>Attach files</source>
+        <translation>ファイルを添付</translation>
+    </message>
+    <message>
+        <source>Attach files (or drop them here, or paste)</source>
+        <translation>ファイルを添付（ここにドロップ、または貼り付けも可）</translation>
     </message>
     <message>
         <source>Say something</source>
@@ -1177,6 +1247,26 @@
     <message>
         <source>That cannot be sent (%1).</source>
         <translation>送信できません（%1）。</translation>
+    </message>
+    <message>
+        <source>A folder cannot be sent: only files.</source>
+        <translation>フォルダーは送信できません。ファイルのみです。</translation>
+    </message>
+    <message>
+        <source>The image cannot be pasted.</source>
+        <translation>画像を貼り付けられません。</translation>
+    </message>
+    <message>
+        <source>At most %1 files go with one message.</source>
+        <translation>1 つのメッセージに添付できるのは %1 ファイルまでです。</translation>
+    </message>
+    <message>
+        <source>&apos;%1&apos; cannot be sent (%2).</source>
+        <translation>「%1」を送信できません（%2）。</translation>
+    </message>
+    <message>
+        <source>The file cannot be saved among the downloads.</source>
+        <translation>ファイルをダウンロードに保存できません。</translation>
     </message>
     <message>
         <source>&apos;%1&apos; cannot be played (%2).</source>

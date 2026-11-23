@@ -26,6 +26,11 @@
  * `preview` and its own share, small and a few times a second (Preview), to
  * `sharePreview`. What is said in writing is `chat` (ChatModel): said with say(),
  * and what the others said, what was said before this side came among it.
+ * Files go with what is said (attachFiles(), attachClipboard()): made ready
+ * off the GUI thread — read through for their id, an image's small picture
+ * made — and sent with the next message. Another's image comes by itself,
+ * up to kFetchImagesUpTo; any other file as the user asks (fetchFile()), put
+ * among the downloads.
  *
  * The microphone, the speaker and the camera are the system's defaults until
  * the user chooses others among those listed (listDevices()): kept from one
@@ -54,16 +59,20 @@
 #include <QSettings>
 #include <QString>
 #include <QStringList>
+#include <QThreadPool>
 #include <QTimer>
+#include <QUrl>
 #include <QVariantList>
 #include <QVariantMap>
 
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <functional>
 #include <map>
 #include <memory>
+#include <optional>
 #include <stop_token>
 #include <string>
 #include <thread>
@@ -135,6 +144,12 @@ class CallController : public QObject {
     /// What is said in the room (ChatModel), from the start of this side's
     /// time in it.
     Q_PROPERTY(ratcast::app::ChatModel* chat READ chat CONSTANT)
+    /// The files to go with the next message, in the order attached: maps of
+    /// `key` (removeDraftFile()), `name`, `size` (as people read it),
+    /// `image`, `url` (an image's, to show) and `ready` — read through.
+    Q_PROPERTY(QVariantList draftFiles READ draftFiles NOTIFY draftFilesChanged)
+    /// Every file of the draft read through: the message can go.
+    Q_PROPERTY(bool draftReady READ draftReady NOTIFY draftFilesChanged)
     /// How many of the others' cameras are shown here: those on, or past
     /// kMostCameras, of the last to speak.
     Q_PROPERTY(int cameras READ cameras NOTIFY camerasChanged)
@@ -231,6 +246,9 @@ public:
     /// How often how the call goes is written to the log while in a room: the
     /// monitor's report of the time since, a line a part.
     static constexpr std::chrono::seconds kLogStatsEvery{60};
+    /// Another's image comes by itself up to this size; a larger one, as
+    /// the user asks.
+    static constexpr uint64_t kFetchImagesUpTo = 16 * 1024 * 1024;
 
     /// What the controller takes from the system; tests stand in for it.
     struct Environment {
@@ -275,11 +293,18 @@ public:
         /// devices chosen are kept from one run to the next; null: while the
         /// controller lives.
         std::function<std::unique_ptr<QSettings>()> settings = {};
+        /// Where a file fetched that is no image is put, under its name or
+        /// one not taken there; "": left where the call fetched it
+        /// (`call.files_dir`, which each room begins without the last one's
+        /// files, and where what is pasted is written).
+        QString downloads = {};
 
         /// This computer's: its desktop, its speaker, the user's data
         /// directory, settings and name, discoverable through the DHT, the
         /// build's server (RATCAST_DEFAULT_SERVER), kMostCameras, kLostAfter,
-        /// kChosenServers of the servers known, kept in the data directory.
+        /// kChosenServers of the servers known, kept in the data directory;
+        /// the files of what is said fetched into the cache, and those that
+        /// are no images put among the user's downloads.
         static Environment system();
     };
 
@@ -338,9 +363,30 @@ public:
     /// Draw the camera of the member of `id` into `view`; null: nowhere.
     Q_INVOKABLE void setCameraView(const QString& id, ratcast::app::VideoView* view);
     /// Say `text` to the room, its ends trimmed, its line breaks kept and
-    /// any other control character dropped: false for nothing to say, and,
+    /// any other control character dropped, with the files of the draft:
+    /// false for nothing to say, for files not ready yet (draftReady), and,
     /// with a notice, for too much (ChatMessage::kMaxTextSize).
     Q_INVOKABLE bool say(const QString& text);
+    /// The local files of `urls` to go with the next message, made ready
+    /// meanwhile; a folder, or past ChatMessage::kMaxAttachments, with a
+    /// notice.
+    Q_INVOKABLE void attachFiles(const QList<QUrl>& urls);
+    /// What the clipboard holds to go with the next message, if it is a
+    /// file or an image (and no text): false, with nothing done, else.
+    Q_INVOKABLE bool attachClipboard();
+    /// A file of the draft taken off it.
+    Q_INVOKABLE void removeDraftFile(int key);
+    /// Fetch the file of `id` (hex) of what was said: of its sayer, or any
+    /// member that has it.
+    Q_INVOKABLE void fetchFile(const QString& id);
+    Q_INVOKABLE void stopFetching(const QString& id);
+    /// Open a file of what was said that is here, as the system does; show
+    /// it in its folder.
+    Q_INVOKABLE void openFile(const QString& id);
+    Q_INVOKABLE void showFile(const QString& id);
+    /// A copy of the file of `id` that is here put among the downloads: its
+    /// path, or "" with a notice.
+    Q_INVOKABLE QString saveFile(const QString& id);
     /// Put `text` on the clipboard: an invite, for the user to send.
     Q_INVOKABLE void copy(const QString& text);
     /// Look at what devices there are now, for the user to choose from.
@@ -358,6 +404,8 @@ public:
     MembersModel* members() { return &members_; }
     static double maxVolume() { return kMaxVolume; }
     ChatModel* chat() { return &chat_; }
+    QVariantList draftFiles() const;
+    bool draftReady() const;
     const MembersModel& memberList() const { return members_; }
     int cameras() const { return cameras_on_; }
     bool muted() const { return muted_; }
@@ -432,6 +480,7 @@ Q_SIGNALS:
     void statsChanged();
     void statsEveryChanged();
     void peopleChanged();
+    void draftFilesChanged();
 
 private:
     struct Pictures;
@@ -535,6 +584,27 @@ private:
     /// Back to Idle; `notice` says why, if it was not the user.
     void end(QString notice = {});
 
+    /// A file of the draft: being read through, or ready.
+    struct DraftFile {
+        int key = 0;
+        QString path;
+        std::optional<SharedFile> file;  ///< ready
+        std::shared_ptr<std::atomic<bool>> stop = std::make_shared<std::atomic<bool>>(false);
+    };
+    /// The file at `path` on the draft, read through off the GUI thread.
+    void prepare(const QString& path);
+    void prepared(int key, Result<SharedFile> file);
+    void clear_draft();
+    /// The files of a message new here as they are: here already, or an
+    /// image coming by itself.
+    void follow_files(const ChatMessage& message);
+    void fetched(const FileId& id, Result<std::string> path);
+    /// A file of what was said, here: its path; "" for none.
+    QString here(const QString& id) const;
+    /// The folder the call fetches into, left as a new room finds it: the
+    /// last one's files gone.
+    void clear_files();
+
     Environment environment_;
     State state_ = State::Idle;
     QStringList invites_;
@@ -550,6 +620,10 @@ private:
     QString server_;
     MembersModel members_;
     ChatModel chat_;
+    std::vector<DraftFile> draft_;
+    int draft_key_ = 0;
+    /// Reads the draft's files through; waited for as the controller goes.
+    QThreadPool files_pool_;
     QMap<QString, Hearing> hearing_;          ///< the members not heard as they come, by id
     std::map<PeerId, Hearing> told_hearing_;  ///< what the call was told of each peer
     QPointer<PeopleController> people_;

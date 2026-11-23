@@ -41,6 +41,37 @@
     </message>
 </context>
 <context>
+    <name>FileView</name>
+    <message>
+        <source>Download</source>
+        <translation>Télécharger</translation>
+    </message>
+    <message>
+        <source>Nobody in the room has it now</source>
+        <translation>Personne dans le salon ne l’a pour l’instant</translation>
+    </message>
+    <message>
+        <source>Stop</source>
+        <translation>Arrêter</translation>
+    </message>
+    <message>
+        <source>%1 · nobody in the room has it now</source>
+        <translation>%1 · personne dans le salon ne l’a pour l’instant</translation>
+    </message>
+    <message>
+        <source>%1 · it did not come</source>
+        <translation>%1 · il n’est pas arrivé</translation>
+    </message>
+    <message>
+        <source>Open</source>
+        <translation>Ouvrir</translation>
+    </message>
+    <message>
+        <source>Show in its folder</source>
+        <translation>Afficher dans son dossier</translation>
+    </message>
+</context>
+<context>
     <name>FriendsPanel</name>
     <message>
         <source>Someone</source>
@@ -244,6 +275,25 @@
     </message>
 </context>
 <context>
+    <name>ImageViewer</name>
+    <message>
+        <source>Save</source>
+        <translation>Enregistrer</translation>
+    </message>
+    <message>
+        <source>Saved among the downloads</source>
+        <translation>Enregistré dans les téléchargements</translation>
+    </message>
+    <message>
+        <source>Open</source>
+        <translation>Ouvrir</translation>
+    </message>
+    <message>
+        <source>Close</source>
+        <translation>Fermer</translation>
+    </message>
+</context>
+<context>
     <name>Main</name>
     <message>
         <source>%1 stopped sharing</source>
@@ -436,6 +486,10 @@
     <message>
         <source>Decline</source>
         <translation>Refuser</translation>
+    </message>
+    <message>
+        <source>Drop to send in the chat</source>
+        <translation>Déposez pour l’envoyer dans le chat</translation>
     </message>
     <message>
         <source>Accept</source>
@@ -686,6 +740,22 @@
         <translation>Aucun message pour l’instant</translation>
     </message>
     <message>
+        <source>Getting it ready…</source>
+        <translation>Préparation…</translation>
+    </message>
+    <message>
+        <source>Remove</source>
+        <translation>Retirer</translation>
+    </message>
+    <message>
+        <source>Attach files</source>
+        <translation>Joindre des fichiers</translation>
+    </message>
+    <message>
+        <source>Attach files (or drop them here, or paste)</source>
+        <translation>Joindre des fichiers (ou déposez-les ici, ou collez-les)</translation>
+    </message>
+    <message>
         <source>Say something</source>
         <translation>Écrivez quelque chose</translation>
     </message>
@@ -930,11 +1000,11 @@
     </message>
     <message>
         <source>As sharp as the connection and the computer allow: lower when they cannot keep up, back up when they can, never above the screen&apos;s own.</source>
-        <translation>Aussi nette que la connexion et l’ordinateur le permettent : plus basse quand ils ne suivent pas, de nouveau plus haute quand ils le peuvent, jamais au-delà de celle de l’écran.</translation>
+        <translation>Aussi nette que la connexion et l’ordinateur le permettent&#xa0;: plus basse quand ils ne suivent pas, de nouveau plus haute quand ils le peuvent, jamais au-delà de celle de l’écran.</translation>
     </message>
     <message>
         <source>A lower one is lighter on a slow connection and a weak computer; a screen with less is sent as it is.</source>
-        <translation>Une plus basse ménage une connexion lente et un ordinateur modeste ; un écran qui en a moins est envoyé tel quel.</translation>
+        <translation>Une plus basse ménage une connexion lente et un ordinateur modeste&#xa0;; un écran qui en a moins est envoyé tel quel.</translation>
     </message>
     <message>
         <source>Takes effect at once, while sharing too.</source>
@@ -954,7 +1024,7 @@
     </message>
     <message>
         <source>60 is smooth, for games and films; 30 is half the work for the computer, and enough for documents and code. Taken by the next share.</source>
-        <translation>60 est fluide, pour les jeux et les films ; 30 demande deux fois moins à l’ordinateur et suffit pour des documents et du code. Pris en compte au prochain partage.</translation>
+        <translation>60 est fluide, pour les jeux et les films&#xa0;; 30 demande deux fois moins à l’ordinateur et suffit pour des documents et du code. Pris en compte au prochain partage.</translation>
     </message>
     <message>
         <source>Server</source>
@@ -1177,6 +1247,26 @@
     <message>
         <source>That cannot be sent (%1).</source>
         <translation>Impossible d’envoyer ce message (%1).</translation>
+    </message>
+    <message>
+        <source>A folder cannot be sent: only files.</source>
+        <translation>Impossible d’envoyer un dossier&#xa0;: seulement des fichiers.</translation>
+    </message>
+    <message>
+        <source>The image cannot be pasted.</source>
+        <translation>Impossible de coller l’image.</translation>
+    </message>
+    <message>
+        <source>At most %1 files go with one message.</source>
+        <translation>Au plus %1 fichiers par message.</translation>
+    </message>
+    <message>
+        <source>&apos;%1&apos; cannot be sent (%2).</source>
+        <translation>Impossible d’envoyer «&#xa0;%1&#xa0;» (%2).</translation>
+    </message>
+    <message>
+        <source>The file cannot be saved among the downloads.</source>
+        <translation>Impossible d’enregistrer le fichier dans les téléchargements.</translation>
     </message>
     <message>
         <source>&apos;%1&apos; cannot be played (%2).</source>

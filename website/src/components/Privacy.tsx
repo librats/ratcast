@@ -5,7 +5,7 @@ import { Footer } from "./Footer";
 import { Logo } from "./Nav";
 
 /** When the policy last changed: change it with the text. */
-export const PRIVACY_UPDATED = "November 14, 2026";
+export const PRIVACY_UPDATED = "November 23, 2026";
 
 function Section({ title, children }: { title: string; children: ReactNode }) {
   return (
@@ -82,8 +82,9 @@ export function Privacy() {
             </li>
           </ul>
           <p>
-            The app does not read your contacts, files, photos, location or anything else on the device, and does not
-            record calls.
+            The app does not read your contacts, location or anything else on the device, and does not record calls.
+            It reads a file or a photo only when you send it in a room's chat — chosen, dropped on the window or
+            pasted.
           </p>
         </Section>
 
@@ -98,6 +99,13 @@ export function Privacy() {
           <p>
             Chat messages are kept in the memory of the members' apps while the room is open, so that whoever joins
             later sees the last hundred. They are not saved to disk.
+          </p>
+          <p>
+            A file you send in the chat is not sent to everyone: the message carries its name, its size and, for an
+            image, a small picture of it, and each member's app asks for the file itself — an image by itself, any
+            other file when the member chooses to download it. It goes straight from a device in the room that has it,
+            yours or that of a member who downloaded it, over the same encrypted connection. It stays where it is on
+            your device; the app reads it only to send it to a member who asks while you are in the room.
           </p>
           <p>
             Who joins a room is up to you: anyone who has a room's link can join it, so share it only with people
@@ -187,7 +195,12 @@ export function Privacy() {
             </li>
             <li>
               your settings: the language, the microphone, speaker and camera you chose, the volume you set for each
-              member (by their key) and, on a computer, the screen or window you last shared.
+              member (by their key), how your screen is shared (its resolution and frame rate) and, on a computer, the
+              screen or window you last shared;
+            </li>
+            <li>
+              the files of a room's chat: images others sent, and images you pasted, in the app's cache until you
+              enter the next room; any other file you download, in your downloads folder, where it stays.
             </li>
           </ul>
           <p>

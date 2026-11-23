@@ -45,6 +45,8 @@ enum class MessageKind : uint8_t {
     Chat = 19,            ///< I say this, in writing
     ChatAsk = 20,         ///< what was said?
     ChatTold = 21,        ///< this was said, as I know it
+    FileAsk = 22,         ///< send me this file of what was said
+    FileNone = 23,        ///< I have no such file
 };
 
 constexpr uint8_t message_prefix(MessageKind kind) noexcept {
@@ -79,7 +81,9 @@ inline Result<MessageKind> read_prefix(Reader& in) noexcept {
         case MessageKind::FrameKey:
         case MessageKind::Chat:
         case MessageKind::ChatAsk:
-        case MessageKind::ChatTold: return kind;
+        case MessageKind::ChatTold:
+        case MessageKind::FileAsk:
+        case MessageKind::FileNone: return kind;
     }
     return fail(Errc::UnknownKind);
 }

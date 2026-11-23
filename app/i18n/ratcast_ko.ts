@@ -41,6 +41,37 @@
     </message>
 </context>
 <context>
+    <name>FileView</name>
+    <message>
+        <source>Download</source>
+        <translation>다운로드</translation>
+    </message>
+    <message>
+        <source>Nobody in the room has it now</source>
+        <translation>지금 방에 이 파일을 가진 사람이 없어요</translation>
+    </message>
+    <message>
+        <source>Stop</source>
+        <translation>중지</translation>
+    </message>
+    <message>
+        <source>%1 · nobody in the room has it now</source>
+        <translation>%1 · 지금 방에 가진 사람이 없어요</translation>
+    </message>
+    <message>
+        <source>%1 · it did not come</source>
+        <translation>%1 · 받지 못했어요</translation>
+    </message>
+    <message>
+        <source>Open</source>
+        <translation>열기</translation>
+    </message>
+    <message>
+        <source>Show in its folder</source>
+        <translation>폴더에서 보기</translation>
+    </message>
+</context>
+<context>
     <name>FriendsPanel</name>
     <message>
         <source>Someone</source>
@@ -244,6 +275,25 @@
     </message>
 </context>
 <context>
+    <name>ImageViewer</name>
+    <message>
+        <source>Save</source>
+        <translation>저장</translation>
+    </message>
+    <message>
+        <source>Saved among the downloads</source>
+        <translation>다운로드에 저장했어요</translation>
+    </message>
+    <message>
+        <source>Open</source>
+        <translation>열기</translation>
+    </message>
+    <message>
+        <source>Close</source>
+        <translation>닫기</translation>
+    </message>
+</context>
+<context>
     <name>Main</name>
     <message>
         <source>%1 stopped sharing</source>
@@ -436,6 +486,10 @@
     <message>
         <source>Decline</source>
         <translation>거절</translation>
+    </message>
+    <message>
+        <source>Drop to send in the chat</source>
+        <translation>놓으면 채팅으로 보내요</translation>
     </message>
     <message>
         <source>Accept</source>
@@ -684,6 +738,22 @@
     <message>
         <source>Nothing said yet</source>
         <translation>아직 메시지가 없어요</translation>
+    </message>
+    <message>
+        <source>Getting it ready…</source>
+        <translation>준비 중…</translation>
+    </message>
+    <message>
+        <source>Remove</source>
+        <translation>삭제</translation>
+    </message>
+    <message>
+        <source>Attach files</source>
+        <translation>파일 첨부</translation>
+    </message>
+    <message>
+        <source>Attach files (or drop them here, or paste)</source>
+        <translation>파일 첨부 (여기로 끌어다 놓거나 붙여넣어도 돼요)</translation>
     </message>
     <message>
         <source>Say something</source>
@@ -1177,6 +1247,26 @@
     <message>
         <source>That cannot be sent (%1).</source>
         <translation>메시지를 보낼 수 없어요 (%1).</translation>
+    </message>
+    <message>
+        <source>A folder cannot be sent: only files.</source>
+        <translation>폴더는 보낼 수 없어요. 파일만 보낼 수 있어요.</translation>
+    </message>
+    <message>
+        <source>The image cannot be pasted.</source>
+        <translation>이미지를 붙여넣을 수 없어요.</translation>
+    </message>
+    <message>
+        <source>At most %1 files go with one message.</source>
+        <translation>메시지 하나에 파일은 최대 %1개까지예요.</translation>
+    </message>
+    <message>
+        <source>&apos;%1&apos; cannot be sent (%2).</source>
+        <translation>보낼 수 없어요: &apos;%1&apos; (%2).</translation>
+    </message>
+    <message>
+        <source>The file cannot be saved among the downloads.</source>
+        <translation>파일을 다운로드에 저장할 수 없어요.</translation>
     </message>
     <message>
         <source>&apos;%1&apos; cannot be played (%2).</source>

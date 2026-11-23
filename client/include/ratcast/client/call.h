@@ -80,6 +80,7 @@
 
 #include "ratcast/client/audio_player.h"
 #include "ratcast/client/audio_publisher.h"
+#include "ratcast/client/chat_files.h"
 #include "ratcast/client/data_player.h"
 #include "ratcast/client/data_publisher.h"
 #include "ratcast/client/identity.h"
@@ -104,6 +105,7 @@ class Rendezvous;
 
 namespace ratcast {
 
+class FileExchange;
 class MediaService;
 
 /// The label of a sound stream that is someone's voice: played as soon as it
@@ -225,6 +227,9 @@ struct CallConfig {
     /// node (identity.h, People::card()), told in its presence from the
     /// start; none, nobody's.
     std::function<IdentityCard(const PeerId& node)> identity = {};
+    /// Where the files of what is said are fetched to (chat_files.h), each in
+    /// a folder named by its id (UTF-8); "": none fetched, and none sent.
+    std::string files_dir = {};
 };
 
 struct CallHandlers {
@@ -247,6 +252,12 @@ struct CallHandlers {
     /// A message new here: a member said it, or one told what was said before
     /// this side came or while it was away. Not what say() said.
     std::function<void(const ChatMessage& message)> said = {};
+    /// So much of a file fetched is here, of its size (fetch_file()): a few
+    /// times a second at most.
+    std::function<void(const FileId& id, uint64_t received, uint64_t size)> file_progress = {};
+    /// A file fetched is here, at the path (UTF-8). Or not: Unavailable, no
+    /// member had it to send; Cancelled, stop_fetching().
+    std::function<void(const FileId& id, Result<std::string> path)> file_fetched = {};
     /// A published stream stopped by itself: its source ran out (success),
     /// or the source or its encoder failed. It stays published until
     /// unpublish().
@@ -332,8 +343,26 @@ public:
     /// (MediaSession::say(); never to a server). Fails with InvalidArgument
     /// for a text no message has (is_valid()).
     Result<ChatMessage> say(std::string text);
+    /// Say `text` with `files`, as their attachments describe them, each kept
+    /// to be sent from its path to a member who asks (chat_files.h). Fails
+    /// as say() does, and with Unavailable for files where none are sent
+    /// (CallConfig::files_dir).
+    Result<ChatMessage> say(std::string text, std::vector<SharedFile> files);
     /// What this side knows was said, oldest first: the last 100 messages.
     std::vector<ChatMessage> chat() const;
+
+    /// Fetch the file `file` describes, asking `first` for it — who said it
+    /// — and then each other member in turn; told by the handlers'
+    /// file_progress and file_fetched (at once, for one here already). Fails
+    /// with Unavailable where none are fetched (CallConfig::files_dir).
+    Result<void> fetch_file(const ChatAttachment& file, const PeerId& first);
+    /// Fetch it no more: told as Cancelled.
+    void stop_fetching(const FileId& id);
+    /// The file of `id` is at `path` (UTF-8), say where a fetched one was
+    /// moved to: sent from there to who asks for it.
+    void keep_file(const FileId& id, std::string path);
+    /// Where this side has the file of `id`: said or fetched, still there.
+    std::optional<std::string> file(const FileId& id) const;
 
     // ── What this side sends ────────────────────────────────────────────────
 
@@ -500,6 +529,10 @@ private:
     std::mutex speakers_mutex_;
     std::condition_variable_any speakers_wake_;
     std::jthread speakers_;
+
+    /// The files of what is said, where there are (CallConfig::files_dir):
+    /// gone once the node has stopped.
+    std::unique_ptr<FileExchange> files_;
 };
 
 }  // namespace ratcast

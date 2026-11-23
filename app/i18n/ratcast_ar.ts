@@ -41,6 +41,37 @@
     </message>
 </context>
 <context>
+    <name>FileView</name>
+    <message>
+        <source>Download</source>
+        <translation>تنزيل</translation>
+    </message>
+    <message>
+        <source>Nobody in the room has it now</source>
+        <translation>لا أحد في الغرفة يملكه الآن</translation>
+    </message>
+    <message>
+        <source>Stop</source>
+        <translation>إيقاف</translation>
+    </message>
+    <message>
+        <source>%1 · nobody in the room has it now</source>
+        <translation>%1 · لا أحد في الغرفة يملكه الآن</translation>
+    </message>
+    <message>
+        <source>%1 · it did not come</source>
+        <translation>%1 · لم يصل</translation>
+    </message>
+    <message>
+        <source>Open</source>
+        <translation>فتح</translation>
+    </message>
+    <message>
+        <source>Show in its folder</source>
+        <translation>إظهار في مجلده</translation>
+    </message>
+</context>
+<context>
     <name>FriendsPanel</name>
     <message>
         <source>Someone</source>
@@ -244,6 +275,25 @@
     </message>
 </context>
 <context>
+    <name>ImageViewer</name>
+    <message>
+        <source>Save</source>
+        <translation>حفظ</translation>
+    </message>
+    <message>
+        <source>Saved among the downloads</source>
+        <translation>حُفظ في التنزيلات</translation>
+    </message>
+    <message>
+        <source>Open</source>
+        <translation>فتح</translation>
+    </message>
+    <message>
+        <source>Close</source>
+        <translation>إغلاق</translation>
+    </message>
+</context>
+<context>
     <name>Main</name>
     <message>
         <source>%1 stopped sharing</source>
@@ -436,6 +486,10 @@
     <message>
         <source>Decline</source>
         <translation>رفض</translation>
+    </message>
+    <message>
+        <source>Drop to send in the chat</source>
+        <translation>أفلِت للإرسال في الدردشة</translation>
     </message>
     <message>
         <source>Accept</source>
@@ -684,6 +738,22 @@
     <message>
         <source>Nothing said yet</source>
         <translation>لا رسائل بعد</translation>
+    </message>
+    <message>
+        <source>Getting it ready…</source>
+        <translation>جارٍ التجهيز…</translation>
+    </message>
+    <message>
+        <source>Remove</source>
+        <translation>إزالة</translation>
+    </message>
+    <message>
+        <source>Attach files</source>
+        <translation>إرفاق ملفات</translation>
+    </message>
+    <message>
+        <source>Attach files (or drop them here, or paste)</source>
+        <translation>إرفاق ملفات (أو أفلتها هنا، أو الصقها)</translation>
     </message>
     <message>
         <source>Say something</source>
@@ -1177,6 +1247,26 @@
     <message>
         <source>That cannot be sent (%1).</source>
         <translation>تعذّر الإرسال (%1).</translation>
+    </message>
+    <message>
+        <source>A folder cannot be sent: only files.</source>
+        <translation>لا يمكن إرسال مجلد: الملفات فقط.</translation>
+    </message>
+    <message>
+        <source>The image cannot be pasted.</source>
+        <translation>تعذّر لصق الصورة.</translation>
+    </message>
+    <message>
+        <source>At most %1 files go with one message.</source>
+        <translation>%1 ملفات على الأكثر في الرسالة الواحدة.</translation>
+    </message>
+    <message>
+        <source>&apos;%1&apos; cannot be sent (%2).</source>
+        <translation>تعذّر إرسال «%1» (%2).</translation>
+    </message>
+    <message>
+        <source>The file cannot be saved among the downloads.</source>
+        <translation>تعذّر حفظ الملف في التنزيلات.</translation>
     </message>
     <message>
         <source>&apos;%1&apos; cannot be played (%2).</source>

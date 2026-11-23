@@ -41,6 +41,37 @@
     </message>
 </context>
 <context>
+    <name>FileView</name>
+    <message>
+        <source>Download</source>
+        <translation>Baixar</translation>
+    </message>
+    <message>
+        <source>Nobody in the room has it now</source>
+        <translation>Ninguém na sala tem agora</translation>
+    </message>
+    <message>
+        <source>Stop</source>
+        <translation>Parar</translation>
+    </message>
+    <message>
+        <source>%1 · nobody in the room has it now</source>
+        <translation>%1 · ninguém na sala tem agora</translation>
+    </message>
+    <message>
+        <source>%1 · it did not come</source>
+        <translation>%1 · não chegou</translation>
+    </message>
+    <message>
+        <source>Open</source>
+        <translation>Abrir</translation>
+    </message>
+    <message>
+        <source>Show in its folder</source>
+        <translation>Mostrar na pasta</translation>
+    </message>
+</context>
+<context>
     <name>FriendsPanel</name>
     <message>
         <source>Someone</source>
@@ -244,6 +275,25 @@
     </message>
 </context>
 <context>
+    <name>ImageViewer</name>
+    <message>
+        <source>Save</source>
+        <translation>Salvar</translation>
+    </message>
+    <message>
+        <source>Saved among the downloads</source>
+        <translation>Salvo em Downloads</translation>
+    </message>
+    <message>
+        <source>Open</source>
+        <translation>Abrir</translation>
+    </message>
+    <message>
+        <source>Close</source>
+        <translation>Fechar</translation>
+    </message>
+</context>
+<context>
     <name>Main</name>
     <message>
         <source>%1 stopped sharing</source>
@@ -436,6 +486,10 @@
     <message>
         <source>Decline</source>
         <translation>Recusar</translation>
+    </message>
+    <message>
+        <source>Drop to send in the chat</source>
+        <translation>Solte para enviar no chat</translation>
     </message>
     <message>
         <source>Accept</source>
@@ -684,6 +738,22 @@
     <message>
         <source>Nothing said yet</source>
         <translation>Nenhuma mensagem ainda</translation>
+    </message>
+    <message>
+        <source>Getting it ready…</source>
+        <translation>Preparando…</translation>
+    </message>
+    <message>
+        <source>Remove</source>
+        <translation>Remover</translation>
+    </message>
+    <message>
+        <source>Attach files</source>
+        <translation>Anexar arquivos</translation>
+    </message>
+    <message>
+        <source>Attach files (or drop them here, or paste)</source>
+        <translation>Anexar arquivos (ou arraste para cá, ou cole)</translation>
     </message>
     <message>
         <source>Say something</source>
@@ -1177,6 +1247,26 @@
     <message>
         <source>That cannot be sent (%1).</source>
         <translation>Não foi possível enviar (%1).</translation>
+    </message>
+    <message>
+        <source>A folder cannot be sent: only files.</source>
+        <translation>Não é possível enviar uma pasta: só arquivos.</translation>
+    </message>
+    <message>
+        <source>The image cannot be pasted.</source>
+        <translation>Não é possível colar a imagem.</translation>
+    </message>
+    <message>
+        <source>At most %1 files go with one message.</source>
+        <translation>No máximo %1 arquivos por mensagem.</translation>
+    </message>
+    <message>
+        <source>&apos;%1&apos; cannot be sent (%2).</source>
+        <translation>Não é possível enviar &apos;%1&apos; (%2).</translation>
+    </message>
+    <message>
+        <source>The file cannot be saved among the downloads.</source>
+        <translation>Não é possível salvar o arquivo em Downloads.</translation>
     </message>
     <message>
         <source>&apos;%1&apos; cannot be played (%2).</source>

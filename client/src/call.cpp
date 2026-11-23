@@ -8,10 +8,12 @@
 #include <type_traits>
 #include <utility>
 
+#include "file_exchange.h"
 #include "ratcast/client/camera_choice.h"
 #include "ratcast/session/media_service.h"
 
 #include "librats/subsystems/dht_discovery.h"
+#include "librats/subsystems/file_transfer.h"
 #include "librats/subsystems/hole_punch.h"
 #include "librats/subsystems/peer_exchange.h"
 #include "librats/subsystems/port_mapping_service.h"
@@ -223,6 +225,27 @@ Call::Call(CallConfig config, CallHandlers handlers)
     // What this side decodes, for senders to code their pictures to it in.
     if (config_.playback.pictures || config_.playback.cameras)
         decodes_ = config_.playback.decodes.value_or(live_video_decoders());
+    // The files of what is said: each sent on a lane of its own, below every
+    // other — a file never holds up what is played.
+    if (!config_.files_dir.empty()) {
+        const std::string folder = config_.files_dir;
+        librats::FileTransfer::Config files;
+        files.temp_directory = folder + "/.partial";
+        files.offer_timeout_secs = 30;
+        auto* transfer = node_.add_subsystem(std::make_unique<librats::FileTransfer>(files));
+        files_ = std::make_unique<FileExchange>(
+            *transfer, session(), folder, [this] { return peers(); },
+            FileExchange::Handlers{
+                .progress =
+                    [this](const FileId& id, uint64_t received, uint64_t size) {
+                        notify(handlers_.file_progress, id, received, size);
+                    },
+                .fetched =
+                    [this](const FileId& id, Result<std::string> path) {
+                        notify(handlers_.file_fetched, id, path);
+                    },
+            });
+    }
     if (config_.identity) identity_ = encode(config_.identity(node_.local_id()));
     if (!decodes_.empty() || !identity_.empty()) {
         Presence presence;
@@ -333,6 +356,7 @@ Call::Call(CallConfig config, CallHandlers handlers)
         LOG_INFO("call", peer.short_hex()
                              << (lost ? " lost (" : " left (") << librats::to_string(reason) << ")"
                              << (lost ? "; dialed again" : ""));
+        if (files_) files_->left(peer);
         notify(lost ? handlers_.lost : handlers_.left, peer);
     });
 }
@@ -364,6 +388,8 @@ Call::~Call() {
         ended_feed = std::move(ended_feed_);
     }
     node_.stop();
+    // Nothing of the node calls it now.
+    files_.reset();
 }
 
 const PeerId& Call::id() const noexcept { return node_.local_id(); }
@@ -468,12 +494,40 @@ bool Call::relayed(const PeerId& peer) const {
 
 // ── What is said ────────────────────────────────────────────────────────────
 
-Result<ChatMessage> Call::say(std::string text) {
+Result<ChatMessage> Call::say(std::string text) { return say(std::move(text), {}); }
+
+Result<ChatMessage> Call::say(std::string text, std::vector<SharedFile> files) {
+    if (!files.empty() && !files_) return fail(Errc::Unavailable);
+    // Kept before they are told of: a member may ask as the message comes.
+    std::vector<ChatAttachment> attachments;
+    attachments.reserve(files.size());
+    for (SharedFile& file : files) {
+        files_->keep(file.attachment.id, std::move(file.path));
+        attachments.push_back(std::move(file.attachment));
+    }
     const auto now = std::chrono::floor<WallTime::duration>(std::chrono::system_clock::now());
-    return session().say(std::move(text), now);
+    return session().say(std::move(text), now, std::move(attachments));
 }
 
 std::vector<ChatMessage> Call::chat() const { return media_->session().chat(); }
+
+Result<void> Call::fetch_file(const ChatAttachment& file, const PeerId& first) {
+    if (!files_) return fail(Errc::Unavailable);
+    files_->fetch(file, first);
+    return {};
+}
+
+void Call::stop_fetching(const FileId& id) {
+    if (files_) files_->stop(id);
+}
+
+void Call::keep_file(const FileId& id, std::string path) {
+    if (files_) files_->keep(id, std::move(path));
+}
+
+std::optional<std::string> Call::file(const FileId& id) const {
+    return files_ ? files_->path(id) : std::nullopt;
+}
 
 MediaSession& Call::session() noexcept { return media_->session(); }
 
@@ -513,6 +567,18 @@ SessionHandlers Call::session_handlers() {
                 notify(handlers_.presence, peer, presence);
             },
         .said = [this](const ChatMessage& message) { notify(handlers_.said, message); },
+        .file_asked =
+            [this](const PeerId& peer, const FileId& id) {
+                if (files_) {
+                    files_->asked(peer, id);
+                } else {
+                    session().no_file(peer, id);
+                }
+            },
+        .no_file =
+            [this](const PeerId& peer, const FileId& id) {
+                if (files_) files_->none(peer, id);
+            },
     };
 }
 

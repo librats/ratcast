@@ -41,6 +41,37 @@
     </message>
 </context>
 <context>
+    <name>FileView</name>
+    <message>
+        <source>Download</source>
+        <translation>下载</translation>
+    </message>
+    <message>
+        <source>Nobody in the room has it now</source>
+        <translation>房间里现在没有人有这个文件</translation>
+    </message>
+    <message>
+        <source>Stop</source>
+        <translation>停止</translation>
+    </message>
+    <message>
+        <source>%1 · nobody in the room has it now</source>
+        <translation>%1 · 房间里现在没有人有它</translation>
+    </message>
+    <message>
+        <source>%1 · it did not come</source>
+        <translation>%1 · 没有收到</translation>
+    </message>
+    <message>
+        <source>Open</source>
+        <translation>打开</translation>
+    </message>
+    <message>
+        <source>Show in its folder</source>
+        <translation>在文件夹中显示</translation>
+    </message>
+</context>
+<context>
     <name>FriendsPanel</name>
     <message>
         <source>Someone</source>
@@ -244,6 +275,25 @@
     </message>
 </context>
 <context>
+    <name>ImageViewer</name>
+    <message>
+        <source>Save</source>
+        <translation>保存</translation>
+    </message>
+    <message>
+        <source>Saved among the downloads</source>
+        <translation>已保存到下载</translation>
+    </message>
+    <message>
+        <source>Open</source>
+        <translation>打开</translation>
+    </message>
+    <message>
+        <source>Close</source>
+        <translation>关闭</translation>
+    </message>
+</context>
+<context>
     <name>Main</name>
     <message>
         <source>%1 stopped sharing</source>
@@ -436,6 +486,10 @@
     <message>
         <source>Decline</source>
         <translation>拒绝</translation>
+    </message>
+    <message>
+        <source>Drop to send in the chat</source>
+        <translation>松开以发送到聊天</translation>
     </message>
     <message>
         <source>Accept</source>
@@ -684,6 +738,22 @@
     <message>
         <source>Nothing said yet</source>
         <translation>还没有消息</translation>
+    </message>
+    <message>
+        <source>Getting it ready…</source>
+        <translation>正在准备…</translation>
+    </message>
+    <message>
+        <source>Remove</source>
+        <translation>移除</translation>
+    </message>
+    <message>
+        <source>Attach files</source>
+        <translation>附加文件</translation>
+    </message>
+    <message>
+        <source>Attach files (or drop them here, or paste)</source>
+        <translation>附加文件（也可拖放到这里或粘贴）</translation>
     </message>
     <message>
         <source>Say something</source>
@@ -1177,6 +1247,26 @@
     <message>
         <source>That cannot be sent (%1).</source>
         <translation>无法发送（%1）。</translation>
+    </message>
+    <message>
+        <source>A folder cannot be sent: only files.</source>
+        <translation>无法发送文件夹：只能发送文件。</translation>
+    </message>
+    <message>
+        <source>The image cannot be pasted.</source>
+        <translation>无法粘贴图片。</translation>
+    </message>
+    <message>
+        <source>At most %1 files go with one message.</source>
+        <translation>一条消息最多附带 %1 个文件。</translation>
+    </message>
+    <message>
+        <source>&apos;%1&apos; cannot be sent (%2).</source>
+        <translation>无法发送“%1”（%2）。</translation>
+    </message>
+    <message>
+        <source>The file cannot be saved among the downloads.</source>
+        <translation>无法将文件保存到下载。</translation>
     </message>
     <message>
         <source>&apos;%1&apos; cannot be played (%2).</source>

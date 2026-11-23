@@ -58,8 +58,11 @@ ratcast is built on [librats](https://github.com/librats/librats). It comes in t
 - **Camera.** Each side can show itself next to the share. Without a share, everyone is a tile
   in a grid, and whoever speaks is ringed. In a room of more than seven, you see the cameras of
   the last six to speak.
-- **Text chat.** Write to the room next to the call. Links open in the browser, and whoever
-  joins later sees the last hundred messages.
+- **Text chat, with files.** Write to the room next to the call, each message under its
+  author's avatar. Links open in the browser, and whoever joins later sees the last hundred
+  messages. Attach images and files of any size — chosen, dropped on the window or pasted — and
+  they go straight from a device that has them to whoever asks, on a lane below the call's, so a
+  file never holds up the picture. Images come by themselves; other files when you download them.
 - **Settings.** Pick the microphone, speaker and camera if the system's defaults are not the
   ones, even in the middle of a call. The window can go to the tray when minimized or closed,
   and the room goes on.

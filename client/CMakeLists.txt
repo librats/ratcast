@@ -11,9 +11,11 @@ add_library(ratcast_client STATIC
     src/call_monitor.cpp
     src/camera.cpp
     src/camera_choice.cpp
+    src/chat_files.cpp
     src/cpu_meter.cpp
     src/data_player.cpp
     src/data_publisher.cpp
+    src/file_exchange.cpp
     src/group.cpp
     src/identity.cpp
     src/key_link.cpp

@@ -43,6 +43,12 @@
  *   ChatAsk           prefix
  *   ChatTold          prefix, the author's 32-byte id, varint sent,
  *                     varint name length + name, varint text length + text
+ *                     — both chats then, if they carry files: varint count,
+ *                     and each file's 32-byte id, varint name length + name,
+ *                     varint size, varint width, varint height, varint
+ *                     preview length + preview
+ *   FileAsk           prefix, the file's 32-byte id
+ *   FileNone          prefix, the file's 32-byte id
  *
  * A later version may append fields to any of them: a receiver reads the
  * fields it knows and ignores whatever follows.
@@ -175,6 +181,7 @@ struct FrameKey {
 struct Chat {
     WallTime sent{};  ///< by the sayer's clock
     std::string text;
+    std::vector<ChatAttachment> attachments = {};
 };
 
 /// What was said? Answered with a ChatTold for each message the peer knows.
@@ -185,10 +192,22 @@ struct ChatTold {
     ChatMessage message;
 };
 
+/// Send me the file of this id, if you have it (a file of a message:
+/// ChatAttachment). Answered by the file, sent apart from the session, or by
+/// a FileNone.
+struct FileAsk {
+    FileId id{};
+};
+
+/// I have no file of this id to send you.
+struct FileNone {
+    FileId id{};
+};
+
 using ControlMessage =
     std::variant<Announce, Withdraw, Subscribe, Unsubscribe, KeyframeRequest, PresenceUpdate,
                  ClockProbe, ClockEcho, PlayoutNeed, PlayoutDelay, Forward, RelayedPath, Uplink,
-                 CannotReach, Forwarder, FrameKey, Chat, ChatAsk, ChatTold>;
+                 CannotReach, Forwarder, FrameKey, Chat, ChatAsk, ChatTold, FileAsk, FileNone>;
 
 /// The message for `message`. Precondition: an Announce carries a description,
 /// a PresenceUpdate a presence, a ChatTold a message — and a Chat what would

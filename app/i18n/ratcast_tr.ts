@@ -41,6 +41,37 @@
     </message>
 </context>
 <context>
+    <name>FileView</name>
+    <message>
+        <source>Download</source>
+        <translation>İndir</translation>
+    </message>
+    <message>
+        <source>Nobody in the room has it now</source>
+        <translation>Şu anda odada kimsede yok</translation>
+    </message>
+    <message>
+        <source>Stop</source>
+        <translation>Durdur</translation>
+    </message>
+    <message>
+        <source>%1 · nobody in the room has it now</source>
+        <translation>%1 · şu anda odada kimsede yok</translation>
+    </message>
+    <message>
+        <source>%1 · it did not come</source>
+        <translation>%1 · gelmedi</translation>
+    </message>
+    <message>
+        <source>Open</source>
+        <translation>Aç</translation>
+    </message>
+    <message>
+        <source>Show in its folder</source>
+        <translation>Klasöründe göster</translation>
+    </message>
+</context>
+<context>
     <name>FriendsPanel</name>
     <message>
         <source>Someone</source>
@@ -244,6 +275,25 @@
     </message>
 </context>
 <context>
+    <name>ImageViewer</name>
+    <message>
+        <source>Save</source>
+        <translation>Kaydet</translation>
+    </message>
+    <message>
+        <source>Saved among the downloads</source>
+        <translation>İndirilenlere kaydedildi</translation>
+    </message>
+    <message>
+        <source>Open</source>
+        <translation>Aç</translation>
+    </message>
+    <message>
+        <source>Close</source>
+        <translation>Kapat</translation>
+    </message>
+</context>
+<context>
     <name>Main</name>
     <message>
         <source>%1 stopped sharing</source>
@@ -436,6 +486,10 @@
     <message>
         <source>Decline</source>
         <translation>Reddet</translation>
+    </message>
+    <message>
+        <source>Drop to send in the chat</source>
+        <translation>Sohbete göndermek için bırakın</translation>
     </message>
     <message>
         <source>Accept</source>
@@ -684,6 +738,22 @@
     <message>
         <source>Nothing said yet</source>
         <translation>Henüz mesaj yok</translation>
+    </message>
+    <message>
+        <source>Getting it ready…</source>
+        <translation>Hazırlanıyor…</translation>
+    </message>
+    <message>
+        <source>Remove</source>
+        <translation>Kaldır</translation>
+    </message>
+    <message>
+        <source>Attach files</source>
+        <translation>Dosya ekle</translation>
+    </message>
+    <message>
+        <source>Attach files (or drop them here, or paste)</source>
+        <translation>Dosya ekle (ya da buraya sürükleyin veya yapıştırın)</translation>
     </message>
     <message>
         <source>Say something</source>
@@ -1177,6 +1247,26 @@
     <message>
         <source>That cannot be sent (%1).</source>
         <translation>Mesaj gönderilemedi (%1).</translation>
+    </message>
+    <message>
+        <source>A folder cannot be sent: only files.</source>
+        <translation>Klasör gönderilemez, yalnızca dosyalar.</translation>
+    </message>
+    <message>
+        <source>The image cannot be pasted.</source>
+        <translation>Görüntü yapıştırılamıyor.</translation>
+    </message>
+    <message>
+        <source>At most %1 files go with one message.</source>
+        <translation>Bir mesajda en fazla %1 dosya.</translation>
+    </message>
+    <message>
+        <source>&apos;%1&apos; cannot be sent (%2).</source>
+        <translation>&apos;%1&apos; gönderilemiyor (%2).</translation>
+    </message>
+    <message>
+        <source>The file cannot be saved among the downloads.</source>
+        <translation>Dosya indirilenlere kaydedilemiyor.</translation>
     </message>
     <message>
         <source>&apos;%1&apos; cannot be played (%2).</source>

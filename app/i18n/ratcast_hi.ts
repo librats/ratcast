@@ -41,6 +41,37 @@
     </message>
 </context>
 <context>
+    <name>FileView</name>
+    <message>
+        <source>Download</source>
+        <translation>डाउनलोड करें</translation>
+    </message>
+    <message>
+        <source>Nobody in the room has it now</source>
+        <translation>अभी रूम में किसी के पास यह नहीं है</translation>
+    </message>
+    <message>
+        <source>Stop</source>
+        <translation>रोकें</translation>
+    </message>
+    <message>
+        <source>%1 · nobody in the room has it now</source>
+        <translation>%1 · अभी रूम में किसी के पास यह नहीं है</translation>
+    </message>
+    <message>
+        <source>%1 · it did not come</source>
+        <translation>%1 · नहीं मिल पाई</translation>
+    </message>
+    <message>
+        <source>Open</source>
+        <translation>खोलें</translation>
+    </message>
+    <message>
+        <source>Show in its folder</source>
+        <translation>फ़ोल्डर में दिखाएँ</translation>
+    </message>
+</context>
+<context>
     <name>FriendsPanel</name>
     <message>
         <source>Someone</source>
@@ -244,6 +275,25 @@
     </message>
 </context>
 <context>
+    <name>ImageViewer</name>
+    <message>
+        <source>Save</source>
+        <translation>सहेजें</translation>
+    </message>
+    <message>
+        <source>Saved among the downloads</source>
+        <translation>डाउनलोड में सहेजा गया</translation>
+    </message>
+    <message>
+        <source>Open</source>
+        <translation>खोलें</translation>
+    </message>
+    <message>
+        <source>Close</source>
+        <translation>बंद करें</translation>
+    </message>
+</context>
+<context>
     <name>Main</name>
     <message>
         <source>%1 stopped sharing</source>
@@ -436,6 +486,10 @@
     <message>
         <source>Decline</source>
         <translation>अस्वीकार करें</translation>
+    </message>
+    <message>
+        <source>Drop to send in the chat</source>
+        <translation>चैट में भेजने के लिए छोड़ें</translation>
     </message>
     <message>
         <source>Accept</source>
@@ -684,6 +738,22 @@
     <message>
         <source>Nothing said yet</source>
         <translation>अभी तक कोई संदेश नहीं</translation>
+    </message>
+    <message>
+        <source>Getting it ready…</source>
+        <translation>तैयार हो रहा है…</translation>
+    </message>
+    <message>
+        <source>Remove</source>
+        <translation>हटाएँ</translation>
+    </message>
+    <message>
+        <source>Attach files</source>
+        <translation>फ़ाइलें जोड़ें</translation>
+    </message>
+    <message>
+        <source>Attach files (or drop them here, or paste)</source>
+        <translation>फ़ाइलें जोड़ें (या उन्हें यहाँ छोड़ें, या पेस्ट करें)</translation>
     </message>
     <message>
         <source>Say something</source>
@@ -1177,6 +1247,26 @@
     <message>
         <source>That cannot be sent (%1).</source>
         <translation>यह भेजा नहीं जा सकता (%1)।</translation>
+    </message>
+    <message>
+        <source>A folder cannot be sent: only files.</source>
+        <translation>फ़ोल्डर नहीं भेजा जा सकता: केवल फ़ाइलें।</translation>
+    </message>
+    <message>
+        <source>The image cannot be pasted.</source>
+        <translation>छवि पेस्ट नहीं की जा सकती।</translation>
+    </message>
+    <message>
+        <source>At most %1 files go with one message.</source>
+        <translation>एक संदेश के साथ अधिकतम %1 फ़ाइलें।</translation>
+    </message>
+    <message>
+        <source>&apos;%1&apos; cannot be sent (%2).</source>
+        <translation>&apos;%1&apos; भेजा नहीं जा सकता (%2)।</translation>
+    </message>
+    <message>
+        <source>The file cannot be saved among the downloads.</source>
+        <translation>फ़ाइल डाउनलोड में सहेजी नहीं जा सकती।</translation>
     </message>
     <message>
         <source>&apos;%1&apos; cannot be played (%2).</source>

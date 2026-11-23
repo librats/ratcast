@@ -150,9 +150,12 @@ qt_add_qml_module(ratcast_app
     QML_FILES
         qml/AboutDialog.qml
         qml/Avatar.qml
+        qml/FileView.qml
         qml/FriendsPanel.qml
         qml/GroupsPanel.qml
+        qml/ImageViewer.qml
         qml/Main.qml
+        qml/MessageView.qml
         qml/PeoplePanel.qml
         qml/RatLogo.qml
         qml/SettingsDialog.qml
@@ -166,10 +169,12 @@ qt_add_qml_module(ratcast_app
         qml/icons/bug.svg
         qml/icons/check.svg
         qml/icons/copy.svg
+        qml/icons/download.svg
         qml/icons/ellipsis.svg
         qml/icons/external-link.svg
         qml/icons/eye-off.svg
         qml/icons/eye.svg
+        qml/icons/file.svg
         qml/icons/folder-open.svg
         qml/icons/globe.svg
         qml/icons/headphone-off.svg
@@ -187,6 +192,7 @@ qt_add_qml_module(ratcast_app
         qml/icons/mic.svg
         qml/icons/minimize.svg
         qml/icons/monitor.svg
+        qml/icons/paperclip.svg
         qml/icons/pencil.svg
         qml/icons/phone-off.svg
         qml/icons/phone.svg

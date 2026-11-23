@@ -1113,9 +1113,12 @@ bool MediaSession::entitled(const PeerId& peer) const {
 
 // ── What is said ────────────────────────────────────────────────────────────
 
-Result<ChatMessage> MediaSession::say(std::string text, WallTime now) {
+Result<ChatMessage> MediaSession::say(std::string text, WallTime now,
+                                      std::vector<ChatAttachment> attachments) {
     if (config_.forwarder) return fail(Errc::Unsupported);
-    ChatMessage message{.author = network_.local_id(), .text = std::move(text)};
+    ChatMessage message{.author = network_.local_id(),
+                        .text = std::move(text),
+                        .attachments = std::move(attachments)};
     if (message.author.is_zero()) return fail(Errc::Unavailable);
     {
         std::lock_guard lock(presence_mutex_);
@@ -1128,7 +1131,8 @@ Result<ChatMessage> MediaSession::say(std::string text, WallTime now) {
     if (!is_valid(message)) return fail(Errc::InvalidArgument);
     last_said_ = message.sent;
     chat_.add(message);
-    const Buffer said = wire::encode_control(wire::Chat{message.sent, message.text});
+    const Buffer said =
+        wire::encode_control(wire::Chat{message.sent, message.text, message.attachments});
     for (const PeerId& peer : connected_peers()) {
         if (entitled(peer)) network_.send_reliable(peer, said);
     }
@@ -1164,6 +1168,24 @@ void MediaSession::tell_chat(const PeerId& peer) {
         }
     }
     for (const Buffer& message : told) network_.send_reliable(peer, message);
+}
+
+Result<void> MediaSession::ask_file(const PeerId& peer, const FileId& id) {
+    if (config_.forwarder) return fail(Errc::Unsupported);
+    if (!find_peer(peer)) return fail(Errc::Unavailable);
+    if (!entitled(peer)) return fail(Errc::InvalidArgument);
+    network_.send_reliable(peer, wire::encode_control(wire::FileAsk{id}));
+    return {};
+}
+
+void MediaSession::no_file(const PeerId& peer, const FileId& id) {
+    if (config_.forwarder || !find_peer(peer)) return;
+    network_.send_reliable(peer, wire::encode_control(wire::FileNone{id}));
+}
+
+void MediaSession::on_file_message(const PeerId& peer, const FileId& id, bool asked) {
+    if (config_.forwarder || !find_peer(peer) || !entitled(peer)) return;
+    notify(asked ? handlers_.file_asked : handlers_.no_file, peer, id);
 }
 
 void MediaSession::on_peer_disconnected(const PeerId& peer) {
@@ -1429,12 +1451,19 @@ void MediaSession::on_message(const PeerId& peer, std::span<const uint8_t> messa
                 // From the sender itself: never passed on.
                 if (find_peer(peer)) sealing_->keep(peer, m.kid, m.key);
             } else if constexpr (std::is_same_v<Message, wire::Chat>) {
-                on_chat(peer, ChatMessage{.sent = m.sent, .text = std::move(m.text)},
+                on_chat(peer,
+                        ChatMessage{.sent = m.sent,
+                                    .text = std::move(m.text),
+                                    .attachments = std::move(m.attachments)},
                         /*told=*/false);
             } else if constexpr (std::is_same_v<Message, wire::ChatAsk>) {
                 tell_chat(peer);
             } else if constexpr (std::is_same_v<Message, wire::ChatTold>) {
                 on_chat(peer, std::move(m.message), /*told=*/true);
+            } else if constexpr (std::is_same_v<Message, wire::FileAsk>) {
+                on_file_message(peer, m.id, /*asked=*/true);
+            } else if constexpr (std::is_same_v<Message, wire::FileNone>) {
+                on_file_message(peer, m.id, /*asked=*/false);
             } else {
                 static_assert(std::is_same_v<Message, wire::KeyframeRequest>);
                 on_keyframe_request(peer, m.stream);

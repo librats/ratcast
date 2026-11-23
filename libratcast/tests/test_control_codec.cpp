@@ -400,3 +400,111 @@ TEST(ControlCodec, RefusesAChatThatIsNoMessage) {
     told[1 + PeerId::kSize + 1 + 1] = '\n';  // the name's first byte
     EXPECT_EQ(decode_error(told), Errc::Malformed);
 }
+
+namespace {
+
+ChatAttachment attachment(uint8_t seed, std::string name, uint32_t width = 0, uint32_t height = 0) {
+    ChatAttachment file{.name = std::move(name), .size = 1'234'567'890'123ull * seed};
+    file.id.fill(seed);
+    file.width = width;
+    file.height = height;
+    if (width != 0) file.preview.assign(ChatAttachment::kMaxPreviewSize, seed);
+    return file;
+}
+
+}  // namespace
+
+TEST(ControlCodec, RoundTripsAChatOfFiles) {
+    const WallTime noon{std::chrono::hours(482'000)};
+    const std::vector<ChatAttachment> files = {attachment(1, "кот.jpg", 4032, 3024),
+                                               attachment(2, "notes.tar.gz")};
+    const Chat chat = round_trip(Chat{noon, "look", files});
+    EXPECT_EQ(chat.text, "look");
+    EXPECT_EQ(chat.attachments, files);
+    // Files alone, with nothing said: told as they were.
+    const ChatMessage message{peer(5), "Анна", noon, "", files};
+    EXPECT_EQ(round_trip(ChatTold{message}).message, message);
+}
+
+TEST(ControlCodec, AChatWithoutFilesIsAsABuildBeforeFilesWroteIt) {
+    const WallTime noon{std::chrono::hours(482'000)};
+    const auto plain = bytes_of(encode_control(Chat{noon, "hello"}));
+    auto with = bytes_of(encode_control(Chat{noon, "hello", {attachment(1, "a.txt")}}));
+    ASSERT_GT(with.size(), plain.size());
+    EXPECT_TRUE(std::equal(plain.begin(), plain.end(), with.begin()));
+    // And read so by this one: what ends at its text has none.
+    EXPECT_TRUE(round_trip(Chat{noon, "hello"}).attachments.empty());
+}
+
+TEST(ControlCodec, EveryCutOfAChatsFilesIsTruncated) {
+    const WallTime noon{std::chrono::hours(482'000)};
+    const std::vector<ChatAttachment> files = {attachment(1, "a.png", 640, 480),
+                                               attachment(2, "b.txt")};
+    for (const ControlMessage& message :
+         {ControlMessage{Chat{noon, "hi", files}},
+          ControlMessage{ChatTold{ChatMessage{peer(5), "Анна", noon, "hi", files}}}}) {
+        const auto bytes = bytes_of(encode_control(message));
+        // Cut where its files start, it is a message without them.
+        const size_t plain = [&] {
+            ControlMessage without = message;
+            if (auto* chat = std::get_if<Chat>(&without)) chat->attachments.clear();
+            if (auto* told = std::get_if<ChatTold>(&without)) told->message.attachments.clear();
+            return bytes_of(encode_control(without)).size();
+        }();
+        for (size_t cut = 0; cut < bytes.size(); ++cut) {
+            const std::vector<uint8_t> part(bytes.begin(),
+                                            bytes.begin() + static_cast<ptrdiff_t>(cut));
+            if (cut == plain) {
+                EXPECT_TRUE(decode_control(part));
+                continue;
+            }
+            EXPECT_EQ(decode_error(part), Errc::Truncated)
+                << "kind " << int(bytes[0]) << ", cut at " << cut;
+        }
+    }
+}
+
+TEST(ControlCodec, RefusesFilesThatAreNoFiles) {
+    const WallTime noon{std::chrono::hours(482'000)};
+    const auto refused = [&](ChatAttachment file) {
+        // Written as is, past what encode_control() would allow.
+        auto bytes = bytes_of(encode_control(Chat{noon, "hi", {attachment(9, "x")}}));
+        bytes.resize(bytes_of(encode_control(Chat{noon, "hi"})).size());
+        bytes.push_back(1);
+        bytes.insert(bytes.end(), file.id.begin(), file.id.end());
+        bytes.push_back(static_cast<uint8_t>(file.name.size()));
+        bytes.insert(bytes.end(), file.name.begin(), file.name.end());
+        bytes.insert(bytes.end(),
+                     {0, static_cast<uint8_t>(file.width), static_cast<uint8_t>(file.height), 0});
+        return decode_error(bytes);
+    };
+    EXPECT_EQ(refused(attachment(1, "")), Errc::Malformed);
+    EXPECT_EQ(refused(attachment(1, "..")), Errc::Malformed);
+    EXPECT_EQ(refused(attachment(1, "a/b")), Errc::Malformed);
+    EXPECT_EQ(refused(attachment(1, "a\\b")), Errc::Malformed);
+    EXPECT_EQ(refused(attachment(1, "a\nb")), Errc::Malformed);
+    ChatAttachment half = attachment(1, "half.png");
+    half.width = 10;
+    EXPECT_EQ(refused(half), Errc::Malformed) << "a width and no height";
+
+    // Too many, or one twice.
+    std::vector<ChatAttachment> many;
+    for (uint8_t i = 0; i <= ChatMessage::kMaxAttachments; ++i)
+        many.push_back(attachment(i, "f" + std::to_string(i)));
+    ChatMessage message{peer(5), "Анна", noon, "hi", many};
+    EXPECT_FALSE(is_valid(message));
+    message.attachments = {attachment(1, "a"), attachment(1, "b")};
+    EXPECT_FALSE(is_valid(message));
+    message.attachments.pop_back();
+    EXPECT_TRUE(is_valid(message));
+}
+
+TEST(ControlCodec, RoundTripsAskingForAFile) {
+    FileId id{};
+    for (size_t i = 0; i < id.size(); ++i) id[i] = static_cast<uint8_t>(i * 7);
+    EXPECT_EQ(round_trip(FileAsk{id}).id, id);
+    EXPECT_EQ(round_trip(FileNone{id}).id, id);
+    const auto bytes = bytes_of(encode_control(FileAsk{id}));
+    EXPECT_EQ(bytes.size(), 1 + id.size());
+    EXPECT_EQ(decode_error({bytes.begin(), bytes.end() - 1}), Errc::Truncated);
+}

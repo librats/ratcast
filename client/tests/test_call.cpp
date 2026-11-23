@@ -17,9 +17,12 @@
 #include <chrono>
 #include <cmath>
 #include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <map>
 #include <memory>
 #include <mutex>
+#include <random>
 #include <span>
 #include <string>
 #include <thread>
@@ -207,6 +210,16 @@ public:
     size_t told_times(const std::string& event) {
         return static_cast<size_t>(std::ranges::count(events(), event));
     }
+    /// What came of fetching the file of `id`, once it did.
+    std::optional<Result<std::string>> fetched(const FileId& id) {
+        std::lock_guard lock(mutex_);
+        const auto it = fetched_.find(id);
+        return it != fetched_.end() ? std::optional(it->second) : std::nullopt;
+    }
+    uint64_t received(const FileId& id) {
+        std::lock_guard lock(mutex_);
+        return received_[id];
+    }
 
 private:
     CallHandlers handlers() {
@@ -228,6 +241,16 @@ private:
                 [this](const ChatMessage& message) {
                     tell("said " + message.name + ": " + message.text);
                 },
+            .file_progress =
+                [this](const FileId& id, uint64_t received, uint64_t) {
+                    std::lock_guard lock(mutex_);
+                    received_[id] = received;
+                },
+            .file_fetched =
+                [this](const FileId& id, Result<std::string> path) {
+                    std::lock_guard lock(mutex_);
+                    fetched_.insert_or_assign(id, std::move(path));
+                },
             .source_ended =
                 [this](StreamId stream, Result<void> outcome) {
                     tell("source " + std::to_string(stream) + (outcome ? " ended" : " failed"));
@@ -247,6 +270,8 @@ private:
     size_t heard_ = 0;
     std::map<PeerId, size_t> heard_from_;
     std::vector<std::string> events_;
+    std::map<FileId, Result<std::string>> fetched_;
+    std::map<FileId, uint64_t> received_;
     std::atomic<float> loudest_{0.0f};
     VirtualOutput speaker_{
         VirtualOutputConfig{}, [this](std::span<const float> samples, Timestamp) {
@@ -1068,6 +1093,133 @@ TEST_F(CallTest, WhatIsSaidReachesEveryMemberAndOneWhoComesLaterReadsIt) {
     std::this_thread::sleep_for(200ms);
     EXPECT_EQ(bob.told_times("said Ann: hi, all"), 1u);
     EXPECT_EQ(host->say("").error(), Errc::InvalidArgument);
+}
+
+namespace {
+
+/// A folder of the test's own, gone after it.
+class Folder {
+public:
+    explicit Folder(const std::string& name)
+        : path_(std::filesystem::temp_directory_path() /
+                ("ratcast-" + name + "-" + std::to_string(std::random_device{}()))) {
+        std::filesystem::create_directories(path_);
+    }
+    ~Folder() {
+        std::error_code error;
+        std::filesystem::remove_all(path_, error);
+    }
+
+    const std::filesystem::path& path() const { return path_; }
+    std::string utf8(const std::filesystem::path& inside = {}) const {
+        const std::u8string text = (inside.empty() ? path_ : path_ / inside).u8string();
+        return {reinterpret_cast<const char*>(text.data()), text.size()};
+    }
+
+private:
+    std::filesystem::path path_;
+};
+
+std::vector<char> read_all(const std::string& utf8) {
+    std::ifstream in(std::filesystem::path(std::u8string(utf8.begin(), utf8.end())),
+                     std::ios::binary);
+    return {std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
+}
+
+}  // namespace
+
+TEST_F(CallTest, AFileSaidIsFetchedOfWhoeverHasIt) {
+    Folder ann_files("ann");
+    Folder bob_files("bob");
+    Folder cat_files("cat");
+    // Of a few megabytes, written where Ann has it.
+    std::vector<char> bytes(3 * 1024 * 1024 + 17);
+    std::mt19937 random(7);
+    for (char& byte : bytes) byte = static_cast<char>(random());
+    const std::string original = ann_files.utf8("holiday.bin");
+    std::ofstream(ann_files.path() / "holiday.bin", std::ios::binary)
+        .write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
+    const Result<FileId> id = file_id(original);
+    ASSERT_TRUE(id);
+    EXPECT_EQ(*id,
+              file_id(std::span(reinterpret_cast<const uint8_t*>(bytes.data()), bytes.size())));
+    const ChatAttachment attachment{.id = *id, .name = "отпуск 1.bin", .size = bytes.size()};
+
+    Side ann;
+    CallConfig ann_config = room();
+    ann_config.files_dir = ann_files.utf8("fetched");
+    ann.start(ann_config, false, false);
+    Side bob;
+    CallConfig bob_config = room(RatsUrl{ann.address()});
+    bob_config.files_dir = bob_files.utf8();
+    bob.start(bob_config, false, false);
+    meet(ann, bob);
+
+    ASSERT_TRUE(ann->say("look", {SharedFile{attachment, original}}));
+    ASSERT_TRUE(wait_for([&] { return bob.told("said Ann: look"); }));
+    ASSERT_EQ(bob->chat().back().attachments, std::vector{attachment});
+    EXPECT_EQ(ann->file(*id), original);
+
+    // Bob asks Ann for it, and has it: under its name, in a folder of its id.
+    ASSERT_TRUE(bob->fetch_file(attachment, ann->id()));
+    ASSERT_TRUE(wait_for([&] { return bob.fetched(*id).has_value(); }, 20s));
+    const Result<std::string> at = *bob.fetched(*id);
+    ASSERT_TRUE(at) << to_string(at.error());
+    EXPECT_EQ(*at, bob_files.utf8(std::filesystem::path(to_hex(*id)) / u8"отпуск 1.bin"));
+    EXPECT_EQ(read_all(*at), bytes);
+    EXPECT_EQ(bob->file(*id), *at);
+
+    // Ann goes. Cat comes later, through Bob, asks Ann first as she said it —
+    // she is not there — and has it of Bob.
+    const PeerId ann_id = ann->id();
+    ann.hang_up();
+    ASSERT_TRUE(wait_for([&] { return bob->peers().empty(); }));
+    Side cat;
+    CallConfig cat_config = room(RatsUrl{bob.address()});
+    cat_config.files_dir = cat_files.utf8();
+    cat.start(cat_config, false, false);
+    ASSERT_TRUE(wait_for([&] { return cat->chat().size() == 1; }));
+    ASSERT_TRUE(cat->fetch_file(cat->chat().back().attachments[0], ann_id));
+    ASSERT_TRUE(wait_for([&] { return cat.fetched(*id).has_value(); }, 20s));
+    ASSERT_TRUE(*cat.fetched(*id));
+    EXPECT_EQ(read_all(**cat.fetched(*id)), bytes);
+
+    // One nobody has is not to be had.
+    ChatAttachment unknown = attachment;
+    unknown.id.fill(3);
+    ASSERT_TRUE(cat->fetch_file(unknown, bob->id()));
+    ASSERT_TRUE(wait_for([&] { return cat.fetched(unknown.id).has_value(); }));
+    EXPECT_EQ(cat.fetched(unknown.id)->error(), Errc::Unavailable);
+}
+
+TEST_F(CallTest, AFileFetchedCanBeStopped) {
+    Folder ann_files("ann");
+    Folder bob_files("bob");
+    // Large enough to be under way when it is stopped.
+    std::vector<char> bytes(192 * 1024 * 1024, 'x');
+    const std::string original = ann_files.utf8("big.bin");
+    std::ofstream(ann_files.path() / "big.bin", std::ios::binary)
+        .write(bytes.data(), static_cast<std::streamsize>(bytes.size()));
+    const ChatAttachment attachment{
+        .id = *file_id(original), .name = "big.bin", .size = bytes.size()};
+
+    Side ann;
+    CallConfig ann_config = room();
+    ann_config.files_dir = ann_files.utf8("fetched");
+    ann.start(ann_config, false, false);
+    Side bob;
+    CallConfig bob_config = room(RatsUrl{ann.address()});
+    bob_config.files_dir = bob_files.utf8();
+    bob.start(bob_config, false, false);
+    meet(ann, bob);
+    ASSERT_TRUE(ann->say("", {SharedFile{attachment, original}}));
+
+    ASSERT_TRUE(bob->fetch_file(attachment, ann->id()));
+    ASSERT_TRUE(wait_for([&] { return bob.received(attachment.id) > 0; }, 20s));
+    bob->stop_fetching(attachment.id);
+    ASSERT_TRUE(wait_for([&] { return bob.fetched(attachment.id).has_value(); }));
+    EXPECT_EQ(bob.fetched(attachment.id)->error(), Errc::Cancelled);
+    EXPECT_FALSE(bob->file(attachment.id));
 }
 
 TEST_F(CallTest, WhatWasSaidWhileAMemberWasAwayIsToldItOnItsReturn) {

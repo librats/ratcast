@@ -195,6 +195,11 @@ struct SessionHandlers {
     /// A message new here: said by a peer, or told by one — what was said
     /// before this node came, or while it was away. Not what say() said.
     std::function<void(const ChatMessage& message)> said = {};
+    /// A peer asks for the file of `id` (ask_file()): send it apart from the
+    /// session, or say there is none (no_file()). Only from a peer entitled.
+    std::function<void(const PeerId& peer, const FileId& id)> file_asked = {};
+    /// A peer has no file of `id` to send.
+    std::function<void(const PeerId& peer, const FileId& id)> no_file = {};
 };
 
 struct OutgoingStreamStats {
@@ -324,15 +329,24 @@ public:
 
     /// Say `text` to every peer entitled (SessionConfig::entitled), as of
     /// `now` by the wall clock — or a moment after what this node said last,
-    /// if that was later — with the name this node gave (set_presence()).
-    /// Kept with what was said, and told to who asks. Fails with
-    /// InvalidArgument for a text no valid message has (is_valid()),
-    /// Unsupported for a forwarder, and Unavailable while the network does not
-    /// know this node's id.
-    Result<ChatMessage> say(std::string text, WallTime now);
+    /// if that was later — with the name this node gave (set_presence()),
+    /// and the files described by `attachments`. Kept with what was said,
+    /// and told to who asks. Fails with InvalidArgument for a text and files
+    /// no valid message has (is_valid()), Unsupported for a forwarder, and
+    /// Unavailable while the network does not know this node's id.
+    Result<ChatMessage> say(std::string text, WallTime now,
+                            std::vector<ChatAttachment> attachments = {});
 
     /// What this node knows was said, oldest first (ChatLog).
     std::vector<ChatMessage> chat() const;
+
+    /// Ask `peer` for the file of `id`: it sends it apart from the session
+    /// (its handler's file_asked), or says it has none (no_file). Fails with
+    /// Unavailable for a peer not connected, InvalidArgument for one not
+    /// entitled (a server), and Unsupported for a forwarder.
+    Result<void> ask_file(const PeerId& peer, const FileId& id);
+    /// Tell `peer`, who asked, there is no file of `id` to send it.
+    void no_file(const PeerId& peer, const FileId& id);
 
     // ── Playing in step ─────────────────────────────────────────────────────
 
@@ -459,6 +473,8 @@ private:
     void on_chat(const PeerId& peer, ChatMessage message, bool told);
     /// Tell `peer` every message this node knows was said.
     void tell_chat(const PeerId& peer);
+    /// A FileAsk (`asked`) or a FileNone from `peer`.
+    void on_file_message(const PeerId& peer, const FileId& id, bool asked);
     void on_announce(const PeerId& peer, StreamDescription description);
     void on_withdraw(const PeerId& peer, StreamId stream);
     void on_subscribe(const PeerId& peer, StreamId stream);

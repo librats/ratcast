@@ -122,6 +122,75 @@ TEST(ChatModel, CountsWhatOthersSayWhileNobodyReads) {
     EXPECT_EQ(unread, 5);
 }
 
+TEST(ChatModel, ShowsEachAuthorAsWhoseItIs) {
+    ChatModel chat;
+    chat.add(said("hi", kNoon, 1), false);
+    chat.add(said("hello", kNoon + 1s, 2), false);
+    EXPECT_EQ(chat.data(chat.index(0), ChatModel::TagRole), "") << "not known yet";
+    std::vector<int> changed;
+    QObject::connect(&chat, &QAbstractItemModel::dataChanged,
+                     [&](const QModelIndex& from) { changed.push_back(from.row()); });
+    chat.know(peer(1), "4F2K");
+    EXPECT_EQ(chat.data(chat.index(0), ChatModel::TagRole), "4F2K");
+    EXPECT_EQ(chat.data(chat.index(1), ChatModel::TagRole), "");
+    EXPECT_EQ(changed, std::vector{0});
+    chat.add(said("again", kNoon + 2s, 1), false);
+    EXPECT_EQ(chat.data(chat.index(2), ChatModel::TagRole), "4F2K") << "and what it says later";
+    EXPECT_EQ(chat.roleNames().value(ChatModel::TagRole), "tag");
+}
+
+TEST(ChatModel, ShowsEachFileAsItIsHere) {
+    ChatModel chat;
+    ChatAttachment photo{.name = "photo.jpg", .size = 2'000'000, .width = 4000, .height = 3000};
+    photo.id.fill(1);
+    photo.preview = {0xFF, 0xD8};
+    ChatAttachment notes{.name = "notes.txt", .size = 1000};
+    notes.id.fill(2);
+    ChatMessage message = said("", kNoon, 1);
+    message.attachments = {photo, notes};
+    chat.add(message, false);
+    chat.add(said("nothing", kNoon + 1s, 2), false);
+
+    const auto files = [&] {
+        return chat.data(chat.index(0), ChatModel::AttachmentsRole).toList();
+    };
+    ASSERT_EQ(files().size(), 2);
+    QVariantMap shown = files()[0].toMap();
+    EXPECT_EQ(shown.value("name"), "photo.jpg");
+    EXPECT_EQ(shown.value("id").toString().size(), 64);
+    EXPECT_TRUE(shown.value("image").toBool());
+    EXPECT_EQ(shown.value("width"), 4000);
+    EXPECT_EQ(shown.value("preview"), "data:image/jpeg;base64,/9g=");
+    EXPECT_EQ(shown.value("status"), "none");
+    EXPECT_FALSE(files()[1].toMap().value("image").toBool());
+    EXPECT_EQ(files()[1].toMap().value("preview"), "");
+
+    std::vector<int> changed;
+    QObject::connect(&chat, &QAbstractItemModel::dataChanged,
+                     [&](const QModelIndex& from) { changed.push_back(from.row()); });
+    using Status = ChatModel::FileState::Status;
+    chat.set_file(photo.id, {.status = Status::Fetching, .received = 500'000});
+    EXPECT_EQ(changed, std::vector{0}) << "the message carrying it alone";
+    shown = files()[0].toMap();
+    EXPECT_EQ(shown.value("status"), "fetching");
+    EXPECT_DOUBLE_EQ(shown.value("progress").toDouble(), 0.25);
+    chat.set_file(photo.id, {.status = Status::Here, .path = "/tmp/photo.jpg"});
+    shown = files()[0].toMap();
+    EXPECT_EQ(shown.value("status"), "here");
+    EXPECT_EQ(shown.value("url"), "file:///tmp/photo.jpg");
+    EXPECT_EQ(chat.file(photo.id).path, "/tmp/photo.jpg");
+
+    const auto found = chat.attachment(notes.id);
+    ASSERT_TRUE(found);
+    EXPECT_EQ(found->first, notes);
+    EXPECT_EQ(found->second, peer(1));
+    FileId unknown{};
+    EXPECT_FALSE(chat.attachment(unknown));
+
+    chat.clear();
+    EXPECT_EQ(chat.file(photo.id).status, Status::None);
+}
+
 TEST(ChatHtml, ShowsATextAsItWasWritten) {
     for (const QString& text :
          {QString("<b>not bold</b> & <a href=\"x\">no link</a>"), QString("one\ntwo"),

@@ -71,6 +71,26 @@ TEST(ChatMessage, ItsNameIsAPresencesAndItWasSaidAfterTheEpoch) {
     EXPECT_FALSE(is_valid(m));
 }
 
+TEST(ChatMessage, FilesNeedNoWords) {
+    ChatMessage m = said("", kNoon);
+    EXPECT_FALSE(is_valid(m));
+    ChatAttachment file{
+        .name = "screenshot 1.png", .size = 1'000'000, .width = 1920, .height = 1080};
+    file.id.fill(7);
+    file.preview.assign(ChatAttachment::kMaxPreviewSize, 1);
+    m.attachments = {file};
+    EXPECT_TRUE(is_valid(m));
+
+    // A name of a file, not a path.
+    for (const char* name : {".", "..", "../up", "C:\\x", "", "a\tb"}) {
+        m.attachments[0].name = name;
+        EXPECT_FALSE(is_valid(m)) << name;
+    }
+    m.attachments[0].name = "notes";
+    m.attachments[0].preview.push_back(1);
+    EXPECT_FALSE(is_valid(m)) << "too large a picture";
+}
+
 TEST(ChatLog, KeepsWhatWasSaidInTheOrderItWasSaid) {
     ChatLog log;
     EXPECT_TRUE(log.add(said("second", kNoon + 1s)));

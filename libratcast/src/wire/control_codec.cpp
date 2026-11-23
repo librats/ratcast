@@ -184,11 +184,37 @@ uint64_t bits_of(WallTime time) noexcept {
     return static_cast<uint64_t>(time.time_since_epoch().count());
 }
 
+/// A chat's files, if it has any: a chat with none ends at its text, as a
+/// build from before files wrote it.
+template <typename Out>
+void write_attachments(Out& out, const std::vector<ChatAttachment>& attachments) {
+    if (attachments.empty()) return;
+    out.varint(attachments.size());
+    for (const ChatAttachment& file : attachments) {
+        out.bytes(file.id);
+        write_text(out, file.name);
+        out.varint(file.size);
+        out.varint(file.width);
+        out.varint(file.height);
+        out.varint(file.preview.size());
+        out.bytes(file.preview);
+    }
+}
+
 template <typename Out>
 void write(Out& out, const Chat& chat) {
     out.u8(message_prefix(MessageKind::Chat));
     out.varint(bits_of(chat.sent));
     write_text(out, chat.text);
+    write_attachments(out, chat.attachments);
+}
+
+template <typename Out, typename Message>
+    requires std::is_same_v<Message, FileAsk> || std::is_same_v<Message, FileNone>
+void write(Out& out, const Message& message) {
+    out.u8(message_prefix(std::is_same_v<Message, FileAsk> ? MessageKind::FileAsk
+                                                           : MessageKind::FileNone));
+    out.bytes(message.id);
 }
 
 template <typename Out>
@@ -204,6 +230,7 @@ void write(Out& out, const ChatTold& told) {
     out.varint(bits_of(m.sent));
     write_text(out, m.name);
     write_text(out, m.text);
+    write_attachments(out, m.attachments);
 }
 
 template <typename Out, typename Message>
@@ -380,13 +407,42 @@ Result<ControlMessage> read_presence(Reader& in) {
     return ControlMessage{PresenceUpdate{std::move(p)}};
 }
 
+FileId read_file_id(Reader& in) {
+    FileId id{};
+    const std::span<const uint8_t> bytes = in.bytes(id.size());
+    if (in.ok()) std::ranges::copy(bytes, id.begin());
+    return id;
+}
+
+/// A chat's files, after its text: none where the message ends there.
+std::vector<ChatAttachment> read_attachments(Reader& in) {
+    std::vector<ChatAttachment> files;
+    if (!in.ok() || in.remaining() == 0) return files;
+    const uint64_t count = in.varint();
+    if (count > ChatMessage::kMaxAttachments) in.fail(Errc::Malformed);
+    for (uint64_t i = 0; i < count && in.ok(); ++i) {
+        ChatAttachment& file = files.emplace_back();
+        file.id = read_file_id(in);
+        file.name = read_text(in, ChatAttachment::kMaxNameSize);
+        file.size = in.varint();
+        file.width = read_u32(in);
+        file.height = read_u32(in);
+        const uint64_t preview = in.varint();
+        if (preview > ChatAttachment::kMaxPreviewSize) in.fail(Errc::Malformed);
+        const std::span<const uint8_t> bytes = in.bytes(static_cast<size_t>(preview));
+        if (in.ok()) file.preview.assign(bytes.begin(), bytes.end());
+    }
+    return files;
+}
+
 Result<ControlMessage> read_chat(Reader& in) {
     ChatMessage m;
     m.sent = read_wall_time(in);
     m.text = read_text(in, ChatMessage::kMaxTextSize);
+    m.attachments = read_attachments(in);
     if (!in.ok()) return fail(in.error());
     if (!is_valid(m)) return fail(Errc::Malformed);
-    return ControlMessage{Chat{m.sent, std::move(m.text)}};
+    return ControlMessage{Chat{m.sent, std::move(m.text), std::move(m.attachments)}};
 }
 
 Result<ControlMessage> read_chat_told(Reader& in) {
@@ -395,9 +451,17 @@ Result<ControlMessage> read_chat_told(Reader& in) {
     m.sent = read_wall_time(in);
     m.name = read_text(in, Presence::kMaxNameSize);
     m.text = read_text(in, ChatMessage::kMaxTextSize);
+    m.attachments = read_attachments(in);
     if (!in.ok()) return fail(in.error());
     if (!is_valid(m)) return fail(Errc::Malformed);
     return ControlMessage{ChatTold{std::move(m)}};
+}
+
+template <typename Message>
+Result<ControlMessage> read_file_message(Reader& in) {
+    const FileId id = read_file_id(in);
+    if (!in.ok()) return fail(in.error());
+    return ControlMessage{Message{id}};
 }
 
 Result<ControlMessage> read_clock_probe(Reader& in) {
@@ -457,7 +521,8 @@ Buffer encode_control(const ControlMessage& message) {
                 assert(m.signal.queue_delay >= Duration::zero() &&
                        m.signal.rtt >= Duration::zero() && m.signal.queue_rise >= Duration::zero());
             } else if constexpr (std::is_same_v<std::decay_t<decltype(m)>, Chat>) {
-                assert(is_valid(ChatMessage{.sent = m.sent, .text = m.text}));
+                assert(is_valid(
+                    ChatMessage{.sent = m.sent, .text = m.text, .attachments = m.attachments}));
             } else if constexpr (std::is_same_v<std::decay_t<decltype(m)>, ChatTold>) {
                 assert(is_valid(m.message));
             }
@@ -497,6 +562,8 @@ Result<ControlMessage> decode_control(std::span<const uint8_t> message) {
         case MessageKind::Chat: return read_chat(in);
         case MessageKind::ChatAsk: return ControlMessage{ChatAsk{}};
         case MessageKind::ChatTold: return read_chat_told(in);
+        case MessageKind::FileAsk: return read_file_message<FileAsk>(in);
+        case MessageKind::FileNone: return read_file_message<FileNone>(in);
         case MessageKind::Frame:
         case MessageKind::RelayedFrame: break;
     }

@@ -190,6 +190,9 @@ struct Party {
             .presence_changed = [this](const PeerId&,
                                        const Presence& p) { presences.push_back(p); },
             .said = [this](const ChatMessage& m) { said.push_back(m); },
+            .file_asked = [this](const PeerId& p,
+                                 const FileId& f) { files_asked.emplace_back(p, f); },
+            .no_file = [this](const PeerId& p, const FileId& f) { no_files.emplace_back(p, f); },
         };
     }
 
@@ -203,6 +206,8 @@ struct Party {
     std::vector<uint32_t> bitrates;
     std::vector<Presence> presences;  ///< what peers said of themselves, in order
     std::vector<ChatMessage> said;    ///< messages new here, in order
+    std::vector<std::pair<PeerId, FileId>> files_asked;
+    std::vector<std::pair<PeerId, FileId>> no_files;
     std::function<void(const EncodedFrame&)> on_frame;
     MediaSession session;  // last: its handlers point at the members above
 };
@@ -1133,6 +1138,53 @@ TEST_F(MediaSessionTest, NothingIsSaidToNorHeardFromThoseNotEntitled) {
 
     // A server not known for one yet is asked, and answers nothing.
     EXPECT_EQ(hub.delivered[wire::MessageKind::ChatTold], 1) << "the sender's, to picky";
+}
+
+TEST_F(MediaSessionTest, FilesAreToldWithWhatWasSaidAndAskedOfWhoeverHasThem) {
+    ChatAttachment file{.name = "cat.jpg", .size = 123'456, .width = 640, .height = 480};
+    file.id.fill(42);
+    file.preview = {0xFF, 0xD8, 0xFF};
+    const Result<ChatMessage> sent = sender.session.say("", kNoon, {file});
+    ASSERT_TRUE(sent);
+    hub.deliver_all();
+    ASSERT_EQ(receiver.said.size(), 1u);
+    EXPECT_EQ(receiver.said[0].attachments, std::vector{file});
+
+    // One who comes later is told them too.
+    Party late(hub, clock, 3);
+    connect(receiver, late);
+    hub.deliver_all();
+    ASSERT_EQ(late.said.size(), 1u);
+    EXPECT_EQ(late.said[0], *sent);
+
+    // And asks for the file of whoever it likes: the session only carries the
+    // asking and the answer that there is none.
+    ASSERT_TRUE(late.session.ask_file(receiver.id, file.id));
+    hub.deliver_all();
+    ASSERT_EQ(receiver.files_asked.size(), 1u);
+    EXPECT_EQ(receiver.files_asked[0], std::pair(late.id, file.id));
+    receiver.session.no_file(late.id, file.id);
+    hub.deliver_all();
+    ASSERT_EQ(late.no_files.size(), 1u);
+    EXPECT_EQ(late.no_files[0], std::pair(receiver.id, file.id));
+
+    EXPECT_EQ(late.session.ask_file(sender.id, file.id).error(), Errc::Unavailable)
+        << "not connected";
+}
+
+TEST_F(MediaSessionTest, FilesAreNeitherAskedOfNorByThoseNotEntitled) {
+    Party server(hub, clock, 9, SessionConfig{.forwarder = true});
+    Party stranger(hub, clock, 8);
+    Party picky(hub, clock, 4,
+                SessionConfig{.entitled = [&](const PeerId& p) { return p != stranger.id; }});
+    for (Party* other : {&server, &stranger}) connect(picky, *other);
+    FileId id{};
+    id.fill(1);
+    EXPECT_EQ(picky.session.ask_file(stranger.id, id).error(), Errc::InvalidArgument);
+    EXPECT_EQ(server.session.ask_file(picky.id, id).error(), Errc::Unsupported);
+    ASSERT_TRUE(stranger.session.ask_file(picky.id, id));
+    hub.deliver_all();
+    EXPECT_TRUE(picky.files_asked.empty());
 }
 
 TEST_F(MediaSessionTest, RefusesToSayWhatIsNotAMessage) {
