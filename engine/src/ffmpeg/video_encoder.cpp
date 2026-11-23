@@ -9,6 +9,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cmath>
 #include <cstring>
 #include <future>
 #include <limits>
@@ -49,6 +50,28 @@ constexpr uint32_t kBufferFrames = 2;
 /// gop_size when keyframes come only on request: longer than any session.
 constexpr int kNoPeriodicKeyframes = 1 << 30;
 
+// An encoder that spends bitrate / frame rate on each picture, whatever its
+// timestamps say, sends a film of 24 pictures a second shared at 60 at 24/60
+// of its bitrate. It is told as much more as pictures come further apart.
+
+/// At most this many times (or as many times less, nearer): a still screen's
+/// next picture carries up to kBufferFrames times this over the frame rate
+/// of a second's bits (at 60, a tenth).
+constexpr double kMostApart = 3;
+/// The pictures' spacing, averaged over about this many as they come further
+/// apart, and over this few as they come nearer: spending more than the path
+/// carries fills its queue, spending less only costs some quality.
+constexpr double kSpacingOver = 16;
+constexpr double kNearerOver = 4;
+/// Told again once it is this far off what the codec has: in flight by a
+/// fraction; opening another, which starts with a keyframe, by a factor held
+/// for kRepaceHeld (the average settled), no more often than every
+/// kRepaceEvery — both in the pictures' time.
+constexpr double kRepaceInFlight = 0.1;
+constexpr double kRepaceByOpening = 1.5;
+constexpr Duration kRepaceHeld = std::chrono::seconds(2);
+constexpr Duration kRepaceEvery = std::chrono::seconds(10);
+
 /// Held while an encoder opens or closes. SVT-AV1 keeps state of its own
 /// across encoders, and opening one while another closes races on it
 /// (ThreadSanitizer saw it): one at a time, whichever threads they are on.
@@ -65,6 +88,9 @@ struct Candidate {
     /// opened anew, which costs a keyframe, and takes long enough (SVT-AV1:
     /// 55 ms at 1080p) to be done alongside the encoder at work.
     bool dynamic_bitrate;
+    /// Spends bitrate / frame rate on each picture, whatever the timestamps:
+    /// told more as pictures come further apart than the config's rate.
+    bool spends_by_frame_rate;
     void (*tune)(const VideoEncoderConfig&, AVCodecContext&, av::Dictionary&);
     /// Some of its versions hold pictures back however tuned: checked once a
     /// process, by encoding one (hands_back_at_once()), and passed over if so.
@@ -136,35 +162,37 @@ void tune_openh264(const VideoEncoderConfig&, AVCodecContext&, av::Dictionary& o
 // Best first within each codec. VAAPI is missing on purpose: it takes only
 // pictures already in GPU memory, which arrive with DMA-BUF capture.
 constexpr Candidate kCandidates[] = {
-    {"av1_nvenc", Codec::AV1, true, true, tune_nvenc},
-    {"av1_qsv", Codec::AV1, true, true, tune_qsv},
-    {"av1_amf", Codec::AV1, true, false, tune_amf},
+    {"av1_nvenc", Codec::AV1, true, true, true, tune_nvenc},
+    {"av1_qsv", Codec::AV1, true, true, true, tune_qsv},
+    {"av1_amf", Codec::AV1, true, false, true, tune_amf},
     // Before 2.3 (Ubuntu 24.04 has 1.7) it never waits for a picture in low
     // delay, and FFmpeg asks for one only as it hands in the next: each comes
     // back a picture or two later.
-    {"libsvtav1", Codec::AV1, false, false, tune_svtav1, true},
-    {"libaom-av1", Codec::AV1, false, false, tune_aom},
-    {"hevc_nvenc", Codec::H265, true, true, tune_nvenc},
-    {"hevc_qsv", Codec::H265, true, true, tune_qsv},
-    {"hevc_amf", Codec::H265, true, false, tune_amf},
+    {"libsvtav1", Codec::AV1, false, false, true, tune_svtav1, true},
+    {"libaom-av1", Codec::AV1, false, false, false, tune_aom},
+    {"hevc_nvenc", Codec::H265, true, true, true, tune_nvenc},
+    {"hevc_qsv", Codec::H265, true, true, true, tune_qsv},
+    {"hevc_amf", Codec::H265, true, false, true, tune_amf},
 #ifdef __APPLE__
-    {"hevc_videotoolbox", Codec::H265, true, true, nullptr, false,
+    {"hevc_videotoolbox", Codec::H265, true, true, false, nullptr, false,
      macos::open_videotoolbox_encoder},
 #endif
 #ifdef __ANDROID__
-    {"hevc_mediacodec", Codec::H265, true, true, nullptr, false, android::open_mediacodec_encoder},
+    {"hevc_mediacodec", Codec::H265, true, true, false, nullptr, false,
+     android::open_mediacodec_encoder},
 #endif
-    {"h264_nvenc", Codec::H264, true, true, tune_nvenc},
-    {"h264_qsv", Codec::H264, true, true, tune_qsv},
-    {"h264_amf", Codec::H264, true, false, tune_amf},
+    {"h264_nvenc", Codec::H264, true, true, true, tune_nvenc},
+    {"h264_qsv", Codec::H264, true, true, true, tune_qsv},
+    {"h264_amf", Codec::H264, true, false, true, tune_amf},
 #ifdef __APPLE__
-    {"h264_videotoolbox", Codec::H264, true, true, nullptr, false,
+    {"h264_videotoolbox", Codec::H264, true, true, false, nullptr, false,
      macos::open_videotoolbox_encoder},
 #endif
 #ifdef __ANDROID__
-    {"h264_mediacodec", Codec::H264, true, true, nullptr, false, android::open_mediacodec_encoder},
+    {"h264_mediacodec", Codec::H264, true, true, false, nullptr, false,
+     android::open_mediacodec_encoder},
 #endif
-    {"libopenh264", Codec::H264, false, false, tune_openh264},
+    {"libopenh264", Codec::H264, false, false, false, tune_openh264},
 };
 
 /// The pixel formats `codec` takes, terminated by AV_PIX_FMT_NONE.
@@ -212,17 +240,20 @@ public:
                 hw_frames != nullptr},
           hw_frames_(std::move(hw_frames)),
           frame_(av_frame_alloc()),
-          packet_(av_packet_alloc()) {}
+          packet_(av_packet_alloc()),
+          spacing_(frame_spacing()) {}
 
     ~FfmpegVideoEncoder() override { close_context(std::move(context_)); }
 
     /// Open the codec for the current config.
     Result<void> open() {
         if (!frame_ || !packet_) return fail(Errc::Internal);
+        const VideoEncoderConfig config = codec_config();
         Result<av::CodecContextPtr> context =
-            open_context(candidate_, codec_, config_, info_, hw_frames_.get());
+            open_context(candidate_, codec_, config, info_, hw_frames_.get());
         if (!context) return fail(context.error());
         close_context(std::exchange(context_, std::move(*context)));
+        codec_bitrate_ = config.bitrate;
         return {};
     }
 
@@ -267,9 +298,11 @@ public:
                 reopen_ = false;
                 keyframe = true;
             }  // else open_context() said why; the encoder at work carries on
+            codec_bitrate_ = static_cast<uint32_t>(context_->bit_rate);
             keyframe = std::exchange(keyframe_owed_, false) || keyframe;
             if (std::exchange(open_again_, false)) open_alongside();
         }
+        pace(picture.capture_time());
 
         if (Result<void> wrapped = wrap(picture, keyframe); !wrapped) return wrapped;
         const int error = avcodec_send_frame(context_.get(), frame_.get());
@@ -285,7 +318,7 @@ public:
         if (bits_per_second == 0 || bits_per_second == config_.bitrate) return;
         config_.bitrate = bits_per_second;
         if (candidate_.dynamic_bitrate) {
-            apply_bitrate(*context_, config_);
+            apply_codec_bitrate();
         } else {
             open_alongside();
         }
@@ -301,6 +334,59 @@ public:
     }
 
 private:
+    /// How far apart pictures come at the config's frame rate, in µs.
+    double frame_spacing() const noexcept {
+        return 1e6 * config_.frame_rate_den / std::max<uint32_t>(config_.frame_rate_num, 1);
+    }
+
+    /// The config as the codec is told it: its bitrate a second's, over the
+    /// pictures as they come.
+    VideoEncoderConfig codec_config() const {
+        VideoEncoderConfig config = config_;
+        if (candidate_.spends_by_frame_rate) {
+            config.bitrate =
+                static_cast<uint32_t>(std::min(config_.bitrate * spacing_ / frame_spacing(),
+                                               double(std::numeric_limits<uint32_t>::max())));
+        }
+        return config;
+    }
+
+    void apply_codec_bitrate() {
+        const VideoEncoderConfig config = codec_config();
+        apply_bitrate(*context_, config);
+        codec_bitrate_ = config.bitrate;
+    }
+
+    /// Follow how far apart the pictures come — a picture `capture_time` —
+    /// and tell the codec once its bitrate is far enough off.
+    void pace(Timestamp capture_time) {
+        if (!candidate_.spends_by_frame_rate) return;
+        const double nominal = frame_spacing();
+        if (last_capture_) {
+            const double apart = std::clamp(double((capture_time - *last_capture_).count()),
+                                            nominal / kMostApart, nominal * kMostApart);
+            spacing_ += (apart - spacing_) / (apart < spacing_ ? kNearerOver : kSpacingOver);
+        }
+        last_capture_ = capture_time;
+
+        const double off = double(codec_config().bitrate) / std::max<uint32_t>(codec_bitrate_, 1);
+        if (candidate_.dynamic_bitrate) {
+            if (std::abs(off - 1) > kRepaceInFlight) apply_codec_bitrate();
+            return;
+        }
+        if (off <= kRepaceByOpening && off * kRepaceByOpening >= 1) {
+            off_since_.reset();
+            return;
+        }
+        if (!off_since_) off_since_ = capture_time;
+        if (capture_time - *off_since_ >= kRepaceHeld &&
+            (!repaced_at_ || capture_time - *repaced_at_ >= kRepaceEvery)) {
+            repaced_at_ = capture_time;
+            off_since_.reset();
+            open_alongside();
+        }
+    }
+
     static void apply_bitrate(AVCodecContext& context, const VideoEncoderConfig& config) {
         const int64_t bitrate = config.bitrate;
         context.bit_rate = bitrate;
@@ -366,9 +452,11 @@ private:
             open_again_ = true;
             return;
         }
+        const VideoEncoderConfig config = codec_config();
         next_ =
             std::async(std::launch::async, &FfmpegVideoEncoder::open_context, std::cref(candidate_),
-                       std::cref(codec_), config_, info_, hw_frames_.get());
+                       std::cref(codec_), config, info_, hw_frames_.get());
+        codec_bitrate_ = config.bitrate;  // as it will be
     }
 
     // Point frame_ at the picture: at a frame of the GPU's that it was copied
@@ -467,6 +555,16 @@ private:
     std::future<void> closing_;  ///< the encoder switched from, being closed
     std::optional<int64_t> last_pts_;
     FrameNumber next_number_ = 0;
+    // For an encoder that spends by frame rate (pace()): how far apart
+    // pictures come, on average, in µs; the last one's capture time; the
+    // bitrate the codec has (or the one opening alongside will); since when
+    // it has been too far off to keep, and when the last was opened alongside
+    // for the spacing.
+    double spacing_;
+    std::optional<Timestamp> last_capture_;
+    uint32_t codec_bitrate_ = 0;
+    std::optional<Timestamp> off_since_;
+    std::optional<Timestamp> repaced_at_;
 };
 
 /// Whether `candidate` hands a picture back as it takes it, as every encoder

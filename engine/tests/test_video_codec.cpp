@@ -162,6 +162,48 @@ TEST_P(VideoCodecTest, ABitrateChangeTakesEffect) {
     EXPECT_LT(after * 2, before) << "before " << before << " B, after " << after << " B";
 }
 
+// A screen's pictures come as it changes: a film of 24 a second, shared at
+// 60 — two and three refreshes apart in turn. The bitrate is a second's,
+// however many pictures fill it — an encoder that spends bitrate / 60 on
+// each would send 24/60 of it. Measured against what it sends at 60, as some
+// encoders run over on noise alike at any rate.
+TEST_P(VideoCodecTest, SpendsTheBitrateOnPicturesFewerThanItsFrameRate) {
+    encoder_->set_bitrate(600'000);
+    using Spacing = std::vector<std::chrono::microseconds>;
+    Timestamp at{1s};
+    uint64_t index = 0;
+    // Bits a second out for `count` pictures taken `apart` apart, in turn.
+    const auto rate = [&](uint64_t count, const Spacing& apart) {
+        const Timestamp from = at;
+        size_t bytes = 0;
+        for (uint64_t i = 0; i < count; ++i) {
+            VideoFrame picture = noise(index++);
+            picture.set_capture_time(at);
+            at += apart[i % apart.size()];
+            for (EncodedVideo& out : encode(picture)) bytes += out.payload.size();
+        }
+        return double(bytes) * 8 * 1'000'000 / double((at - from).count());
+    };
+    const Spacing k60{16'667us};
+    const Spacing k24{33'333us, 50'000us};
+
+    (void)rate(60, k60);  // settling: the bitrate set, or an encoder opened for it
+    const double at_60 = rate(120, k60);
+    // Three seconds to settle: an encoder that opens another for a bitrate
+    // waits for the spacing to hold first.
+    (void)rate(72, k24);
+    const double at_24 = rate(72, k24);
+    EXPECT_GT(at_24, at_60 * 0.75) << "at 60: " << at_60 << " bit/s, at 24: " << at_24;
+    EXPECT_LT(at_24, at_60 * 1.33) << "at 60: " << at_60 << " bit/s, at 24: " << at_24;
+
+    // Still for a while, then back at 60.
+    at += 10s;
+    (void)rate(180, k60);
+    const double again_60 = rate(120, k60);
+    EXPECT_GT(again_60, at_60 * 0.75) << "at 60: " << at_60 << " bit/s, again: " << again_60;
+    EXPECT_LT(again_60, at_60 * 1.33) << "at 60: " << at_60 << " bit/s, again: " << again_60;
+}
+
 TEST_P(VideoCodecTest, ABitrateChangeLosesNoPicture) {
     // An encoder that cannot change its rate in flight opens another alongside
     // and switches to it: every picture still comes out, in order, decodable.
