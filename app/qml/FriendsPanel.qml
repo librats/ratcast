@@ -119,13 +119,13 @@ ColumnLayout {
             icon.source: "icons/ellipsis.svg"
             onClicked: linkMenu.open()
 
-            Menu {
+            ButtonMenu {
                 id: linkMenu
 
                 MenuItem {
                     text: qsTr("A new link (the old one stops working)")
                     icon.source: "icons/refresh-cw.svg"
-                    onTriggered: panel.people.resetLink()
+                    onTriggered: resetLink.open()
                 }
             }
         }
@@ -335,16 +335,42 @@ ColumnLayout {
                 icon.source: "icons/ellipsis.svg"
                 onClicked: friendMenu.open()
 
-                Menu {
+                ButtonMenu {
                     id: friendMenu
 
                     MenuItem {
                         text: qsTr("Remove from friends")
                         icon.source: "icons/x.svg"
-                        onTriggered: panel.people.remove(modelData.person)
+                        onTriggered: {
+                            removeFriend.person = modelData.person
+                            removeFriend.name = modelData.name.length > 0 ? modelData.name
+                                                                          : qsTr("Someone")
+                            removeFriend.open()
+                        }
                     }
                 }
             }
         }
+    }
+
+    ConfirmDialog {
+        id: removeFriend
+
+        property string person
+        property string name
+
+        title: qsTr("Remove from friends?")
+        text: qsTr("%1 is removed on all your devices, and is not told. To be friends again, add them anew.").arg(name)
+        action: qsTr("Remove", "a friend, asked first")
+        onAccepted: panel.people.remove(person)
+    }
+
+    ConfirmDialog {
+        id: resetLink
+
+        title: qsTr("Make a new link?")
+        text: qsTr("The link you sent stops working: whoever has it and has not asked yet cannot ask you by it. Your friends stay.")
+        action: qsTr("Make it")
+        onAccepted: panel.people.resetLink()
     }
 }

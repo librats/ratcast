@@ -41,6 +41,13 @@
     </message>
 </context>
 <context>
+    <name>ConfirmDialog</name>
+    <message>
+        <source>Cancel</source>
+        <translation>취소</translation>
+    </message>
+</context>
+<context>
     <name>FileView</name>
     <message>
         <source>Download</source>
@@ -189,6 +196,31 @@
         <source>Remove from friends</source>
         <translation>친구에서 삭제</translation>
     </message>
+    <message>
+        <source>Remove from friends?</source>
+        <translation>친구에서 삭제할까요?</translation>
+    </message>
+    <message>
+        <source>%1 is removed on all your devices, and is not told. To be friends again, add them anew.</source>
+        <translation>%1 님이 모든 기기에서 삭제되며, 상대에게는 알리지 않습니다. 다시 친구가 되려면 다시 추가하세요.</translation>
+    </message>
+    <message>
+        <source>Remove</source>
+        <comment>a friend, asked first</comment>
+        <translation>삭제</translation>
+    </message>
+    <message>
+        <source>Make a new link?</source>
+        <translation>새 링크를 만들까요?</translation>
+    </message>
+    <message>
+        <source>The link you sent stops working: whoever has it and has not asked yet cannot ask you by it. Your friends stay.</source>
+        <translation>보낸 링크가 더 이상 작동하지 않습니다. 링크를 가지고 있지만 아직 요청하지 않은 사람은 그 링크로 요청할 수 없습니다. 친구는 그대로입니다.</translation>
+    </message>
+    <message>
+        <source>Make it</source>
+        <translation>만들기</translation>
+    </message>
 </context>
 <context>
     <name>GroupsPanel</name>
@@ -266,8 +298,24 @@
         <translation>%1의 링크를 재설정할까요?</translation>
     </message>
     <message>
+        <source>Reset</source>
+        <translation>재설정</translation>
+    </message>
+    <message>
+        <source>Leave the group?</source>
+        <translation>그룹에서 나갈까요?</translation>
+    </message>
+    <message>
+        <source>You leave %1 on all your devices. To be in it again, you need its link.</source>
+        <translation>모든 기기에서 %1에서 나갑니다. 다시 들어가려면 그룹 링크가 필요합니다.</translation>
+    </message>
+    <message>
         <source>The old link stops letting anyone in. The group&apos;s members stay, and their devices are given the new link as they meet; someone who had only the old link and never met a member is left out. Send the new link to whoever is still to join.</source>
         <translation>이전 링크로는 더 이상 아무도 들어올 수 없습니다. 그룹 멤버는 그대로 남고, 서로 만날 때 기기에 새 링크가 전달됩니다. 이전 링크만 있고 멤버를 한 번도 만나지 않은 사람은 제외됩니다. 아직 참여할 사람에게는 새 링크를 보내세요.</translation>
+    </message>
+    <message>
+        <source>Leave</source>
+        <translation>나가기</translation>
     </message>
     <message>
         <source>Rename the group</source>

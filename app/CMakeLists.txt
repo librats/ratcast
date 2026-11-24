@@ -150,6 +150,8 @@ qt_add_qml_module(ratcast_app
     QML_FILES
         qml/AboutDialog.qml
         qml/Avatar.qml
+        qml/ButtonMenu.qml
+        qml/ConfirmDialog.qml
         qml/FileView.qml
         qml/FriendsPanel.qml
         qml/GroupsPanel.qml

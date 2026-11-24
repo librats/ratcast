@@ -41,6 +41,13 @@
     </message>
 </context>
 <context>
+    <name>ConfirmDialog</name>
+    <message>
+        <source>Cancel</source>
+        <translation>Abbrechen</translation>
+    </message>
+</context>
+<context>
     <name>FileView</name>
     <message>
         <source>Download</source>
@@ -189,6 +196,31 @@
         <source>Remove from friends</source>
         <translation>Aus den Freunden entfernen</translation>
     </message>
+    <message>
+        <source>Remove from friends?</source>
+        <translation>Aus den Freunden entfernen?</translation>
+    </message>
+    <message>
+        <source>%1 is removed on all your devices, and is not told. To be friends again, add them anew.</source>
+        <translation>%1 wird auf all deinen Geräten entfernt und erfährt es nicht. Um wieder befreundet zu sein, füge die Person erneut hinzu.</translation>
+    </message>
+    <message>
+        <source>Remove</source>
+        <comment>a friend, asked first</comment>
+        <translation>Entfernen</translation>
+    </message>
+    <message>
+        <source>Make a new link?</source>
+        <translation>Einen neuen Link erstellen?</translation>
+    </message>
+    <message>
+        <source>The link you sent stops working: whoever has it and has not asked yet cannot ask you by it. Your friends stay.</source>
+        <translation>Der Link, den du verschickt hast, funktioniert nicht mehr: Wer ihn hat und noch nicht angefragt hat, kann dich darüber nicht mehr anfragen. Deine Freunde bleiben.</translation>
+    </message>
+    <message>
+        <source>Make it</source>
+        <translation>Erstellen</translation>
+    </message>
 </context>
 <context>
     <name>GroupsPanel</name>
@@ -266,8 +298,24 @@
         <translation>Link von %1 zurücksetzen?</translation>
     </message>
     <message>
+        <source>Reset</source>
+        <translation>Zurücksetzen</translation>
+    </message>
+    <message>
+        <source>Leave the group?</source>
+        <translation>Gruppe verlassen?</translation>
+    </message>
+    <message>
+        <source>You leave %1 on all your devices. To be in it again, you need its link.</source>
+        <translation>Du verlässt %1 auf all deinen Geräten. Um wieder beizutreten, brauchst du ihren Link.</translation>
+    </message>
+    <message>
         <source>The old link stops letting anyone in. The group&apos;s members stay, and their devices are given the new link as they meet; someone who had only the old link and never met a member is left out. Send the new link to whoever is still to join.</source>
         <translation>Mit dem alten Link kommt niemand mehr hinein. Die Mitglieder der Gruppe bleiben, und ihre Geräte erhalten den neuen Link, sobald sie sich treffen; wer nur den alten Link hatte und nie ein Mitglied getroffen hat, bleibt draußen. Schicke den neuen Link allen, die noch beitreten sollen.</translation>
+    </message>
+    <message>
+        <source>Leave</source>
+        <translation>Verlassen</translation>
     </message>
     <message>
         <source>Rename the group</source>

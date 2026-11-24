@@ -41,6 +41,13 @@
     </message>
 </context>
 <context>
+    <name>ConfirmDialog</name>
+    <message>
+        <source>Cancel</source>
+        <translation>Cancelar</translation>
+    </message>
+</context>
+<context>
     <name>FileView</name>
     <message>
         <source>Download</source>
@@ -189,6 +196,31 @@
         <source>Remove from friends</source>
         <translation>Quitar de amigos</translation>
     </message>
+    <message>
+        <source>Remove from friends?</source>
+        <translation>¿Quitar de tus amigos?</translation>
+    </message>
+    <message>
+        <source>%1 is removed on all your devices, and is not told. To be friends again, add them anew.</source>
+        <translation>%1 se quitará en todos tus dispositivos y no se le avisará. Para volver a ser amigos, añádelo de nuevo.</translation>
+    </message>
+    <message>
+        <source>Remove</source>
+        <comment>a friend, asked first</comment>
+        <translation>Quitar</translation>
+    </message>
+    <message>
+        <source>Make a new link?</source>
+        <translation>¿Crear un enlace nuevo?</translation>
+    </message>
+    <message>
+        <source>The link you sent stops working: whoever has it and has not asked yet cannot ask you by it. Your friends stay.</source>
+        <translation>El enlace que enviaste deja de funcionar: quien lo tenga y aún no te haya pedido amistad ya no podrá hacerlo con él. Tus amigos se quedan.</translation>
+    </message>
+    <message>
+        <source>Make it</source>
+        <translation>Crear</translation>
+    </message>
 </context>
 <context>
     <name>GroupsPanel</name>
@@ -266,8 +298,24 @@
         <translation>¿Restablecer el enlace de %1?</translation>
     </message>
     <message>
+        <source>Reset</source>
+        <translation>Restablecer</translation>
+    </message>
+    <message>
+        <source>Leave the group?</source>
+        <translation>¿Salir del grupo?</translation>
+    </message>
+    <message>
+        <source>You leave %1 on all your devices. To be in it again, you need its link.</source>
+        <translation>Saldrás de %1 en todos tus dispositivos. Para volver a entrar, necesitarás su enlace.</translation>
+    </message>
+    <message>
         <source>The old link stops letting anyone in. The group&apos;s members stay, and their devices are given the new link as they meet; someone who had only the old link and never met a member is left out. Send the new link to whoever is still to join.</source>
         <translation>El enlace antiguo deja de dejar entrar a nadie. Los miembros del grupo se quedan, y sus dispositivos reciben el enlace nuevo al encontrarse; quien solo tenía el enlace antiguo y nunca se encontró con un miembro se queda fuera. Envía el enlace nuevo a quien aún tenga que unirse.</translation>
+    </message>
+    <message>
+        <source>Leave</source>
+        <translation>Salir</translation>
     </message>
     <message>
         <source>Rename the group</source>

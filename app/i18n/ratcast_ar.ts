@@ -41,6 +41,13 @@
     </message>
 </context>
 <context>
+    <name>ConfirmDialog</name>
+    <message>
+        <source>Cancel</source>
+        <translation>إلغاء</translation>
+    </message>
+</context>
+<context>
     <name>FileView</name>
     <message>
         <source>Download</source>
@@ -189,6 +196,31 @@
         <source>Remove from friends</source>
         <translation>إزالة من الأصدقاء</translation>
     </message>
+    <message>
+        <source>Remove from friends?</source>
+        <translation>إزالة من الأصدقاء؟</translation>
+    </message>
+    <message>
+        <source>%1 is removed on all your devices, and is not told. To be friends again, add them anew.</source>
+        <translation>سيُزال %1 على كل أجهزتك ولن يُبلَّغ بذلك. لتعودا صديقين، أضفه من جديد.</translation>
+    </message>
+    <message>
+        <source>Remove</source>
+        <comment>a friend, asked first</comment>
+        <translation>إزالة</translation>
+    </message>
+    <message>
+        <source>Make a new link?</source>
+        <translation>إنشاء رابط جديد؟</translation>
+    </message>
+    <message>
+        <source>The link you sent stops working: whoever has it and has not asked yet cannot ask you by it. Your friends stay.</source>
+        <translation>سيتوقف الرابط الذي أرسلته عن العمل: من لديه ولم يطلب بعد لن يستطيع الطلب به. يبقى أصدقاؤك.</translation>
+    </message>
+    <message>
+        <source>Make it</source>
+        <translation>إنشاء</translation>
+    </message>
 </context>
 <context>
     <name>GroupsPanel</name>
@@ -266,8 +298,24 @@
         <translation>إعادة تعيين رابط %1؟</translation>
     </message>
     <message>
+        <source>Reset</source>
+        <translation>إعادة تعيين</translation>
+    </message>
+    <message>
+        <source>Leave the group?</source>
+        <translation>مغادرة المجموعة؟</translation>
+    </message>
+    <message>
+        <source>You leave %1 on all your devices. To be in it again, you need its link.</source>
+        <translation>ستغادر %1 على كل أجهزتك. للعودة إليها ستحتاج إلى رابطها.</translation>
+    </message>
+    <message>
         <source>The old link stops letting anyone in. The group&apos;s members stay, and their devices are given the new link as they meet; someone who had only the old link and never met a member is left out. Send the new link to whoever is still to join.</source>
         <translation>يتوقف الرابط القديم عن السماح لأي أحد بالدخول. يبقى أعضاء المجموعة، وتحصل أجهزتهم على الرابط الجديد عند التقائها؛ ومن كان لديه الرابط القديم فقط ولم يلتقِ بأي عضو يبقى خارجها. أرسل الرابط الجديد لمن لم ينضم بعد.</translation>
+    </message>
+    <message>
+        <source>Leave</source>
+        <translation>مغادرة</translation>
     </message>
     <message>
         <source>Rename the group</source>

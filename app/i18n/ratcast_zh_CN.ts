@@ -41,6 +41,13 @@
     </message>
 </context>
 <context>
+    <name>ConfirmDialog</name>
+    <message>
+        <source>Cancel</source>
+        <translation>取消</translation>
+    </message>
+</context>
+<context>
     <name>FileView</name>
     <message>
         <source>Download</source>
@@ -189,6 +196,31 @@
         <source>Remove from friends</source>
         <translation>从好友中移除</translation>
     </message>
+    <message>
+        <source>Remove from friends?</source>
+        <translation>从好友中删除？</translation>
+    </message>
+    <message>
+        <source>%1 is removed on all your devices, and is not told. To be friends again, add them anew.</source>
+        <translation>将在你的所有设备上删除 %1，对方不会收到通知。要再次成为好友，请重新添加。</translation>
+    </message>
+    <message>
+        <source>Remove</source>
+        <comment>a friend, asked first</comment>
+        <translation>删除</translation>
+    </message>
+    <message>
+        <source>Make a new link?</source>
+        <translation>生成新链接？</translation>
+    </message>
+    <message>
+        <source>The link you sent stops working: whoever has it and has not asked yet cannot ask you by it. Your friends stay.</source>
+        <translation>你发出的链接将失效：拿到它但还没发出请求的人，将无法再用它向你发出请求。你的好友不受影响。</translation>
+    </message>
+    <message>
+        <source>Make it</source>
+        <translation>生成</translation>
+    </message>
 </context>
 <context>
     <name>GroupsPanel</name>
@@ -266,8 +298,24 @@
         <translation>重置 %1 的链接?</translation>
     </message>
     <message>
+        <source>Reset</source>
+        <translation>重置</translation>
+    </message>
+    <message>
+        <source>Leave the group?</source>
+        <translation>退出群组？</translation>
+    </message>
+    <message>
+        <source>You leave %1 on all your devices. To be in it again, you need its link.</source>
+        <translation>你将在所有设备上退出 %1。要再次加入，需要群组的链接。</translation>
+    </message>
+    <message>
         <source>The old link stops letting anyone in. The group&apos;s members stay, and their devices are given the new link as they meet; someone who had only the old link and never met a member is left out. Send the new link to whoever is still to join.</source>
         <translation>旧链接将不再允许任何人进入。群组成员保留,他们的设备在相遇时会获得新链接;只有旧链接且从未遇到过成员的人将被排除在外。请把新链接发给还要加入的人。</translation>
+    </message>
+    <message>
+        <source>Leave</source>
+        <translation>退出</translation>
     </message>
     <message>
         <source>Rename the group</source>

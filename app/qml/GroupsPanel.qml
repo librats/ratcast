@@ -158,7 +158,7 @@ ColumnLayout {
                 icon.source: "icons/ellipsis.svg"
                 onClicked: groupMenu.open()
 
-                Menu {
+                ButtonMenu {
                     id: groupMenu
 
                     MenuItem {
@@ -202,7 +202,11 @@ ColumnLayout {
                         icon.source: "icons/x.svg"
                         visible: !row.inIt
                         height: visible ? implicitHeight : 0
-                        onTriggered: panel.people.leaveGroup(row.modelData.id)
+                        onTriggered: {
+                            leave.group = row.modelData.id
+                            leave.name = panel.nameOf(row.modelData)
+                            leave.open()
+                        }
                     }
                 }
             }
@@ -239,25 +243,29 @@ ColumnLayout {
     }
 
     // A new link, the old one letting nobody in: asked first.
-    Dialog {
+    ConfirmDialog {
         id: resetLink
 
         property string group
         property string name
 
-        parent: Overlay.overlay
-        anchors.centerIn: parent
-        width: Math.min(panel.Window.width - 48, 420)
-        modal: true
         title: qsTr("Reset the link of %1?").arg(name)
-        standardButtons: Dialog.Ok | Dialog.Cancel
+        text: qsTr("The old link stops letting anyone in. The group's members stay, and their devices are given the new link as they meet; someone who had only the old link and never met a member is left out. Send the new link to whoever is still to join.")
+        action: qsTr("Reset")
         onAccepted: panel.people.resetGroupLink(group)
+    }
 
-        Label {
-            width: parent.width
-            text: qsTr("The old link stops letting anyone in. The group's members stay, and their devices are given the new link as they meet; someone who had only the old link and never met a member is left out. Send the new link to whoever is still to join.")
-            wrapMode: Text.Wrap
-        }
+    // Asked first: back in only by its link.
+    ConfirmDialog {
+        id: leave
+
+        property string group
+        property string name
+
+        title: qsTr("Leave the group?")
+        text: qsTr("You leave %1 on all your devices. To be in it again, you need its link.").arg(name)
+        action: qsTr("Leave")
+        onAccepted: panel.people.leaveGroup(group)
     }
 
     Dialog {

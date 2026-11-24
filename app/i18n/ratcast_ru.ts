@@ -41,6 +41,13 @@
     </message>
 </context>
 <context>
+    <name>ConfirmDialog</name>
+    <message>
+        <source>Cancel</source>
+        <translation>Отмена</translation>
+    </message>
+</context>
+<context>
     <name>FileView</name>
     <message>
         <source>Download</source>
@@ -189,6 +196,31 @@
         <source>Remove from friends</source>
         <translation>Удалить из друзей</translation>
     </message>
+    <message>
+        <source>Remove from friends?</source>
+        <translation>Удалить из друзей?</translation>
+    </message>
+    <message>
+        <source>%1 is removed on all your devices, and is not told. To be friends again, add them anew.</source>
+        <translation>%1 будет удалён на всех ваших устройствах, ему об этом не сообщат. Чтобы снова стать друзьями, добавьте его заново.</translation>
+    </message>
+    <message>
+        <source>Remove</source>
+        <comment>a friend, asked first</comment>
+        <translation>Удалить</translation>
+    </message>
+    <message>
+        <source>Make a new link?</source>
+        <translation>Создать новую ссылку?</translation>
+    </message>
+    <message>
+        <source>The link you sent stops working: whoever has it and has not asked yet cannot ask you by it. Your friends stay.</source>
+        <translation>Отправленная вами ссылка перестанет работать: кто получил её, но ещё не попросился в друзья, по ней уже не сможет. Друзья останутся.</translation>
+    </message>
+    <message>
+        <source>Make it</source>
+        <translation>Создать</translation>
+    </message>
 </context>
 <context>
     <name>GroupsPanel</name>
@@ -266,8 +298,24 @@
         <translation>Сбросить ссылку группы %1?</translation>
     </message>
     <message>
+        <source>Reset</source>
+        <translation>Сбросить</translation>
+    </message>
+    <message>
+        <source>Leave the group?</source>
+        <translation>Выйти из группы?</translation>
+    </message>
+    <message>
+        <source>You leave %1 on all your devices. To be in it again, you need its link.</source>
+        <translation>Вы выйдете из группы «%1» на всех своих устройствах. Чтобы вернуться, понадобится ссылка на группу.</translation>
+    </message>
+    <message>
         <source>The old link stops letting anyone in. The group&apos;s members stay, and their devices are given the new link as they meet; someone who had only the old link and never met a member is left out. Send the new link to whoever is still to join.</source>
         <translation>По старой ссылке больше никто не войдёт. Участники группы остаются, их устройства получают новую ссылку при встрече; кто знал только старую ссылку и ни разу не встречался с участником, останется за дверью. Отправьте новую ссылку тем, кто ещё должен вступить.</translation>
+    </message>
+    <message>
+        <source>Leave</source>
+        <translation>Выйти</translation>
     </message>
     <message>
         <source>Rename the group</source>

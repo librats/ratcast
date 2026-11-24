@@ -41,6 +41,13 @@
     </message>
 </context>
 <context>
+    <name>ConfirmDialog</name>
+    <message>
+        <source>Cancel</source>
+        <translation>रद्द करें</translation>
+    </message>
+</context>
+<context>
     <name>FileView</name>
     <message>
         <source>Download</source>
@@ -189,6 +196,31 @@
         <source>Remove from friends</source>
         <translation>दोस्तों से हटाएँ</translation>
     </message>
+    <message>
+        <source>Remove from friends?</source>
+        <translation>दोस्तों से हटाएँ?</translation>
+    </message>
+    <message>
+        <source>%1 is removed on all your devices, and is not told. To be friends again, add them anew.</source>
+        <translation>%1 आपके सभी डिवाइस पर हटा दिए जाएँगे, और उन्हें बताया नहीं जाएगा। फिर से दोस्त बनने के लिए उन्हें दोबारा जोड़ें।</translation>
+    </message>
+    <message>
+        <source>Remove</source>
+        <comment>a friend, asked first</comment>
+        <translation>हटाएँ</translation>
+    </message>
+    <message>
+        <source>Make a new link?</source>
+        <translation>नया लिंक बनाएँ?</translation>
+    </message>
+    <message>
+        <source>The link you sent stops working: whoever has it and has not asked yet cannot ask you by it. Your friends stay.</source>
+        <translation>आपका भेजा हुआ लिंक काम करना बंद कर देगा: जिसके पास यह है और जिसने अभी तक अनुरोध नहीं भेजा, वह इससे अनुरोध नहीं भेज पाएगा। आपके दोस्त बने रहेंगे।</translation>
+    </message>
+    <message>
+        <source>Make it</source>
+        <translation>बनाएँ</translation>
+    </message>
 </context>
 <context>
     <name>GroupsPanel</name>
@@ -266,8 +298,24 @@
         <translation>%1 का लिंक रीसेट करें?</translation>
     </message>
     <message>
+        <source>Reset</source>
+        <translation>रीसेट करें</translation>
+    </message>
+    <message>
+        <source>Leave the group?</source>
+        <translation>समूह छोड़ें?</translation>
+    </message>
+    <message>
+        <source>You leave %1 on all your devices. To be in it again, you need its link.</source>
+        <translation>आप अपने सभी डिवाइस पर %1 छोड़ देंगे। दोबारा जुड़ने के लिए उसका लिंक चाहिए होगा।</translation>
+    </message>
+    <message>
         <source>The old link stops letting anyone in. The group&apos;s members stay, and their devices are given the new link as they meet; someone who had only the old link and never met a member is left out. Send the new link to whoever is still to join.</source>
         <translation>पुराना लिंक अब किसी को अंदर नहीं आने देता। समूह के सदस्य बने रहते हैं, और मिलने पर उनके डिवाइस को नया लिंक मिल जाता है; जिसके पास केवल पुराना लिंक था और जो कभी किसी सदस्य से नहीं मिला, वह बाहर रह जाता है। जिन्हें अभी जुड़ना है, उन्हें नया लिंक भेजें।</translation>
+    </message>
+    <message>
+        <source>Leave</source>
+        <translation>छोड़ें</translation>
     </message>
     <message>
         <source>Rename the group</source>

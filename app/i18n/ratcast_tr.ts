@@ -41,6 +41,13 @@
     </message>
 </context>
 <context>
+    <name>ConfirmDialog</name>
+    <message>
+        <source>Cancel</source>
+        <translation>İptal</translation>
+    </message>
+</context>
+<context>
     <name>FileView</name>
     <message>
         <source>Download</source>
@@ -189,6 +196,31 @@
         <source>Remove from friends</source>
         <translation>Arkadaşlardan çıkar</translation>
     </message>
+    <message>
+        <source>Remove from friends?</source>
+        <translation>Arkadaşlardan çıkarılsın mı?</translation>
+    </message>
+    <message>
+        <source>%1 is removed on all your devices, and is not told. To be friends again, add them anew.</source>
+        <translation>%1 tüm cihazlarında çıkarılır ve kendisine bildirilmez. Yeniden arkadaş olmak için onu tekrar ekle.</translation>
+    </message>
+    <message>
+        <source>Remove</source>
+        <comment>a friend, asked first</comment>
+        <translation>Çıkar</translation>
+    </message>
+    <message>
+        <source>Make a new link?</source>
+        <translation>Yeni bir bağlantı oluşturulsun mu?</translation>
+    </message>
+    <message>
+        <source>The link you sent stops working: whoever has it and has not asked yet cannot ask you by it. Your friends stay.</source>
+        <translation>Gönderdiğin bağlantı çalışmayı bırakır: elinde olup henüz istek göndermemiş olan, artık onunla istek gönderemez. Arkadaşların kalır.</translation>
+    </message>
+    <message>
+        <source>Make it</source>
+        <translation>Oluştur</translation>
+    </message>
 </context>
 <context>
     <name>GroupsPanel</name>
@@ -266,8 +298,24 @@
         <translation>%1 bağlantısı sıfırlansın mı?</translation>
     </message>
     <message>
+        <source>Reset</source>
+        <translation>Sıfırla</translation>
+    </message>
+    <message>
+        <source>Leave the group?</source>
+        <translation>Gruptan çıkılsın mı?</translation>
+    </message>
+    <message>
+        <source>You leave %1 on all your devices. To be in it again, you need its link.</source>
+        <translation>%1 grubundan tüm cihazlarında çıkarsın. Yeniden katılmak için grubun bağlantısı gerekir.</translation>
+    </message>
+    <message>
         <source>The old link stops letting anyone in. The group&apos;s members stay, and their devices are given the new link as they meet; someone who had only the old link and never met a member is left out. Send the new link to whoever is still to join.</source>
         <translation>Eski bağlantı artık kimseyi içeri almaz. Grubun üyeleri kalır ve cihazları karşılaştıklarında yeni bağlantıyı alır; yalnızca eski bağlantıya sahip olup hiçbir üyeyle karşılaşmamış olan dışarıda kalır. Yeni bağlantıyı henüz katılacak olanlara gönderin.</translation>
+    </message>
+    <message>
+        <source>Leave</source>
+        <translation>Çık</translation>
     </message>
     <message>
         <source>Rename the group</source>

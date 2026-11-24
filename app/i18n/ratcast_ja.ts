@@ -41,6 +41,13 @@
     </message>
 </context>
 <context>
+    <name>ConfirmDialog</name>
+    <message>
+        <source>Cancel</source>
+        <translation>キャンセル</translation>
+    </message>
+</context>
+<context>
     <name>FileView</name>
     <message>
         <source>Download</source>
@@ -189,6 +196,31 @@
         <source>Remove from friends</source>
         <translation>フレンドから削除</translation>
     </message>
+    <message>
+        <source>Remove from friends?</source>
+        <translation>友だちから削除しますか？</translation>
+    </message>
+    <message>
+        <source>%1 is removed on all your devices, and is not told. To be friends again, add them anew.</source>
+        <translation>%1 はすべてのデバイスで削除され、相手には通知されません。また友だちになるには、もう一度追加してください。</translation>
+    </message>
+    <message>
+        <source>Remove</source>
+        <comment>a friend, asked first</comment>
+        <translation>削除</translation>
+    </message>
+    <message>
+        <source>Make a new link?</source>
+        <translation>新しいリンクを作成しますか？</translation>
+    </message>
+    <message>
+        <source>The link you sent stops working: whoever has it and has not asked yet cannot ask you by it. Your friends stay.</source>
+        <translation>送ったリンクは使えなくなります。リンクを持っていてまだ申請していない人は、そのリンクで申請できなくなります。友だちはそのままです。</translation>
+    </message>
+    <message>
+        <source>Make it</source>
+        <translation>作成</translation>
+    </message>
 </context>
 <context>
     <name>GroupsPanel</name>
@@ -266,8 +298,24 @@
         <translation>%1 のリンクをリセットしますか?</translation>
     </message>
     <message>
+        <source>Reset</source>
+        <translation>リセット</translation>
+    </message>
+    <message>
+        <source>Leave the group?</source>
+        <translation>グループから退出しますか？</translation>
+    </message>
+    <message>
+        <source>You leave %1 on all your devices. To be in it again, you need its link.</source>
+        <translation>すべてのデバイスで %1 から退出します。もう一度参加するにはグループのリンクが必要です。</translation>
+    </message>
+    <message>
         <source>The old link stops letting anyone in. The group&apos;s members stay, and their devices are given the new link as they meet; someone who had only the old link and never met a member is left out. Send the new link to whoever is still to join.</source>
         <translation>古いリンクでは誰も入れなくなります。グループのメンバーはそのまま残り、出会ったときに各デバイスへ新しいリンクが渡されます。古いリンクしか持たず、メンバーと一度も出会っていない人は外れます。これから参加する人には新しいリンクを送ってください。</translation>
+    </message>
+    <message>
+        <source>Leave</source>
+        <translation>退出</translation>
     </message>
     <message>
         <source>Rename the group</source>
