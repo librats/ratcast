@@ -11,7 +11,8 @@ it was measured on and with which command, so it can be measured again after a c
 cmake --preset release -DRATCAST_BUILD_BENCH=ON && cmake --build --preset release
 ./build/release/bin/bench_core      # Buffer, frame header
 ./build/release/bin/bench_session   # MediaSession per frame
-./build/release/bin/bench_codec     # video encoders and decoders, Opus
+./build/release/bin/bench_codec     # video encoders and decoders; encoding at a screen's sizes,
+                                    # paced, and on Windows from D3D11 and after its conversion; Opus
 ./build/release/bin/bench_convert   # BGRA -> NV12 / I420, against libswscale; YUY2 -> NV12;
                                     # NV12 shrunk for a sharer's preview
 ```
@@ -1676,3 +1677,29 @@ measured): nothing next to the encoder, but spent the whole time a game is playe
 window with nobody looking. So the preview pauses while the window is not the one in use (Qt's
 `active`): the view let go, nothing taken, shrunk or drawn, the last picture left with
 "paused" — all of the above back to its hidden column.
+
+## What a screen's picture costs NVENC (after a session's log)
+
+A session's log (another machine: a 3840 x 2400 screen, av1_nvenc) had `encode` at 18.7 ms a
+picture at 3840 x 2280, 16 ms at 2304 x 1440, 10 ms at 1728 x 1080 — barely less with fewer
+pixels, so it looked like a fixed wait of ours rather than the encoder's work. `bench_codec`'s
+new rows measure it apart. Windows 11, NVIDIA GeForce RTX 5080, FFmpeg 9.0.1 from vcpkg,
+RelWithDebInfo, two runs (they differ by up to 2x: the GPU also draws the desktop):
+
+- **The encoder alone** (the pattern, from D3D11's memory): av1_nvenc 2.1 ms at 1080p, 3.4 at
+  1440p, 4.0 at 4K, at 60 a second; back to back the same or less — a GPU idle between pictures
+  does not clock down enough to show.
+- **As a screen captured comes**: BGRA textures through the video processor (`Nv12Converter`)
+  into NV12, then encoded. The conversion takes 0.3–1.7 ms on the GPU; encoding after it takes
+  what encoding the same pictures takes uploaded with no conversion before it, within the runs'
+  spread. No wait of ours: the copy into the encoder's frames costs nothing measurable, and a
+  `Flush()` after it changed nothing.
+- **Content decides**: a moving gradient instead of the pattern costs av1_nvenc 4–10 ms at
+  1440p (3840 x 2400 shrunk to 2304 x 1440: 3.8–7.9 ms), hevc_nvenc and h264_nvenc up to 13 ms
+  at 4K — and not in order of size (1440p slower than 4K in some runs). The real path here,
+  `ratcast-send --source screen` on the 1080p desktop: 5 ms against the pattern's 2.
+
+So the log's times are that machine's NVENC on that content, not a wait to remove — and they say
+4K at 60 a second was out of its reach while a film at 24 (41 ms a picture) was not: what the
+encoder keeps up with depends on the content and the rate it comes at, which a ceiling set for
+good from one moment cannot know.

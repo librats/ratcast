@@ -32,11 +32,14 @@ ratcast_add_bench(bench_session
 )
 target_include_directories(bench_session PRIVATE "${PROJECT_SOURCE_DIR}/libratcast/src")
 
-# Engine codecs: milliseconds per picture at 720p and 1080p, per encoder.
+# Engine codecs: milliseconds per picture at 720p and 1080p, per encoder; and
+# encoding alone at a screen's sizes, paced as a share is (the engine's Sleeper)
+# and, on Windows, from Direct3D 11's memory (its d3d11.h).
 ratcast_add_bench(bench_codec
     SOURCES bench_codec.cpp
     LIBS    ratcast::engine
 )
+target_include_directories(bench_codec PRIVATE "${PROJECT_SOURCE_DIR}/engine/src")
 
 # Capture's pixel conversion (BGRA into NV12 / I420) per screen size, with
 # libswscale alongside for scale when FFmpeg is there.
