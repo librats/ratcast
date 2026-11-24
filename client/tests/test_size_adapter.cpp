@@ -45,6 +45,17 @@ public:
         return within;
     }
 
+    /// The encoder opening anew for `time`, as when the window shared changes
+    /// size: the publisher asks nothing meanwhile, and of the pictures that
+    /// come, each but the last is replaced by the next — skipped.
+    void reopen(Duration time) {
+        const uint64_t count = uint64_t(time / 100ms) * 6;
+        now_ += time;
+        pictures_ += count;
+        skipped_ += count - 1;
+        adapter_.encoder_started(now_);
+    }
+
     uint32_t lines() const { return adapter_.lines(); }
 
 private:
@@ -130,6 +141,33 @@ TEST(SizeAdapter, AnEncoderBehindStepsDownForGood) {
     EXPECT_EQ(screen.lines(), 1440u);
     // Keeping up there, with a path that carries 4K: never up again.
     EXPECT_EQ(screen.run(300s, 20'000'000), 1440u);
+}
+
+// A window shared at 1440 lines going full screen and back: each change of
+// its size opens the encoder anew, half a second in which every picture is
+// skipped, and a few more as it finds its feet. No reason to step down.
+TEST(SizeAdapter, AnEncoderStartingOverIsNoReason) {
+    Screen screen({}, 2304, 1440);
+    screen.run(6s, 20'000'000);
+    for (int i = 0; i < 4; ++i) {
+        screen.reopen(500ms);
+        screen.run(1s, 20'000'000, 1.0 / 3);
+        screen.reopen(500ms);
+        screen.run(4s, 20'000'000);
+    }
+    EXPECT_EQ(screen.lines(), 0u);
+}
+
+// What it skips once it has found its feet counts as ever.
+TEST(SizeAdapter, AnEncoderBehindAfterStartingOverStepsDown) {
+    Screen screen;
+    screen.run(6s, 20'000'000);
+    screen.reopen(500ms);
+    const Duration down = screen.until_change(20'000'000, 15s, 1.0 / 3);
+    // Five seconds not counted, then within two counts.
+    EXPECT_GE(down, 5s);
+    EXPECT_LE(down, 9s);
+    EXPECT_EQ(screen.lines(), 1440u);
 }
 
 TEST(SizeAdapter, AFewSkippedAreNoReason) {

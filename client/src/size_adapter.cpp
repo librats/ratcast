@@ -101,8 +101,13 @@ uint32_t SizeAdapter::update(Timestamp now, uint32_t width, uint32_t height, uin
     };
     const auto below = [&](uint32_t level) { return level <= shorter * kStep; };
 
-    // The encoder behind: a level down, for good.
-    if (now - counted_since_ >= kCountOver) {
+    // The encoder behind: a level down, for good. Not while it has just
+    // started over: counted from when it has found its feet.
+    if (started_at_ && now - *started_at_ < kSettle) {
+        counted_since_ = now;
+        pictures_ = pictures;
+        skipped_ = skipped;
+    } else if (now - counted_since_ >= kCountOver) {
         const uint64_t given = pictures - pictures_;
         const uint64_t missed = skipped - skipped_;
         counted_since_ = now;

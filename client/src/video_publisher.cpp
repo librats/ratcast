@@ -454,6 +454,8 @@ Result<void> VideoPublisher::open_encoder(const VideoFrame& picture) {
     encoder_ = std::move(*encoder);
     encoder_config_ = config;
     number_offset_ = next_number_;
+    // Pictures that came while it opened were skipped: not for being slow.
+    if (adapter_) adapter_->encoder_started(clock_.now());
 
     StreamDescription description;
     description.id = config_.stream;

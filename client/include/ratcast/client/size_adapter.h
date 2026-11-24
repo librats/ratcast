@@ -16,7 +16,9 @@
  *     the largest size it keeps up, or the least.
  *   - Down a level when the encoder skipped more than a fifth of the pictures
  *     over two seconds: and never up past that level again, as the computer
- *     will not get faster.
+ *     will not get faster. Not counted for five seconds after the encoder
+ *     started over (encoder_started()): what came while it opened, as the
+ *     window shared changed size, was skipped however fast it is.
  *   - Up a level once the bitrate has stayed at 60% of what it needs for ten
  *     seconds: twice as long after each step up that came straight back down
  *     (within twenty seconds), up to 160, back to ten after a minute held.
@@ -71,6 +73,10 @@ public:
     uint32_t update(Timestamp now, uint32_t width, uint32_t height, uint32_t bitrate,
                     uint64_t pictures, uint64_t skipped);
 
+    /// The encoder started over at `now` — opened anew, for pictures of
+    /// another size or kind: what it skips is not counted for a while.
+    void encoder_started(Timestamp now) noexcept { started_at_ = now; }
+
     /// The pictures' limit in lines: 0, none.
     uint32_t lines() const noexcept { return lines_; }
 
@@ -94,6 +100,7 @@ private:
     Timestamp counted_since_;
     uint64_t pictures_ = 0;
     uint64_t skipped_ = 0;
+    std::optional<Timestamp> started_at_;  ///< the encoder's last start over
 };
 
 }  // namespace ratcast
