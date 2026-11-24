@@ -231,6 +231,8 @@ private:
     Timestamp limited_at_{};                   ///< on clock_, when lines_ last changed
     FrameScaler scaler_;
     bool scaling_failed_ = false;  ///< said once
+    uint64_t taken_ = 0;           ///< pictures taken on, for the adapter
+    Duration busy_{};              ///< spent on them, made to fit and encoded
 
     mutable std::mutex stats_mutex_;
     VideoPublisherStats stats_;

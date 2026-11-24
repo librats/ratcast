@@ -333,7 +333,13 @@ Notes on the ladder (2026-11-23): a share goes out at 2160, 1440, 1080 or 720 li
 needs (`bitrate_for_size()`: 8 Mbit/s for 1080p60, others by pixels a second to the power 0.75 —
 22.6 for 4K60, which is also the screen's most now): down after 3 s below 35% of it, straight to
 the largest size kept; up after 10 s at 60% of the next, twice as long after a step up that came
-straight back; a level down for good when the encoder skips a fifth of the pictures. Each change
+straight back; a level down when the encoder skips a fifth of the pictures (coming at a quarter
+of the frame rate or more: a film at 24 as well), and back up to that many lines only while what
+a picture took it there — made to fit and encoded, the encoder thread's time — is 70% of the
+time between pictures as they come now (a film at 24 or 30 after a page scrolled at 60 was too
+much; nothing judged on a still screen), or that is five minutes old: tried again, the next time
+after twice as long (up to 40) if it falls behind again.
+Each change
 is a keyframe, so 5 s pass after one before the next. The capture draws the smaller picture
 where that is cheaper (`VideoSource::limit_size()`: the D3D11 video processor as it makes NV12,
 ScreenCaptureKit's size, Android's virtual display); the rest is scaled by libswscale in the

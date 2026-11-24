@@ -272,7 +272,13 @@ void VideoPublisher::run() {
 
 Result<void> VideoPublisher::publish(VideoFrame picture, bool keyframe) {
     follow_viewers(keyframe);
+    // What the adapter judges the encoder by: all this thread spends on a
+    // picture but opening the encoder (counted from its start over). Scaling
+    // on the CPU in fit() makes the pictures come late as encoding does.
+    const auto fitting = std::chrono::steady_clock::now();
     picture = fit(std::move(picture));
+    const auto fitted =
+        std::chrono::duration_cast<Duration>(std::chrono::steady_clock::now() - fitting);
     if (picture.empty()) {  // dropped while its source makes them smaller
         if (keyframe) {
             std::lock_guard lock(mutex_);
@@ -314,6 +320,8 @@ Result<void> VideoPublisher::publish(VideoFrame picture, bool keyframe) {
         picture, keyframe, [this](EncodedVideo&& frame) { send(std::move(frame)); });
     const auto took =
         std::chrono::duration_cast<Duration>(std::chrono::steady_clock::now() - start);
+    ++taken_;
+    busy_ += fitted + took;
     {
         std::lock_guard lock(stats_mutex_);
         stats_.encode_time += took;
@@ -376,22 +384,22 @@ VideoFrame VideoPublisher::fit(VideoFrame picture) {
     }
 
     if (adapter_) {
-        uint64_t pictures = 0;
-        uint64_t skipped = 0;
+        EncoderCounts counts{.taken = taken_, .busy = busy_};
         {
             std::lock_guard lock(stats_mutex_);
-            pictures = stats_.pictures;
-            skipped = stats_.skipped;
+            counts.pictures = stats_.pictures;
+            counts.skipped = stats_.skipped;
         }
         const uint32_t bitrate = bitrate_.load(std::memory_order_relaxed);
-        const uint32_t next = adapter_->update(clock_.now(), picture.width(), picture.height(),
-                                               bitrate, pictures, skipped);
+        const uint32_t next =
+            adapter_->update(clock_.now(), picture.width(), picture.height(), bitrate, counts);
         if (next != lines) {
             LOG_INFO("client", "stream " << config_.stream << ": sent at "
                                          << (next != 0 ? std::to_string(next) + " lines"
                                                        : std::string("the size it comes"))
-                                         << " from now on, at " << bitrate << " bit/s, " << skipped
-                                         << " of " << pictures << " pictures skipped so far");
+                                         << " from now on, at " << bitrate << " bit/s, "
+                                         << counts.skipped << " of " << counts.pictures
+                                         << " pictures skipped so far");
             limit(next);
         }
     }

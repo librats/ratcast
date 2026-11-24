@@ -1702,4 +1702,8 @@ RelWithDebInfo, two runs (they differ by up to 2x: the GPU also draws the deskto
 So the log's times are that machine's NVENC on that content, not a wait to remove — and they say
 4K at 60 a second was out of its reach while a film at 24 (41 ms a picture) was not: what the
 encoder keeps up with depends on the content and the rate it comes at, which a ceiling set for
-good from one moment cannot know.
+good from one moment cannot know. So `SizeAdapter` now keeps what a picture took the encoder where
+it fell behind (18.7 ms at 4K there) and goes back to as many lines while that is 70% of the time
+between the pictures as they come or less: the film at 24 (0.45) would have gone back to 4K some
+17 s in, a video at 30 (0.56) as well, a page scrolled at 60 (1.1) not — but for a try every five
+minutes and more, as what one moment measured may have been the GPU busy with something else.
