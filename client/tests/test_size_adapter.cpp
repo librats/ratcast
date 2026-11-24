@@ -245,6 +245,34 @@ TEST(SizeAdapter, AStillScreenIsNoReasonToTryAgain) {
     EXPECT_EQ(screen.run(280s, 20'000'000), 1440u);
 }
 
+// Nor once what was measured is old: the try waits for a scroll, and having
+// fallen behind straight away, the next waits twice as long. Tried on the
+// still page, it would have held a minute and been counted as having kept
+// up: a try every five minutes, each coming back at the next scroll.
+TEST(SizeAdapter, AStillScreenWaitsForMovementToTryAgain) {
+    Screen screen;
+    screen.set_cost(18ms);
+    screen.run(6s, 20'000'000);
+    ASSERT_LE(screen.until_change(20'000'000, 10s, 1.0 / 3), 4s);
+    ASSERT_EQ(screen.lines(), 1440u);
+    screen.set_rate(2);
+    EXPECT_EQ(screen.run(600s, 20'000'000), 1440u);
+
+    // Scrolled: a count to see the rate, ten seconds held.
+    screen.set_rate(60);
+    EXPECT_LE(screen.until_change(20'000'000, 30s), 13s);
+    ASSERT_EQ(screen.lines(), 2160u);
+    ASSERT_LE(screen.until_change(20'000'000, 10s, 1.0 / 3), 8s) << "settled, then a count";
+    ASSERT_EQ(screen.lines(), 1440u);
+
+    // Ten minutes now, and twenty seconds held, the try having come back.
+    EXPECT_EQ(screen.run(590s, 20'000'000), 1440u);
+    const Duration again = screen.until_change(20'000'000, 60s);
+    EXPECT_GE(again, 25s);
+    EXPECT_LE(again, 35s);
+    EXPECT_EQ(screen.lines(), 2160u);
+}
+
 // Back up for a film at 24, which then takes the encoder 50 ms a picture at
 // 4K (the GPU busy with a game, say): behind at 24 as at 60 — down again,
 // and not back up for it until what was measured is five minutes old. The

@@ -90,11 +90,12 @@ std::optional<uint32_t> SizeAdapter::next_up() const noexcept {
 bool SizeAdapter::keeps_up(uint32_t lines, Timestamp now) const noexcept {
     for (const Behind& behind : behind_) {
         if (lines != 0 && behind.lines > lines) continue;  // larger pictures than these
-        if (now - behind.at >= behind.held) continue;      // to be tried again
-        if (!rate_ || *rate_ < config_.frame_rate * kMoving ||
-            seconds(behind.took) * *rate_ > kKeepsUp) {
-            return false;
-        }
+        // Still: nothing a try would be judged by, held to or not — tried on
+        // a page being read, it would come back at the next scroll and be
+        // counted as having kept up.
+        if (!rate_ || *rate_ < config_.frame_rate * kMoving) return false;
+        if (now - behind.at >= behind.held) continue;  // to be tried again
+        if (seconds(behind.took) * *rate_ > kKeepsUp) return false;
     }
     return true;
 }

@@ -31,8 +31,9 @@
  *     computer alone. Falling behind again soon after counts as a step up
  *     that came straight back, below. What a picture took is held to for
  *     five minutes (a moment of the GPU busy with a game says nothing of the
- *     rest of the session), then tried again: twice as long after each try
- *     that fell behind again within a minute, up to forty minutes.
+ *     rest of the session), then tried again once the pictures come at a
+ *     quarter of the frame rate or more: twice as long after each try that
+ *     fell behind again within a minute, up to forty minutes.
  *   - Up a level once the bitrate has stayed at 60% of what it needs (and the
  *     encoder kept up with that size, as above) for ten seconds: twice as
  *     long after each step up that came straight back down (within twenty
@@ -113,7 +114,8 @@ private:
     std::optional<uint32_t> next_up() const noexcept;
     /// Whether the encoder keeps up with pictures of `lines` lines (0: as
     /// they come) at the rate they come now, by what one took it where it
-    /// fell behind at as many lines or fewer, still held to at `now`.
+    /// fell behind at as many lines or fewer, still held to at `now`; where
+    /// it fell behind, never while the pictures hardly come.
     bool keeps_up(uint32_t lines, Timestamp now) const noexcept;
     void change(uint32_t lines, Timestamp now, const EncoderCounts& counts);
 

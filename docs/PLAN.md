@@ -337,8 +337,8 @@ straight back; a level down when the encoder skips a fifth of the pictures (comi
 of the frame rate or more: a film at 24 as well), and back up to that many lines only while what
 a picture took it there — made to fit and encoded, the encoder thread's time — is 70% of the
 time between pictures as they come now (a film at 24 or 30 after a page scrolled at 60 was too
-much; nothing judged on a still screen), or that is five minutes old: tried again, the next time
-after twice as long (up to 40) if it falls behind again.
+much; nothing judged on a still screen), or that is five minutes old: tried again while the
+pictures move, the next time after twice as long (up to 40) if it falls behind again.
 Each change
 is a keyframe, so 5 s pass after one before the next. The capture draws the smaller picture
 where that is cheaper (`VideoSource::limit_size()`: the D3D11 video processor as it makes NV12,
