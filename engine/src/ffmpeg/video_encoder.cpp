@@ -29,6 +29,7 @@ extern "C" {
 #include "ratcast/engine/video_codec.h"
 #include "ratcast/engine/video_convert.h"
 #include "video/codec_backend.h"
+#include "video/picture_spacing.h"
 
 #ifdef __APPLE__
 #include "macos/videotoolbox_encoder.h"
@@ -51,18 +52,9 @@ constexpr uint32_t kBufferFrames = 2;
 constexpr int kNoPeriodicKeyframes = 1 << 30;
 
 // An encoder that spends bitrate / frame rate on each picture, whatever its
-// timestamps say, sends a film of 24 pictures a second shared at 60 at 24/60
-// of its bitrate. It is told as much more as pictures come further apart.
+// timestamps say, is told as much more as pictures come further apart
+// (video/picture_spacing.h).
 
-/// At most this many times (or as many times less, nearer): a still screen's
-/// next picture carries up to kBufferFrames times this over the frame rate
-/// of a second's bits (at 60, a tenth).
-constexpr double kMostApart = 3;
-/// The pictures' spacing, averaged over about this many as they come further
-/// apart, and over this few as they come nearer: spending more than the path
-/// carries fills its queue, spending less only costs some quality.
-constexpr double kSpacingOver = 16;
-constexpr double kNearerOver = 4;
 /// Told again once it is this far off what the codec has: in flight by a
 /// fraction; opening another, which starts with a keyframe, by a factor held
 /// for kRepaceHeld (the average settled), no more often than every
@@ -98,6 +90,15 @@ struct Candidate {
     /// Opened on the system's own API rather than through FFmpeg, whose
     /// wrapper of it holds every picture back a call; `tune` goes unused.
     Result<std::unique_ptr<VideoEncoder>> (*open_native)(const VideoEncoderConfig&) = nullptr;
+    /// Takes each picture's share of the bitrate from how far it is from the
+    /// one before, so that a film's pictures two and three refreshes apart in
+    /// turn swing it — one large, the next next to nothing, half as much
+    /// again spent in all (libaom 3.8) — or from how long it lasts, which
+    /// FFmpeg says is the config's frame rate (libaom 3.14: a film at 60
+    /// spends 0.4 of it): given its pictures evenly spaced, at their average
+    /// spacing (PictureSpacing), each lasting as long, their capture times
+    /// kept apart.
+    bool even_times = false;
 };
 
 void tune_nvenc(const VideoEncoderConfig&, AVCodecContext&, av::Dictionary& options) {
@@ -169,7 +170,7 @@ constexpr Candidate kCandidates[] = {
     // delay, and FFmpeg asks for one only as it hands in the next: each comes
     // back a picture or two later.
     {"libsvtav1", Codec::AV1, false, false, true, tune_svtav1, true},
-    {"libaom-av1", Codec::AV1, false, false, false, tune_aom},
+    {"libaom-av1", Codec::AV1, false, false, false, tune_aom, false, nullptr, true},
     {"hevc_nvenc", Codec::H265, true, true, true, tune_nvenc},
     {"hevc_qsv", Codec::H265, true, true, true, tune_qsv},
     {"hevc_amf", Codec::H265, true, false, true, tune_amf},
@@ -241,7 +242,7 @@ public:
           hw_frames_(std::move(hw_frames)),
           frame_(av_frame_alloc()),
           packet_(av_packet_alloc()),
-          spacing_(frame_spacing()) {}
+          spacing_(config.frame_rate_num, config.frame_rate_den) {}
 
     ~FfmpegVideoEncoder() override { close_context(std::move(context_)); }
 
@@ -334,20 +335,12 @@ public:
     }
 
 private:
-    /// How far apart pictures come at the config's frame rate, in µs.
-    double frame_spacing() const noexcept {
-        return 1e6 * config_.frame_rate_den / std::max<uint32_t>(config_.frame_rate_num, 1);
-    }
-
     /// The config as the codec is told it: its bitrate a second's, over the
     /// pictures as they come.
     VideoEncoderConfig codec_config() const {
         VideoEncoderConfig config = config_;
-        if (candidate_.spends_by_frame_rate) {
-            config.bitrate =
-                static_cast<uint32_t>(std::min(config_.bitrate * spacing_ / frame_spacing(),
-                                               double(std::numeric_limits<uint32_t>::max())));
-        }
+        if (candidate_.spends_by_frame_rate)
+            config.bitrate = spacing_.told_bitrate(config_.bitrate);
         return config;
     }
 
@@ -360,14 +353,8 @@ private:
     /// Follow how far apart the pictures come — a picture `capture_time` —
     /// and tell the codec once its bitrate is far enough off.
     void pace(Timestamp capture_time) {
+        if (candidate_.spends_by_frame_rate || candidate_.even_times) spacing_.add(capture_time);
         if (!candidate_.spends_by_frame_rate) return;
-        const double nominal = frame_spacing();
-        if (last_capture_) {
-            const double apart = std::clamp(double((capture_time - *last_capture_).count()),
-                                            nominal / kMostApart, nominal * kMostApart);
-            spacing_ += (apart - spacing_) / (apart < spacing_ ? kNearerOver : kSpacingOver);
-        }
-        last_capture_ = capture_time;
 
         const double off = double(codec_config().bitrate) / std::max<uint32_t>(codec_bitrate_, 1);
         if (candidate_.dynamic_bitrate) {
@@ -481,6 +468,19 @@ private:
         if (last_pts_ && pts <= *last_pts_) pts = *last_pts_ + 1;
         last_pts_ = pts;
         frame_->pts = pts;
+        if (candidate_.even_times) {
+            even_pts_ = even_pts_
+                            ? *even_pts_ + std::max<int64_t>(std::llround(spacing_.average()), 1)
+                            : pts;
+            frame_->pts = *even_pts_;
+            capture_of_.emplace(*even_pts_, pts);
+#if LIBAVUTIL_VERSION_MAJOR >= 58
+            // Lasting as long, which a newer libaom (3.14) takes its rate
+            // from in place of the times (FFmpeg tells it the config's
+            // otherwise).
+            frame_->duration = std::max<int64_t>(std::llround(spacing_.average()), 1);
+#endif
+        }
         frame_->pict_type = keyframe ? AV_PICTURE_TYPE_I : AV_PICTURE_TYPE_NONE;
         return {};
     }
@@ -520,7 +520,15 @@ private:
             EncodedVideo out;
             out.info.number = next_number_++;
             out.info.keyframe = (packet_->flags & AV_PKT_FLAG_KEY) != 0;
-            out.info.capture_time = Timestamp{Duration{packet_->pts}};
+            int64_t pts = packet_->pts;
+            if (candidate_.even_times) {
+                // Its own, and any before it never handed out: done with.
+                const auto end = capture_of_.upper_bound(pts);
+                if (const auto it = capture_of_.find(pts); it != capture_of_.end())
+                    pts = it->second;
+                capture_of_.erase(capture_of_.begin(), end);
+            }
+            out.info.capture_time = Timestamp{Duration{pts}};
             // One chain from keyframe to keyframe: each frame needs the one
             // before (and through it everything back to the keyframe).
             if (!out.info.keyframe && out.info.number > 0) {
@@ -554,14 +562,16 @@ private:
     bool keyframe_owed_ = false;
     std::future<void> closing_;  ///< the encoder switched from, being closed
     std::optional<int64_t> last_pts_;
+    /// An encoder of even times (Candidate::even_times): the last it was
+    /// given, and the capture time of each it has yet to hand out.
+    std::optional<int64_t> even_pts_;
+    std::map<int64_t, int64_t> capture_of_;
     FrameNumber next_number_ = 0;
     // For an encoder that spends by frame rate (pace()): how far apart
-    // pictures come, on average, in µs; the last one's capture time; the
-    // bitrate the codec has (or the one opening alongside will); since when
-    // it has been too far off to keep, and when the last was opened alongside
-    // for the spacing.
-    double spacing_;
-    std::optional<Timestamp> last_capture_;
+    // pictures come; the bitrate the codec has (or the one opening alongside
+    // will); since when it has been too far off to keep, and when the last
+    // was opened alongside for the spacing.
+    PictureSpacing spacing_;
     uint32_t codec_bitrate_ = 0;
     std::optional<Timestamp> off_since_;
     std::optional<Timestamp> repaced_at_;

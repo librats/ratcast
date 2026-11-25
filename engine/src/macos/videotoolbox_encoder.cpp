@@ -12,6 +12,8 @@
 #include <CoreVideo/CoreVideo.h>
 #include <VideoToolbox/VideoToolbox.h>
 
+#include <algorithm>
+#include <cmath>
 #include <cstring>
 #include <memory>
 #include <mutex>
@@ -24,6 +26,7 @@
 #include "macos/pixel_buffer.h"
 #include "ratcast/engine/video_convert.h"
 #include "ratcast/stream/frame.h"
+#include "video/picture_spacing.h"
 
 #include "librats/util/logger.h"
 
@@ -57,6 +60,9 @@ constexpr int64_t kNoPeriodicKeyframes = 1 << 30;
 
 /// The timescale of the session's times: capture times' microseconds.
 constexpr int32_t kMicroseconds = 1'000'000;
+
+/// Told its bitrate again once the pictures' spacing makes it this far off.
+constexpr double kRetellOff = 0.1;
 
 /// What each NAL unit starts with in Annex B, in place of its length.
 constexpr uint8_t kStartCode[] = {0, 0, 0, 1};
@@ -92,7 +98,8 @@ public:
         : config_(config),
           info_{config.codec == Codec::H265 ? "hevc_videotoolbox" : "h264_videotoolbox",
                 config.codec, true, PixelFormat::NV12,
-                config.device && config.device->api() == GpuApi::CoreVideo} {}
+                config.device && config.device->api() == GpuApi::CoreVideo},
+          spacing_(config.frame_rate_num, config.frame_rate_den) {}
 
     ~VideoToolboxEncoder() override { close(); }
 
@@ -133,6 +140,14 @@ public:
         int64_t pts = picture.capture_time().time_since_epoch().count();
         if (last_pts_ && pts <= *last_pts_) pts = *last_pts_ + 1;
         last_pts_ = pts;
+        // It spends AverageBitRate / ExpectedFrameRate on each picture,
+        // whatever the times say (a film of 24 shared at 60 went out at 0.45
+        // of it): told more as they come further apart.
+        spacing_.add(picture.capture_time());
+        if (std::abs(double(spacing_.told_bitrate(config_.bitrate)) / std::max<uint32_t>(told_, 1) -
+                     1) > kRetellOff) {
+            apply_bitrate();
+        }
         const CMTime time = CMTimeMake(pts, kMicroseconds);
         const CMTime duration =
             CMTimeMake(int64_t{kMicroseconds} * config_.frame_rate_den / config_.frame_rate_num,
@@ -251,11 +266,18 @@ private:
     }
 
     /// Aim at the config's bitrate, a second's worth at most in any second
-    /// (as FFmpeg's encoders are capped at it).
+    /// (as FFmpeg's encoders are capped at it), over the pictures as they
+    /// come. The average is told more as they come further apart; the cap is
+    /// over seconds of their times, real ones, so it stays the config's — or
+    /// pictures coming close again after a still screen would get three times
+    /// it until the spacing caught up. told_ is what the session took: one
+    /// refused is told again.
     bool apply_bitrate() {
-        const int64_t bitrate = config_.bitrate;
-        if (!set(kVTCompressionPropertyKey_AverageBitRate, number(bitrate).get())) return false;
-        const CfPtr<CFNumberRef> bytes = number(bitrate / 8);
+        const uint32_t told = spacing_.told_bitrate(config_.bitrate);
+        if (!set(kVTCompressionPropertyKey_AverageBitRate, number(int64_t{told}).get()))
+            return false;
+        told_ = told;
+        const CfPtr<CFNumberRef> bytes = number(int64_t{config_.bitrate} / 8);
         const CfPtr<CFNumberRef> seconds = number(1.0);
         const void* limits[] = {bytes.get(), seconds.get()};
         const CfPtr<CFArrayRef> array(
@@ -455,6 +477,8 @@ private:
     bool keyframe_owed_ = false;
     std::optional<int64_t> last_pts_;
     FrameNumber next_number_ = 0;
+    PictureSpacing spacing_;
+    uint32_t told_ = 0;  ///< the bitrate the session was told last
 
     std::mutex mutex_;  ///< over what the session's callback hands back
     std::vector<CfPtr<CMSampleBufferRef>> done_;
