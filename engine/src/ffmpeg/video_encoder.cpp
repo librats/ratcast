@@ -56,9 +56,11 @@ constexpr int kNoPeriodicKeyframes = 1 << 30;
 // (video/picture_spacing.h).
 
 /// Told again once it is this far off what the codec has: in flight by a
-/// fraction; opening another, which starts with a keyframe, by a factor held
-/// for kRepaceHeld (the average settled), no more often than every
-/// kRepaceEvery — both in the pictures' time.
+/// fraction; where that costs a keyframe — opening another, or a change in
+/// flight that starts over with one — by a factor held for kRepaceHeld (the
+/// average settled), no more often than every kRepaceEvery — both in the
+/// pictures' time. A screen's pictures come unevenly: told at every tenth, a
+/// screen shared through NVENC sent two keyframes a second.
 constexpr double kRepaceInFlight = 0.1;
 constexpr double kRepaceByOpening = 1.5;
 constexpr Duration kRepaceHeld = std::chrono::seconds(2);
@@ -99,6 +101,10 @@ struct Candidate {
     /// spacing (PictureSpacing), each lasting as long, their capture times
     /// kept apart.
     bool even_times = false;
+    /// Its bitrate changed in flight starts it over with a keyframe: FFmpeg's
+    /// NVENC wrapper resets the encoder with an IDR at every change. Told
+    /// what it spends by as seldom as one opened anew (kRepaceByOpening).
+    bool bitrate_costs_keyframe = false;
 };
 
 void tune_nvenc(const VideoEncoderConfig&, AVCodecContext&, av::Dictionary& options) {
@@ -163,7 +169,7 @@ void tune_openh264(const VideoEncoderConfig&, AVCodecContext&, av::Dictionary& o
 // Best first within each codec. VAAPI is missing on purpose: it takes only
 // pictures already in GPU memory, which arrive with DMA-BUF capture.
 constexpr Candidate kCandidates[] = {
-    {"av1_nvenc", Codec::AV1, true, true, true, tune_nvenc},
+    {"av1_nvenc", Codec::AV1, true, true, true, tune_nvenc, false, nullptr, false, true},
     {"av1_qsv", Codec::AV1, true, true, true, tune_qsv},
     {"av1_amf", Codec::AV1, true, false, true, tune_amf},
     // Before 2.3 (Ubuntu 24.04 has 1.7) it never waits for a picture in low
@@ -171,7 +177,7 @@ constexpr Candidate kCandidates[] = {
     // back a picture or two later.
     {"libsvtav1", Codec::AV1, false, false, true, tune_svtav1, true},
     {"libaom-av1", Codec::AV1, false, false, false, tune_aom, false, nullptr, true},
-    {"hevc_nvenc", Codec::H265, true, true, true, tune_nvenc},
+    {"hevc_nvenc", Codec::H265, true, true, true, tune_nvenc, false, nullptr, false, true},
     {"hevc_qsv", Codec::H265, true, true, true, tune_qsv},
     {"hevc_amf", Codec::H265, true, false, true, tune_amf},
 #ifdef __APPLE__
@@ -182,7 +188,7 @@ constexpr Candidate kCandidates[] = {
     {"hevc_mediacodec", Codec::H265, true, true, false, nullptr, false,
      android::open_mediacodec_encoder},
 #endif
-    {"h264_nvenc", Codec::H264, true, true, true, tune_nvenc},
+    {"h264_nvenc", Codec::H264, true, true, true, tune_nvenc, false, nullptr, false, true},
     {"h264_qsv", Codec::H264, true, true, true, tune_qsv},
     {"h264_amf", Codec::H264, true, false, true, tune_amf},
 #ifdef __APPLE__
@@ -357,7 +363,7 @@ private:
         if (!candidate_.spends_by_frame_rate) return;
 
         const double off = double(codec_config().bitrate) / std::max<uint32_t>(codec_bitrate_, 1);
-        if (candidate_.dynamic_bitrate) {
+        if (candidate_.dynamic_bitrate && !candidate_.bitrate_costs_keyframe) {
             if (std::abs(off - 1) > kRepaceInFlight) apply_codec_bitrate();
             return;
         }
@@ -370,7 +376,11 @@ private:
             (!repaced_at_ || capture_time - *repaced_at_ >= kRepaceEvery)) {
             repaced_at_ = capture_time;
             off_since_.reset();
-            open_alongside();
+            if (candidate_.dynamic_bitrate) {
+                apply_codec_bitrate();
+            } else {
+                open_alongside();
+            }
         }
     }
 

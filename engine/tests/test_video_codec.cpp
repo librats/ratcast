@@ -204,6 +204,27 @@ TEST_P(VideoCodecTest, SpendsTheBitrateOnPicturesFewerThanItsFrameRate) {
     EXPECT_LT(again_60, at_60 * 1.33) << "at 60: " << at_60 << " bit/s, again: " << again_60;
 }
 
+// A screen's pictures come unevenly: a second of scrolling at 60, a second
+// of a page read with the pointer moving at 10, in turn. Followed (an
+// encoder that spends by frame rate is told more as they come further
+// apart), but at the cost of a keyframe — opening another, or NVENC changed
+// in flight — only now and then.
+TEST_P(VideoCodecTest, PicturesComingUnevenlyCostFewKeyframes) {
+    Timestamp at{1s};
+    int keyframes = 0;
+    for (uint64_t i = 0; i < 700; ++i) {
+        VideoFrame picture = pattern(i);
+        picture.set_capture_time(at);
+        at += i % 70 < 60 ? 16'667us : 100'000us;  // sixty at 60, then ten at 10
+        for (EncodedVideo& frame : encode(picture)) {
+            if (i > 0 && frame.info.keyframe) ++keyframes;
+            EXPECT_EQ(decode(frame).size(), 1u) << "picture " << i;
+        }
+    }
+    // Twenty seconds: once in ten at most.
+    EXPECT_LE(keyframes, 2);
+}
+
 TEST_P(VideoCodecTest, ABitrateChangeLosesNoPicture) {
     // An encoder that cannot change its rate in flight opens another alongside
     // and switches to it: every picture still comes out, in order, decodable.
