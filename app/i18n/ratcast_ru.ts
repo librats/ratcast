@@ -1128,11 +1128,11 @@
     </message>
     <message>
         <source>Make this device someone else&apos;s</source>
-        <translation>Сделать это устройство чужим</translation>
+        <translation>Привязать к другому вашему устройству</translation>
     </message>
     <message>
         <source>the link your other device made</source>
-        <translation>ссылка с вашего другого устройства</translation>
+        <translation>ссылка с другого устройства</translation>
     </message>
     <message>
         <source>Ask</source>

@@ -38,9 +38,14 @@ Dialog {
                                          "user", "app-window"]
     /// The section shown.
     property int section: 0
-    readonly property bool narrow: width < 520
+    /// The sections as tabs across the top: narrow, or low as a phone on its
+    /// side is, where a list of them beside would not show them all.
+    readonly property bool narrow: width < 520 || low
+    /// A phone on its side: the title gone for the settings' room, the tabs
+    /// their icons alone (their names would be cut).
+    readonly property bool low: parent !== null && parent.height < 480
 
-    title: qsTr("Settings")
+    title: low ? "" : qsTr("Settings")
     modal: true
     anchors.centerIn: Overlay.overlay
     // A phone's: nearly all the screen.
@@ -150,6 +155,7 @@ Dialog {
                     required property string modelData
                     required property int index
                     text: modelData
+                    display: dialog.low ? AbstractButton.IconOnly : AbstractButton.TextBesideIcon
                     icon.source: "icons/" + dialog.sectionIcons[index] + ".svg"
                     onClicked: dialog.section = index
                 }
