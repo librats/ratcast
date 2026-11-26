@@ -59,6 +59,19 @@ TEST_F(PlayoutClockTest, ASideQuietForASecondNoLongerCounts) {
     EXPECT_FALSE(stats.pictures);
 }
 
+TEST_F(PlayoutClockTest, NoPicturesNoFloorWhateverTheSendersClock) {
+    // The sender's clock days ahead of this one: every offset from capture
+    // is far below zero.
+    const Timestamp ahead = clock_.now() + 24h * 10;
+    sync_.sound_played(ahead, clock_.now() + 60ms, 25ms, 20ms);
+    EXPECT_EQ(sync_.sound_floor(), 0ms);
+    sync_.pictures_need(clock_.now() + 100ms - ahead);
+    EXPECT_EQ(sync_.sound_floor(), 65ms);
+    clock_.advance(1100ms);  // the pictures stand still
+    sync_.sound_played(ahead + 1100ms, clock_.now() + 60ms, 25ms, 20ms);
+    EXPECT_EQ(sync_.sound_floor(), 0ms);
+}
+
 TEST_F(PlayoutClockTest, AnotherSenderStartsAfresh) {
     const Timestamp captured = clock_.now() - 80ms;
     sync_.sound_played(captured - 1s, captured - 1s + 60ms, 25ms, 20ms);

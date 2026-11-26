@@ -28,10 +28,14 @@ Duration PlayoutClock::sound_floor() const {
 Duration PlayoutClock::floor(const std::optional<Sound>& heard,
                              std::optional<Duration> pictures) const noexcept {
     if (!heard) return Duration::zero();
-    Duration aim{};
+    // Nothing to wait for, no floor. Offsets from capture hold the clocks'
+    // difference: one of none would be against the sound's offset as if
+    // that were the path's alone, days where the sender's clock is ahead.
+    std::optional<Duration> aim;
     if (in_step_ && pictures) aim = *pictures;
-    if (together_) aim = std::max(aim, together_->offset);
-    return std::max(aim - heard->rest, Duration::zero());
+    if (together_) aim = std::max(aim.value_or(together_->offset), together_->offset);
+    if (!aim) return Duration::zero();
+    return std::max(*aim - heard->rest, Duration::zero());
 }
 
 void PlayoutClock::pictures_need(Duration offset) {
