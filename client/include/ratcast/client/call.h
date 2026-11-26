@@ -328,7 +328,8 @@ public:
     /// lost; none before it said anything, or once it left.
     std::optional<Presence> presence(const PeerId& peer) const;
     /// Whose `peer` is, by the card its presence carries (identity.h): none
-    /// before it said, or for a card not of it.
+    /// before it said, or for a card not of it. Its signature is checked once
+    /// for each card a peer says: a UI asks for it ten times a second.
     std::optional<IdentityCard> identity(const PeerId& peer) const;
     /// The path to `peer`, sampled every 100 ms: round trip, bandwidth, loss.
     std::optional<librats::PathStats> path(const PeerId& peer) const;
@@ -506,6 +507,13 @@ private:
     mutable std::mutex members_mutex_;
     std::set<PeerId> away_;
     std::map<PeerId, Presence> said_;
+    /// The card each member's presence carried, as encoded, and what checking
+    /// it found (identity()). Kept for the call: its members are few.
+    struct CheckedCard {
+        std::vector<uint8_t> encoded;
+        std::optional<IdentityCard> card;
+    };
+    mutable std::map<PeerId, CheckedCard> cards_;
 
     mutable std::mutex publishing_;
     /// Shared with a switch_source() under way, which works on its own.

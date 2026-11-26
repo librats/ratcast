@@ -472,7 +472,14 @@ Result<void> Call::set_presence(const Presence& presence) {
 std::optional<IdentityCard> Call::identity(const PeerId& peer) const {
     const std::optional<Presence> said = presence(peer);
     if (!said) return std::nullopt;
-    return identity_of(said->identity, peer);
+    std::lock_guard lock(members_mutex_);
+    CheckedCard& checked = cards_[peer];
+    if (checked.encoded != said->identity) {
+        // A signature checked: some 0.1 ms, a phone's little core longer.
+        checked.card = identity_of(said->identity, peer);
+        checked.encoded = said->identity;
+    }
+    return checked.card;
 }
 
 std::optional<Presence> Call::presence(const PeerId& peer) const {
