@@ -67,7 +67,8 @@ SizeAdapter::SizeAdapter(SizeAdapterConfig config, Timestamp now)
       lines_(config.max_lines),
       changed_at_(now),
       up_after_(kUpAfter),
-      counted_since_(now) {}
+      counted_since_(now),
+      watched_since_(now) {}
 
 uint32_t SizeAdapter::needs(uint32_t lines, double aspect) const noexcept {
     return bitrate_for_size(uint32_t(lines * aspect), lines, config_.frame_rate,
@@ -110,7 +111,7 @@ void SizeAdapter::change(uint32_t lines, Timestamp now, const EncoderCounts& cou
 }
 
 uint32_t SizeAdapter::update(Timestamp now, uint32_t width, uint32_t height, uint32_t bitrate,
-                             const EncoderCounts& counts) {
+                             const EncoderCounts& counts, bool watched) {
     const uint32_t shorter = std::min(width, height);
     if (shorter == 0) return lines_;
     if (now - changed_at_ < kSettle) {
@@ -168,6 +169,19 @@ uint32_t SizeAdapter::update(Timestamp now, uint32_t width, uint32_t height, uin
                 return step_down(level);
             }
         }
+    }
+
+    // Nobody watching: rate control at its start, measuring nothing. From
+    // the first viewer on, once it has found its feet.
+    if (!watched) {
+        watched_since_.reset();
+    } else if (!watched_since_) {
+        watched_since_ = now;
+    }
+    if (!watched_since_ || now - *watched_since_ < kSettle) {
+        low_since_.reset();
+        high_since_.reset();
+        return lines_;
     }
 
     // The path narrower than the size needs: the largest it keeps, or the least.

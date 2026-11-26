@@ -14,7 +14,8 @@ namespace {
 /// picture (a compositor sends only what changes).
 constexpr auto kStillAfter = std::chrono::milliseconds(100);
 
-/// How often the viewers are looked at between keyframes, for what they decode.
+/// How often the viewers are looked at between keyframes, for what they decode,
+/// and for whether there are any (SizeAdapter::update()).
 constexpr auto kViewersEvery = std::chrono::seconds(1);
 
 /// How long pictures in GPU memory may still come larger than a new limit
@@ -390,9 +391,14 @@ VideoFrame VideoPublisher::fit(VideoFrame picture) {
             counts.pictures = stats_.pictures;
             counts.skipped = stats_.skipped;
         }
+        const Timestamp now = clock_.now();
+        if (!watched_seen_ || now - *watched_seen_ >= kViewersEvery) {
+            watched_seen_ = now;
+            watched_ = !session_.viewers(config_.stream).empty();
+        }
         const uint32_t bitrate = bitrate_.load(std::memory_order_relaxed);
         const uint32_t next =
-            adapter_->update(clock_.now(), picture.width(), picture.height(), bitrate, counts);
+            adapter_->update(now, picture.width(), picture.height(), bitrate, counts, watched_);
         if (next != lines) {
             LOG_INFO("client", "stream " << config_.stream << ": sent at "
                                          << (next != 0 ? std::to_string(next) + " lines"

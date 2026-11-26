@@ -24,6 +24,8 @@ public:
     void set_rate(double rate) { rate_ = rate; }
     /// What each picture takes the encoder from now on.
     void set_cost(Duration cost) { cost_ = cost; }
+    /// Whether anyone watches from now on (at first they do).
+    void set_watched(bool watched) { watched_ = watched; }
 
     /// For `time`, at `bitrate`, a share of `skipped_share` of the pictures
     /// skipped: the limit then.
@@ -43,7 +45,7 @@ public:
             const bool limited = lines != 0 && std::min(width_, height_) > lines;
             const uint32_t width = limited ? uint32_t(uint64_t(width_) * lines / height_) : width_;
             const uint32_t height = limited ? lines : height_;
-            adapter_.update(now_, width, height, bitrate, counts_);
+            adapter_.update(now_, width, height, bitrate, counts_, watched_);
         }
         return adapter_.lines();
     }
@@ -78,6 +80,7 @@ private:
     double rate_ = 60;
     double due_ = 0;  ///< pictures owed, less than one
     Duration cost_ = 5ms;
+    bool watched_ = true;
     EncoderCounts counts_;
 };
 
@@ -106,6 +109,40 @@ TEST(SizeAdapter, StepsDownToWhatANarrowPathKeeps) {
     EXPECT_EQ(screen.run(2s, 4'000'000), 1080u);
     // And no further, nor up: 1440 would need 7.4.
     EXPECT_EQ(screen.run(120s, 4'000'000), 1080u);
+}
+
+TEST(SizeAdapter, NobodyWatchingIsNoReason) {
+    // Rate control measures no path and stays at its start, short of what
+    // 4K needs: it says nothing of a path.
+    Screen screen;
+    screen.set_watched(false);
+    EXPECT_EQ(screen.run(60s, 2'000'000), 0u);
+}
+
+TEST(SizeAdapter, AViewerComingIsGivenTimeToo) {
+    Screen screen;
+    screen.set_watched(false);
+    screen.run(20s, 2'000'000);
+    // Rate control starting from the first viewer, at its start: five
+    // seconds to find its feet, and three of too little on.
+    screen.set_watched(true);
+    EXPECT_EQ(screen.run(7s, 2'000'000), 0u);
+    EXPECT_EQ(screen.run(2s, 2'000'000), 720u);
+}
+
+TEST(SizeAdapter, NobodyWatchingHoldsTheSizeAsItIs) {
+    Screen screen;
+    EXPECT_EQ(screen.run(20s, 3'000'000), 1080u);
+    // Not back up with nobody there to measure a path to.
+    screen.set_watched(false);
+    EXPECT_EQ(screen.run(60s, 20'000'000), 1080u);
+}
+
+TEST(SizeAdapter, AnEncoderBehindStepsDownWithNobodyWatching) {
+    Screen screen;
+    screen.set_watched(false);
+    screen.run(6s, 2'000'000);
+    EXPECT_EQ(screen.run(3s, 2'000'000, 0.5), 1440u);
 }
 
 TEST(SizeAdapter, GoesNoLowerThanTheLeast) {

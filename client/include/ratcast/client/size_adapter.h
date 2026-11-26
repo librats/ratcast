@@ -39,6 +39,13 @@
  *     long after each step up that came straight back down (within twenty
  *     seconds), up to 160, back to ten after a minute held.
  *
+ * The bitrate says something of a path only while someone watches: with
+ * nobody, rate control has nothing to measure and stays at its start (2
+ * Mbit/s, short of what 1080 lines need), so it is not looked at — the size
+ * held, neither down nor up — and from the first viewer on only after five
+ * seconds, as rate control finds its feet. The encoder behind is judged
+ * either way: it encodes for nobody just as well.
+ *
  * Each change starts the encoder over with a keyframe, so after one nothing
  * changes for five seconds: rate control finds its feet first (it starts
  * low and ramps up ×1.5 a second, rate_controller.h). Sizes are told in
@@ -94,9 +101,10 @@ public:
     /// no larger than lines() already; the bitrate rate control aims at; and
     /// what the encoder has been given and done so far. The limit from now
     /// on: lines(). It is never more than what the pictures have while they
-    /// have less: nothing to gain.
+    /// have less: nothing to gain. `watched`: someone watches, the bitrate
+    /// rate control's from the paths to them.
     uint32_t update(Timestamp now, uint32_t width, uint32_t height, uint32_t bitrate,
-                    const EncoderCounts& counts);
+                    const EncoderCounts& counts, bool watched = true);
 
     /// The encoder started over at `now` — opened anew, for pictures of
     /// another size or kind: what it skips is not counted for a while.
@@ -141,6 +149,9 @@ private:
     /// Pictures a second the source gave over the last count; none yet.
     std::optional<double> rate_;
     std::optional<Timestamp> started_at_;  ///< the encoder's last start over
+    /// Since when someone watches; none while nobody does. Watched from the
+    /// start: rate control starts with the stream.
+    std::optional<Timestamp> watched_since_;
 };
 
 }  // namespace ratcast

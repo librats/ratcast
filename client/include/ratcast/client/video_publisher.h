@@ -227,6 +227,8 @@ private:
     std::vector<std::vector<Codec>> decodes_;  ///< what the viewers said they decode, last looked
     std::optional<Timestamp> viewers_seen_;    ///< on clock_, when follow_viewers() last looked
     std::optional<SizeAdapter> adapter_;       ///< with adapt_size
+    bool watched_ = false;                     ///< the stream has viewers, last looked
+    std::optional<Timestamp> watched_seen_;    ///< on clock_, when fit() last looked
     std::atomic<uint32_t> lines_{0};           ///< what the pictures are made no larger than
     Timestamp limited_at_{};                   ///< on clock_, when lines_ last changed
     FrameScaler scaler_;
