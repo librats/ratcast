@@ -105,12 +105,14 @@ if(APPLE)
 endif()
 
 # On Android a package, made by androiddeployqt (the `apk` target): the
-# manifest (android/AndroidManifest.xml) and the icon put together in the
-# build's folder, as the package wants them, and the shared libraries the app
-# links beside Qt's — FFmpeg's.
+# manifest (android/AndroidManifest.xml), the activity's dark theme
+# (android/res/values/styles.xml) and the icon put together in the build's
+# folder, as the package wants them, and the shared libraries the app links
+# beside Qt's — FFmpeg's.
 if(ANDROID)
     set(android_dir "${CMAKE_CURRENT_BINARY_DIR}/android")
     configure_file(android/AndroidManifest.xml "${android_dir}/AndroidManifest.xml" COPYONLY)
+    configure_file(android/res/values/styles.xml "${android_dir}/res/values/styles.xml" COPYONLY)
     configure_file(resources/ratcast.png "${android_dir}/res/drawable/ratcast.png" COPYONLY)
     # The engine's Java (its foreground service, the call's sound), compiled
     # with Qt's from the package's src/.

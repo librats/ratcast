@@ -379,7 +379,7 @@ ApplicationWindow {
     // The app's own menu, from the start and from the room: the settings, a
     // newer version, a problem told or a feature asked for on GitHub, and
     // what this ratcast is.
-    Menu {
+    FittedMenu {
         id: appMenu
 
         // An item hidden takes no room.
@@ -868,6 +868,20 @@ ApplicationWindow {
         }
     }
 
+    /// A menu as wide as its widest item shown, within the window: Material's
+    /// is of a fixed width, eliding the longer ones (a phone's Russian).
+    component FittedMenu: Menu {
+        width: {
+            let widest = implicitWidth
+            for (let i = 0; i < count; ++i) {
+                const item = itemAt(i)
+                if (item && item.visible)
+                    widest = Math.max(widest, item.implicitWidth + leftPadding + rightPadding)
+            }
+            return Math.min(widest, root.width - 16)
+        }
+    }
+
     component Dot: Rectangle {
         implicitWidth: 10
         implicitHeight: 10
@@ -1259,423 +1273,437 @@ ApplicationWindow {
         visible: root.inRoom && !root.fullScreen
         Material.elevation: 2
 
-        ColumnLayout {
+        // Scrolled as one when it does not fit (a phone on its side, a share
+        // above it): the members always within reach.
+        Flickable {
+            id: sideScroll
             anchors.fill: parent
-            spacing: 8
+            contentHeight: sideColumn.implicitHeight
+            clip: true
+            boundsBehavior: Flickable.StopAtBounds
+            ScrollBar.vertical: ScrollBar {}
 
-            PlainLabel {
-                Layout.fillWidth: true
-                text: call.group.length > 0 ? root.groupName(call.group) : qsTr("Room")
-                font.pixelSize: 20
-                font.bold: true
-            }
-            Label {
-                Layout.fillWidth: true
-                text: call.group.length > 0 ? qsTr("Send the group's link to whoever is to join:")
-                                            : qsTr("Send the link to whoever is to join:")
-                wrapMode: Text.Wrap
-                opacity: 0.7
-                font.pixelSize: 12
-            }
+            ColumnLayout {
+                id: sideColumn
+                width: sideScroll.width
+                spacing: 8
 
-            // The one link that works anywhere, the first invite; the others,
-            // this device's addresses, a menu away.
-            Rectangle {
-                id: invite
-
-                readonly property string link: call.invites.length > 0 ? call.invites[0] : ""
-                property bool copied: false
-
-                Layout.fillWidth: true
-                implicitHeight: inviteColumn.implicitHeight + 16
-                radius: 8
-                color: Qt.rgba(Material.foreground.r, Material.foreground.g, Material.foreground.b,
-                               0.06)
-
-                Timer {
-                    id: copiedShown
-                    interval: 1500
-                    onTriggered: invite.copied = false
+                PlainLabel {
+                    Layout.fillWidth: true
+                    text: call.group.length > 0 ? root.groupName(call.group) : qsTr("Room")
+                    font.pixelSize: 20
+                    font.bold: true
+                }
+                Label {
+                    Layout.fillWidth: true
+                    text: call.group.length > 0 ? qsTr("Send the group's link to whoever is to join:")
+                                                : qsTr("Send the link to whoever is to join:")
+                    wrapMode: Text.Wrap
+                    opacity: 0.7
+                    font.pixelSize: 12
                 }
 
-                ColumnLayout {
-                    id: inviteColumn
-                    anchors.fill: parent
-                    anchors.margins: 8
-                    anchors.leftMargin: 12
-                    anchors.topMargin: 2
-                    spacing: 0
+                // The one link that works anywhere, the first invite; the others,
+                // this device's addresses, a menu away.
+                Rectangle {
+                    id: invite
 
-                    RowLayout {
-                        Layout.fillWidth: true
+                    readonly property string link: call.invites.length > 0 ? call.invites[0] : ""
+                    property bool copied: false
+
+                    Layout.fillWidth: true
+                    implicitHeight: inviteColumn.implicitHeight + 16
+                    radius: 8
+                    color: Qt.rgba(Material.foreground.r, Material.foreground.g, Material.foreground.b,
+                                   0.06)
+
+                    Timer {
+                        id: copiedShown
+                        interval: 1500
+                        onTriggered: invite.copied = false
+                    }
+
+                    ColumnLayout {
+                        id: inviteColumn
+                        anchors.fill: parent
+                        anchors.margins: 8
+                        anchors.leftMargin: 12
+                        anchors.topMargin: 2
                         spacing: 0
 
-                        Label {
-                            Layout.fillWidth: true
-                            text: invite.link.replace(/^https:\/\//, "")
-                            textFormat: Text.PlainText
-                            elide: Text.ElideRight
-                            font.pixelSize: 12
-                            opacity: 0.8
-                        }
-                        ToolButton {
-                            display: AbstractButton.IconOnly
-                            icon.source: "icons/qr-code.svg"
-                            onClicked: inviteQr.open()
-                            ToolTip.visible: hovered
-                            ToolTip.text: qsTr("Show it as a QR code")
-                        }
-                        ToolButton {
-                            display: AbstractButton.IconOnly
-                            icon.source: "icons/ellipsis.svg"
-                            visible: call.invites.length > 1
-                            onClicked: otherInvites.open()
-                            ToolTip.visible: hovered
-                            ToolTip.text: qsTr("Links for the same network")
-                        }
-                    }
-                    Button {
-                        Layout.fillWidth: true
-                        text: invite.copied ? qsTr("Copied") : qsTr("Copy the link")
-                        icon.source: invite.copied ? "icons/check.svg" : "icons/copy.svg"
-                        highlighted: true
-                        onClicked: {
-                            call.copy(invite.link)
-                            invite.copied = true
-                            copiedShown.restart()
-                        }
-                    }
-                }
-            }
-
-            Popup {
-                id: inviteQr
-
-                parent: Overlay.overlay
-                anchors.centerIn: parent
-                modal: true
-                padding: 16
-
-                ColumnLayout {
-                    spacing: 8
-
-                    QrCode {
-                        Layout.alignment: Qt.AlignHCenter
-                        Layout.preferredWidth: 240
-                        Layout.preferredHeight: 240
-                        text: invite.link
-                    }
-                    Label {
-                        Layout.maximumWidth: 240
-                        text: qsTr("Point a phone's camera at it to join the room there.")
-                        wrapMode: Text.Wrap
-                        horizontalAlignment: Text.AlignHCenter
-                        opacity: 0.7
-                    }
-                }
-            }
-
-            // This device's addresses: straight to it, for someone on the
-            // same network — no internet needed, nor a server.
-            Dialog {
-                id: otherInvites
-
-                parent: Overlay.overlay
-                anchors.centerIn: parent
-                width: Math.min(root.width - 32, 480)
-                modal: true
-                title: qsTr("Links for the same network")
-                standardButtons: Dialog.Close
-
-                ColumnLayout {
-                    anchors.left: parent.left
-                    anchors.right: parent.right
-                    spacing: 8
-
-                    Label {
-                        Layout.fillWidth: true
-                        text: qsTr("These lead straight to this device, by its address on each network it is on: for someone on the same Wi-Fi or network, even with no internet. Anywhere else, send the main link.")
-                        wrapMode: Text.Wrap
-                        opacity: 0.7
-                    }
-                    Repeater {
-                        model: call.invites.slice(1)
-
                         RowLayout {
-                            required property string modelData
                             Layout.fillWidth: true
+                            spacing: 0
 
-                            TextField {
+                            Label {
                                 Layout.fillWidth: true
-                                readOnly: true
-                                text: modelData
-                                selectByMouse: true
+                                text: invite.link.replace(/^https:\/\//, "")
+                                textFormat: Text.PlainText
+                                elide: Text.ElideRight
                                 font.pixelSize: 12
+                                opacity: 0.8
                             }
                             ToolButton {
                                 display: AbstractButton.IconOnly
-                                icon.source: "icons/copy.svg"
-                                onClicked: call.copy(modelData)
+                                icon.source: "icons/qr-code.svg"
+                                onClicked: inviteQr.open()
                                 ToolTip.visible: hovered
-                                ToolTip.text: qsTr("Copy the link")
+                                ToolTip.text: qsTr("Show it as a QR code")
                             }
-                        }
-                    }
-                }
-            }
-
-            Label {
-                Layout.topMargin: 8
-                text: qsTr("In the room")
-                font.bold: true
-            }
-
-            // This side first.
-            RowLayout {
-                Layout.fillWidth: true
-                spacing: 8
-
-                Avatar {
-                    Layout.margins: 6
-                    name: call.name
-                    tag: people.tag
-                    speaking: call.speaking && !call.muted && !call.deafened
-                }
-                PlainLabel {
-                    Layout.fillWidth: true
-                    text: qsTr("%1 (you)").arg(root.memberName(call.name, ""))
-                }
-                Glyph {
-                    glyph: "screen-share"
-                    visible: call.sharing
-                }
-                Glyph {
-                    glyph: call.deafened ? "headphone-off" : "mic-off"
-                    visible: call.deafened || call.muted
-                }
-            }
-
-            ListView {
-                Layout.fillWidth: true
-                Layout.fillHeight: true
-                clip: true
-                model: call.members
-
-                delegate: Item {
-                    id: member
-                    required property string peerId
-                    required property string peer
-                    required property string name
-                    required property bool muted
-                    required property bool deafened
-                    required property bool speaking
-                    required property bool sharing
-                    required property bool reconnecting
-                    required property real volume
-                    required property bool mutedHere
-                    required property string person
-                    required property string tag
-                    required property bool isFriend
-                    required property bool befriendable
-                    width: ListView.view.width
-                    height: memberRow.implicitHeight
-
-                    // A click anywhere along it: how loud they are heard here.
-                    Rectangle {
-                        anchors.fill: parent
-                        radius: 6
-                        color: Material.foreground
-                        opacity: memberHover.hovered ? 0.07 : 0
-                        Behavior on opacity {
-                            NumberAnimation {
-                                duration: 100
+                            ToolButton {
+                                display: AbstractButton.IconOnly
+                                icon.source: "icons/ellipsis.svg"
+                                visible: call.invites.length > 1
+                                onClicked: otherInvites.open()
+                                ToolTip.visible: hovered
+                                ToolTip.text: qsTr("Links for the same network")
                             }
-                        }
-                    }
-                    HoverHandler {
-                        id: memberHover
-                        cursorShape: Qt.PointingHandCursor
-                    }
-                    TapHandler {
-                        acceptedButtons: Qt.LeftButton | Qt.RightButton
-                        onTapped: hearing.open()
-                    }
-
-                    RowLayout {
-                        id: memberRow
-                        anchors.left: parent.left
-                        anchors.right: parent.right
-                        anchors.rightMargin: 4
-                        anchors.verticalCenter: parent.verticalCenter
-                        spacing: 8
-
-                        Avatar {
-                            Layout.margins: 6
-                            name: member.name
-                            // One with no card yet still a colour of their own.
-                            tag: member.tag.length > 0 ? member.tag : member.peer
-                            speaking: member.speaking
-                            reconnecting: member.reconnecting
-                        }
-                        PlainLabel {
-                            Layout.fillWidth: true
-                            text: root.memberName(member.name, member.peer)
-                            opacity: member.speaking ? 1 : 0.85
-                        }
-                        // Whose: four characters that tell two of a name apart.
-                        Badge {
-                            text: member.tag
-                            opacity: 0.45
-                            visible: text.length > 0
-                        }
-                        Glyph {
-                            glyph: "user"
-                            visible: member.isFriend
-                        }
-                        Badge {
-                            text: member.mutedHere ? qsTr("off for you")
-                                                   : member.volume !== 1
-                                                     ? qsTr("%1%").arg(Math.round(member.volume * 100))
-                                                     : ""
-                        }
-                        Badge {
-                            text: member.reconnecting ? qsTr("reconnecting…") : ""
-                            color: Material.color(Material.Orange)
-                        }
-                        Glyph {
-                            glyph: member.deafened ? "headphone-off" : "mic-off"
-                            visible: !member.reconnecting && (member.deafened || member.muted)
                         }
                         Button {
-                            visible: member.sharing
-                            flat: true
-                            font.pixelSize: 11
-                            icon.source: call.watching === member.peerId ? "icons/eye.svg"
-                                                                         : "icons/tv-minimal-play.svg"
-                            icon.width: 16
-                            icon.height: 16
-                            text: call.watching === member.peerId ? qsTr("Watching") : qsTr("Watch")
-                            enabled: call.watching !== member.peerId
-                            onClicked: call.watch(member.peerId)
+                            Layout.fillWidth: true
+                            text: invite.copied ? qsTr("Copied") : qsTr("Copy the link")
+                            icon.source: invite.copied ? "icons/check.svg" : "icons/copy.svg"
+                            highlighted: true
+                            onClicked: {
+                                call.copy(invite.link)
+                                invite.copied = true
+                                copiedShown.restart()
+                            }
                         }
                     }
+                }
 
-                    Popup {
-                        id: hearing
-                        y: member.height
-                        width: member.width
-                        padding: 12
-                        background: Rectangle {
-                            color: "#111214"
+                Popup {
+                    id: inviteQr
+
+                    parent: Overlay.overlay
+                    anchors.centerIn: parent
+                    modal: true
+                    padding: 16
+
+                    ColumnLayout {
+                        spacing: 8
+
+                        QrCode {
+                            Layout.alignment: Qt.AlignHCenter
+                            Layout.preferredWidth: 240
+                            Layout.preferredHeight: 240
+                            text: invite.link
+                        }
+                        Label {
+                            Layout.maximumWidth: 240
+                            text: qsTr("Point a phone's camera at it to join the room there.")
+                            wrapMode: Text.Wrap
+                            horizontalAlignment: Text.AlignHCenter
+                            opacity: 0.7
+                        }
+                    }
+                }
+
+                // This device's addresses: straight to it, for someone on the
+                // same network — no internet needed, nor a server.
+                Dialog {
+                    id: otherInvites
+
+                    parent: Overlay.overlay
+                    anchors.centerIn: parent
+                    width: Math.min(root.width - 32, 480)
+                    modal: true
+                    title: qsTr("Links for the same network")
+                    standardButtons: Dialog.Close
+
+                    ColumnLayout {
+                        anchors.left: parent.left
+                        anchors.right: parent.right
+                        spacing: 8
+
+                        Label {
+                            Layout.fillWidth: true
+                            text: qsTr("These lead straight to this device, by its address on each network it is on: for someone on the same Wi-Fi or network, even with no internet. Anywhere else, send the main link.")
+                            wrapMode: Text.Wrap
+                            opacity: 0.7
+                        }
+                        Repeater {
+                            model: call.invites.slice(1)
+
+                            RowLayout {
+                                required property string modelData
+                                Layout.fillWidth: true
+
+                                TextField {
+                                    Layout.fillWidth: true
+                                    readOnly: true
+                                    text: modelData
+                                    selectByMouse: true
+                                    font.pixelSize: 12
+                                }
+                                ToolButton {
+                                    display: AbstractButton.IconOnly
+                                    icon.source: "icons/copy.svg"
+                                    onClicked: call.copy(modelData)
+                                    ToolTip.visible: hovered
+                                    ToolTip.text: qsTr("Copy the link")
+                                }
+                            }
+                        }
+                    }
+                }
+
+                Label {
+                    Layout.topMargin: 8
+                    text: qsTr("In the room")
+                    font.bold: true
+                }
+
+                // This side first.
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: 8
+
+                    Avatar {
+                        Layout.margins: 6
+                        name: call.name
+                        tag: people.tag
+                        speaking: call.speaking && !call.muted && !call.deafened
+                    }
+                    PlainLabel {
+                        Layout.fillWidth: true
+                        text: qsTr("%1 (you)").arg(root.memberName(call.name, ""))
+                    }
+                    Glyph {
+                        glyph: "screen-share"
+                        visible: call.sharing
+                    }
+                    Glyph {
+                        glyph: call.deafened ? "headphone-off" : "mic-off"
+                        visible: call.deafened || call.muted
+                    }
+                }
+
+                ListView {
+                    Layout.fillWidth: true
+                    Layout.preferredHeight: contentHeight
+                    interactive: false
+                    model: call.members
+
+                    delegate: Item {
+                        id: member
+                        required property string peerId
+                        required property string peer
+                        required property string name
+                        required property bool muted
+                        required property bool deafened
+                        required property bool speaking
+                        required property bool sharing
+                        required property bool reconnecting
+                        required property real volume
+                        required property bool mutedHere
+                        required property string person
+                        required property string tag
+                        required property bool isFriend
+                        required property bool befriendable
+                        width: ListView.view.width
+                        height: memberRow.implicitHeight
+
+                        // A click anywhere along it: how loud they are heard here.
+                        Rectangle {
+                            anchors.fill: parent
                             radius: 6
-                            border.color: "#4e5058"
+                            color: Material.foreground
+                            opacity: memberHover.hovered ? 0.07 : 0
+                            Behavior on opacity {
+                                NumberAnimation {
+                                    duration: 100
+                                }
+                            }
+                        }
+                        HoverHandler {
+                            id: memberHover
+                            cursorShape: Qt.PointingHandCursor
+                            // A touch hovers nothing: no tip or highlight left behind.
+                            acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
+                        }
+                        TapHandler {
+                            acceptedButtons: Qt.LeftButton | Qt.RightButton
+                            onTapped: hearing.open()
                         }
 
-                        ColumnLayout {
-                            anchors.fill: parent
-                            spacing: 4
+                        RowLayout {
+                            id: memberRow
+                            anchors.left: parent.left
+                            anchors.right: parent.right
+                            anchors.rightMargin: 4
+                            anchors.verticalCenter: parent.verticalCenter
+                            spacing: 8
 
+                            Avatar {
+                                Layout.margins: 6
+                                name: member.name
+                                // One with no card yet still a colour of their own.
+                                tag: member.tag.length > 0 ? member.tag : member.peer
+                                speaking: member.speaking
+                                reconnecting: member.reconnecting
+                            }
                             PlainLabel {
                                 Layout.fillWidth: true
-                                text: qsTr("%1, for you").arg(root.memberName(member.name, member.peer))
-                                font.bold: true
+                                text: root.memberName(member.name, member.peer)
+                                opacity: member.speaking ? 1 : 0.85
                             }
-                            // Whose the member is, and being friends.
-                            RowLayout {
-                                Layout.fillWidth: true
-                                visible: member.person.length > 0
+                            // Whose: four characters that tell two of a name apart.
+                            Badge {
+                                text: member.tag
+                                opacity: 0.45
+                                visible: text.length > 0
+                            }
+                            Glyph {
+                                glyph: "user"
+                                visible: member.isFriend
+                            }
+                            Badge {
+                                text: member.mutedHere ? qsTr("off for you")
+                                                       : member.volume !== 1
+                                                         ? qsTr("%1%").arg(Math.round(member.volume * 100))
+                                                         : ""
+                            }
+                            Badge {
+                                text: member.reconnecting ? qsTr("reconnecting…") : ""
+                                color: Material.color(Material.Orange)
+                            }
+                            Glyph {
+                                glyph: member.deafened ? "headphone-off" : "mic-off"
+                                visible: !member.reconnecting && (member.deafened || member.muted)
+                            }
+                            Button {
+                                visible: member.sharing
+                                flat: true
+                                font.pixelSize: 11
+                                icon.source: call.watching === member.peerId ? "icons/eye.svg"
+                                                                             : "icons/tv-minimal-play.svg"
+                                icon.width: 16
+                                icon.height: 16
+                                text: call.watching === member.peerId ? qsTr("Watching") : qsTr("Watch")
+                                enabled: call.watching !== member.peerId
+                                onClicked: call.watch(member.peerId)
+                            }
+                        }
 
-                                Label {
-                                    Layout.fillWidth: true
-                                    wrapMode: Text.Wrap
-                                    font.pixelSize: 12
-                                    opacity: 0.7
-                                    text: member.person === people.person
-                                          ? qsTr("You, on another device")
-                                          : member.isFriend ? qsTr("Your friend")
-                                          : member.befriendable ? ""
-                                          : qsTr("Asked to be your friend")
-                                    visible: text.length > 0
-                                }
-                                Button {
-                                    text: qsTr("Add friend")
-                                    icon.source: "icons/user-plus.svg"
-                                    flat: true
-                                    visible: member.befriendable
-                                    onClicked: call.addFriend(member.peerId)
-                                }
+                        Popup {
+                            id: hearing
+                            y: member.height
+                            width: member.width
+                            padding: 12
+                            background: Rectangle {
+                                color: "#111214"
+                                radius: 6
+                                border.color: "#4e5058"
                             }
-                            RowLayout {
-                                Layout.fillWidth: true
-                                enabled: !member.mutedHere
 
-                                Slider {
-                                    id: volume
+                            ColumnLayout {
+                                anchors.fill: parent
+                                spacing: 4
+
+                                PlainLabel {
                                     Layout.fillWidth: true
-                                    from: 0
-                                    to: call.maxVolume
-                                    stepSize: 0.05
-                                    value: member.volume
-                                    onMoved: call.setVolume(member.peerId, value)
+                                    text: qsTr("%1, for you").arg(root.memberName(member.name, member.peer))
+                                    font.bold: true
                                 }
-                                Label {
-                                    Layout.preferredWidth: 40
-                                    horizontalAlignment: Text.AlignRight
-                                    text: qsTr("%1%").arg(Math.round(volume.value * 100))
-                                }
-                            }
-                            RowLayout {
-                                CheckBox {
-                                    text: qsTr("Mute for me")
-                                    checked: member.mutedHere
-                                    onToggled: call.setMutedHere(member.peerId, checked)
-                                }
-                                Item {
+                                // Whose the member is, and being friends.
+                                RowLayout {
                                     Layout.fillWidth: true
+                                    visible: member.person.length > 0
+
+                                    Label {
+                                        Layout.fillWidth: true
+                                        wrapMode: Text.Wrap
+                                        font.pixelSize: 12
+                                        opacity: 0.7
+                                        text: member.person === people.person
+                                              ? qsTr("You, on another device")
+                                              : member.isFriend ? qsTr("Your friend")
+                                              : member.befriendable ? ""
+                                              : qsTr("Asked to be your friend")
+                                        visible: text.length > 0
+                                    }
+                                    Button {
+                                        text: qsTr("Add friend")
+                                        icon.source: "icons/user-plus.svg"
+                                        flat: true
+                                        visible: member.befriendable
+                                        onClicked: call.addFriend(member.peerId)
+                                    }
                                 }
-                                Button {
-                                    text: qsTr("Reset")
-                                    icon.source: "icons/rotate-ccw.svg"
-                                    flat: true
-                                    visible: member.volume !== 1
-                                    onClicked: {
-                                        call.setVolume(member.peerId, 1)
-                                        volume.value = 1
+                                RowLayout {
+                                    Layout.fillWidth: true
+                                    enabled: !member.mutedHere
+
+                                    Slider {
+                                        id: volume
+                                        Layout.fillWidth: true
+                                        from: 0
+                                        to: call.maxVolume
+                                        stepSize: 0.05
+                                        value: member.volume
+                                        onMoved: call.setVolume(member.peerId, value)
+                                    }
+                                    Label {
+                                        Layout.preferredWidth: 40
+                                        horizontalAlignment: Text.AlignRight
+                                        text: qsTr("%1%").arg(Math.round(volume.value * 100))
+                                    }
+                                }
+                                RowLayout {
+                                    CheckBox {
+                                        text: qsTr("Mute for me")
+                                        checked: member.mutedHere
+                                        onToggled: call.setMutedHere(member.peerId, checked)
+                                    }
+                                    Item {
+                                        Layout.fillWidth: true
+                                    }
+                                    Button {
+                                        text: qsTr("Reset")
+                                        icon.source: "icons/rotate-ccw.svg"
+                                        flat: true
+                                        visible: member.volume !== 1
+                                        onClicked: {
+                                            call.setVolume(member.peerId, 1)
+                                            volume.value = 1
+                                        }
                                     }
                                 }
                             }
                         }
                     }
                 }
-            }
 
-            // A friend rung to this room, until they answer.
-            RowLayout {
-                Layout.fillWidth: true
-                visible: people.ringing.name !== undefined
-                spacing: 8
+                // A friend rung to this room, until they answer.
+                RowLayout {
+                    Layout.fillWidth: true
+                    visible: people.ringing.name !== undefined
+                    spacing: 8
+
+                    Label {
+                        Layout.fillWidth: true
+                        text: qsTr("Calling %1…").arg(people.ringing.name ? people.ringing.name : qsTr("Someone"))
+                        elide: Text.ElideRight
+                        textFormat: Text.PlainText
+                    }
+                    ToolButton {
+                        display: AbstractButton.IconOnly
+                        icon.source: "icons/phone-off.svg"
+                        onClicked: people.hangUp()
+                        ToolTip.visible: hovered
+                        ToolTip.text: qsTr("Stop calling")
+                    }
+                }
 
                 Label {
                     Layout.fillWidth: true
-                    text: qsTr("Calling %1…").arg(people.ringing.name ? people.ringing.name : qsTr("Someone"))
-                    elide: Text.ElideRight
-                    textFormat: Text.PlainText
+                    wrapMode: Text.Wrap
+                    text: call.notice
+                    color: Material.color(Material.Orange)
+                    visible: text.length > 0
                 }
-                ToolButton {
-                    display: AbstractButton.IconOnly
-                    icon.source: "icons/phone-off.svg"
-                    onClicked: people.hangUp()
-                    ToolTip.visible: hovered
-                    ToolTip.text: qsTr("Stop calling")
-                }
-            }
-
-            Label {
-                Layout.fillWidth: true
-                wrapMode: Text.Wrap
-                text: call.notice
-                color: Material.color(Material.Orange)
-                visible: text.length > 0
             }
         }
     }
@@ -1745,34 +1773,48 @@ ApplicationWindow {
             onPositionChanged: chrome.wake()
         }
 
-        // Over the share; narrow, under it.
-        GridLayout {
+        // Under the buttons over the share, to read them by whatever it shows.
+        Rectangle {
+            anchors.fill: shareRow
+            anchors.margins: -4
+            radius: 12
+            color: "#99000000"
+            visible: shareRow.visible && !stage.column
+        }
+
+        // Over the share; narrow, under it. On a phone or narrow, the buttons
+        // their icons alone (their names on hovering), the sound beside them:
+        // their names do not fit.
+        RowLayout {
             id: shareRow
+            readonly property bool iconsOnly: root.mobile || stage.column
             anchors.top: stage.column ? picture.bottom : parent.top
             anchors.topMargin: stage.column ? 8 : 0
             anchors.horizontalCenter: picture.horizontalCenter
-            width: stage.column ? stage.width : implicitWidth
-            columns: stage.column ? 2 : 3
+            width: stage.column ? stage.width : Math.min(implicitWidth, picture.width)
             visible: root.watching && !root.fullScreen
 
             Button {
-                Layout.fillWidth: stage.column
                 text: qsTr("Stop watching")
                 icon.source: "icons/eye-off.svg"
+                display: shareRow.iconsOnly ? AbstractButton.IconOnly : AbstractButton.TextBesideIcon
                 onClicked: call.watch("")
+                ToolTip.visible: hovered && shareRow.iconsOnly
+                ToolTip.text: text
             }
             Button {
-                Layout.fillWidth: stage.column
                 text: qsTr("Full screen")
                 icon.source: "icons/maximize.svg"
+                display: shareRow.iconsOnly ? AbstractButton.IconOnly : AbstractButton.TextBesideIcon
                 onClicked: root.setFullScreen(true)
                 ToolTip.visible: hovered
-                ToolTip.text: qsTr("F, or a double click on the share; Esc to leave")
+                ToolTip.text: shareRow.iconsOnly
+                              ? text + "\n" + qsTr("F, or a double click on the share; Esc to leave")
+                              : qsTr("F, or a double click on the share; Esc to leave")
             }
             ShareVolume {
-                Layout.columnSpan: stage.column ? 2 : 1
-                Layout.fillWidth: stage.column
-                Layout.leftMargin: stage.column ? 0 : 8
+                Layout.fillWidth: shareRow.iconsOnly
+                Layout.leftMargin: 8
             }
         }
 
@@ -1876,6 +1918,8 @@ ApplicationWindow {
                 HoverHandler {
                     id: maximizeHover
                     cursorShape: Qt.PointingHandCursor
+                    // A touch hovers nothing: no tip or highlight left behind.
+                    acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
                 }
                 TapHandler {
                     onTapped: root.setCameraFullScreen(tile.cameraId, tile.named)
@@ -1928,7 +1972,7 @@ ApplicationWindow {
                 return best
             }
             readonly property real tileWidth: root.watching
-                ? (stage.column ? 120 : 240)
+                ? (stage.column ? 120 : Math.min(240, stage.width * 0.3))
                 : Math.min((stage.width - (columns - 1) * spacing) / columns,
                            (stage.height - (Math.ceil(tiles / columns) - 1) * spacing)
                            / Math.ceil(tiles / columns) * 4 / 3)
@@ -2707,7 +2751,7 @@ ApplicationWindow {
                 dot: root.qualityColor(call.quality)
                 onClicked: moreMenu.open()
 
-                Menu {
+                FittedMenu {
                     id: moreMenu
                     x: parent.width - width
                     y: -height
@@ -2898,44 +2942,45 @@ ApplicationWindow {
                 }
             }
 
-            // Narrow, in two columns across, alike.
-            GridLayout {
+            // Round, their names on hovering, as the room's: one row on a phone
+            // held either way, the sound's slider giving way.
+            RowLayout {
                 anchors.horizontalCenter: parent.horizontalCenter
                 anchors.bottom: parent.bottom
                 anchors.bottomMargin: 16
-                width: root.compact ? parent.width - 32 : implicitWidth
-                columns: root.compact ? 2 : 6
-                columnSpacing: 8
+                width: Math.min(implicitWidth, parent.width - 32)
+                spacing: 6
 
                 HoverHandler {
                     id: controlsHover
+                    // A touch is no pointer kept over them: they hide.
+                    acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
                 }
 
-                Button {
-                    Layout.fillWidth: root.compact
-                    Layout.preferredWidth: root.compact ? 1 : -1  // columns alike
+                CallButton {
                     text: call.muted ? qsTr("Unmute") : qsTr("Mute")
-                    icon.source: call.muted ? "icons/mic-off.svg" : "icons/mic.svg"
-                    Material.background: call.muted ? Material.color(Material.Red, Material.Shade700)
-                                                    : undefined
+                    tip: call.muted ? qsTr("Unmute: the others hear you again")
+                                    : qsTr("Mute: the others do not hear you")
+                    iconName: call.muted ? "mic-off" : "mic"
+                    alarm: call.muted
                     onClicked: call.muted = !call.muted
                 }
-                Button {
-                    Layout.fillWidth: root.compact
-                    Layout.preferredWidth: root.compact ? 1 : -1  // columns alike
+                CallButton {
                     text: call.deafened ? qsTr("Undeafen") : qsTr("Deafen")
-                    icon.source: call.deafened ? "icons/headphone-off.svg" : "icons/headphones.svg"
-                    Material.background: call.deafened ? Material.color(Material.Red, Material.Shade700)
-                                                       : undefined
+                    tip: call.deafened ? qsTr("Undeafen: hear the others, and be heard")
+                                       : qsTr("Deafen: you hear nobody, and nobody hears you")
+                    iconName: call.deafened ? "headphone-off" : "headphones"
+                    alarm: call.deafened
                     onClicked: call.deafened = !call.deafened
                 }
                 Dot {
-                    Layout.leftMargin: 8
-                    Layout.alignment: root.compact ? Qt.AlignHCenter : Qt.AlignVCenter
+                    Layout.leftMargin: 4
+                    Layout.rightMargin: 4
                     color: root.qualityColor(call.quality)
 
                     HoverHandler {
                         id: fullQualityHover
+                        acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
                     }
                     ToolTip.visible: fullQualityHover.hovered && call.quality.length > 0
                     ToolTip.text: call.qualityReason.length > 0
@@ -2943,32 +2988,25 @@ ApplicationWindow {
                 }
                 // A share's; a camera has none.
                 ShareVolume {
-                    Layout.fillWidth: root.compact
-                    Layout.preferredWidth: root.compact ? 1 : -1  // columns alike
-                    Layout.leftMargin: 8
+                    Layout.fillWidth: true
+                    Layout.maximumWidth: implicitWidth
                     visible: !root.cameraFullScreen
                 }
-                Button {
-                    Layout.fillWidth: root.compact
-                    Layout.preferredWidth: root.compact ? 1 : -1  // columns alike
-                    Layout.leftMargin: root.compact ? 0 : 8
+                CallButton {
                     visible: !root.cameraFullScreen
                     text: qsTr("Stop watching")
-                    icon.source: "icons/eye-off.svg"
+                    iconName: "eye-off"
                     onClicked: {
                         root.setFullScreen(false)
                         call.watch("")
                     }
                 }
-                Button {
-                    Layout.fillWidth: root.compact
-                    Layout.preferredWidth: root.compact ? 1 : -1  // columns alike
+                CallButton {
                     text: qsTr("Leave full screen")
-                    icon.source: "icons/minimize.svg"
+                    tip: text + "\n" + qsTr("Esc, F, or a double click")
+                    iconName: "minimize"
                     highlighted: true
                     onClicked: root.setFullScreen(false)
-                    ToolTip.visible: hovered
-                    ToolTip.text: qsTr("Esc, F, or a double click")
                 }
             }
         }

@@ -24,6 +24,7 @@
 #ifdef Q_OS_ANDROID
 #include <QJniEnvironment>
 #include <QJniObject>
+#include <QStyleHints>
 
 #include "ratcast/engine/android.h"
 #endif
@@ -120,6 +121,9 @@ int main(int argc, char* argv[]) {
     // What the engine reaches only through Java (the screen kept on).
     ratcast::android::attach(QJniEnvironment::javaVM(),
                              QNativeInterface::QAndroidApplication::context().object());
+    // The window is dark whatever the system's mode, and so the system bars'
+    // icons are light over it: Qt would follow a light system's, dark.
+    QGuiApplication::styleHints()->setColorScheme(Qt::ColorScheme::Dark);
 #endif
     ratcast::app::LinkOpener links;
     // Qt takes the user's locale on Unix; numbers written and read below Qt —
