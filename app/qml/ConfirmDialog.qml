@@ -30,7 +30,10 @@ Dialog {
 
     Label {
         id: said
-        width: parent.width
+        // Wrapped to the dialog's width only while it shows: made before the
+        // window has its size, it is less than nothing wide, and its lines
+        // loop through the dialog's height.
+        width: dialog.visible ? parent.width : 0
         wrapMode: Text.Wrap
         textFormat: Text.PlainText
     }
