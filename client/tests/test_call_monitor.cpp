@@ -189,9 +189,11 @@ TEST(CallMonitor, SoundMadeUpIsFairThenPoor) {
     s.earlier.sound = sound(500, 100ms);
     s.now.sound = sound(550, 110ms);  // 1% of the second
     EXPECT_EQ(compare(s.earlier, s.now).sound->verdict.quality, Quality::Fair);
-    s.now.sound = sound(550, 140ms);  // 4%
+    s.now.sound = sound(550, 140ms);  // 4%, but two frames: some came late
+    EXPECT_EQ(compare(s.earlier, s.now).sound->verdict.quality, Quality::Fair);
+    s.now.sound = sound(550, 220ms);  // 12%: six frames
     const CallReport report = compare(s.earlier, s.now);
-    EXPECT_EQ(report.sound->concealed, 40ms);
+    EXPECT_EQ(report.sound->concealed, 120ms);
     EXPECT_EQ(report.sound->verdict.quality, Quality::Poor);
     EXPECT_EQ(report.verdict.reason.rfind("sound: ", 0), 0u);
 }
@@ -211,7 +213,7 @@ TEST(CallMonitor, DtxSilenceIsGoodAndOnlyNothingComingForLongIsPoor) {
 TEST(CallMonitor, EachPeersVoiceAndCameraAreTheirOwn) {
     Snapshots s;
     s.earlier.voices = {{kAnn, sound(500, {})}, {kBob, sound(500, {})}};
-    s.now.voices = {{kAnn, sound(550, {})}, {kBob, sound(550, 40ms)}};  // Bob's made up
+    s.now.voices = {{kAnn, sound(550, {})}, {kBob, sound(550, 120ms)}};  // Bob's made up
     s.now.cameras = {{kBob, pictures(30, Timestamp{} + 10s, 33ms)}};
     s.now.cameras[kBob].peer = kBob;
 
@@ -283,7 +285,7 @@ TEST(CallMonitor, TheCallIsTheWorstOfItsParts) {
     s.now.sent = {screen(30, 30, 100'000)};
     std::get<VideoPublisherStats>(s.now.sent.front().publisher).skipped = 1;  // fair
     s.earlier.sound = sound(0, {});
-    s.now.sound = sound(50, 100ms);  // poor
+    s.now.sound = sound(50, 120ms);  // poor
 
     const CallReport report = compare(s.earlier, s.now);
     EXPECT_EQ(report.sent.front().verdict.quality, Quality::Fair);
@@ -352,7 +354,7 @@ TEST(CallMonitor, ASectionAPartAndTheCallFirst) {
     s.earlier.sent = {screen(0, 0, 0)};
     s.now.sent = {screen(60, 60, 500'000, 60 * 5ms)};
     s.earlier.voices = {{kAnn, sound(0, {})}};
-    s.now.voices = {{kAnn, sound(50, 100ms)}};
+    s.now.voices = {{kAnn, sound(50, 120ms)}};
 
     const std::vector<ReportSection> sections = report_sections(compare(s.earlier, s.now));
     ASSERT_EQ(sections.size(), 3u);
@@ -370,7 +372,7 @@ TEST(CallMonitor, ASectionAPartAndTheCallFirst) {
     EXPECT_EQ(row(sections[1], "Bitrate"), "4.00 Mbit/s (aim 5.00 Mbit/s)");
     EXPECT_EQ(row(sections[1], "Encode"), "5.0 ms");
     EXPECT_EQ(sections[2].title, "Voice of " + kAnn.short_hex());
-    EXPECT_EQ(row(sections[2], "Made up"), "100.0 ms");
+    EXPECT_EQ(row(sections[2], "Made up"), "120.0 ms");
 }
 
 TEST(CpuMeter, CountsTheProcessCpuTime) {

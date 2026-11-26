@@ -250,6 +250,27 @@ TEST(JitterBufferTest, SoundMadeUpWhileNothingCameIsNeitherUntilTheNextFrameSays
     EXPECT_EQ(lost.buffer().stats().unexplained, 0ms);
 }
 
+TEST(JitterBufferTest, AFrameAfterSilenceComingLateTellsTheSilenceApart) {
+    Simulation sim;
+    sim.silent_from = 50;
+    sim.silence = 400ms;
+    // The words after a pause held up on the way, Wi-Fi's way: their frames
+    // come at once, in order, as the path lets them go 200 ms after the
+    // first was sent — the first ones after their time.
+    sim.transit = [](FrameNumber n) {
+        return std::optional<Duration>(
+            n < 50 ? 30ms : std::max<Duration>(30ms, 200ms - kFrame * int64_t(n - 50)));
+    };
+    sim.run(3s, 100);
+    const JitterBuffer::Stats& stats = sim.buffer().stats();
+    ASSERT_GE(stats.late, 1u);
+    EXPECT_EQ(stats.lost, stats.late);
+    // Made up in place of the late frames, not for the pause before them.
+    EXPECT_LE(stats.concealed, kFrame * int64_t(stats.late));
+    EXPECT_GE(stats.silence, 400ms - kFrame);
+    EXPECT_EQ(stats.unexplained, 0ms);
+}
+
 TEST(JitterBufferTest, ASpikeRaisesTheDelayAndSilenceBringsItBack) {
     Simulation sim({.memory = 1s});
     // Frames 100-109 come 120 ms later than the rest. A pause follows once

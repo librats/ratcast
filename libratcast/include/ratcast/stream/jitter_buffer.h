@@ -87,7 +87,9 @@ public:
         Duration cut{};         ///< taken out of silence to lower it
         /// Made up since the last frame played, while none was there: silence
         /// or a loss, which the next frame to come will tell (it goes to
-        /// `silence` or `concealed` then).
+        /// `silence` or `concealed` then). One come too late tells it up to
+        /// its own time: what was made up in its place is concealed, before
+        /// it silence (or the frames missing before it).
         Duration unexplained{};
     };
 
@@ -146,6 +148,7 @@ private:
 
     void learn(const EncodedFrame& frame, Timestamp now);
     void update_target();
+    void settle_late(const FrameInfo& info);
     std::optional<Next> play_front(Timestamp now);
     bool stretch(Timestamp now);
     Next gap(Duration duration, std::optional<EncodedFrame> after, bool advance);

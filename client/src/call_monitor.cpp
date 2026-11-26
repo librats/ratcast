@@ -14,8 +14,12 @@ namespace {
 
 using namespace std::chrono_literals;
 
-/// Sound made up beyond this share of the time is heard as broken.
+/// Sound made up beyond this share of the time, and this much of it, is heard
+/// as broken. A frame or two now and then is not: the jitter buffer lets 3%
+/// of frames come late to keep its delay low, and makes each up (20 ms). In a
+/// second's report, the window's, two of them are 4%.
 constexpr double kConcealedPoor = 0.02;
+constexpr Duration kConcealedPoorLeast = 100ms;
 /// Nothing come for longer than this is more than DTX's silence, which sends
 /// a frame every 400 ms.
 constexpr Duration kNothingCamePoor = 1s;
@@ -246,7 +250,7 @@ ReceivedSoundReport received_sound(const AudioPlayerStats& now, const AudioPlaye
     if (now.decode_errors > before.decode_errors) {
         sound.verdict.at_least(Quality::Poor, "frames failed to decode");
     }
-    if (interval.share(sound.concealed) > kConcealedPoor) {
+    if (interval.share(sound.concealed) > kConcealedPoor && sound.concealed > kConcealedPoorLeast) {
         sound.verdict.at_least(Quality::Poor, "sound made up for frames that never came");
     } else if (sound.concealed > Duration{}) {
         sound.verdict.at_least(Quality::Fair, "some sound made up");

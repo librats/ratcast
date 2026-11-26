@@ -63,7 +63,7 @@ void JitterBuffer::push(EncodedFrame frame, Timestamp now) {
 
     const FrameNumber number = frame.info.number;
     if (playing_ && (number < next_number_ || frame.info.capture_time + kTolerance < cursor_)) {
-        ++stats_.late;
+        settle_late(frame.info);
         return;
     }
     const auto at = std::ranges::lower_bound(frames_, number, {},
@@ -77,6 +77,30 @@ void JitterBuffer::push(EncodedFrame frame, Timestamp now) {
         frames_.erase(frames_.begin());  // the player is not taking them
         ++stats_.dropped;
     }
+}
+
+// A frame dropped for coming after its time. What was made up while nothing
+// was there is told by it up to where it ends: before its capture time,
+// silence — or a loss, frames missing before it —, in its place, a loss; what
+// came after it is still for the next frame to tell. A pause in speech whose
+// first frame came late is otherwise all counted lost when the next plays.
+void JitterBuffer::settle_late(const FrameInfo& info) {
+    ++stats_.late;
+    if (info.number < next_number_) return;               // a duplicate, or its place told already
+    const Timestamp from = cursor_ - stats_.unexplained;  // where the making up began
+    const Duration before =
+        std::clamp(info.capture_time - from, Duration::zero(), stats_.unexplained);
+    const Duration after = std::clamp(cursor_ - (info.capture_time + frame_duration_),
+                                      Duration::zero(), stats_.unexplained - before);
+    if (info.number > next_number_) {
+        stats_.concealed += before;
+    } else {
+        stats_.silence += before;
+    }
+    stats_.concealed += stats_.unexplained - before - after;
+    stats_.unexplained = after;
+    stats_.lost += info.number + 1 - next_number_;
+    next_number_ = info.number + 1;
 }
 
 // What the frame says of the path: its transit, against the fastest lately,
@@ -139,8 +163,9 @@ JitterBuffer::Next JitterBuffer::next(Timestamp now) {
         // Frames the cursor went past while they waited (it cut silence, or
         // dropped a frame) are of no use now.
         while (!frames_.empty() && frames_.front().info.capture_time + kTolerance < cursor_) {
+            const FrameInfo info = frames_.front().info;
             frames_.erase(frames_.begin());
-            ++stats_.late;
+            settle_late(info);
         }
         const Duration frame = frame_duration_;
 
