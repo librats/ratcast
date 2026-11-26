@@ -95,7 +95,8 @@ ApplicationWindow {
     property int shownVisibility: Window.Windowed
     /// The tray has said once this run that the window went to it.
     property bool trayTold: false
-    /// Quitting from the tray: the window closes for good.
+    /// Qt quits (the tray's Quit, Back with nothing open, Android's activity
+    /// gone; main.cpp sets it): the window closes for good.
     property bool quitting: false
 
     width: 1100
@@ -248,7 +249,7 @@ ApplicationWindow {
     }
 
     onClosing: close => {
-        if (root.mobile && root.stepBack()) {
+        if (root.mobile && !root.quitting && root.stepBack()) {
             close.accepted = false
             return
         }
@@ -331,10 +332,7 @@ ApplicationWindow {
             Platform.MenuSeparator {}
             Platform.MenuItem {
                 text: qsTr("Quit")
-                onTriggered: {
-                    root.quitting = true  // Qt closes the windows first
-                    Qt.quit()
-                }
+                onTriggered: Qt.quit()
             }
         }
     }

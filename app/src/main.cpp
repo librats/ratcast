@@ -88,6 +88,26 @@ private:
     QObject* window_;
 };
 
+/// Tells the window Qt quits (its `quitting`) before Qt closes it, for its
+/// closing to go along rather than keep the room on — in the tray, or behind
+/// as Back sends it: Qt quits only once every window has closed. Android's
+/// activity gone (the app swiped out of the recent ones while a room keeps
+/// the process) quits so, its thread waiting for main() to end; the window
+/// kept, the app's screen stays blank until it is killed.
+class QuitTeller final : public QObject {
+public:
+    explicit QuitTeller(QObject* window) : window_(window) {}
+
+protected:
+    bool eventFilter(QObject* watched, QEvent* event) override {
+        if (event->type() == QEvent::Quit) window_->setProperty("quitting", true);
+        return QObject::eventFilter(watched, event);
+    }
+
+private:
+    QObject* window_;
+};
+
 }  // namespace
 
 int main(int argc, char* argv[]) {
@@ -212,6 +232,8 @@ int main(int argc, char* argv[]) {
     if (engine.rootObjects().isEmpty()) return QGuiApplication::exec();
     QObject* window = engine.rootObjects().constFirst();
     links.show_to(window);
+    QuitTeller quit_teller(window);
+    app.installEventFilter(&quit_teller);
     Activity activity(window);
     QObject::connect(window, SIGNAL(toBackground()), &activity, SLOT(to_background()));
     QObject::connect(window, SIGNAL(onItsSideChanged()), &activity, SLOT(on_its_side_changed()));
