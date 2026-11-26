@@ -243,12 +243,14 @@ private:
         }
         // Complete when its last frame came in: the stream's stamp of a
         // frame it counts, as far on from it as that frame is. The frames
-        // read so far are this block's first.
+        // read so far end with this block: AAudio counts them before it calls
+        // (counted again, each stamp was a block late, the 20 ms of a call's
+        // and less where one came in two callbacks: a jump in each).
         Timestamp complete = clock_.now();
         int64_t position = 0;
         int64_t nanos = 0;
         if (AAudioStream_getTimestamp(stream, CLOCK_MONOTONIC, &position, &nanos) == AAUDIO_OK) {
-            const int64_t last = AAudioStream_getFramesRead(stream) + frames;
+            const int64_t last = AAudioStream_getFramesRead(stream);
             complete = at_monotonic(
                 clock_, nanos + (last - position) * 1'000'000'000 / int64_t(format_.sample_rate));
         }
