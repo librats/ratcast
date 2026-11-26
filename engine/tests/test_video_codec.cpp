@@ -225,6 +225,43 @@ TEST_P(VideoCodecTest, PicturesComingUnevenlyCostFewKeyframes) {
     EXPECT_LE(keyframes, 2);
 }
 
+// A page read for a while, ten pictures a second as the pointer moves, then
+// scrolled at 60. Told more for the pictures coming apart, the encoder is told
+// less as soon as they come near again — spending more than the path carries
+// fills its queue — though that costs a keyframe; told more again only now and
+// then.
+TEST_P(VideoCodecTest, PicturesComingNearAgainStopSpendingMore) {
+    encoder_->set_bitrate(600'000);
+    Timestamp at{1s};
+    uint64_t index = 0;
+    int keyframes = 0;
+    // Bits a second out for `count` pictures taken `apart` apart.
+    const auto rate = [&](uint64_t count, std::chrono::microseconds apart) {
+        const Timestamp from = at;
+        size_t bytes = 0;
+        for (uint64_t i = 0; i < count; ++i) {
+            VideoFrame picture = noise(index++);
+            picture.set_capture_time(at);
+            at += apart;
+            for (EncodedVideo& out : encode(picture)) {
+                bytes += out.payload.size();
+                if (out.info.number > 0 && out.info.keyframe) ++keyframes;
+            }
+        }
+        return double(bytes) * 8 * 1'000'000 / double((at - from).count());
+    };
+
+    (void)rate(60, 16'667us);  // settling: the bitrate set, or an encoder opened for it
+    const double at_60 = rate(120, 16'667us);
+    keyframes = 0;
+    (void)rate(40, 100'000us);  // four seconds read: told more
+    (void)rate(30, 16'667us);   // half a second to tell it less, or open another
+    const double scrolled = rate(60, 16'667us);
+    EXPECT_LT(scrolled, at_60 * 1.33) << "at 60: " << at_60 << " bit/s, scrolled: " << scrolled;
+    // Told more once, and less once.
+    EXPECT_LE(keyframes, 2);
+}
+
 TEST_P(VideoCodecTest, ABitrateChangeLosesNoPicture) {
     // An encoder that cannot change its rate in flight opens another alongside
     // and switches to it: every picture still comes out, in order, decodable.

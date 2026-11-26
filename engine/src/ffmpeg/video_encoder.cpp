@@ -60,10 +60,16 @@ constexpr int kNoPeriodicKeyframes = 1 << 30;
 /// flight that starts over with one — by a factor held for kRepaceHeld (the
 /// average settled), no more often than every kRepaceEvery — both in the
 /// pictures' time. A screen's pictures come unevenly: told at every tenth, a
-/// screen shared through NVENC sent two keyframes a second.
+/// screen shared through NVENC sent two keyframes a second. Told less, though,
+/// once that far off for kRepaceLowerHeld, whenever: spending more than the
+/// path carries fills its queue, as a page read, then scrolled, would for the
+/// rest of the ten seconds; spending less only costs some quality. Told less
+/// only after being told more, or a new bitrate, it costs a keyframe no more
+/// often than they do.
 constexpr double kRepaceInFlight = 0.1;
 constexpr double kRepaceByOpening = 1.5;
 constexpr Duration kRepaceHeld = std::chrono::seconds(2);
+constexpr Duration kRepaceLowerHeld = std::chrono::milliseconds(250);
 constexpr Duration kRepaceEvery = std::chrono::seconds(10);
 
 /// Held while an encoder opens or closes. SVT-AV1 keeps state of its own
@@ -372,8 +378,11 @@ private:
             return;
         }
         if (!off_since_) off_since_ = capture_time;
-        if (capture_time - *off_since_ >= kRepaceHeld &&
-            (!repaced_at_ || capture_time - *repaced_at_ >= kRepaceEvery)) {
+        const Duration held = capture_time - *off_since_;
+        const bool lower = off < 1;  // the codec spends more than the bitrate
+        if (lower ? held >= kRepaceLowerHeld
+                  : held >= kRepaceHeld &&
+                        (!repaced_at_ || capture_time - *repaced_at_ >= kRepaceEvery)) {
             repaced_at_ = capture_time;
             off_since_.reset();
             if (candidate_.dynamic_bitrate) {
