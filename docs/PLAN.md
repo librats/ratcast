@@ -689,8 +689,9 @@ encoding, and a 1440p60 game is captured and encoded without a CPU copy.
     FFmpeg's wrapper takes a picture and returns what the session finished by then, so each frame
     came out a call late. Each picture is copied into the session's pool, encoded and waited for
     (`VTCompressionSessionCompleteFrames`); frames leave in Annex B, a keyframe's parameter sets
-    ahead of it; the bitrate changes in flight; low-latency rate control for H.264 where the
-    encoder has it.
+    ahead of it; the bitrate changes in flight; low-latency rate control for H.264 and HEVC where
+    the encoder has it (HEVC's without it, told less after pictures came apart, kept spending
+    nearly three times the bitrate for over a second).
   - **(b) Sound:** ✅ written, to be tried on a Mac — Core Audio (`engine/src/macos/core_audio.h`).
     A capture is an IOProc on a device: the microphone's — the one chosen by its UID, or the
     default, opened anew as the default changes — or, for what the computer plays, a private

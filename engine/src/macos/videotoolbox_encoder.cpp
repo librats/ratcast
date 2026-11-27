@@ -104,9 +104,14 @@ public:
     ~VideoToolboxEncoder() override { close(); }
 
     /// A session for the config: with low-latency rate control where the
-    /// encoder has it (H.264 on Apple's GPUs), else without.
+    /// encoder has it (Apple's GPUs; HEVC's on macOS 26 at least), else
+    /// without. HEVC's without it is slow to be told less: told more for
+    /// pictures coming apart, then back at the bitrate, it spent nearly
+    /// three times that for over a second once they came near again, and
+    /// more by its times than by its frame rate wherever DataRateLimits
+    /// left it room.
     Result<void> open() {
-        if (config_.codec == Codec::H264 && create(true)) return {};
+        if (create(true)) return {};
         return create(false);
     }
 
@@ -244,7 +249,9 @@ private:
         set(kVTCompressionPropertyKey_ProfileLevel,
             config_.codec == Codec::H265 ? kVTProfileLevel_HEVC_Main_AutoLevel
                                          : kVTProfileLevel_H264_ConstrainedHigh_AutoLevel);
-        // HEVC's keyframes IDR, each decodable on its own.
+        // HEVC's keyframes IDR, each decodable on its own. Low-latency rate
+        // control refuses to be told, but never reorders: a keyframe has no
+        // picture before it that comes after it.
         if (config_.codec == Codec::H265)
             set(kVTCompressionPropertyKey_AllowOpenGOP, kCFBooleanFalse);
         set(kVTCompressionPropertyKey_ExpectedFrameRate,
