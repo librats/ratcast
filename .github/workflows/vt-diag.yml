@@ -1,0 +1,42 @@
+# DIAGNOSTIC (temporary): VideoToolbox's rate control on a Mac, for a branch
+# diag/*. Only the engine and its tests; prints the diagnostic test's output.
+name: VT diag
+
+on:
+  push:
+    branches: ['diag/**']
+  workflow_dispatch:
+
+jobs:
+  vt-diag:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install media libraries
+        run: brew install ffmpeg opus ninja
+
+      - name: Configure
+        run: >
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          -DRATCAST_BUILD_APP=OFF -DRATCAST_BUILD_TESTS=ON
+          -DRATCAST_WITH_FFMPEG=ON -DRATCAST_WITH_OPUS=ON
+
+      - name: Build
+        run: cmake --build build --parallel --target engine_tests
+
+      - name: System
+        run: sw_vers; sysctl -n machdep.cpu.brand_string
+
+      - name: Diagnose
+        run: >
+          build/bin/engine_tests
+          --gtest_filter='Encoders/VideoCodecTest.DiagnoseVideoToolbox/*'
+
+      - name: The failing test, as it is
+        if: always()
+        run: >
+          build/bin/engine_tests
+          --gtest_filter='Encoders/VideoCodecTest.PicturesComingNearAgainStopSpendingMore/*videotoolbox*'

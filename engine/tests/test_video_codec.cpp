@@ -7,6 +7,8 @@
 #include <gtest/gtest.h>
 
 #include <cctype>
+#include <cstdio>
+#include <cstdlib>
 #include <ostream>
 #include <random>
 #include <string>
@@ -261,6 +263,100 @@ TEST_P(VideoCodecTest, PicturesComingNearAgainStopSpendingMore) {
     // Told more once, and less once.
     EXPECT_LE(keyframes, 2);
 }
+
+#ifdef __APPLE__
+// DIAGNOSTIC (temporary): VideoToolbox's rate control through the scenarios of
+// the tests above, with each of the encoder's RATCAST_VT_DIAG switches.
+TEST_P(VideoCodecTest, DiagnoseVideoToolbox) {
+    if (GetParam().name.find("videotoolbox") == std::string::npos) GTEST_SKIP();
+    for (const char* mode : {"", "nolimits", "ll", "even", "reopen", "ll,even", "even,reopen"}) {
+        setenv("RATCAST_VT_DIAG", (std::string("trace,") + mode).c_str(), 1);
+        std::printf("\n===== %s mode [%s]\n", GetParam().name.c_str(), mode);
+        std::fflush(stdout);
+        const auto open = [&] {
+            Result<std::unique_ptr<VideoEncoder>> opened = open_video_encoder(config_);
+            EXPECT_TRUE(opened);
+            if (opened) encoder_ = std::move(*opened);
+            return bool(opened);
+        };
+
+        // A page read, then scrolled.
+        if (!open()) continue;
+        encoder_->set_bitrate(600'000);
+        Timestamp at{1s};
+        uint64_t index = 0;
+        int keyframes = 0;
+        const auto rate = [&](const char* what, uint64_t count, std::chrono::microseconds apart) {
+            const Timestamp from = at;
+            size_t bytes = 0;
+            size_t tens = 0;
+            Timestamp ten_from = at;
+            std::string line;
+            for (uint64_t i = 0; i < count; ++i) {
+                VideoFrame picture = noise(index++);
+                picture.set_capture_time(at);
+                at += apart;
+                for (EncodedVideo& out : encode(picture)) {
+                    bytes += out.payload.size();
+                    tens += out.payload.size();
+                    if (out.info.number > 0 && out.info.keyframe) {
+                        ++keyframes;
+                        line += " K";
+                    }
+                }
+                if (i % 10 == 9) {
+                    line += " " + std::to_string(tens * 8 * 1000 / (at - ten_from).count());
+                    tens = 0;
+                    ten_from = at;
+                }
+            }
+            const double r = double(bytes) * 8 * 1'000'000 / double((at - from).count());
+            std::printf("  %-10s %4.0f kbit/s; by ten, kbit/s:%s\n", what, r / 1000, line.c_str());
+            std::fflush(stdout);
+            return r;
+        };
+        (void)rate("settle", 60, 16'667us);
+        const double at_60 = rate("at 60", 120, 16'667us);
+        keyframes = 0;
+        (void)rate("read", 40, 100'000us);
+        (void)rate("back", 30, 16'667us);
+        const double scrolled = rate("scrolled", 60, 16'667us);
+        (void)rate("after", 120, 16'667us);
+        std::printf("NEAR %s [%s]: scrolled / at 60 = %.2f (< 1.33), keyframes %d (<= 2)\n",
+                    GetParam().name.c_str(), mode, scrolled / at_60, keyframes);
+
+        // Pictures at 24 shared at 60, then at 60 again.
+        if (!open()) continue;
+        encoder_->set_bitrate(600'000);
+        at = Timestamp{1s};
+        index = 0;
+        keyframes = 0;
+        (void)rate("settle", 60, 16'667us);
+        const double at_60b = rate("at 60", 120, 16'667us);
+        (void)rate("settle 24", 72, 41'667us);
+        const double at_24 = rate("at 24", 72, 41'667us);
+        std::printf("PACE %s [%s]: at 24 / at 60 = %.2f (0.75 .. 1.33), keyframes %d\n",
+                    GetParam().name.c_str(), mode, at_24 / at_60b, keyframes);
+
+        // A screen's pictures coming unevenly.
+        if (!open()) continue;
+        at = Timestamp{1s};
+        int uneven = 0;
+        for (uint64_t i = 0; i < 700; ++i) {
+            VideoFrame picture = pattern(i);
+            picture.set_capture_time(at);
+            at += i % 70 < 60 ? 16'667us : 100'000us;
+            for (EncodedVideo& frame : encode(picture)) {
+                if (i > 0 && frame.info.keyframe) ++uneven;
+                EXPECT_EQ(decode(frame).size(), 1u) << "picture " << i;
+            }
+        }
+        std::printf("UNEVEN %s [%s]: keyframes %d (<= 2)\n", GetParam().name.c_str(), mode, uneven);
+        std::fflush(stdout);
+    }
+    unsetenv("RATCAST_VT_DIAG");
+}
+#endif
 
 TEST_P(VideoCodecTest, ABitrateChangeLosesNoPicture) {
     // An encoder that cannot change its rate in flight opens another alongside

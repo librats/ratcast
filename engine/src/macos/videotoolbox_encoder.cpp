@@ -14,11 +14,15 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstdio>
+#include <cstdlib>
 #include <cstring>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <optional>
 #include <span>
+#include <string>
 #include <type_traits>
 #include <utility>
 #include <vector>
@@ -83,6 +87,35 @@ bool for_each_unit(std::span<const uint8_t> data, size_t length_size, Unit unit)
     return true;
 }
 
+// DIAGNOSTIC (temporary): RATCAST_VT_DIAG, words joined by commas —
+// trace: properties refused or taken, bitrates told, sessions opened;
+// ll: low-latency rate control for HEVC too; even: the session's times evenly
+// spaced at the pictures' average; reopen: another session when told less by
+// 1.5 times; nolimits: no DataRateLimits.
+struct Diag {
+    bool trace = false, ll = false, even = false, reopen = false, nolimits = false;
+    static Diag from_env() {
+        Diag d;
+        const char* env = std::getenv("RATCAST_VT_DIAG");
+        const std::string words = env ? std::string(",") + env + "," : std::string();
+        const auto has = [&](const char* w) {
+            return words.find(std::string(",") + w + ",") != std::string::npos;
+        };
+        d.trace = has("trace");
+        d.ll = has("ll");
+        d.even = has("even");
+        d.reopen = has("reopen");
+        d.nolimits = has("nolimits");
+        return d;
+    }
+};
+
+std::string key_name(CFStringRef key) {
+    char name[256] = "?";
+    CFStringGetCString(key, name, sizeof name, kCFStringEncodingUTF8);
+    return name;
+}
+
 bool is_keyframe(CMSampleBufferRef sample) {
     CFArrayRef attachments = CMSampleBufferGetSampleAttachmentsArray(sample, false);
     if (!attachments || CFArrayGetCount(attachments) == 0) return true;
@@ -106,7 +139,7 @@ public:
     /// A session for the config: with low-latency rate control where the
     /// encoder has it (H.264 on Apple's GPUs), else without.
     Result<void> open() {
-        if (config_.codec == Codec::H264 && create(true)) return {};
+        if ((config_.codec == Codec::H264 || diag_.ll) && create(true)) return {};
         return create(false);
     }
 
@@ -144,14 +177,26 @@ public:
         // whatever the times say (a film of 24 shared at 60 went out at 0.45
         // of it): told more as they come further apart.
         spacing_.add(picture.capture_time());
-        if (std::abs(double(spacing_.told_bitrate(config_.bitrate)) / std::max<uint32_t>(told_, 1) -
-                     1) > kRetellOff) {
+        const uint32_t want = spacing_.told_bitrate(config_.bitrate);
+        if (diag_.reopen && told_ > 0 && double(want) * 1.5 < double(told_)) {
+            if (diag_.trace) std::fprintf(stderr, "vtdiag: reopen, told %u -> %u\n", told_, want);
+            close();
+            if (Result<void> opened = open(); !opened) return opened;
+            keyframe_owed_ = true;
+        } else if (std::abs(double(want) / std::max<uint32_t>(told_, 1) - 1) > kRetellOff) {
             apply_bitrate();
         }
-        const CMTime time = CMTimeMake(pts, kMicroseconds);
-        const CMTime duration =
-            CMTimeMake(int64_t{kMicroseconds} * config_.frame_rate_den / config_.frame_rate_num,
-                       kMicroseconds);
+        int64_t session_pts = pts;
+        int64_t lasts = int64_t{kMicroseconds} * config_.frame_rate_den / config_.frame_rate_num;
+        if (diag_.even) {
+            const int64_t apart = std::max<int64_t>(std::llround(spacing_.average()), 1);
+            even_pts_ = even_pts_ ? *even_pts_ + apart : pts;
+            session_pts = *even_pts_;
+            lasts = apart;
+            capture_of_[session_pts] = pts;
+        }
+        const CMTime time = CMTimeMake(session_pts, kMicroseconds);
+        const CMTime duration = CMTimeMake(lasts, kMicroseconds);
 
         CfPtr<CFMutableDictionaryRef> options;
         if (std::exchange(keyframe_owed_, false) || keyframe) {
@@ -226,6 +271,9 @@ private:
         }
         LOG_DEBUG("engine",
                   info_.name << (low_latency ? ": low-latency rate control" : ": real time"));
+        if (diag_.trace)
+            std::fprintf(stderr, "vtdiag: %s opened, low latency %d\n", info_.name.c_str(),
+                         int(low_latency));
         return {};
     }
 
@@ -277,6 +325,8 @@ private:
         if (!set(kVTCompressionPropertyKey_AverageBitRate, number(int64_t{told}).get()))
             return false;
         told_ = told;
+        if (diag_.trace) std::fprintf(stderr, "vtdiag: told %u bit/s\n", told);
+        if (diag_.nolimits) return true;
         const CfPtr<CFNumberRef> bytes = number(int64_t{config_.bitrate} / 8);
         const CfPtr<CFNumberRef> seconds = number(1.0);
         const void* limits[] = {bytes.get(), seconds.get()};
@@ -289,6 +339,8 @@ private:
     /// Set a property of the session; false, and said so, if refused.
     bool set(CFStringRef key, CFTypeRef value) {
         const OSStatus status = VTSessionSetProperty(session_.get(), key, value);
+        if (diag_.trace && (status != noErr || !traced_[key_name(key)]++))
+            std::fprintf(stderr, "vtdiag: set %s: %d\n", key_name(key).c_str(), int(status));
         if (status != noErr) {
             const char* name = CFStringGetCStringPtr(key, kCFStringEncodingUTF8);
             LOG_DEBUG("engine",
@@ -427,10 +479,15 @@ private:
         for_each_unit(units, size_t(length_size), append);
 
         out.info.number = next_number_++;
-        out.info.capture_time = Timestamp{
-            Duration{CMTimeConvertScale(CMSampleBufferGetPresentationTimeStamp(sample),
-                                        kMicroseconds, kCMTimeRoundingMethod_RoundHalfAwayFromZero)
-                         .value}};
+        int64_t out_pts =
+            CMTimeConvertScale(CMSampleBufferGetPresentationTimeStamp(sample), kMicroseconds,
+                               kCMTimeRoundingMethod_RoundHalfAwayFromZero)
+                .value;
+        if (auto it = capture_of_.find(out_pts); it != capture_of_.end()) {
+            out_pts = it->second;
+            capture_of_.erase(capture_of_.begin(), std::next(it));
+        }
+        out.info.capture_time = Timestamp{Duration{out_pts}};
         // One chain from keyframe to keyframe: each frame needs the one
         // before (and through it everything back to the keyframe).
         if (!out.info.keyframe && out.info.number > 0) out.info.references = {out.info.number - 1};
@@ -479,6 +536,10 @@ private:
     FrameNumber next_number_ = 0;
     PictureSpacing spacing_;
     uint32_t told_ = 0;  ///< the bitrate the session was told last
+    const Diag diag_ = Diag::from_env();
+    std::optional<int64_t> even_pts_;
+    std::map<int64_t, int64_t> capture_of_;
+    std::map<std::string, int> traced_;
 
     std::mutex mutex_;  ///< over what the session's callback hands back
     std::vector<CfPtr<CMSampleBufferRef>> done_;
