@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The activity's theme: dark as the window is (Main.qml's colour), its
+     system bars too, and what shows before Qt draws — the system's light one
+     would put a white bar over the window and a white screen before it. -->
+<resources>
+    <color name="ratcast_window">#1e1f22</color>
+
+    <style name="RatcastTheme" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/ratcast_window</item>
+        <item name="android:statusBarColor">@color/ratcast_window</item>
+        <item name="android:navigationBarColor">@color/ratcast_window</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowLightNavigationBar">false</item>
+    </style>
+</resources>
