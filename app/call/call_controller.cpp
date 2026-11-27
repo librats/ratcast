@@ -268,6 +268,7 @@ CallController::CallController(QObject* parent)
     connect(&logging_, &QTimer::timeout, this, &CallController::log_stats);
     load_hearing();
     load_devices();
+    load_recent();
     load_share_settings();
 }
 

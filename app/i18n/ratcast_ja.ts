@@ -412,10 +412,6 @@
         <translation>ルームを作成</translation>
     </message>
     <message>
-        <source>or a link to a room</source>
-        <translation>またはルームへのリンク</translation>
-    </message>
-    <message>
         <source>Join</source>
         <translation>参加</translation>
     </message>
@@ -618,6 +614,18 @@
     <message>
         <source>Groups and friends</source>
         <translation>グループと友達</translation>
+    </message>
+    <message>
+        <source>Change your name</source>
+        <translation>名前を変更</translation>
+    </message>
+    <message>
+        <source>Join by link</source>
+        <translation>リンクで参加</translation>
+    </message>
+    <message>
+        <source>A room&apos;s link</source>
+        <translation>ルームへのリンク</translation>
     </message>
     <message>
         <source>Recent rooms</source>

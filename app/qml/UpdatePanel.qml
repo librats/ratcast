@@ -12,10 +12,18 @@ ColumnLayout {
     required property Updater updater
     /// A check offered even while the updater checks by itself.
     property bool alwaysOfferCheck: false
+    /// The check and whether to update by itself offered: the start leaves
+    /// them to the About dialog, saying only what goes on.
+    property bool controls: true
+    /// Something to say: a version on its way, in place, or a notice. By its
+    /// text: the start hides the panel while there is none, and an item
+    /// inside one hidden is never visible itself.
+    readonly property bool news: status.text.length > 0
 
     spacing: 4
 
     Label {
+        id: status
         Layout.fillWidth: true
         horizontalAlignment: Text.AlignHCenter
         wrapMode: Text.Wrap
@@ -73,12 +81,13 @@ ColumnLayout {
             text: qsTr("Check for updates")
             icon.source: "icons/refresh-cw.svg"
             flat: true
-            visible: panel.updater.state === Updater.Idle
+            visible: panel.controls && panel.updater.state === Updater.Idle
                      && (panel.alwaysOfferCheck || !panel.updater.automatic)
             onClicked: panel.updater.check()
         }
         CheckBox {
             Layout.alignment: Qt.AlignHCenter
+            visible: panel.controls
             text: qsTr("Update automatically")
             checked: panel.updater.automatic
             onToggled: panel.updater.automatic = checked

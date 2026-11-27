@@ -412,10 +412,6 @@
         <translation>방 만들기</translation>
     </message>
     <message>
-        <source>or a link to a room</source>
-        <translation>또는 방 링크</translation>
-    </message>
-    <message>
         <source>Join</source>
         <translation>참여</translation>
     </message>
@@ -618,6 +614,18 @@
     <message>
         <source>Groups and friends</source>
         <translation>그룹과 친구</translation>
+    </message>
+    <message>
+        <source>Change your name</source>
+        <translation>이름 바꾸기</translation>
+    </message>
+    <message>
+        <source>Join by link</source>
+        <translation>링크로 참여</translation>
+    </message>
+    <message>
+        <source>A room&apos;s link</source>
+        <translation>방 링크</translation>
     </message>
     <message>
         <source>Recent rooms</source>

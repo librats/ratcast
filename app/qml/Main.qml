@@ -262,12 +262,15 @@ ApplicationWindow {
     /// The app sent to the background (main.cpp: Android's activity behind).
     signal toBackground()
 
-    /// Android's Back: out of the groups and friends, full screen, the chat
+    /// Android's Back: out of the groups and friends, a room's link being
+    /// typed on the start, full screen, the chat
     /// or the stats, if open; in a room, the app to the background, the room
     /// going on. False when there is nothing to step out of: the app goes.
     function stepBack() {
         if (friendsDrawer.opened)
             friendsDrawer.close()
+        else if (startColumn.linkOpen && call.state === CallController.Idle)
+            startColumn.linkOpen = false
         else if (root.fullScreen)
             root.setFullScreen(false)
         else if (chatPane.shown)
@@ -923,6 +926,25 @@ ApplicationWindow {
     }
 
     /// An icon of icons/ by its name, in the colour of the text beside it.
+    /// A rounded backing on the start, its content one column inside.
+    component StartCard: Rectangle {
+        default property alias content: cardColumn.data
+        property alias spacing: cardColumn.spacing
+        property real padding: 16
+
+        Layout.fillWidth: true
+        implicitHeight: cardColumn.implicitHeight + 2 * padding
+        radius: 12
+        color: Qt.rgba(Material.foreground.r, Material.foreground.g, Material.foreground.b, 0.05)
+
+        ColumnLayout {
+            id: cardColumn
+            anchors.fill: parent
+            anchors.margins: parent.padding
+            spacing: 8
+        }
+    }
+
     component Glyph: IconImage {
         /// Its name in icons/ (IconImage's own name is a theme's).
         property string glyph
@@ -1020,6 +1042,33 @@ ApplicationWindow {
         }
     }
 
+    // Narrow, the groups and the friends a drawer away, from the other corner;
+    // a dot while someone asks to be a friend.
+    RoundButton {
+        anchors.right: parent.right
+        anchors.top: parent.top
+        anchors.margins: 8
+        z: 1  // over the start, which scrolls under it
+        visible: call.state === CallController.Idle && root.compact
+        flat: true
+        icon.source: "icons/users.svg"
+        icon.width: 22
+        icon.height: 22
+        ToolTip.visible: hovered
+        ToolTip.text: people.asking > 0 ? qsTr("Groups and friends (%1 asking)").arg(people.asking)
+                                        : qsTr("Groups and friends")
+        ToolTip.delay: 300
+        onClicked: friendsDrawer.open()
+
+        Dot {
+            anchors.right: parent.right
+            anchors.top: parent.top
+            anchors.margins: 6
+            visible: people.asking > 0
+            color: Material.accent
+        }
+    }
+
     // Wide, the friends beside the start.
     Pane {
         id: friendsPane
@@ -1053,192 +1102,312 @@ ApplicationWindow {
         boundsBehavior: Flickable.StopAtBounds
         visible: call.state === CallController.Idle
         ScrollBar.vertical: ScrollBar {}
+        // Back from a room, the start as it first is.
+        onVisibleChanged: if (!visible) startColumn.linkOpen = false
 
         ColumnLayout {
             id: startColumn
+            /// The field for a room's link shown, under the two ways in.
+            property bool linkOpen: false
+            /// The name being changed: its field in place of it.
+            property bool nameOpen: false
+            /// Its field shown: while it changes, while it has the focus, and
+            /// while there is no name.
+            readonly property bool nameShown: nameOpen || nameField.activeFocus
+                                              || people.name.length === 0
+
             x: (startScroll.width - width) / 2
             y: Math.max(16, (startScroll.height - implicitHeight) / 2)
-            width: Math.min(startScroll.width - 48, 520)
+            width: Math.min(startScroll.width - 32, 420)
             spacing: 16
 
-            // As large as the window leaves room for under it; none where
-            // that is less than its least (a phone on its side).
+            // As large as the rest leaves room for; none where that is less
+            // than its least (a phone on its side).
             RatLogo {
-                /// The height the rest leaves it.
-                readonly property real room: root.height - 420 - recentList.taken
+                /// The height the rest leaves it: the title over it a little.
+                readonly property real room: startScroll.height - 32 - startTitle.implicitHeight
+                                             - startRest.implicitHeight - 2 * startColumn.spacing + 8
 
                 Layout.alignment: Qt.AlignHCenter
-                Layout.preferredWidth: Math.max(140, Math.min(parent.width, 440,
-                                                              room * implicitWidth / implicitHeight))
+                Layout.preferredWidth: Math.min(startColumn.width, 440,
+                                                room * implicitWidth / implicitHeight)
                 Layout.preferredHeight: Layout.preferredWidth * implicitHeight / implicitWidth
                 visible: room >= 140 * implicitHeight / implicitWidth
-                running: visible && parent.visible && root.visibility !== Window.Minimized
+                running: visible && startScroll.visible && root.visibility !== Window.Minimized
                          && root.visibility !== Window.Hidden
             }
 
-            Label {
+            // The name and which ratcast this is, the About dialog a click away.
+            ColumnLayout {
+                id: startTitle
                 Layout.alignment: Qt.AlignHCenter
                 Layout.topMargin: -8
-                text: "ratcast"
-                font.pixelSize: 32
-                font.bold: true
-            }
+                spacing: 0
 
-            // Narrow, one under another.
-            GridLayout {
-                Layout.alignment: Qt.AlignHCenter
-                columns: root.compact ? 1 : 3
-                columnSpacing: 8
-                rowSpacing: 0
-
+                Label {
+                    Layout.alignment: Qt.AlignHCenter
+                    text: "ratcast"
+                    font.pixelSize: 32
+                    font.bold: true
+                }
                 Label {
                     Layout.alignment: Qt.AlignHCenter
                     text: "v" + root.ratcastVersion + "  ·  librats " + root.libratsVersion
-                    opacity: 0.6
-                }
-                Button {
-                    Layout.alignment: Qt.AlignHCenter
-                    text: qsTr("Open log folder")
-                    icon.source: "icons/folder-open.svg"
-                    flat: true
-                    visible: !root.mobile
-                    onClicked: Qt.openUrlExternally(root.dataFolder)
-                }
-                Button {
-                    Layout.alignment: Qt.AlignHCenter
-                    text: qsTr("Settings")
-                    icon.source: "icons/settings.svg"
-                    flat: true
-                    onClicked: settingsDialog.open()
-                }
-                // Narrow, the groups and the friends are a drawer away.
-                Button {
-                    Layout.alignment: Qt.AlignHCenter
-                    text: people.asking > 0 ? qsTr("Groups and friends (%1 asking)").arg(people.asking)
-                                            : qsTr("Groups and friends")
-                    icon.source: "icons/users.svg"
-                    flat: true
-                    highlighted: people.asking > 0
-                    visible: root.compact
-                    onClicked: friendsDrawer.open()
-                }
-            }
-
-            UpdatePanel {
-                Layout.fillWidth: true
-                updater: updater
-                visible: updater.supported
-            }
-
-            TextField {
-                Layout.alignment: Qt.AlignHCenter
-                Layout.preferredWidth: 280
-                placeholderText: qsTr("Your name, as the others see it")
-                text: people.name
-                maximumLength: 32
-                onTextEdited: people.name = text
-            }
-
-            Button {
-                Layout.alignment: Qt.AlignHCenter
-                text: qsTr("Make a room")
-                icon.source: "icons/plus.svg"
-                highlighted: true
-                onClicked: call.create()
-            }
-
-            RowLayout {
-                Layout.fillWidth: true
-
-                TextField {
-                    id: linkField
-                    Layout.fillWidth: true
-                    placeholderText: qsTr("or a link to a room")
-                    onAccepted: if (text.length > 0) root.openLink(text.trim())
-                }
-                Button {
-                    text: qsTr("Join")
-                    icon.source: "icons/log-in.svg"
-                    enabled: linkField.text.length > 0
-                    onClicked: root.openLink(linkField.text.trim())
-                }
-            }
-
-            Label {
-                Layout.fillWidth: true
-                horizontalAlignment: Text.AlignHCenter
-                wrapMode: Text.Wrap
-                text: call.notice
-                color: Material.color(Material.Orange)
-                visible: text.length > 0
-            }
-
-            // The rooms last left, a way back without their link: whoever is
-            // still there is met again.
-            ColumnLayout {
-                id: recentList
-                /// What it takes of the window's height.
-                readonly property real taken: visible ? implicitHeight + parent.spacing : 0
-                Layout.fillWidth: true
-                spacing: 0
-                visible: call.recentRooms.length > 0
-
-                Label {
-                    text: qsTr("Recent rooms")
                     font.pixelSize: 12
-                    opacity: 0.6
+                    opacity: versionHover.hovered ? 0.9 : 0.5
+
+                    HoverHandler {
+                        id: versionHover
+                        cursorShape: Qt.PointingHandCursor
+                        acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
+                    }
+                    TapHandler {
+                        onTapped: aboutDialog.open()
+                    }
+                    ToolTip.visible: versionHover.hovered
+                    ToolTip.text: qsTr("About ratcast")
+                    ToolTip.delay: 300
                 }
-                Repeater {
-                    model: call.recentRooms
+            }
 
-                    ItemDelegate {
-                        id: recent
-                        required property var modelData
+            ColumnLayout {
+                id: startRest
+                Layout.fillWidth: true
+                spacing: 16
+
+                // A new version on its way or in place, only while there is
+                // one: checking and updating by itself are the About dialog's.
+                StartCard {
+                    visible: startUpdate.news
+
+                    UpdatePanel {
+                        id: startUpdate
                         Layout.fillWidth: true
-                        leftPadding: 8
-                        rightPadding: 0
-                        topPadding: 4
-                        bottomPadding: 4
-                        onClicked: root.openLink(modelData.link)
+                        updater: updater
+                        controls: false
+                    }
+                }
 
-                        contentItem: RowLayout {
-                            spacing: 12
+                // Who this is, and the two ways into a room.
+                StartCard {
+                    spacing: 12
 
-                            Glyph {
-                                glyph: "history"
-                            }
-                            ColumnLayout {
+                    RowLayout {
+                        Layout.fillWidth: true
+                        spacing: 12
+                        visible: !startColumn.nameShown
+
+                        Avatar {
+                            name: people.name
+                            tag: people.tag
+                        }
+                        ColumnLayout {
+                            Layout.fillWidth: true
+                            spacing: 0
+
+                            Label {
                                 Layout.fillWidth: true
-                                spacing: 0
+                                text: people.name
+                                textFormat: Text.PlainText
+                                elide: Text.ElideRight
+                                font.pixelSize: 16
+                            }
+                            Label {
+                                Layout.fillWidth: true
+                                text: qsTr("Your name, as the others see it")
+                                elide: Text.ElideRight
+                                font.pixelSize: 11
+                                opacity: 0.6
+                            }
+                        }
+                        ToolButton {
+                            display: AbstractButton.IconOnly
+                            icon.source: "icons/pencil.svg"
+                            onClicked: {
+                                startColumn.nameOpen = true
+                                nameField.forceActiveFocus()
+                                nameField.selectAll()
+                            }
+                            ToolTip.visible: hovered
+                            ToolTip.text: qsTr("Change your name")
+                            ToolTip.delay: 300
+                        }
+                    }
+                    // In its place while it changes, and while there is none.
+                    RowLayout {
+                        Layout.fillWidth: true
+                        visible: startColumn.nameShown
 
-                                Label {
-                                    Layout.fillWidth: true
-                                    text: root.recentNames(recent.modelData.names)
-                                    textFormat: Text.PlainText
-                                    elide: Text.ElideRight
-                                }
-                                Label {
-                                    Layout.fillWidth: true
-                                    text: root.leftWhen(recent.modelData.left)
-                                    elide: Text.ElideRight
-                                    font.pixelSize: 11
-                                    opacity: 0.6
-                                }
+                        TextField {
+                            id: nameField
+                            Layout.fillWidth: true
+                            placeholderText: qsTr("Your name, as the others see it")
+                            text: people.name
+                            maximumLength: 32
+                            onTextEdited: people.name = text
+                            onEditingFinished: startColumn.nameOpen = false
+                            Keys.onEscapePressed: startColumn.forceActiveFocus()
+                        }
+                        ToolButton {
+                            display: AbstractButton.IconOnly
+                            icon.source: "icons/check.svg"
+                            highlighted: true
+                            visible: people.name.length > 0
+                            onClicked: startColumn.forceActiveFocus()
+                        }
+                    }
+
+                    Rectangle {
+                        Layout.fillWidth: true
+                        implicitHeight: 1
+                        color: Material.foreground
+                        opacity: 0.08
+                    }
+
+                    // Side by side where both fit whole; narrower, one under another.
+                    GridLayout {
+                        Layout.fillWidth: true
+                        columns: width >= 2 * Math.max(makeRoom.implicitWidth, joinByLink.implicitWidth)
+                                 + columnSpacing ? 2 : 1
+                        columnSpacing: 8
+                        rowSpacing: 0
+
+                        Button {
+                            id: makeRoom
+                            Layout.fillWidth: true
+                            Layout.preferredWidth: 1  // columns alike
+                            text: qsTr("Make a room")
+                            icon.source: "icons/plus.svg"
+                            highlighted: true
+                            onClicked: call.create()
+                        }
+                        Button {
+                            id: joinByLink
+                            Layout.fillWidth: true
+                            Layout.preferredWidth: 1
+                            text: qsTr("Join by link")
+                            icon.source: "icons/log-in.svg"
+                            checkable: true
+                            checked: startColumn.linkOpen
+                            onClicked: {
+                                startColumn.linkOpen = !startColumn.linkOpen
+                                if (startColumn.linkOpen)
+                                    linkField.forceActiveFocus()
                             }
-                            ToolButton {
-                                display: AbstractButton.IconOnly
-                                icon.source: "icons/log-in.svg"
-                                highlighted: true
-                                onClicked: root.openLink(recent.modelData.link)
-                                ToolTip.visible: hovered
-                                ToolTip.text: qsTr("Join")
-                            }
-                            ToolButton {
-                                display: AbstractButton.IconOnly
-                                icon.source: "icons/x.svg"
-                                onClicked: call.forgetRoom(recent.modelData.link)
-                                ToolTip.visible: hovered
-                                ToolTip.text: qsTr("Forget")
+                        }
+                    }
+
+                    RowLayout {
+                        Layout.fillWidth: true
+                        visible: startColumn.linkOpen
+
+                        TextField {
+                            id: linkField
+                            Layout.fillWidth: true
+                            placeholderText: qsTr("A room's link")
+                            onAccepted: if (text.trim().length > 0) root.openLink(text.trim())
+                            Keys.onEscapePressed: startColumn.linkOpen = false
+                        }
+                        ToolButton {
+                            display: AbstractButton.IconOnly
+                            icon.source: "icons/log-in.svg"
+                            highlighted: true
+                            enabled: linkField.text.trim().length > 0
+                            onClicked: root.openLink(linkField.text.trim())
+                            ToolTip.visible: hovered
+                            ToolTip.text: qsTr("Join")
+                            ToolTip.delay: 300
+                        }
+                        ToolButton {
+                            display: AbstractButton.IconOnly
+                            icon.source: "icons/x.svg"
+                            onClicked: startColumn.linkOpen = false
+                            ToolTip.visible: hovered
+                            ToolTip.text: qsTr("Cancel")
+                            ToolTip.delay: 300
+                        }
+                    }
+
+                    Label {
+                        Layout.fillWidth: true
+                        horizontalAlignment: Text.AlignHCenter
+                        wrapMode: Text.Wrap
+                        text: call.notice
+                        color: Material.color(Material.Orange)
+                        visible: text.length > 0
+                    }
+                }
+
+                // The rooms last left, a way back without their link: whoever
+                // is still there is met again.
+                ColumnLayout {
+                    Layout.fillWidth: true
+                    spacing: 6
+                    visible: call.recentRooms.length > 0
+
+                    Label {
+                        Layout.leftMargin: 4
+                        text: qsTr("Recent rooms")
+                        font.pixelSize: 12
+                        opacity: 0.6
+                    }
+                    StartCard {
+                        padding: 4
+                        spacing: 0
+
+                        Repeater {
+                            model: call.recentRooms
+
+                            ItemDelegate {
+                                id: recent
+                                required property var modelData
+                                Layout.fillWidth: true
+                                leftPadding: 12
+                                rightPadding: 4
+                                topPadding: 4
+                                bottomPadding: 4
+                                onClicked: root.openLink(modelData.link)
+
+                                contentItem: RowLayout {
+                                    spacing: 12
+
+                                    Glyph {
+                                        glyph: "history"
+                                    }
+                                    ColumnLayout {
+                                        Layout.fillWidth: true
+                                        spacing: 0
+
+                                        Label {
+                                            Layout.fillWidth: true
+                                            text: root.recentNames(recent.modelData.names)
+                                            textFormat: Text.PlainText
+                                            elide: Text.ElideRight
+                                        }
+                                        Label {
+                                            Layout.fillWidth: true
+                                            text: root.leftWhen(recent.modelData.left)
+                                            elide: Text.ElideRight
+                                            font.pixelSize: 11
+                                            opacity: 0.6
+                                        }
+                                    }
+                                    ToolButton {
+                                        display: AbstractButton.IconOnly
+                                        icon.source: "icons/log-in.svg"
+                                        highlighted: true
+                                        onClicked: root.openLink(recent.modelData.link)
+                                        ToolTip.visible: hovered
+                                        ToolTip.text: qsTr("Join")
+                                    }
+                                    ToolButton {
+                                        display: AbstractButton.IconOnly
+                                        icon.source: "icons/x.svg"
+                                        onClicked: call.forgetRoom(recent.modelData.link)
+                                        ToolTip.visible: hovered
+                                        ToolTip.text: qsTr("Forget")
+                                    }
+                                }
                             }
                         }
                     }

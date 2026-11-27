@@ -412,10 +412,6 @@
         <translation>إنشاء غرفة</translation>
     </message>
     <message>
-        <source>or a link to a room</source>
-        <translation>أو رابط إلى غرفة</translation>
-    </message>
-    <message>
         <source>Join</source>
         <translation>انضمام</translation>
     </message>
@@ -618,6 +614,18 @@
     <message>
         <source>Groups and friends</source>
         <translation>المجموعات والأصدقاء</translation>
+    </message>
+    <message>
+        <source>Change your name</source>
+        <translation>تغيير اسمك</translation>
+    </message>
+    <message>
+        <source>Join by link</source>
+        <translation>الانضمام عبر رابط</translation>
+    </message>
+    <message>
+        <source>A room&apos;s link</source>
+        <translation>رابط غرفة</translation>
     </message>
     <message>
         <source>Recent rooms</source>

@@ -412,10 +412,6 @@
         <translation>Oda oluştur</translation>
     </message>
     <message>
-        <source>or a link to a room</source>
-        <translation>veya bir odanın bağlantısı</translation>
-    </message>
-    <message>
         <source>Join</source>
         <translation>Katıl</translation>
     </message>
@@ -618,6 +614,18 @@
     <message>
         <source>Groups and friends</source>
         <translation>Gruplar ve arkadaşlar</translation>
+    </message>
+    <message>
+        <source>Change your name</source>
+        <translation>Adınızı değiştirin</translation>
+    </message>
+    <message>
+        <source>Join by link</source>
+        <translation>Bağlantıyla katıl</translation>
+    </message>
+    <message>
+        <source>A room&apos;s link</source>
+        <translation>Bir odanın bağlantısı</translation>
     </message>
     <message>
         <source>Recent rooms</source>

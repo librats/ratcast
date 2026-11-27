@@ -412,10 +412,6 @@
         <translation>创建房间</translation>
     </message>
     <message>
-        <source>or a link to a room</source>
-        <translation>或房间链接</translation>
-    </message>
-    <message>
         <source>Join</source>
         <translation>加入</translation>
     </message>
@@ -618,6 +614,18 @@
     <message>
         <source>Groups and friends</source>
         <translation>群组和好友</translation>
+    </message>
+    <message>
+        <source>Change your name</source>
+        <translation>更改你的名字</translation>
+    </message>
+    <message>
+        <source>Join by link</source>
+        <translation>通过链接加入</translation>
+    </message>
+    <message>
+        <source>A room&apos;s link</source>
+        <translation>房间链接</translation>
     </message>
     <message>
         <source>Recent rooms</source>

@@ -412,10 +412,6 @@
         <translation>रूम बनाएँ</translation>
     </message>
     <message>
-        <source>or a link to a room</source>
-        <translation>या किसी रूम का लिंक</translation>
-    </message>
-    <message>
         <source>Join</source>
         <translation>जुड़ें</translation>
     </message>
@@ -618,6 +614,18 @@
     <message>
         <source>Groups and friends</source>
         <translation>समूह और दोस्त</translation>
+    </message>
+    <message>
+        <source>Change your name</source>
+        <translation>अपना नाम बदलें</translation>
+    </message>
+    <message>
+        <source>Join by link</source>
+        <translation>लिंक से जुड़ें</translation>
+    </message>
+    <message>
+        <source>A room&apos;s link</source>
+        <translation>रूम का लिंक</translation>
     </message>
     <message>
         <source>Recent rooms</source>

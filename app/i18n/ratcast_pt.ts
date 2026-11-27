@@ -412,10 +412,6 @@
         <translation>Criar uma sala</translation>
     </message>
     <message>
-        <source>or a link to a room</source>
-        <translation>ou um link para uma sala</translation>
-    </message>
-    <message>
         <source>Join</source>
         <translation>Entrar</translation>
     </message>
@@ -618,6 +614,18 @@
     <message>
         <source>Groups and friends</source>
         <translation>Grupos e amigos</translation>
+    </message>
+    <message>
+        <source>Change your name</source>
+        <translation>Mudar seu nome</translation>
+    </message>
+    <message>
+        <source>Join by link</source>
+        <translation>Entrar por link</translation>
+    </message>
+    <message>
+        <source>A room&apos;s link</source>
+        <translation>Link para uma sala</translation>
     </message>
     <message>
         <source>Recent rooms</source>
